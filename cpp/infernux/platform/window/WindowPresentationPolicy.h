@@ -79,7 +79,13 @@ inline WindowPresentationPolicy ResolveWindowPresentationPolicy(bool hasPlayerCo
         return {};
 
     WindowPresentationPolicy policy;
-    policy.focusable = false;
+    // SDL's X11 backend waits for a MapNotify from the compositor while
+    // showing a non-focusable window.  On headless/Xvfb validation displays
+    // there may be no focus-stealing window manager, so that wait blocks the
+    // Player before its control channel starts.  Keep activation disabled,
+    // but let X11 create a normal focusable toplevel; input remains driven by
+    // the explicit control channel.  Wayland retains the non-focusable path.
+    policy.focusable = videoDriver == "x11";
     policy.activateWhenShown = false;
     // Wayland does not assign an xdg-surface size until the toplevel is mapped
     // and configured. Vulkan surface preparation therefore cannot precede the
