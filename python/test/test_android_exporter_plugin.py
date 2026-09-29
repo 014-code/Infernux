@@ -142,43 +142,23 @@ def _write_native_payload(root: Path, *, abi: str) -> Path:
     }), encoding="utf-8")
     java = root / "java/org/libsdl/app/SDLActivity.java"
     java.parent.mkdir(parents=True)
-    java.write_text(
-        """class SDLActivity extends Activity {
-    static class ShowTextInputTask implements Runnable {
-        public void run() {
-            mTextEdit.setVisibility(View.VISIBLE);
-            mTextEdit.requestFocus();
-            InputMethodManager imm = (InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
-            imm.showSoftInput(mTextEdit, 0);
-
-            if (imm.isAcceptingText()) {
-                onNativeScreenKeyboardShown();
-            }
-        }
-    }
-}
-""",
-        encoding="utf-8",
+    sdl_java = (
+        ROOT
+        / "external"
+        / "SDL"
+        / "android-project"
+        / "app"
+        / "src"
+        / "main"
+        / "java"
+        / "org"
+        / "libsdl"
+        / "app"
     )
-    (java.parent / "SDLInputConnection.java").write_text(
-        """class SDLInputConnection extends BaseInputConnection {
-    public boolean sendKeyEvent(KeyEvent event) {
-        if (event.getKeyCode() == KeyEvent.KEYCODE_ENTER) {
-            if (SDLActivity.onNativeSoftReturnKey()) {
-                return true;
-            }
-        }
-        return super.sendKeyEvent(event);
-    }
-    public boolean deleteSurroundingText(int beforeLength, int afterLength) {
-        while (beforeLength-- > 0) {
-            nativeGenerateScancodeForUnichar('\\b');
-        }
-        return true;
-    }
-}
-""",
-        encoding="utf-8",
+    shutil.copy2(sdl_java / "SDLActivity.java", java)
+    shutil.copy2(
+        sdl_java / "SDLInputConnection.java",
+        java.parent / "SDLInputConnection.java",
     )
     return root
 
