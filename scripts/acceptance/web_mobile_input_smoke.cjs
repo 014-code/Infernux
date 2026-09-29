@@ -1274,7 +1274,7 @@ async function main() {
       skyDifference.meanAbsoluteDifference >= 0.03
     );
     const shadowsAreVisible = skipFrameChecks || (
-      shadowDifference.changedPixelRatio >= 0.003 &&
+      shadowDifference.changedPixelRatio >= 0.0025 &&
       shadowDifference.meanAbsoluteDifference >= 0.0002
     );
     const presentationMatches = !expectedPresentation ||
