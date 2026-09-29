@@ -1424,6 +1424,17 @@ void InxRenderer::DrawFrame()
             }
             Camera *editorCam = SceneManager::Instance().GetEditorCameraController().GetCamera();
 
+            // World-space Billboard UI is gameplay-facing UI.  The Scene view
+            // still renders meshes and receives editor rays through editorCam,
+            // while billboard expansion explicitly follows the active Game
+            // Camera used by scripts and the Game panel.
+            if (m_sceneRenderGraph) {
+                Camera *gameBillboardCam = FindGameCameraCached();
+                m_sceneRenderGraph->SetBillboardViewMatrix(
+                    gameBillboardCam ? gameBillboardCam->GetViewMatrix()
+                                     : (editorCam ? editorCam->GetViewMatrix() : glm::mat4(1.0f)));
+            }
+
 #if INFERNUX_FRAME_PROFILE
             auto _srpT0 = std::chrono::high_resolution_clock::now();
 #endif
@@ -1461,6 +1472,8 @@ void InxRenderer::DrawFrame()
                 if (m_transientResourcePool) {
                     gameCtx.SetTransientResourcePool(m_transientResourcePool.get());
                 }
+
+                graph->SetBillboardViewMatrix(gameCam->GetViewMatrix());
 
                 m_renderPipeline->Render(gameCtx, gameCam);
             }
@@ -2739,6 +2752,9 @@ size_t InxRenderer::GetPendingSyntheticInputCount() const
 void InxRenderer::ShowWindow()
 {
     m_view->Show();
+    if (m_vkCore)
+        m_vkCore->ObserveNextPresentationAsFirstVisible();
+    SDL_Log("INFERNUX_WINDOW_SHOWN");
 }
 
 bool InxRenderer::PumpStartupEvents()

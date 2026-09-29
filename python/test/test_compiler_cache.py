@@ -9,11 +9,25 @@ from Infernux.application import Application
 from Infernux._compiler.cache import compiler_cache_root, prune_cache_files
 from Infernux import _jit_cache
 from Infernux.engine.project_context import using_project_root
+from Infernux.engine.player_package_native import write_pack
 
 
 def test_player_gpu_artifacts_are_shipped_while_cpu_cache_remains_writable(tmp_path, monkeypatch):
     project = tmp_path / "project"
     player = tmp_path / "player"
+    package = tmp_path / "package"
+    package.mkdir()
+    index = tmp_path / "inx-test.nbi"
+    data = tmp_path / "inx-test.nbc"
+    index.write_bytes(b"index")
+    data.write_bytes(b"data")
+    write_pack(
+        (
+            ("Library/Artifacts/Compute/CPU/inx-test.nbi", index),
+            ("Library/Artifacts/Compute/CPU/inx-test.nbc", data),
+        ),
+        package / "Content.inxpkg",
+    )
     monkeypatch.setattr(Application, "is_player", staticmethod(lambda: False))
     monkeypatch.setenv("NUMBA_CACHE_DIR", str(tmp_path / "unrelated-global-cache"))
     with using_project_root(str(project)):
@@ -21,8 +35,11 @@ def test_player_gpu_artifacts_are_shipped_while_cpu_cache_remains_writable(tmp_p
         assert _jit_cache.cpu_cache_root() == project / "Library/Artifacts/Compute/CPU"
         monkeypatch.setattr(Application, "is_player", staticmethod(lambda: True))
         monkeypatch.setattr(Application, "persistent_data_path", staticmethod(lambda: str(player)))
+        monkeypatch.setenv("_INFERNUX_PLAYER_DATA_ROOT", str(package))
         assert compiler_cache_root() == project / "Library/Artifacts/Compute"
         assert _jit_cache.cpu_cache_root() == player / "Cache/Compute/CPU"
+        assert (player / "Cache/Compute/CPU/inx-test.nbi").read_bytes() == b"index"
+        assert (player / "Cache/Compute/CPU/inx-test.nbc").read_bytes() == b"data"
 
 
 def test_standalone_disk_cache_requires_explicit_storage(tmp_path, monkeypatch):

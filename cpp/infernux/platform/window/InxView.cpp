@@ -1035,23 +1035,24 @@ void InxView::SDLInit()
     }
     INXLOG_DEBUG("Window created successfully.");
 
+    // X11 must commit the initial map before maximizing a hidden editor or
+    // creating its Vulkan surface. Otherwise the window manager can map the
+    // native window while SDL still records it as hidden, and the later show
+    // call waits forever for a second MapNotify. Wayland needs the same early
+    // map so its compositor can assign the first authoritative extent.
+    if (presentation.showBeforeSurface && !ShowNativeWindow()) {
+        const std::string error = SDL_GetError();
+        throw std::runtime_error("Native window configure failed: " + error);
+    }
+
     if (!playerMode) {
         if (!SDL_MaximizeWindow(m_window))
             throw std::runtime_error(std::string("Cannot maximize the Editor window: ") + SDL_GetError());
-        if (!SDL_SyncWindow(m_window))
+        if (presentation.syncInitialMaximize && !SDL_SyncWindow(m_window))
             throw std::runtime_error(std::string("Cannot commit the maximized Editor window: ") + SDL_GetError());
         SDL_GetWindowSize(m_window, &m_windowWidth, &m_windowHeight);
     }
     SDL_GetWindowSizeInPixels(m_window, &m_framebufferWidth, &m_framebufferHeight);
-
-    // A Wayland Vulkan toplevel has no authoritative extent before its first
-    // show/configure roundtrip. Automated Players must complete that handshake
-    // before renderer surface preparation, while the non-activation policy
-    // above keeps the validation window from taking keyboard focus.
-    if (presentation.showBeforeSurface && !ShowNativeWindow()) {
-        const std::string error = SDL_GetError();
-        throw std::runtime_error("Wayland automation window configure failed: " + error);
-    }
 }
 
 void InxView::CreateSurface(VkInstance *vkInstance, VkSurfaceKHR *vkSurface)
@@ -1073,8 +1074,14 @@ bool InxView::TryCreateSurface(VkInstance vkInstance, VkSurfaceKHR *vkSurface) n
         return false;
     *vkSurface = VK_NULL_HANDLE;
     const bool created = SDL_Vulkan_CreateSurface(m_window, vkInstance, nullptr, vkSurface);
-    if (created)
+    if (created) {
+        int pixelWidth = 0;
+        int pixelHeight = 0;
+        SDL_GetWindowSizeInPixels(m_window, &pixelWidth, &pixelHeight);
+        m_surfaceFramebufferWidth.store(pixelWidth, std::memory_order_relaxed);
+        m_surfaceFramebufferHeight.store(pixelHeight, std::memory_order_relaxed);
         m_hasCreatedSurface.store(true, std::memory_order_release);
+    }
     return created;
 }
 
@@ -1114,15 +1121,18 @@ bool SDLCALL InxView::WatchApplicationEvents(void *userdata, SDL_Event *event)
         view->RequestExternalWake();
         break;
 #if defined(SDL_PLATFORM_ANDROID) || defined(__ANDROID__) || defined(ANDROID)
-    case SDL_EVENT_WINDOW_RESIZED:
     case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
-        // Android may replace the SurfaceView buffer queue after the Activity
-        // has already resumed (notably during fixed-rotation transitions).
-        // Recreating only on DID_ENTER_FOREGROUND can therefore bind Vulkan to
-        // the retiring ANativeWindow and leave the renderer dequeuing from an
-        // abandoned BufferQueue. Once the initial surface exists, any native
-        // pixel-size transition is a presentation-surface boundary.
-        if (view->m_hasCreatedSurface.load(std::memory_order_acquire)) {
+        // Fixed-rotation transitions can resize the native buffer queue after
+        // foregrounding. The initial same-size notification is not a native
+        // surface boundary and must not rebuild the startup swapchain.
+        if (ShouldRecreateAndroidSurfaceForPixelExtent(view->m_hasCreatedSurface.load(std::memory_order_acquire),
+                                                       view->m_surfaceFramebufferWidth.load(std::memory_order_relaxed),
+                                                       view->m_surfaceFramebufferHeight.load(std::memory_order_relaxed),
+                                                       event->window.data1, event->window.data2)) {
+            SDL_Log("INFERNUX_ANDROID_SURFACE_EXTENT old=%dx%d new=%dx%d",
+                    view->m_surfaceFramebufferWidth.load(std::memory_order_relaxed),
+                    view->m_surfaceFramebufferHeight.load(std::memory_order_relaxed), event->window.data1,
+                    event->window.data2);
             view->m_surfaceRecreationPending.store(true, std::memory_order_release);
             view->RequestExternalWake();
         }

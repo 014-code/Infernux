@@ -34,6 +34,11 @@ def _gpu_state_output(out, names, *, flush: bool = True):
         raise TypeError("GPU physics state outputs must all be resident GPU inx.buffer values")
     for value in values:
         value._require_open()
+    cpu_mapped = [bool(value._cpu_mapped) for value in values]
+    if any(cpu_mapped):
+        if not all(cpu_mapped):
+            raise TypeError("Physics state output cannot mix Web CPU and native GPU buffers")
+        return None
     host = values[0]._host
     if any(int(value._host.identity) != int(host.identity) for value in values[1:]):
         raise ValueError("GPU physics state outputs must use the same compute host")
@@ -247,6 +252,31 @@ class Physics(metaclass=_PhysicsMeta):
         state_names = ("position", "center_of_mass", "linear_velocity", "angular_velocity",
                        "inverse_mass", "rotation", "inverse_inertia")
         box_names = ("body_index", "center", "rotation", "half_extents", "friction", "bounciness")
+        from Infernux.compute import Buffer
+        mapped_values = [state_out.get(name) for name in state_names]
+        mapped_values.extend(box_out.get(name) for name in box_names)
+        if mapped_values and all(
+            isinstance(value, Buffer) and value._cpu_mapped
+            for value in mapped_values
+        ):
+            state_arrays = {
+                name: state_out[name].numpy(copy=False) for name in state_names
+            }
+            box_arrays = {
+                name: box_out[name].numpy(copy=False) for name in box_names
+            }
+            native_bodies, count = _CppPhysics._query_rigidbody_state_and_box_state_arrays(
+                coerce_vec3(minimum), coerce_vec3(maximum), int(layer_mask),
+                bool(query_triggers), state_arrays, box_arrays,
+            )
+            from Infernux.components.builtin import Rigidbody
+            rigidbodies = [
+                Rigidbody._get_or_create_wrapper(body, body.game_object)
+                for body in native_bodies
+            ]
+            box_out["count"] = int(count)
+            box_out["rigidbodies"] = rigidbodies
+            return state_out, box_out
         state_gpu = _gpu_state_output(state_out, state_names)
         box_gpu = _gpu_state_output(box_out, box_names, flush=False)
         if state_gpu is None or box_gpu is None:
@@ -290,21 +320,20 @@ class Physics(metaclass=_PhysicsMeta):
         if any(buffers):
             if not all(buffers) or linear_impulses.device != angular_impulses.device:
                 raise TypeError("Rigidbody impulse inputs must use the same CPU or GPU storage kind")
-            if linear_impulses.device == "gpu":
+            count = len(native_bodies)
+            for value in (linear_impulses, angular_impulses):
+                value._require_open()
+                if value.dtype != "vector3" or value.element_count < count:
+                    raise ValueError(
+                        "Rigidbody impulse buffers must be vector3 with body-count capacity"
+                    )
+            if count == 0:
+                return
+            if linear_impulses.device == "gpu" and not linear_impulses._cpu_mapped:
                 from Infernux.compute import _submit_and_read
 
-                linear_impulses._require_open()
-                angular_impulses._require_open()
                 if int(linear_impulses._host.identity) != int(angular_impulses._host.identity):
                     raise ValueError("Rigidbody impulse GPU buffers must use the same compute host")
-                count = len(native_bodies)
-                for value in (linear_impulses, angular_impulses):
-                    if value.dtype != "vector3" or value.element_count < count:
-                        raise ValueError(
-                            "Rigidbody impulse GPU buffers must be vector3 with body-count capacity"
-                        )
-                if count == 0:
-                    return
                 byte_size = count * 3 * np.dtype(np.float32).itemsize
                 linear_bytes, angular_bytes = _submit_and_read(
                     linear_impulses._host,
@@ -317,8 +346,8 @@ class Physics(metaclass=_PhysicsMeta):
                 angular_values = np.frombuffer(angular_bytes, dtype=np.float32).reshape(count, 3)
                 _CppPhysics.apply_rigidbody_impulses(native_bodies, linear_values, angular_values)
                 return
-            linear_impulses = linear_impulses.numpy(copy=False)
-            angular_impulses = angular_impulses.numpy(copy=False)
+            linear_impulses = linear_impulses.numpy(copy=False)[:count]
+            angular_impulses = angular_impulses.numpy(copy=False)[:count]
         _CppPhysics.apply_rigidbody_impulses(native_bodies, linear_impulses, angular_impulses)
 
     @staticmethod

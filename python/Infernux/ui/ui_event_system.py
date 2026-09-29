@@ -427,6 +427,17 @@ class UIEventProcessor:
         for pointer_key, state in pointers.items():
             self._cancel_pointer_state(pointer_key, state, epoch)
 
+    def discard(self) -> None:
+        """Forget pointer state whose owning scene has already retired.
+
+        Scene replacement destroys the old component graph before the next GUI
+        frame.  Cancellation callbacks are meaningful while that graph is
+        alive; after publication they would dereference retired targets.
+        """
+
+        self._pointers.clear()
+        self._last_pointer_debug = {}
+
     def debug_state(self) -> dict:
         """Return the latest transition without polling input each frame."""
 
@@ -434,14 +445,33 @@ class UIEventProcessor:
 
     @staticmethod
     def _dispatch_pointer_callback(target, method_name, event, epoch) -> None:
-        """Invoke one callback exactly once and propagate user-code failures."""
+        """Queue one callback outside the native GUI draw traversal.
+
+        Pointer callbacks are allowed to replace scenes and destroy UI objects.
+        Running them synchronously from ``PyGUIRenderable::OnRender`` lets that
+        mutation invalidate the C++ renderable traversal on Android and other
+        backends.  Resolve the runtime method again at the owner safe point so
+        a scene retired before the drain cannot call stale Python objects.
+        """
         if getattr(target, "_is_destroyed", False):
             return
 
-        callback = resolve_runtime_method(target, method_name, epoch=epoch)
-        epoch.require_descriptor(type(target))
-        if callback is not None:
-            callback(event)
+        from Infernux.engine.runtime_event_queue import enqueue
+
+        def invoke_later(target=target, method_name=method_name, event=event):
+            if getattr(target, "_is_destroyed", False):
+                return
+            try:
+                if not target:
+                    return
+            except Exception:
+                return
+            callback = resolve_runtime_method(target, method_name, epoch=epoch)
+            epoch.require_descriptor(type(target))
+            if callback is not None:
+                callback(event)
+
+        enqueue(invoke_later)
 
     @staticmethod
     def _make_event(

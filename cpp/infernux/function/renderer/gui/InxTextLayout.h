@@ -182,6 +182,22 @@ inline uint64_t &FontCacheGeneration()
     return generation;
 }
 
+// The editor/player GUI installs one authoritative engine font at startup.
+// UIText without an authored Font asset must use that same PingFang face,
+// rather than inheriting whatever ambient ImGui font happens to be active.
+// The pointer is valid only while the current ImGui atlas is alive; the GUI
+// reload path clears it before rebuilding the atlas.
+inline ImFont *&DefaultFont()
+{
+    static ImFont *font = nullptr;
+    return font;
+}
+
+inline void SetDefaultFont(ImFont *font)
+{
+    DefaultFont() = font;
+}
+
 inline void ClearFontCache()
 {
     GetFontCache().clear();
@@ -202,7 +218,7 @@ inline std::string NormalizeFontPath(const std::string &fontPath)
 inline ImFont *ResolveFont(const std::string &fontPath)
 {
     if (fontPath.empty())
-        return ImGui::GetFont();
+        return DefaultFont() != nullptr ? DefaultFont() : ImGui::GetFont();
 
     // Font loading owns filesystem resolution. Replaying text must not walk
     // the filesystem again; lexical absolute keys still distinguish relative
@@ -242,6 +258,12 @@ inline ImFont *ResolveFont(const std::string &fontPath)
     }
 
     ImFontConfig config{};
+    // World-space UIText is frequently magnified by the scene/game camera.
+    // Keep a stable two-tap horizontal/vertical oversample so the dynamic
+    // ImGui atlas retains edge coverage instead of magnifying a one-pixel
+    // glyph raster.
+    config.OversampleH = 2;
+    config.OversampleV = 2;
     ImFont *font = ImGui::GetIO().Fonts->AddFontFromFileTTF(normalizedPath.c_str(), 18.0f, &config);
     if (font == nullptr) {
         missingFonts.insert(pathKey);

@@ -1119,7 +1119,10 @@ void HierarchyPanel::RenderFlatItem(InxGUIContext *ctx, const FlatItem &item, fl
         return;
 
     uint64_t objId = obj->GetID();
-    ctx->PushID(static_cast<int>(objId & 0x7FFFFFFF));
+    // Object identity is a full 64-bit native ID. Truncating it to a signed
+    // 31-bit ImGui ID made distinct hierarchy rows collide after enough
+    // objects/scenes were loaded together.
+    ctx->PushID(std::to_string(objId));
 
     // ── Inline rename mode ──────────────────────────────────────
     if (m_renameId == objId) {

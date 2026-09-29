@@ -43,6 +43,23 @@ _world_projection_geometry = None
 _pointer_batch_local = threading.local()
 
 
+def reset_runtime_ui_state() -> None:
+    """Drop hierarchy snapshots when a Player scene is replaced."""
+    global _world_elements_key, _world_elements
+    global _input_world_elements, _input_canvases, _input_canvas_token
+    global _input_surfaces, _world_projection_targets, _world_projection_geometry
+    _world_elements_key = None
+    _world_elements = ()
+    _input_world_elements = None
+    _input_canvases = None
+    _input_canvas_token = None
+    _input_surfaces = ()
+    _world_projection_targets = ()
+    _world_projection_geometry = None
+    from Infernux.ui.ui_canvas_utils import invalidate_canvas_cache
+    invalidate_canvas_cache()
+
+
 def _canvas_metrics(canvas, viewport_width: float, viewport_height: float):
     """Return scale and logical size for screen UI canvases.
 
@@ -669,6 +686,8 @@ def _collect_world_ui_elements(*scenes):
     result = []
 
     def walk(game_object, canvas_ancestor: bool) -> None:
+        if not game_object:
+            return
         components = tuple(game_object.get_py_components())
         canvas_here = canvas_ancestor or any(
             isinstance(component, UICanvas) for component in components
@@ -680,7 +699,8 @@ def _collect_world_ui_elements(*scenes):
         if ui_component is not None and not canvas_here:
             result.append(ui_component)
         for child in game_object.get_children():
-            walk(child, canvas_here)
+            if child:
+                walk(child, canvas_here)
 
     seen = set()
     for scene in scenes:
@@ -812,6 +832,23 @@ class RuntimeScreenUISubmission:
         packets.flush(renderer)
         self._last_submission_frame = frame_token
         return True
+
+    @staticmethod
+    def prepare_text_layouts(world_elements, canvases, renderer,
+                             game_width: int, game_height: int) -> None:
+        """Resolve every font face and size before recording any UI vertices."""
+        for element in world_elements:
+            if callable(getattr(element, "resolve_text_layout", None)):
+                _resolve_text_layout(element, renderer.measure_text, 1.0)
+        for canvas in canvases:
+            if not getattr(canvas, "enabled", True):
+                continue
+            _scale_x, _scale_y, text_scale, _width, _height = _canvas_metrics(
+                canvas, game_width, game_height
+            )
+            for element in canvas_elements(canvas):
+                if callable(getattr(element, "resolve_text_layout", None)):
+                    _resolve_text_layout(element, renderer.measure_text, text_scale)
 
     @staticmethod
     def _submit_world_element(element, renderer, get_texture_id, screen_ui_list) -> None:

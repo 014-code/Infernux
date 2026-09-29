@@ -287,6 +287,7 @@ void InxGUI::ReloadGUIFont()
 
     ImGuiIO &io = ImGui::GetIO();
     textlayout::ClearFontCache();
+    textlayout::SetDefaultFont(nullptr);
     io.Fonts->Clear();
 
     // Font size is in the same window units as layout and hit testing. ImGui
@@ -295,6 +296,10 @@ void InxGUI::ReloadGUIFont()
     INXLOG_DEBUG("Loading font at ", scaledSize, "px (base ", dpiState.fontSize, " x scale ", m_dpiScale, ")");
 
     ImFontConfig fontConfig;
+    // World-space UIText can be magnified by a camera. Keep enough atlas
+    // coverage for that path while retaining ImGui's dynamic size baking.
+    fontConfig.OversampleH = 2;
+    fontConfig.OversampleV = 2;
 
     // Since ImGui 1.92+ with RendererHasTextures, glyph ranges are no longer
     // needed. Glyphs are loaded on-demand at any requested size, so the atlas
@@ -304,6 +309,12 @@ void InxGUI::ReloadGUIFont()
         INXLOG_WARN("InxGUI::ReloadGUIFont(): Failed to load font from ", dpiState.fontPath);
         return;
     }
+
+    // This is the single engine font used by both ImGui and UIText when a
+    // component has no explicit Font asset. Keeping the exact ImFont pointer
+    // avoids an ambient ImGui default-font path and avoids loading PingFang
+    // twice into the atlas.
+    textlayout::SetDefaultFont(font);
 
     // Clear() may restore the previous current font's size into FontSizeBase
     // (ImGui 1.92 UpdateCurrentFontSize). Publishing the new font alone then

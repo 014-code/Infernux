@@ -728,6 +728,7 @@ int main(int argc, char **argv)
         renderer.SetMaterialProgramResolver(resolveMaterialProgram);
         glm::mat4 camera(1.f);
         glm::mat4 cameraView(1.f);
+        glm::mat4 billboardView(1.f);
         glm::mat4 cameraProjection(1.f);
         uint32_t frameSlot = 0;
         uint32_t cullingMask = 0xffffffffu;
@@ -764,7 +765,7 @@ int main(int argc, char **argv)
                     }
                     if (list == ScreenUIList::World)
                         activeRenderer->RenderWorld(ctx.GetCommandBuffer(), 128, 128, camera, signature, frameSlot,
-                                                    cullingMask, cameraView, cameraProjection);
+                                                    cullingMask, cameraView, cameraProjection, billboardView);
                     else
                         activeRenderer->Render(ctx.GetCommandBuffer(), list, 128, 128, frameSlot);
                     renderMs =
@@ -925,9 +926,16 @@ int main(int argc, char **argv)
         cameraView = glm::lookAtRH(glm::vec3(2.f, 0.f, -2.f), glm::vec3(0.f, 0.f, -2.f), glm::vec3(0.f, 1.f, 0.f));
         camera = cameraProjection * cameraView;
         buildGraph();
+        // The Game Camera remains at identity while the Scene Camera looks
+        // edge-on at its billboard plane. Identity is a real camera matrix,
+        // never a sentinel requesting the Scene Camera basis.
+        const auto gameFacingEdge = cameraPolicyBounds(2.f, true, true, true);
+        assert(gameFacingEdge[2] - gameFacingEdge[0] < nearPixels[2] - nearPixels[0]);
+        billboardView = cameraView;
         const auto sideCameraPixels = cameraPolicyBounds(2.f, true, true, true);
         assert(sideCameraPixels == nearPixels);
         cameraView = glm::mat4(1.f);
+        billboardView = cameraView;
         cameraProjection = glm::orthoRH_ZO(-1.f, 1.f, -1.f, 1.f, .1f, 10.f);
         camera = cameraProjection * cameraView;
         buildGraph();

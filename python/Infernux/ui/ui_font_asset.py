@@ -71,6 +71,14 @@ def ui_font_paths(component, primary_field: str = "font",
         component, primary_field, fallback_field,
     )
     primary_path = ui_font_reference_path(primary)
+    if not primary_path:
+        # A UI element with no authored Font asset still has a deterministic
+        # engine face. Keep this explicit so every backend, including the Web
+        # Player, receives PingFang instead of inheriting an ambient ImGui
+        # default font.
+        from Infernux.resources import engine_font_path
+
+        primary_path = str(engine_font_path)
     fallback_paths = [ui_font_reference_path(reference) for reference in fallbacks]
     return primary_path, [path for path in fallback_paths if path]
 

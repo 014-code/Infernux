@@ -709,6 +709,22 @@ py::tuple QueryRigidbodyStateAndBoxStateBuffers(const glm::vec3 &minimum, const 
     return py::make_tuple(result, boxCount);
 }
 
+py::tuple QueryRigidbodyStateAndBoxStateArrays(const glm::vec3 &minimum, const glm::vec3 &maximum, uint32_t layerMask,
+                                               bool queryTriggers, py::dict stateOutput, py::dict boxOutput)
+{
+    RequireFinite(minimum, "minimum");
+    RequireFinite(maximum, "maximum");
+    if (minimum.x > maximum.x || minimum.y > maximum.y || minimum.z > maximum.z)
+        throw py::value_error("minimum must not exceed maximum on any axis");
+    const auto bodies = PhysicsWorld::Instance().QueryRigidbodiesInBounds(minimum, maximum, layerMask, queryTriggers);
+    GetRigidbodyStates(bodies, stateOutput);
+    const auto boxes = GetRigidbodyBoxStates(bodies, boxOutput, queryTriggers);
+    py::list result;
+    for (auto *body : bodies)
+        result.append(py::cast(body, py::return_value_policy::reference));
+    return py::make_tuple(result, py::cast<uint64_t>(boxes[py::str("count")]));
+}
+
 void ApplyRigidbodyImpulseValues(const std::vector<Rigidbody *> &bodies, const float *linear, const float *angular)
 {
     const auto count = static_cast<py::ssize_t>(bodies.size());
@@ -1248,6 +1264,9 @@ void RegisterPhysicsBindings(py::module_ &m)
             "_query_rigidbody_state_and_box_state_buffers", &QueryRigidbodyStateAndBoxStateBuffers, "minimum"_a,
             "maximum"_a, "layer_mask"_a, "query_triggers"_a, "state_output"_a, "box_output"_a,
             "Query candidates and upload authoritative rigidbody plus BoxCollider state in one compute submission")
+        .def_static("_query_rigidbody_state_and_box_state_arrays", &QueryRigidbodyStateAndBoxStateArrays, "minimum"_a,
+                    "maximum"_a, "layer_mask"_a, "query_triggers"_a, "state_output"_a, "box_output"_a,
+                    "Query candidates and write authoritative rigidbody plus BoxCollider state into CPU arrays")
         .def_static("apply_rigidbody_impulses", &ApplyRigidbodyImpulses, "rigidbodies"_a,
                     py::arg("linear_impulses").noconvert(), py::arg("angular_impulses").noconvert(),
                     "Apply aggregated world-space impulses; angular impulses are about each body's COM")

@@ -6,6 +6,11 @@
 #include <string_view>
 #include <vector>
 
+static_assert(!infernux::ShouldRecreateAndroidSurfaceForPixelExtent(false, 0, 0, 3200, 1440));
+static_assert(!infernux::ShouldRecreateAndroidSurfaceForPixelExtent(true, 3200, 1440, 3200, 1440));
+static_assert(infernux::ShouldRecreateAndroidSurfaceForPixelExtent(true, 3200, 1440, 1440, 3200));
+static_assert(!infernux::ShouldRecreateAndroidSurfaceForPixelExtent(true, 3200, 1440, 0, 0));
+
 int main()
 {
     using infernux::ResolveEditorInitialWindowSize;
@@ -34,6 +39,13 @@ int main()
     assert(ordinaryWayland.focusable);
     assert(ordinaryWayland.activateWhenShown);
     assert(!ordinaryWayland.showBeforeSurface);
+    assert(ordinaryWayland.syncInitialMaximize);
+
+    const auto ordinaryX11 = infernux::ResolveWindowPresentationPolicy(false, "x11");
+    assert(ordinaryX11.focusable);
+    assert(!ordinaryX11.activateWhenShown);
+    assert(ordinaryX11.showBeforeSurface);
+    assert(!ordinaryX11.syncInitialMaximize);
 
     const auto controlledWayland = infernux::ResolveWindowPresentationPolicy(true, "wayland");
     assert(!controlledWayland.focusable);
@@ -41,9 +53,9 @@ int main()
     assert(controlledWayland.showBeforeSurface);
 
     const auto controlledX11 = infernux::ResolveWindowPresentationPolicy(true, "x11");
-    assert(!controlledX11.focusable);
+    assert(controlledX11.focusable);
     assert(!controlledX11.activateWhenShown);
-    assert(!controlledX11.showBeforeSurface);
+    assert(controlledX11.showBeforeSurface);
 
     const auto controlledWindows = infernux::ResolveWindowPresentationPolicy(true, "windows");
     assert(!controlledWindows.focusable);
@@ -68,5 +80,11 @@ int main()
     assert(ShouldSuspendWindowRendering(WindowVisibility::Minimized, false, false));
     assert(ShouldSuspendWindowRendering(WindowVisibility::Visible, true, false));
     assert(ShouldSuspendWindowRendering(WindowVisibility::Visible, false, true));
+
+    using infernux::ShouldRecreateAndroidSurfaceForPixelExtent;
+    assert(!ShouldRecreateAndroidSurfaceForPixelExtent(false, 0, 0, 3200, 1440));
+    assert(!ShouldRecreateAndroidSurfaceForPixelExtent(true, 3200, 1440, 3200, 1440));
+    assert(ShouldRecreateAndroidSurfaceForPixelExtent(true, 3200, 1440, 1440, 3200));
+    assert(!ShouldRecreateAndroidSurfaceForPixelExtent(true, 3200, 1440, 0, 0));
     return 0;
 }

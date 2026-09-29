@@ -56,6 +56,41 @@ ResourceType ParseResourceTypeName(std::string_view value)
     throw std::invalid_argument("unknown ResourceType metadata value: " + std::string(value));
 }
 
+std::string_view ResourceTypeName(ResourceType value)
+{
+    switch (value) {
+    case ResourceType::Meta:
+        return "Meta";
+    case ResourceType::Shader:
+        return "Shader";
+    case ResourceType::Texture:
+        return "Texture";
+    case ResourceType::Mesh:
+        return "Mesh";
+    case ResourceType::Material:
+        return "Material";
+    case ResourceType::Script:
+        return "Script";
+    case ResourceType::Audio:
+        return "Audio";
+    case ResourceType::DefaultText:
+        return "DefaultText";
+    case ResourceType::DefaultBinary:
+        return "DefaultBinary";
+    case ResourceType::PhysicMaterial:
+        return "PhysicMaterial";
+    case ResourceType::RenderEffect:
+        return "RenderEffect";
+    case ResourceType::ParticleGraph:
+        return "ParticleGraph";
+    case ResourceType::DataAsset:
+        return "DataAsset";
+    case ResourceType::RenderTexture:
+        return "RenderTexture";
+    }
+    throw std::invalid_argument("invalid ResourceType metadata value");
+}
+
 std::string ComputeContentHashHex(const char *content, size_t contentSize)
 {
     // Stable FNV-1a 64-bit hash
@@ -152,9 +187,54 @@ void InxResourceMeta::Init(const char *content, size_t contentSize, const std::s
     AddMetadata("last_modified", modTimeStr);
 }
 
-void InxResourceMeta::AddMetadata(const std::string &key, const std::any &value)
+void InxResourceMeta::AddMetadata(const std::string &key, const std::string &value)
 {
-    m_metadata[key] = std::make_pair(InxTypeRegistry::GetInstance().GetTypeName(value.type()), value);
+    m_metadata[key] = std::make_pair("string", MetadataValue(value));
+}
+
+void InxResourceMeta::AddMetadata(const std::string &key, const char *value)
+{
+    if (!value)
+        throw std::invalid_argument("metadata string value cannot be null: " + key);
+    AddMetadata(key, std::string(value));
+}
+
+void InxResourceMeta::AddMetadata(const std::string &key, int value)
+{
+    m_metadata[key] = std::make_pair("int", MetadataValue(value));
+}
+
+void InxResourceMeta::AddMetadata(const std::string &key, bool value)
+{
+    m_metadata[key] = std::make_pair("bool", MetadataValue(value));
+}
+
+void InxResourceMeta::AddMetadata(const std::string &key, size_t value)
+{
+    m_metadata[key] = std::make_pair("size_t", MetadataValue(value));
+}
+
+void InxResourceMeta::AddMetadata(const std::string &key, float value)
+{
+    m_metadata[key] = std::make_pair("float", MetadataValue(value));
+}
+
+void InxResourceMeta::AddMetadata(const std::string &key, ResourceType value)
+{
+    m_metadata[key] = std::make_pair("enum infernux::ResourceType", MetadataValue(value));
+}
+
+void InxResourceMeta::AddMetadata(const std::string &key, const nlohmann::json &value)
+{
+    if (value.is_array()) {
+        m_metadata[key] = std::make_pair("json_array", MetadataValue(value.dump()));
+        return;
+    }
+    if (value.is_object()) {
+        m_metadata[key] = std::make_pair("json_object", MetadataValue(value.dump()));
+        return;
+    }
+    throw std::invalid_argument("metadata JSON value must be an array or object: " + key);
 }
 
 bool InxResourceMeta::CopyMetadataIfMissing(const InxResourceMeta &source, const std::string &key)
@@ -173,7 +253,7 @@ const std::string &InxResourceMeta::GetResourceName() const
     static const std::string empty;
     auto it = m_metadata.find("resource_name");
     if (it != m_metadata.end()) {
-        return std::any_cast<const std::string &>(it->second.second);
+        return std::get<std::string>(it->second.second);
     }
     return empty;
 }
@@ -183,7 +263,7 @@ const std::string &InxResourceMeta::GetHashCode() const
     static const std::string empty;
     auto it = m_metadata.find("hash");
     if (it != m_metadata.end()) {
-        return std::any_cast<const std::string &>(it->second.second);
+        return std::get<std::string>(it->second.second);
     }
     return empty;
 }
@@ -193,7 +273,7 @@ const std::string &InxResourceMeta::GetGuid() const
     static const std::string empty;
     auto it = m_metadata.find("guid");
     if (it != m_metadata.end()) {
-        return std::any_cast<const std::string &>(it->second.second);
+        return std::get<std::string>(it->second.second);
     }
     return empty;
 }
@@ -201,6 +281,60 @@ const std::string &InxResourceMeta::GetGuid() const
 bool InxResourceMeta::HasKey(const std::string &key) const
 {
     return m_metadata.find(key) != m_metadata.end();
+}
+
+namespace
+{
+template <typename T>
+T ReadMetadataValue(const InxResourceMeta::MetadataMap &metadata, const std::string &key, std::string_view expectedType)
+{
+    const auto it = metadata.find(key);
+    if (it == metadata.end())
+        throw std::invalid_argument("metadata key is missing: " + key);
+    if (it->second.first != expectedType)
+        throw std::invalid_argument("metadata type mismatch for '" + key + "': expected " + std::string(expectedType) +
+                                    ", got " + it->second.first);
+    return std::get<T>(it->second.second);
+}
+} // namespace
+
+std::string InxResourceMeta::GetStringData(const std::string &key) const
+{
+    return ReadMetadataValue<std::string>(m_metadata, key, "string");
+}
+
+int InxResourceMeta::GetIntData(const std::string &key) const
+{
+    return ReadMetadataValue<int>(m_metadata, key, "int");
+}
+
+bool InxResourceMeta::GetBoolData(const std::string &key) const
+{
+    return ReadMetadataValue<bool>(m_metadata, key, "bool");
+}
+
+size_t InxResourceMeta::GetSizeData(const std::string &key) const
+{
+    return ReadMetadataValue<size_t>(m_metadata, key, "size_t");
+}
+
+float InxResourceMeta::GetFloatData(const std::string &key) const
+{
+    return ReadMetadataValue<float>(m_metadata, key, "float");
+}
+
+nlohmann::json InxResourceMeta::GetJsonData(const std::string &key) const
+{
+    const auto it = m_metadata.find(key);
+    if (it == m_metadata.end())
+        throw std::invalid_argument("metadata key is missing: " + key);
+    const std::string &typeName = it->second.first;
+    if (typeName != "json_array" && typeName != "json_object")
+        throw std::invalid_argument("metadata type mismatch for '" + key + "': expected JSON, got " + typeName);
+    const nlohmann::json value = nlohmann::json::parse(std::get<std::string>(it->second.second));
+    if ((typeName == "json_array" && !value.is_array()) || (typeName == "json_object" && !value.is_object()))
+        throw std::invalid_argument("metadata JSON shape mismatch for '" + key + "'");
+    return value;
 }
 
 void InxResourceMeta::UpdateFilePath(const std::string &newFilePath)
@@ -233,7 +367,7 @@ const ResourceType &InxResourceMeta::GetResourceType() const
     static const ResourceType defaultType = ResourceType::DefaultText;
     auto it = m_metadata.find("resource_type");
     if (it != m_metadata.end()) {
-        return std::any_cast<const ResourceType &>(it->second.second);
+        return std::get<ResourceType>(it->second.second);
     }
     return defaultType;
 }
@@ -254,28 +388,28 @@ nlohmann::json InxResourceMeta::SerializeDocument() const
     nlohmann::json entries = nlohmann::json::object();
     for (const auto &[key, metaPair] : m_metadata) {
         const std::string &typeName = metaPair.first;
-        const std::any &value = metaPair.second;
+        const MetadataValue &value = metaPair.second;
 
         nlohmann::json entry;
         entry["type"] = typeName;
 
         if (typeName == "string") {
-            entry["value"] = std::any_cast<std::string>(value);
+            entry["value"] = std::get<std::string>(value);
         } else if (typeName == "int") {
-            entry["value"] = std::any_cast<int>(value);
+            entry["value"] = std::get<int>(value);
         } else if (typeName == "bool") {
-            entry["value"] = std::any_cast<bool>(value);
+            entry["value"] = std::get<bool>(value);
         } else if (typeName == "size_t") {
-            entry["value"] = std::any_cast<size_t>(value);
+            entry["value"] = std::get<size_t>(value);
         } else if (typeName == "float") {
-            const float number = std::any_cast<float>(value);
+            const float number = std::get<float>(value);
             if (!std::isfinite(number))
                 throw std::invalid_argument("metadata float must be finite: " + key);
             entry["value"] = number;
         } else if (typeName == "enum infernux::ResourceType") {
-            entry["value"] = InxTypeRegistry::GetInstance().ToString(typeName, value);
+            entry["value"] = ResourceTypeName(std::get<ResourceType>(value));
         } else if (typeName == "json_array" || typeName == "json_object") {
-            entry["value"] = nlohmann::json::parse(std::any_cast<std::string>(value));
+            entry["value"] = nlohmann::json::parse(std::get<std::string>(value));
         } else {
             throw std::invalid_argument("unsupported metadata type for '" + key + "': " + typeName);
         }
@@ -305,19 +439,20 @@ void InxResourceMeta::DeserializeDocument(const nlohmann::json &document)
         if (typeName == "string") {
             if (!value.is_string())
                 throw std::invalid_argument("metadata string value expected: " + key);
-            staged.AddMetadata(key, value.get<std::string>());
+            // The persisted type tag is the canonical metadata contract.
+            staged.m_metadata[key] = std::make_pair(typeName, MetadataValue(value.get<std::string>()));
         } else if (typeName == "int") {
             if (!value.is_number_integer())
                 throw std::invalid_argument("metadata int value expected: " + key);
-            staged.AddMetadata(key, value.get<int>());
+            staged.m_metadata[key] = std::make_pair(typeName, MetadataValue(value.get<int>()));
         } else if (typeName == "bool") {
             if (!value.is_boolean())
                 throw std::invalid_argument("metadata bool value expected: " + key);
-            staged.AddMetadata(key, value.get<bool>());
+            staged.m_metadata[key] = std::make_pair(typeName, MetadataValue(value.get<bool>()));
         } else if (typeName == "size_t") {
             if (!value.is_number_unsigned())
                 throw std::invalid_argument("metadata unsigned value expected: " + key);
-            staged.AddMetadata(key, value.get<size_t>());
+            staged.m_metadata[key] = std::make_pair(typeName, MetadataValue(value.get<size_t>()));
         } else if (typeName == "float") {
             if (!value.is_number())
                 throw std::invalid_argument("metadata float value expected: " + key);
@@ -325,24 +460,20 @@ void InxResourceMeta::DeserializeDocument(const nlohmann::json &document)
             if (!std::isfinite(number) || number < -std::numeric_limits<float>::max() ||
                 number > std::numeric_limits<float>::max())
                 throw std::invalid_argument("metadata float must be finite: " + key);
-            staged.AddMetadata(key, static_cast<float>(number));
+            staged.m_metadata[key] = std::make_pair(typeName, MetadataValue(static_cast<float>(number)));
         } else if (typeName == "enum infernux::ResourceType") {
             if (!value.is_string())
                 throw std::invalid_argument("metadata ResourceType string expected: " + key);
-            // Do not round-trip this enum through std::any here.  On Android
-            // the runtime and Python extension can be loaded from separate
-            // shared objects; their RTTI identities are not guaranteed to be
-            // identical, which makes std::any_cast<ResourceType> fail even
-            // when the textual value is valid.
-            staged.AddMetadata(key, ParseResourceTypeName(value.get<std::string>()));
+            staged.m_metadata[key] =
+                std::make_pair(typeName, MetadataValue(ParseResourceTypeName(value.get<std::string>())));
         } else if (typeName == "json_array") {
             if (!value.is_array())
                 throw std::invalid_argument("metadata JSON array expected: " + key);
-            staged.m_metadata[key] = std::make_pair(typeName, std::any(value.dump()));
+            staged.m_metadata[key] = std::make_pair(typeName, MetadataValue(value.dump()));
         } else if (typeName == "json_object") {
             if (!value.is_object())
                 throw std::invalid_argument("metadata JSON object expected: " + key);
-            staged.m_metadata[key] = std::make_pair(typeName, std::any(value.dump()));
+            staged.m_metadata[key] = std::make_pair(typeName, MetadataValue(value.dump()));
         } else {
             throw std::invalid_argument("unsupported metadata type for '" + key + "': " + typeName);
         }

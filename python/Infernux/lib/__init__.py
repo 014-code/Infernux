@@ -310,6 +310,7 @@ except (ModuleNotFoundError, ImportError, OSError) as _initial_native_error:
         _raise_native_import_error(_last_native_error)
 
 _export_native_module(_native_module)
+
 _SceneDocumentReadTicket = _native_module._SceneDocumentReadTicket
 _preflight_scene_resource_dependencies = (
     _native_module._preflight_scene_resource_dependencies

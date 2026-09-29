@@ -435,10 +435,6 @@ class SceneViewGizmoMixin:
         set_frame = getattr(native, "set_editor_rect_frame_override", None)
         if not callable(clear) or not callable(set_frame):
             return
-        if self._gizmo_tool_mode != TOOL_RECT:
-            clear()
-            return
-
         from Infernux.engine.interaction import SelectionService
         from Infernux.lib._Infernux import SceneManager as _SM
         from .ui_rect_manipulation import (

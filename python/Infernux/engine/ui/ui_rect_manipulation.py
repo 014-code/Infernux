@@ -71,7 +71,13 @@ def apply_layout_size(
 
 
 def resolve_world_ui_frame(component):
-    """Resolve one free world UI element into a Scene-tool world frame."""
+    """Resolve one free world UI element into the frame used by its renderer.
+
+    UI editing remains strictly local for authored transforms. Billboard
+    rectangles use the Game Camera plane because that is the plane rendered
+    for gameplay-facing text, while the editor camera remains the Scene ray
+    and picking camera.
+    """
     if component is None or not component.is_world_space():
         return None
     game_object = getattr(component, "game_object", None)
@@ -86,8 +92,18 @@ def resolve_world_ui_frame(component):
     transform = game_object.transform
     center = transform.position
     world_u = transform.transform_direction(Vector3(1.0, 0.0, 0.0))
-    # UI Y grows downward; the Rect frame follows that authored direction.
     world_v = transform.transform_direction(Vector3(0.0, -1.0, 0.0))
+    if bool(getattr(component, "world_billboard", False)):
+        from Infernux.lib import SceneManager
+
+        scene = SceneManager.instance().get_active_scene()
+        camera = getattr(scene, "effective_game_camera", None) if scene is not None else None
+        camera_to_world = getattr(camera, "camera_to_world_matrix", None) if camera is not None else None
+        if camera_to_world is not None:
+            world_u = Vector3(float(camera_to_world[0][0]), float(camera_to_world[1][0]),
+                              float(camera_to_world[2][0]))
+            world_v = Vector3(-float(camera_to_world[0][1]), -float(camera_to_world[1][1]),
+                              -float(camera_to_world[2][1]))
     scale_u = max(math.sqrt(sum(float(world_u[i]) ** 2 for i in range(3))), 1.0e-6)
     scale_v = max(math.sqrt(sum(float(world_v[i]) ** 2 for i in range(3))), 1.0e-6)
     axis_u = tuple(float(world_u[i]) / scale_u for i in range(3))

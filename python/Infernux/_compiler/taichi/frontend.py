@@ -658,8 +658,11 @@ def _artifact_key(function, definition, helpers, params) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _load_artifact(key: str) -> CompilerArtifact | None:
-    path = _cache_root() / f"{key}.inxgpu"
+def _specialization_identity(params) -> str:
+    return json.dumps(parameter_key(params), separators=(",", ":"))
+
+
+def _decode_artifact(path: Path, *, specialization: str | None = None) -> CompilerArtifact | None:
     if not path.is_file():
         return None
     payload = path.read_bytes()
@@ -669,6 +672,10 @@ def _load_artifact(key: str) -> CompilerArtifact | None:
     header_begin = len(_CACHE_MAGIC) + 4
     header_end = header_begin + header_size
     header = json.loads(payload[header_begin:header_end].decode("utf-8"))
+    if specialization is not None and header.get("specialization") != specialization:
+        # Artifacts written before the direct AOT contract are compiler cache,
+        # not valid Player inputs. The Editor recompiles and replaces them.
+        return None
     tasks = []
     cursor = header_end
     for size in header["task_sizes"]:
@@ -689,7 +696,41 @@ def _load_artifact(key: str) -> CompilerArtifact | None:
     )
 
 
-def _store_artifact(key: str, artifact: CompilerArtifact) -> None:
+def _load_artifact(key: str, params) -> CompilerArtifact | None:
+    path = _cache_root() / f"{key}.inxgpu"
+    return _decode_artifact(path, specialization=_specialization_identity(params))
+
+
+def _load_player_artifact(function, params) -> CompilerArtifact:
+    root = _cache_root()
+    manifest_path = root / "AotManifest.json"
+    try:
+        document = json.loads(manifest_path.read_text(encoding="utf-8"))
+        records = document["artifacts"]
+    except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise RuntimeError(f"Player GPU AOT artifact is missing: {manifest_path}") from exc
+    identity = f"{function.__module__}.{function.__qualname__}"
+    specialization = _specialization_identity(params)
+    matches = [
+        record for record in records
+        if isinstance(record, dict)
+        and record.get("function") == identity
+        and record.get("specialization") == specialization
+    ]
+    if len(matches) != 1:
+        raise RuntimeError(
+            "Player GPU AOT specialization is missing or ambiguous for " + identity
+        )
+    filename = str(matches[0].get("artifact", ""))
+    if not filename or Path(filename).name != filename or not filename.endswith(".inxgpu"):
+        raise RuntimeError(f"Player GPU AOT artifact path is invalid for {identity}")
+    artifact = _decode_artifact(root / filename, specialization=specialization)
+    if artifact is None:
+        raise RuntimeError(f"Player GPU AOT artifact is unavailable for {identity}")
+    return artifact
+
+
+def _store_artifact(key: str, artifact: CompilerArtifact, params) -> None:
     root = _cache_root()
     root.mkdir(parents=True, exist_ok=True)
     path = root / f"{key}.inxgpu"
@@ -700,6 +741,7 @@ def _store_artifact(key: str, artifact: CompilerArtifact) -> None:
         "argument_layout": artifact.argument_layout,
         "required_capabilities": artifact.required_capabilities,
         "diagnostic_locations": artifact.diagnostic_locations,
+        "specialization": _specialization_identity(params),
     }, sort_keys=True, separators=(",", ":")).encode("utf-8")
     payload = _CACHE_MAGIC + struct.pack("<I", len(header)) + header + b"".join(artifact.spirv_tasks)
     temporary = path.with_suffix(".tmp")
@@ -739,6 +781,10 @@ def compile_kernel(function, params, *, receiver_fields: tuple[tuple[str, object
             f"arbitrary Python closure capture is not part of the GPU ABI ({captured or 'unknown value'})",
             "pass buffers or numeric scalars as explicit parameters; do not close over Python locals",
         ))
+    from Infernux.application import Application
+
+    if Application.is_player() and (_cache_root() / "AotOnly").is_file():
+        return _load_player_artifact(function, params)
     source = _function_source(function)
     tree = ast.parse(source)
     definition = next((node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))), None)
@@ -828,7 +874,7 @@ def compile_kernel(function, params, *, receiver_fields: tuple[tuple[str, object
         orelse=[],
     )]
     artifact_key = _artifact_key(function, definition, helpers, params)
-    cached = _load_artifact(artifact_key)
+    cached = _load_artifact(artifact_key, params)
     if cached is not None:
         return cached
     if (_cache_root() / "AotOnly").is_file():
@@ -902,7 +948,7 @@ def compile_kernel(function, params, *, receiver_fields: tuple[tuple[str, object
             # Source text is needed only while lowering this request. Keeping
             # every hot-reloaded function here would bypass the artifact cache.
             del linecache.cache[filename]
-        _store_artifact(artifact_key, artifact)
+        _store_artifact(artifact_key, artifact, params)
         return artifact
 
 

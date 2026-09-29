@@ -337,8 +337,10 @@ class PlayerSceneService:
 
     def _publish_completed_scene(self, path: str, *, start_for_play: bool) -> None:
         from Infernux.lib import SceneManager
+        from Infernux.engine.runtime_screen_ui import reset_runtime_ui_state
 
         scene_manager = SceneManager.instance()
+        reset_runtime_ui_state()
         scene = scene_manager.get_active_scene()
         if scene is not None:
             kept_world = int(scene.world_id)
@@ -351,6 +353,7 @@ class PlayerSceneService:
             elif os.environ.get("INFERNUX_WEB_RUNTIME") != "1" and os.sys.platform != "emscripten":
                 raise AttributeError("native SceneManager.get_scene_at is unavailable")
             scene_manager.set_active_scene(scene)
+        reset_runtime_ui_state()
         self._active_scene_path = path
         self._last_error = ""
         from Infernux.timing import Time

@@ -412,6 +412,14 @@ class InxVkCoreModular
         return m_maxFramesInFlight == 0 ? 0 : m_currentFrame % m_maxFramesInFlight;
     }
 
+    /// The hidden startup frame has already populated the swapchain. Mark the
+    /// next successful present after the native window is revealed so startup
+    /// measurements observe actual user-visible readiness.
+    void ObserveNextPresentationAsFirstVisible() noexcept
+    {
+        m_firstVisiblePresentationPending = true;
+    }
+
     /// @brief Update material UBO with current material properties (stub)
     void UpdateMaterialUBO(InxMaterial &material);
 
@@ -1209,6 +1217,7 @@ class InxVkCoreModular
     uint32_t m_maxFramesInFlight;
     uint32_t m_currentFrame = 0;
     bool m_framebufferResized = false;
+    bool m_firstVisiblePresentationPending = false;
     bool m_presentationReadbackRequested = false;
     std::shared_ptr<vk::ImageReadbackTicket> m_presentationReadback;
     std::string m_presentationReadbackError;

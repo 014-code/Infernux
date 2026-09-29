@@ -446,32 +446,15 @@ struct MeshImportSettings
         }
         for (const auto &flag : Flags)
             settings.*(flag.member) = metadata.GetDataAs<bool>(flag.name);
-        const auto &materialRemaps = metadata.GetMetadata().at("material_remaps");
-        if (materialRemaps.first != "json_object")
-            throw std::invalid_argument("model material_remaps metadata must use json_object");
-        settings.materialRemaps = nlohmann::json::parse(std::any_cast<const std::string &>(materialRemaps.second));
+        settings.materialRemaps = metadata.GetJsonData("material_remaps");
         RequireMaterialRemaps(settings.materialRemaps);
-        const auto &animationClips = metadata.GetMetadata().at("animation_clips");
-        if (animationClips.first != "json_array")
-            throw std::invalid_argument("model animation_clips metadata must use json_array");
-        settings.animationClips = nlohmann::json::parse(std::any_cast<const std::string &>(animationClips.second));
+        settings.animationClips = metadata.GetJsonData("animation_clips");
         RequireAnimationClips(settings.animationClips);
-        const auto &animationClipExtras = metadata.GetMetadata().at("animation_clip_extras");
-        if (animationClipExtras.first != "json_array")
-            throw std::invalid_argument("model animation_clip_extras metadata must use json_array");
-        settings.animationClipExtras =
-            nlohmann::json::parse(std::any_cast<const std::string &>(animationClipExtras.second));
+        settings.animationClipExtras = metadata.GetJsonData("animation_clip_extras");
         RequireAnimationClipExtras(settings.animationClipExtras);
-        const auto &exposedBones = metadata.GetMetadata().at("exposed_bones");
-        if (exposedBones.first != "json_array")
-            throw std::invalid_argument("model exposed_bones metadata must use json_array");
-        settings.exposedBones = nlohmann::json::parse(std::any_cast<const std::string &>(exposedBones.second));
+        settings.exposedBones = metadata.GetJsonData("exposed_bones");
         RequireExposedBones(settings.exposedBones);
-        const auto &humanoidBoneOverrides = metadata.GetMetadata().at("humanoid_bone_overrides");
-        if (humanoidBoneOverrides.first != "json_object")
-            throw std::invalid_argument("model humanoid_bone_overrides metadata must use json_object");
-        settings.humanoidBoneOverrides =
-            nlohmann::json::parse(std::any_cast<const std::string &>(humanoidBoneOverrides.second));
+        settings.humanoidBoneOverrides = metadata.GetJsonData("humanoid_bone_overrides");
         RequireHumanoidBoneOverrides(settings.humanoidBoneOverrides);
         settings.rigType = metadata.GetDataAs<std::string>("rig_type");
         RequireRigType(settings.rigType);

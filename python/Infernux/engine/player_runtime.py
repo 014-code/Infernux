@@ -44,6 +44,23 @@ class PlayerRuntimeSession:
         self._state = "stopped"
         self._last_frame_time = time.time()
         self._membership_warmup_frames = 0
+        self._startup_warmup = None
+
+    def schedule_startup_warmup(self, warmup: Any) -> None:
+        """Install the post-present warmup queue before the native loop starts."""
+        if self._startup_warmup is not None:
+            raise RuntimeError("Player startup warmup is already scheduled")
+        self._startup_warmup = warmup
+
+    def pump_startup_warmup(self) -> bool:
+        """Advance the bounded startup queue and report when it is drained."""
+        warmup = self._startup_warmup
+        if warmup is None:
+            return True
+        if warmup.pump():
+            self._startup_warmup = None
+            return True
+        return False
 
     def _refresh_execution_membership(self) -> None:
         # Defer the registry scan to the scheduler's next safe point.  Calling
@@ -226,6 +243,18 @@ class PlayerRuntimeSession:
             # so the native lifecycle fast path cannot start with an empty
             # phase plan (which would leave GPU compute components idle).
             self._refresh_execution_membership()
+            from Infernux.components.component import InxComponent
+            from Infernux.engine.startup_warmup import run_component_warmups
+            from Infernux.engine.project_context import get_project_root
+            run_component_warmups(
+                (
+                    component
+                    for values in InxComponent._active_instances.values()
+                    for component in values
+                ),
+                scope="player",
+                project_path=get_project_root(),
+            )
         except Exception:
             RuntimeSceneManager.remove_runtime_service(self._scene_service)
             self._scene_service_installed = False
@@ -247,6 +276,7 @@ class PlayerRuntimeSession:
         """
         if not self.is_playing:
             return 0.0
+        self.pump_startup_warmup()
         if self._membership_warmup_frames > 0:
             self._refresh_execution_membership()
             self._membership_warmup_frames -= 1

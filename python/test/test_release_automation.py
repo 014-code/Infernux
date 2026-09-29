@@ -61,9 +61,13 @@ def test_release_catalog_reads_the_wheel_build_number(tmp_path):
         json.dumps({"$schema": "infernux.hub_catalog", "stable": "", "releases": []}),
         encoding="utf-8",
     )
-    for platform, suffix, wheel_suffix in (
-        ("windows-x64", ".exe", "win_amd64.whl"),
-        ("linux-x64", "", "manylinux_2_35_x86_64.whl"),
+    wheel_names = {
+        "windows-x64": "infernux-1.2.3-4-cp313-cp313-win_amd64.whl",
+        "linux-x64": "infernux-1.2.3-4-cp313-cp313-linux_x86_64.whl",
+    }
+    for platform, suffix in (
+        ("windows-x64", ".exe"),
+        ("linux-x64", ""),
     ):
         (tmp_path / f"InfernuxHub-{platform}-manifest.json").write_text(
             json.dumps({"version": "1.2.3", "platform": platform}),
@@ -72,7 +76,7 @@ def test_release_catalog_reads_the_wheel_build_number(tmp_path):
         for name in (
             f"InfernuxHubInstaller-1.2.3-{platform}{suffix}",
             f"InfernuxHub-1.2.3-{platform}-full.zip",
-            f"infernux-1.2.3-4-cp313-cp313-{wheel_suffix}",
+            wheel_names[platform],
         ):
             (tmp_path / name).write_bytes(b"release")
 
@@ -93,7 +97,7 @@ def test_release_catalog_reads_the_wheel_build_number(tmp_path):
         if item["kind"] == "python-wheel"
     } == {
         "infernux-1.2.3-4-cp313-cp313-win_amd64.whl",
-        "infernux-1.2.3-4-cp313-cp313-manylinux_2_35_x86_64.whl",
+        "infernux-1.2.3-4-cp313-cp313-linux_x86_64.whl",
     }
 
 

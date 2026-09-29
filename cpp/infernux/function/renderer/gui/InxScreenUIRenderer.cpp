@@ -1077,8 +1077,12 @@ void InxScreenUIRenderer::ResolveWorldPose(WorldElementSpan &span)
     if (!store.IsValid(span.transform))
         throw std::runtime_error("World UI packet outlived its Transform; rebuild membership");
     auto *transform = store.GetOwner(span.transform);
-    span.localToWorld = glm::mat4_cast(transform->GetRotation());
-    span.localToWorld[3] = glm::vec4(transform->GetPosition(), 1.0f);
+    // World UI owns its logical pixel size. The scene pose is world position
+    // and world rotation; authored Transform scale is intentionally excluded
+    // so text size remains governed by UIText font/layout settings. The
+    // editor Gizmo uses this same pose contract.
+    span.localToWorld = glm::mat4_cast(transform->GetWorldRotation());
+    span.localToWorld[3] = glm::vec4(transform->GetWorldPosition(), 1.0f);
     span.layerMask = uint32_t(1) << transform->GetGameObject()->GetLayer();
 }
 
@@ -2297,7 +2301,8 @@ std::vector<InxScreenUIRenderer::WorldDepthRun> InxScreenUIRenderer::GetWorldDep
 void InxScreenUIRenderer::RenderWorld(VkCommandBuffer cmdBuf, uint32_t width, uint32_t height,
                                       const glm::mat4 &viewProjection, const rhi::GraphicsRenderingSignature &target,
                                       uint32_t frameSlot, uint32_t cullingMask, const glm::mat4 &view,
-                                      const glm::mat4 &projection, uint32_t firstOrdinal, uint32_t endOrdinal)
+                                      const glm::mat4 &projection, const glm::mat4 &billboardView,
+                                      uint32_t firstOrdinal, uint32_t endOrdinal)
 {
     constexpr ScreenUIList list = ScreenUIList::World;
     constexpr int listIndex = 2;
@@ -2440,7 +2445,7 @@ void InxScreenUIRenderer::RenderWorld(VkCommandBuffer cmdBuf, uint32_t width, ui
     const bool hasConstantSize = std::any_of(elementOrder.begin(), elementOrder.end(), [&](const ElementDepth &entry) {
         return m_worldElementSpans[entry.index].constantScreenSize;
     });
-    const glm::mat4 cameraToWorld = hasBillboard ? glm::inverse(view) : glm::mat4(1.0f);
+    const glm::mat4 cameraToWorld = hasBillboard ? glm::inverse(billboardView) : glm::mat4(1.0f);
     const glm::vec4 cameraRight(glm::vec3(cameraToWorld[0]), 0.0f);
     const glm::vec4 cameraUp(glm::vec3(cameraToWorld[1]), 0.0f);
     const float screenPixelScale =

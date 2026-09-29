@@ -111,6 +111,7 @@ void InxVkCoreModular::DrawFrame(const float *viewPos, const float *viewLookAt, 
     }
 
     if (result == vk::SwapchainResult::NeedRecreate) {
+        SDL_Log("INFERNUX_SWAPCHAIN_RECREATE stage=acquire");
         RecreateSwapchain();
         return;
     }
@@ -526,10 +527,16 @@ void InxVkCoreModular::DrawFrame(const float *viewPos, const float *viewLookAt, 
 
     // Present
     result = m_backend.Presentation().Present(m_backend.Queues(), imageIndex);
+    if (result == vk::SwapchainResult::Success && m_firstVisiblePresentationPending) {
+        m_firstVisiblePresentationPending = false;
+        SDL_Log("INFERNUX_FIRST_VISIBLE_PRESENT");
+    }
     if (result == vk::SwapchainResult::SurfaceLost) {
         m_presentationSurfaceLost = true;
         INXLOG_WARN("Platform presentation surface was lost while presenting; scheduling a surface rebind");
     } else if (result == vk::SwapchainResult::NeedRecreate || m_framebufferResized) {
+        SDL_Log("INFERNUX_SWAPCHAIN_RECREATE stage=present result=%d framebuffer_resized=%d", static_cast<int>(result),
+                m_framebufferResized ? 1 : 0);
         m_framebufferResized = false;
         RecreateSwapchain();
     }

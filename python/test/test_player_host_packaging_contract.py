@@ -128,6 +128,15 @@ def test_runtime_pack_is_compiled_from_the_assembled_wheel_payload():
     assert 'DIRECTORY "${INFERNUX_PREBUILT_RUNTIME_DIR}/"' not in install
 
 
+def test_linux_wheel_repair_uses_auditwheel_compatible_platform_detection():
+    repair = (ROOT / "cmake/repair_linux_wheel.py").read_text(encoding="utf-8")
+
+    assert '"auditwheel"' in repair
+    assert '"repair"' in repair
+    assert '"--plat"' not in repair
+    assert "manylinux_" not in repair
+
+
 def test_player_package_contract_has_bootstrap_archive_and_no_root_bootstrap_files():
     audit = (ROOT / "python/Infernux/engine/player_package_audit.py").read_text(encoding="utf-8")
     builder = (ROOT / "python/Infernux/engine/game_builder.py").read_text(encoding="utf-8")

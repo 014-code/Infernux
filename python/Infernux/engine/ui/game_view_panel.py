@@ -124,6 +124,7 @@ class GameViewPanel(EditorPanel):
         # UI event processor — dispatches pointer events to UI elements
         self._ui_event_processor = UIEventProcessor()
         self._mouse_event_dispatcher = MouseEventDispatcher()
+        self._input_scene_token = None
 
         # Game resolution selection (Unity-like)
         self._selected_resolution_idx = 0
@@ -143,6 +144,7 @@ class GameViewPanel(EditorPanel):
         # Game-only FPS (excludes editor panel overhead)
         self._display_game_fps = 0.0
         self._display_game_frame_ms = 0.0
+        self._fps_toolbar_hidden = False
 
     def _set_game_render_active(self, active: bool) -> None:
         """Keep C++ game rendering in lockstep with actual panel visibility.
@@ -395,6 +397,17 @@ class GameViewPanel(EditorPanel):
         finally:
             self._mouse_event_dispatcher.reset()
 
+    def _synchronize_input_scene(self, scene) -> None:
+        scene_token = (
+            int(scene.world_id),
+            int(scene.temporal_discontinuity_revision),
+        ) if scene is not None else None
+        if scene_token == getattr(self, "_input_scene_token", None):
+            return
+        self._ui_event_processor.discard()
+        self._mouse_event_dispatcher.discard()
+        self._input_scene_token = scene_token
+
     def _on_not_visible(self, ctx):
         self._commit_pending_view_edits()
         self._was_focused = False
@@ -597,8 +610,9 @@ class GameViewPanel(EditorPanel):
         self._render_resolution_toolbar(ctx, dpi)
         target_w, target_h, fit_scale = self._render_scale_toolbar(ctx, dpi)
         self._render_fps_counter(ctx)
-
-        ctx.new_line()
+        # Keep the viewport close to the controls. ``NewLine`` after a row
+        # that already used SameLine reserves another full row in ImGui.
+        ctx.spacing()
 
         self._render_game_viewport(ctx, target_w, target_h, fit_scale)
 
@@ -663,7 +677,26 @@ class GameViewPanel(EditorPanel):
         scale_label_w, _ = ctx.calc_text_size("200%")
         ctx.label(f"{pct}%")
         ctx.same_line(scale_label_x + scale_label_w + 4.0 * dpi)
-        ctx.set_next_item_width(230.0 * dpi)
+        # Reserve the performance readout while there is room. The slider is
+        # the first control to yield width; FPS is hidden only after the
+        # slider reaches its compact minimum.
+        fit_label = t("game_view.fit")
+        fit_w = max(44.0 * dpi, ctx.calc_text_width(fit_label) + 12.0 * dpi)
+        get_cursor_pos_x = getattr(ctx, "get_cursor_pos_x", None)
+        cursor_x = float(get_cursor_pos_x()) if callable(get_cursor_pos_x) else 0.0
+        window_width = ctx.get_window_width()
+        fps_text = getattr(self, "_cached_fps_text", "FPS: --")
+        fps_w = float(getattr(self, "_cached_fps_text_w", 0.0))
+        fps_reserve = fps_w + 18.0 * dpi
+        compact_slider = max(72.0 * dpi, min(230.0 * dpi,
+            window_width - cursor_x - fit_w - 18.0 * dpi - fps_reserve))
+        self._fps_toolbar_hidden = (
+            window_width - cursor_x - fit_w - 18.0 * dpi - compact_slider < fps_reserve
+        )
+        if self._fps_toolbar_hidden:
+            compact_slider = max(72.0 * dpi, min(230.0 * dpi,
+                window_width - cursor_x - fit_w - 18.0 * dpi))
+        ctx.set_next_item_width(compact_slider)
         scale_before = self._capture_view_state()
         old_scale = self._display_scale
         new_scale = round(ctx.float_slider("##Scale", old_scale, 0.10, 2.0), 3)
@@ -680,8 +713,6 @@ class GameViewPanel(EditorPanel):
         )
         ctx.same_line(0, 6.0 * dpi)
         ctx.align_text_to_frame_padding()
-        fit_label = t("game_view.fit")
-        fit_w = max(44.0 * dpi, ctx.calc_text_width(fit_label) + 12.0 * dpi)
         color_count = Theme.push_inline_button_style(ctx, active=self._fit_mode)
         ctx.push_style_var_float(ImGuiStyleVar.FrameBorderSize, 0.0)
         ctx.button(f"{fit_label}##game_view_fit", self._fit_scale, width=fit_w, height=0)
@@ -746,8 +777,12 @@ class GameViewPanel(EditorPanel):
             self._cached_fps_text_w, _ = ctx.calc_text_size(fps_text)
         text_w = self._cached_fps_text_w
         window_width = ctx.get_window_width()
-        fps_x = max(window_width - text_w - 24.0, 360.0)
-        if fps_x + text_w <= window_width - 12.0:
+        if self._fps_toolbar_hidden:
+            return
+        get_cursor_pos_x = getattr(ctx, "get_cursor_pos_x", None)
+        cursor_x = float(get_cursor_pos_x()) if callable(get_cursor_pos_x) else 0.0
+        fps_x = window_width - text_w - 12.0
+        if fps_x >= cursor_x + 8.0 and fps_x + text_w <= window_width - 8.0:
             ctx.same_line(fps_x)
             ctx.label(fps_text)
             if bool(getattr(ctx, "semantic_capture_enabled", False)):
@@ -1028,6 +1063,7 @@ class GameViewPanel(EditorPanel):
         from Infernux.lib import SceneManager
         scene_manager = SceneManager.instance()
         scene = scene_manager.get_active_scene()
+        self._synchronize_input_scene(scene)
         if scene is None:
             self._reset_pointer_input()
             return

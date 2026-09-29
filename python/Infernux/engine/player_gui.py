@@ -124,6 +124,7 @@ class PlayerGUI(InxGUIRenderable):
         self._render_scale = _player_render_scale()
         self._ui_event_processor = UIEventProcessor()
         self._mouse_event_dispatcher = MouseEventDispatcher()
+        self._input_scene_token = None
         self._has_shared_scene_query = False
         self._last_frame_time = time.time()
         self._control = control_channel
@@ -314,6 +315,18 @@ class PlayerGUI(InxGUIRenderable):
         """Return the last runtime UI pointer transition for Player diagnostics."""
         return self._ui_event_processor.debug_state()
 
+    def _synchronize_input_scene(self, scene) -> None:
+        scene_token = (
+            int(scene.world_id),
+            int(scene.temporal_discontinuity_revision),
+        ) if scene is not None else None
+        if scene_token == getattr(self, "_input_scene_token", None):
+            return
+        self._ui_event_processor.discard()
+        self._mouse_event_dispatcher.discard()
+        self._has_shared_scene_query = False
+        self._input_scene_token = scene_token
+
     def _process_mouse_events(self, game_w: int, game_h: int, *, scene_hit=None, mouse_frame=None) -> None:
         dispatcher = getattr(self, "_mouse_event_dispatcher", None)
         if dispatcher is None:
@@ -336,6 +349,7 @@ class PlayerGUI(InxGUIRenderable):
         from Infernux.lib import SceneManager
 
         scene = SceneManager.instance().get_active_scene()
+        self._synchronize_input_scene(scene)
         if scene is None:
             self._has_shared_scene_query = False
             return None

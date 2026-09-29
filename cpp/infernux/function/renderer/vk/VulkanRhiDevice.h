@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <string>
 #include <string_view>
 #include <vector>
 #include <vk_mem_alloc.h>
@@ -318,6 +319,9 @@ class VulkanRhiDevice final : public rhi::Device
                                                                          VkCommandBuffer commandBuffer) noexcept;
 
   private:
+    void CreatePipelineCache() noexcept;
+    void SaveAndDestroyPipelineCache() noexcept;
+
     struct BufferPayload
     {
         VkBuffer buffer = VK_NULL_HANDLE;
@@ -430,6 +434,8 @@ class VulkanRhiDevice final : public rhi::Device
 
     rhi::DeviceId m_deviceId = rhi::InvalidDeviceId;
     VkDevice m_device = VK_NULL_HANDLE;
+    VkPipelineCache m_pipelineCache = VK_NULL_HANDLE;
+    std::string m_pipelineCachePath;
     VmaAllocator m_allocator = VK_NULL_HANDLE;
     rhi::DeviceCaps m_capabilities{};
     rhi::DeviceCapabilityState m_capabilityState{};

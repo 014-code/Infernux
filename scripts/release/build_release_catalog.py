@@ -62,6 +62,39 @@ def pypi_wheel_urls(version: str) -> dict[str, str]:
     }
 
 
+def release_wheel_names(
+    release_dir: Path,
+    version: str,
+    wheel_build: str,
+    linux_inventory: dict[str, object] | None = None,
+) -> dict[str, str]:
+    prefix = f"infernux-{version}-{wheel_build}-cp313-cp313-"
+    windows = f"{prefix}win_amd64.whl"
+    if linux_inventory is None:
+        candidates = sorted(
+            path.name
+            for path in release_dir.glob(f"{prefix}*.whl")
+            if path.name != windows
+        )
+    else:
+        files = linux_inventory.get("files")
+        if not isinstance(files, dict):
+            raise ValueError("Linux release inventory has no file map")
+        candidates = sorted(
+            Path(str(relative)).name
+            for relative in files
+            if Path(str(relative)).name.startswith(prefix)
+            and Path(str(relative)).name.endswith(".whl")
+            and Path(str(relative)).name != windows
+        )
+    if len(candidates) != 1:
+        raise ValueError(
+            "Desktop release must contain exactly one audited Linux wheel; "
+            f"found {candidates}"
+        )
+    return {"windows-x64": windows, "linux-x64": candidates[0]}
+
+
 def build_catalog(
     release_dir: Path,
     published_at: str | None,
@@ -78,9 +111,10 @@ def build_catalog(
     platforms = {}
     assets = []
     ci = json.loads(linux_inventory.read_text(encoding="utf-8")) if linux_inventory else None
-    for platform, suffix, wheel_suffix in (
-        ("windows-x64", ".exe", "win_amd64.whl"),
-        ("linux-x64", "", "manylinux_2_35_x86_64.whl"),
+    wheel_names = release_wheel_names(release_dir, version, wheel_build, ci)
+    for platform, suffix in (
+        ("windows-x64", ".exe"),
+        ("linux-x64", ""),
     ):
         manifest_name = f"InfernuxHub-{platform}-manifest.json"
         from_ci = platform == "linux-x64" and ci is not None
@@ -91,7 +125,7 @@ def build_catalog(
             return ci["files"][f"{version}/{name}"] if from_ci else (release_dir / name).stat().st_size
         installer_name = f"InfernuxHubInstaller-{version}-{platform}{suffix}"
         update_name = f"InfernuxHub-{version}-{platform}-full.zip"
-        wheel_name = f"infernux-{version}-{wheel_build}-cp313-cp313-{wheel_suffix}"
+        wheel_name = wheel_names[platform]
         platforms[platform] = {
             "installer": {
                 "name": installer_name,

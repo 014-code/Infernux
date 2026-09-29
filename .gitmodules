@@ -13,7 +13,8 @@
 	branch = infernux-vulkan
 [submodule "external/SDL"]
 	path = external/SDL
-	url = https://github.com/libsdl-org/SDL.git
+	url = https://github.com/ChenlizheMe/SDL.git
+	branch = infernux-platform
 [submodule "external/stb"]
 	path = external/stb
 	url = https://github.com/nothings/stb.git

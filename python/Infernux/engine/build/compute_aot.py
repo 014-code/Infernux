@@ -8,6 +8,9 @@ from dataclasses import dataclass
 from pathlib import Path
 import shutil
 import struct
+import time
+
+import numpy as np
 
 from Infernux.engine.path_utils import resolved_path
 from Infernux.engine.project_context import get_script_module_name
@@ -35,6 +38,50 @@ class ComputeAotBuildError(RuntimeError):
 class ComputeAotResult:
     artifact_count: int
     kernel_count: int
+
+
+def _gpu_buffer_descriptor(shape: tuple[int, ...], dtype):
+    """Create a compiler-only GPU buffer descriptor without acquiring an RHI."""
+    from Infernux import compute
+
+    value = object.__new__(compute.Buffer)
+    value._dtype = compute._buffer_dtype(dtype)
+    value._shape = shape
+    value._device = "gpu"
+    return value
+
+
+def ensure_engine_compute_artifacts(project_root: str | Path) -> float:
+    """Compile every engine-owned Player compute specialization into Library."""
+    from Infernux import compute
+    from Infernux._compiler.taichi.frontend import compile_kernel
+    from Infernux.engine.project_context import using_project_root
+    from Infernux.math import vector3
+
+    domain = _gpu_buffer_descriptor((1,), np.int32)
+    vector_values = _gpu_buffer_descriptor((1,), vector3)
+    vertices = _gpu_buffer_descriptor((1, 25), np.float32)
+    triangles = _gpu_buffer_descriptor((1, 3), np.int32)
+    adjacency = _gpu_buffer_descriptor((1, 1), np.int32)
+    counts = _gpu_buffer_descriptor((1,), np.int32)
+    specializations = (
+        (compute._transform_anchor_points, (domain, vector_values, *([0.0] * 20))),
+        (compute._transform_anchor_vectors, (domain, vector_values, *([0.0] * 14))),
+        (
+            compute._mesh_attribute_kernel,
+            (domain, vertices, triangles, adjacency, counts, 1, 1, 1),
+        ),
+    )
+    started = time.perf_counter()
+    try:
+        with using_project_root(project_root):
+            for declaration, params in specializations:
+                compile_kernel(declaration.function, params)
+    except Exception as error:
+        raise ComputeAotBuildError(
+            f"Engine GPU AOT prewarm failed: {error}"
+        ) from error
+    return (time.perf_counter() - started) * 1000.0
 
 
 def _attribute_name(node: ast.expr) -> str:
@@ -246,7 +293,7 @@ def declared_kernel_names(
     return tuple(sorted(names))
 
 
-def _artifact_functions(path: Path) -> tuple[str, ...]:
+def _artifact_record(path: Path) -> tuple[tuple[str, ...], str]:
     try:
         payload = path.read_bytes()
         if not payload.startswith(_ARTIFACT_MAGIC):
@@ -270,7 +317,10 @@ def _artifact_functions(path: Path) -> tuple[str, ...]:
         )
         if not functions:
             raise ValueError("missing kernel identity")
-        return functions
+        specialization = header.get("specialization")
+        if not isinstance(specialization, str) or not specialization:
+            raise ValueError("missing direct specialization identity; warm the kernel again")
+        return functions, specialization
     except (KeyError, OSError, TypeError, UnicodeError, ValueError, json.JSONDecodeError) as error:
         raise ComputeAotBuildError(
             f"GPU AOT artifact is unreadable: {path}: {error}"
@@ -300,9 +350,10 @@ def stage_compute_artifacts(
         / "Compute"
     )
     if not expected:
-        shutil.rmtree(destination, ignore_errors=True)
+        _clear_staged_gpu_artifacts(destination)
         return ComputeAotResult(0, 0)
 
+    engine_elapsed_ms = ensure_engine_compute_artifacts(root)
     source = root / "Library" / "Artifacts" / "Compute"
     if not source.is_dir():
         raise ComputeAotBuildError(
@@ -315,7 +366,7 @@ def stage_compute_artifacts(
     covered: set[str] = set()
     expected_set = set(expected)
     for artifact in sorted(source.glob("*.inxgpu"), key=lambda value: value.name):
-        functions = _artifact_functions(artifact)
+        functions, _specialization = _artifact_record(artifact)
         matched = expected_set.intersection(functions)
         engine_primitive = any(name.startswith("Infernux.compute.") for name in functions)
         if not matched and not engine_primitive:
@@ -331,21 +382,56 @@ def stage_compute_artifacts(
             missing=missing,
         )
 
-    shutil.rmtree(destination, ignore_errors=True)
+    _clear_staged_gpu_artifacts(destination)
     destination.mkdir(parents=True, exist_ok=True)
     for artifact in selected:
         shutil.copy2(artifact, destination / artifact.name)
+    manifest_records = []
+    for artifact in selected:
+        functions, specialization = _artifact_record(artifact)
+        for function_name in functions:
+            manifest_records.append({
+                "function": function_name,
+                "specialization": specialization,
+                "artifact": artifact.name,
+            })
+    manifest_records.sort(key=lambda item: (item["function"], item["specialization"]))
+    (destination / "AotManifest.json").write_text(
+        json.dumps({"artifacts": manifest_records}, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
     (destination / "AotOnly").write_text(
         "GPU kernels in this Player are immutable build artifacts.\n",
         encoding="utf-8",
         newline="\n",
     )
+    print(
+        "INFERNUX_BUILD_GPU_AOT_READY "
+        f"target={target} project_kernels={len(expected)} artifacts={len(selected)} "
+        f"engine_prewarm_ms={engine_elapsed_ms:.1f}"
+    )
     return ComputeAotResult(len(selected), len(expected))
+
+
+def _clear_staged_gpu_artifacts(destination: Path) -> None:
+    """Replace GPU-owned files without deleting the sibling CPU JIT cache."""
+    if not destination.is_dir():
+        return
+    for artifact in destination.glob("*.inxgpu"):
+        artifact.unlink()
+    for name in ("AotManifest.json", "AotOnly"):
+        marker = destination / name
+        if marker.exists():
+            marker.unlink()
+    if not any(destination.iterdir()):
+        destination.rmdir()
 
 
 __all__ = [
     "ComputeAotBuildError",
     "ComputeAotResult",
     "declared_kernel_names",
+    "ensure_engine_compute_artifacts",
     "stage_compute_artifacts",
 ]

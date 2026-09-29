@@ -279,36 +279,41 @@ def _render_common_position(ctx, comp):
     if not render_compact_section_header(ctx, t("ui_comp.location"), level="primary"):
         return
 
-    section_lw = max_label_w(ctx, [t("ui_comp.alignment")])
+    # World-space UI has an authored 3D Transform and no canvas rectangle to
+    # align against.  Showing the screen-space edge buttons here would offer
+    # an operation with no valid target and suggests a different pose model
+    # from the renderer and gizmo.  Keep the location section for the
+    # rotation actions, which remain meaningful for world-space elements.
+    if not bool(getattr(comp, "is_world_space", lambda: False)()):
+        section_lw = max_label_w(ctx, [t("ui_comp.alignment")])
 
-    # ── Alignment ──
-    render_compact_section_title(ctx, t("ui_comp.alignment"), level="secondary")
-    field_label(ctx, t("ui_comp.alignment"), section_lw)
-    clicked = Theme.render_inline_button_row(
-        ctx,
-        "ui_align_row",
-        [
-            ("left", t("ui_comp.align_left")),
-            ("center_x", t("ui_comp.align_cx")),
-            ("right", t("ui_comp.align_right")),
-            ("top", t("ui_comp.align_top")),
-            ("middle", t("ui_comp.align_mid")),
-            ("bottom", t("ui_comp.align_bot")),
-        ],
-        semantic_base=_field_semantic_id(ctx, comp, "alignment"),
-    )
-    if clicked == "left":
-        _align_component(comp, "x", "left")
-    elif clicked == "center_x":
-        _align_component(comp, "x", "center")
-    elif clicked == "right":
-        _align_component(comp, "x", "right")
-    elif clicked == "top":
-        _align_component(comp, "y", "top")
-    elif clicked == "middle":
-        _align_component(comp, "y", "middle")
-    elif clicked == "bottom":
-        _align_component(comp, "y", "bottom")
+        render_compact_section_title(ctx, t("ui_comp.alignment"), level="secondary")
+        field_label(ctx, t("ui_comp.alignment"), section_lw)
+        clicked = Theme.render_inline_button_row(
+            ctx,
+            "ui_align_row",
+            [
+                ("left", t("ui_comp.align_left")),
+                ("center_x", t("ui_comp.align_cx")),
+                ("right", t("ui_comp.align_right")),
+                ("top", t("ui_comp.align_top")),
+                ("middle", t("ui_comp.align_mid")),
+                ("bottom", t("ui_comp.align_bot")),
+            ],
+            semantic_base=_field_semantic_id(ctx, comp, "alignment"),
+        )
+        if clicked == "left":
+            _align_component(comp, "x", "left")
+        elif clicked == "center_x":
+            _align_component(comp, "x", "center")
+        elif clicked == "right":
+            _align_component(comp, "x", "right")
+        elif clicked == "top":
+            _align_component(comp, "y", "top")
+        elif clicked == "middle":
+            _align_component(comp, "y", "middle")
+        elif clicked == "bottom":
+            _align_component(comp, "y", "bottom")
 
     clicked = Theme.render_inline_button_row(
         ctx,
@@ -413,36 +418,21 @@ def _render_layout_behavior(ctx, comp, section_lw):
     render_compact_section_title(ctx, t("ui_comp.parent_layout"), level="secondary")
 
     position_members = list(UILayoutPosition)
+    position_labels = [
+        t("ui_comp.position_flow"),
+        t("ui_comp.position_absolute"),
+    ]
     field_label(ctx, t("ui_comp.position_mode"), section_lw)
     position_index = position_members.index(comp.layout_position)
     new_position_index = ctx.combo(
         "##ui_layout_position", position_index,
-        [member.name for member in position_members], -1,
+        position_labels, -1,
     )
     _record_field(ctx, comp, "layout_position", "combo", t("ui_comp.position_mode"))
     _apply_if_changed(
         comp, "layout_position", comp.layout_position,
         position_members[new_position_index],
     )
-
-    sizing_members = list(UILayoutSizing)
-    field_label(ctx, t("ui_comp.width_sizing"), section_lw)
-    width_index = sizing_members.index(comp.width_sizing)
-    new_width_index = ctx.combo(
-        "##ui_width_sizing", width_index,
-        [member.name for member in sizing_members], -1,
-    )
-    _record_field(ctx, comp, "width_sizing", "combo", t("ui_comp.width_sizing"))
-    _apply_if_changed(comp, "width_sizing", comp.width_sizing, sizing_members[new_width_index])
-
-    field_label(ctx, t("ui_comp.height_sizing"), section_lw)
-    height_index = sizing_members.index(comp.height_sizing)
-    new_height_index = ctx.combo(
-        "##ui_height_sizing", height_index,
-        [member.name for member in sizing_members], -1,
-    )
-    _record_field(ctx, comp, "height_sizing", "combo", t("ui_comp.height_sizing"))
-    _apply_if_changed(comp, "height_sizing", comp.height_sizing, sizing_members[new_height_index])
 
     field_label(ctx, t("ui_comp.min_size"), section_lw)
     min_width, min_height = ctx.vector2(
@@ -477,8 +467,7 @@ def _render_common_layout(ctx, comp):
 
     labels = [
         t("ui_comp.dimensions"), t("ui_comp.size"), t("ui_comp.modify"),
-        t("ui_comp.position_mode"), t("ui_comp.width_sizing"),
-        t("ui_comp.height_sizing"), t("ui_comp.layout_weight"),
+        t("ui_comp.position_mode"), t("ui_comp.layout_weight"),
     ]
     if isinstance(comp, UIText):
         labels.append(t("ui_comp.resizing"))
@@ -614,6 +603,50 @@ def _render_common_appearance(ctx, comp):
         target_radius = max(0.0, float(new_radius))
         if not math.isclose(target_radius, float(getattr(comp, "corner_radius", 0.0)), rel_tol=1e-5, abs_tol=1e-6):
             _apply_if_changed(comp, "corner_radius", comp.corner_radius, target_radius)
+
+
+def _render_world_ui_policy(ctx, comp):
+    """Render the policies that make a Canvas-free UI element a world object.
+
+    These fields are intentionally grouped separately from ordinary layout so
+    Billboard elements are visibly distinguishable in the Inspector and their
+    Game Camera behavior is explicit.
+    """
+    if not bool(getattr(comp, "is_world_space", lambda: False)()):
+        return
+    if not render_compact_section_header(ctx, t("ui_comp.world_ui"), level="primary"):
+        return
+
+    billboard = render_inspector_checkbox(
+        ctx, t("ui_comp.world_billboard"), bool(getattr(comp, "world_billboard", False))
+    )
+    _record_field(ctx, comp, "world_billboard", "checkbox", t("ui_comp.world_billboard"))
+    _apply_if_changed(comp, "world_billboard", comp.world_billboard, bool(billboard))
+
+    constant_size = render_inspector_checkbox(
+        ctx,
+        t("ui_comp.world_constant_screen_size"),
+        bool(getattr(comp, "world_constant_screen_size", False)),
+    )
+    _record_field(
+        ctx, comp, "world_constant_screen_size", "checkbox",
+        t("ui_comp.world_constant_screen_size"),
+    )
+    _apply_if_changed(
+        comp, "world_constant_screen_size", comp.world_constant_screen_size,
+        bool(constant_size),
+    )
+
+    always_on_top = render_inspector_checkbox(
+        ctx,
+        t("ui_comp.world_always_on_top"),
+        bool(getattr(comp, "world_always_on_top", False)),
+    )
+    _record_field(
+        ctx, comp, "world_always_on_top", "checkbox",
+        t("ui_comp.world_always_on_top"),
+    )
+    _apply_if_changed(comp, "world_always_on_top", comp.world_always_on_top, bool(always_on_top))
 
 
 def _render_font_picker(ctx, comp, field_name: str, lw: float, imgui_id: str):
@@ -916,6 +949,7 @@ def _render_frame_inspector(ctx, frame: UIFrame):
 def _render_text_inspector(ctx, text_comp: UIText):
     _render_common_position(ctx, text_comp)
     _render_common_layout(ctx, text_comp)
+    _render_world_ui_policy(ctx, text_comp)
     _render_common_appearance(ctx, text_comp)
     _render_text_typography(ctx, text_comp)
     _render_text_fill(ctx, text_comp)

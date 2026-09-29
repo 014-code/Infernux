@@ -269,6 +269,14 @@ void RegisterResourceBindings(py::module_ &m)
                 return self.GetDataAs<float>(key);
             },
             py::arg("key"), "Get a float metadata value")
+        .def(
+            "get_bool",
+            [](const InxResourceMeta &self, const std::string &key) {
+                if (!self.HasKey(key))
+                    return false;
+                return self.GetDataAs<bool>(key);
+            },
+            py::arg("key"), "Get a boolean metadata value")
         .def("serialize_document", [](const InxResourceMeta &self) { return JsonToPython(self.SerializeDocument()); })
         .def(
             "deserialize_document",

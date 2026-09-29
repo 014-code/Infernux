@@ -1106,15 +1106,10 @@ std::string TryGetMetaString(const infernux::InxResourceMeta *meta, const std::s
 {
     if (!meta || key.empty())
         return {};
-    const auto &map = meta->GetMetadata();
-    auto it = map.find(key);
-    if (it == map.end())
+    if (!meta->HasKey(key))
         return {};
-    const auto &typeName = it->second.first;
-    const auto &value = it->second.second;
     try {
-        if (typeName == "string")
-            return std::any_cast<std::string>(value);
+        return meta->GetStringData(key);
     } catch (...) {
     }
     return {};
@@ -1129,14 +1124,13 @@ int TryGetMetaInt(const infernux::InxResourceMeta *meta, const std::string &key,
     if (it == map.end())
         return defaultValue;
     const auto &typeName = it->second.first;
-    const auto &value = it->second.second;
     try {
         if (typeName == "int")
-            return std::any_cast<int>(value);
+            return meta->GetIntData(key);
         if (typeName == "size_t")
-            return static_cast<int>(std::any_cast<size_t>(value));
+            return static_cast<int>(meta->GetSizeData(key));
         if (typeName == "float")
-            return static_cast<int>(std::lround(std::any_cast<float>(value)));
+            return static_cast<int>(std::lround(meta->GetFloatData(key)));
     } catch (...) {
     }
     return defaultValue;

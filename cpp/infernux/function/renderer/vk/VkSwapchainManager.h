@@ -115,10 +115,14 @@ class VkSwapchainManager
         m_skipWaitIdle = v;
     }
 
-    /// @brief Set the preferred present mode.  Takes effect on next Recreate().
-    void SetPreferredPresentMode(VkPresentModeKHR mode)
+    /// @brief Set the preferred present mode. Returns true when it changed.
+    [[nodiscard]] bool SetPreferredPresentMode(VkPresentModeKHR mode)
     {
+        if (m_preferredPresentMode == mode) {
+            return false;
+        }
         m_preferredPresentMode = mode;
+        return true;
     }
 
     /// @brief Get the preferred present mode.
@@ -268,7 +272,11 @@ class VkSwapchainManager
 
     bool m_skipWaitIdle = false;
     rhi::DeviceId m_deviceId = rhi::InvalidDeviceId;
+#if defined(__ANDROID__)
+    VkPresentModeKHR m_preferredPresentMode = VK_PRESENT_MODE_FIFO_KHR;
+#else
     VkPresentModeKHR m_preferredPresentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
+#endif
     VkDevice m_device = VK_NULL_HANDLE;
     SwapchainGeneration m_generation;
 

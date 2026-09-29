@@ -69,10 +69,7 @@ def _model_generates_colliders(asset_database: Any, guid: str) -> bool:
     meta = asset_database.get_meta_by_guid(str(guid or ""))
     if meta is None:
         raise ValueError(f"model source metadata is missing: {guid}")
-    document = meta.serialize_document()
-    metadata = document.get("metadata") if isinstance(document, dict) else None
-    setting = metadata.get("generate_colliders") if isinstance(metadata, dict) else None
-    return bool(setting.get("value")) if isinstance(setting, dict) else False
+    return bool(meta.get_bool("generate_colliders"))
 
 
 def _document_has_authored_content(node: dict[str, Any], source_guid: str) -> bool:
@@ -642,13 +639,30 @@ def reconcile_scene_document_model_source_graphs(document: Any, asset_database: 
     changed = 0
     for root, guid in instances:
         if guid not in cached:
-            identity_map = _model_mesh_identity_map(asset_database, guid)
+            try:
+                identity_map = _model_mesh_identity_map(asset_database, guid)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"model identity metadata failed for {guid}: {exc}"
+                ) from exc
             if identity_map is None:
                 raise ValueError(f"model source has no stable mesh identity manifest: {guid}")
+            try:
+                source_graph = _source_graph(_load_model_source_nodes(guid))
+            except Exception as exc:
+                raise RuntimeError(
+                    f"model resident hierarchy failed for {guid}: {exc}"
+                ) from exc
+            try:
+                generate_colliders = _model_generates_colliders(asset_database, guid)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"model collider metadata failed for {guid}: {exc}"
+                ) from exc
             cached[guid] = (
-                _source_graph(_load_model_source_nodes(guid)),
+                source_graph,
                 identity_map,
-                _model_generates_colliders(asset_database, guid),
+                generate_colliders,
             )
         source_graph, identity_map, generate_colliders = cached[guid]
         changed += _reconcile_document_instance_graph(

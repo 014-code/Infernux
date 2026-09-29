@@ -762,8 +762,25 @@ class PlayModeManager(PlayModeSerializationMixin):
             scene_manager = self._get_scene_manager()
             native_start_started = time.perf_counter()
             self._invalidate_native_gpu_view_state()
+            from Infernux.engine.startup_warmup import run_project_script_warmups
+            from Infernux.engine.project_context import get_project_root
+            run_project_script_warmups(
+                project_path=get_project_root(), scope="editor-startup"
+            )
             if scene_manager:
                 scene_manager.play()
+            from Infernux.components.component import InxComponent
+            from Infernux.engine.startup_warmup import run_component_warmups
+            from Infernux.engine.project_context import get_project_root
+            run_component_warmups(
+                (
+                    component
+                    for values in InxComponent._active_instances.values()
+                    for component in values
+                ),
+                scope="editor-play",
+                project_path=get_project_root(),
+            )
             self._mark_native_scene_temporal_discontinuity()
             native_start_ms = (time.perf_counter() - native_start_started) * 1000.0
             total_ms = (time.perf_counter() - transition_started) * 1000.0

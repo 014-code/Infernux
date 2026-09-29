@@ -114,17 +114,9 @@ def test_web_dependency_gate_accepts_public_cpu_jit_fixture(monkeypatch):
     (
         ("import numba\n", "numba"),
         ("from llvmlite import binding\n", "llvmlite"),
-        (
-            "import infernux as inx\n@inx.compute.kernel\ndef sample():\n    pass\n",
-            "GPU compute declarations",
-        ),
-        (
-            "import infernux as inx\n@inx.compute.function\ndef sample():\n    pass\n",
-            "GPU compute declarations",
-        ),
     ),
 )
-def test_web_dependency_gate_rejects_compiler_imports_and_gpu_declarations(
+def test_web_dependency_gate_rejects_unshipped_compiler_imports(
     monkeypatch, tmp_path, source, diagnostic
 ):
     _web_module(monkeypatch)
@@ -133,6 +125,27 @@ def test_web_dependency_gate_rejects_compiler_imports_and_gpu_declarations(
     script.write_text(source, encoding="utf-8")
     with pytest.raises(ValueError, match=diagnostic):
         exporter._reject_unshipped_web_dependencies((script,))
+
+
+def test_web_dependency_gate_accepts_compute_for_build_time_cpu_lowering(
+    monkeypatch, tmp_path
+):
+    _web_module(monkeypatch)
+    exporter = importlib.import_module("infernux_web.exporter")
+    script = tmp_path / "compute.py"
+    script.write_text(
+        "import infernux as inx\n"
+        "@inx.compute.function\n"
+        "def helper(value):\n"
+        "    return value\n"
+        "@inx.compute.kernel\n"
+        "def sample(values):\n"
+        "    i = inx.compute.index(values)\n"
+        "    values[i] = helper(values[i])\n",
+        encoding="utf-8",
+    )
+
+    exporter._reject_unshipped_web_dependencies((script,))
 
 
 def test_web_build_cache_is_project_owned_by_default(monkeypatch, tmp_path):
@@ -1081,7 +1094,7 @@ def test_web_host_contract_embeds_python_and_uses_only_webgpu(monkeypatch):
         in rhi_backend
     )
     assert "g_fullscreenRenderer.EnsurePipeline" in main
-    assert "g_fullscreenRenderer.Draw" in main
+    assert "g_postProcessRenderer.Render(presentPass)" in main
     assert "CreateGraphicsPipeline" not in main
     assert "CreateGraphicsPipeline" in fullscreen
     assert "ShaderSourceWGSL" not in main
@@ -1330,6 +1343,9 @@ def test_web_host_contract_embeds_python_and_uses_only_webgpu(monkeypatch):
     assert lifecycle_bridge.index("scheduler.bind_native_bridge(scene_manager)") < lifecycle_bridge.index(
         "scene_manager.set_runtime_lifecycle_callbacks("
     )
+    assert '"physics_pre_step", float(scene_manager.get_fixed_time_step())' in lifecycle_bridge
+    assert '"physics_post_step", float(scene_manager.get_fixed_time_step())' in lifecycle_bridge
+    assert "_poll_transform_bindings()" in lifecycle_bridge
     assert main.index("g_particleRuntime.Initialize(") < main.index(
         'PyObject_GetAttrString(mainModule, "infernux_web_ready")'
     )

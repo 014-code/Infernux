@@ -2099,6 +2099,9 @@ void RegisterSceneBindings(py::module_ &m)
                                "Local active state (Unity: gameObject.activeSelf)")
         .def_property_readonly("active_in_hierarchy", &GameObject::IsActiveInHierarchy,
                                "Is active in hierarchy? (Unity: gameObject.activeInHierarchy)")
+        .def_property_readonly("is_destroying", &GameObject::IsDestroying,
+                               "True while the native GameObject is being retired")
+        .def("__bool__", [](const GameObject *obj) { return obj != nullptr && !obj->IsDestroying(); })
         .def_property_readonly("id", &GameObject::GetID)
         .def_property_readonly("handle", &GameObject::GetHandle)
         .def_property("tag", &GameObject::GetTag, &GameObject::SetTag, "Tag string for this GameObject")
@@ -2443,6 +2446,8 @@ void RegisterSceneBindings(py::module_ &m)
             [](GameObject *obj) {
                 // Return all Python components
                 std::vector<py::object> result;
+                if (obj == nullptr || obj->IsDestroying())
+                    return result;
                 for (const auto &comp : obj->GetAllComponents()) {
                     if (auto *proxy = dynamic_cast<PyComponentProxy *>(comp.get())) {
                         py::object pyComp = proxy->GetPyComponent();

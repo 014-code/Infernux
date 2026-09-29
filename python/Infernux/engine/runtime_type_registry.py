@@ -97,6 +97,8 @@ def install_runtime_type_registry(path: str) -> int:
             phase not in _RUNTIME_LIFECYCLE_METHODS for phase in phases
         ):
             raise RuntimeError("Player runtime type registry entry has unknown lifecycle data")
+        if not isinstance(entry.get("startup_warmup", False), bool):
+            raise RuntimeError("Player runtime component has invalid startup warmup data")
         type_guid = entry["type_guid"]
         if type_guid in prepared:
             raise RuntimeError(f"Duplicate Player runtime component type: {type_guid}")

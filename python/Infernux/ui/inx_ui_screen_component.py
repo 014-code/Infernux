@@ -131,7 +131,7 @@ class InxUIScreenComponent(InxUIComponent):
         group="World UI",
     )
     world_billboard: bool = serialized_field(
-        default=False, tooltip="World UI only: face each rendering camera", group="World UI",
+        default=False, tooltip="World UI only: face the Game Camera", group="World UI",
     )
     world_constant_screen_size: bool = serialized_field(
         default=False,
@@ -303,7 +303,7 @@ class InxUIScreenComponent(InxUIComponent):
         return None
 
     def world_ui_matrix(self):
-        """Return this element's ordinary world pose without UI scale."""
+        """Return the world pose used by the World UI renderer and Gizmo."""
         game_object = self._try_get_game_object()
         if game_object is None:
             return [1.0, 0.0, 0.0, 0.0,
@@ -657,7 +657,14 @@ class InxUIScreenComponent(InxUIComponent):
     # ------------------------------------------------------------------
 
     def on_draw_gizmos_selected(self):
-        """Draw this world UI element from its own authoritative Transform."""
+        """Draw the exact world UI plane used by the renderer.
+
+        Billboard text is rendered against the Game Camera basis.  Drawing the
+        selection frame from the authored Transform here made the orange frame
+        diverge from the visible text whenever the Scene Camera was rotated.
+        Resolve the same frame used by the Rect tool and emit world-space lines
+        with an identity Gizmos matrix so the selection frame follows the text.
+        """
         if not self.is_world_space():
             return
         game_object = self._try_get_game_object()
@@ -666,29 +673,35 @@ class InxUIScreenComponent(InxUIComponent):
 
         from Infernux.gizmos import Gizmos
 
-        logical_width, logical_height = (max(1.0, value) for value in self.get_resolved_size())
-        origin_x = logical_width * 0.5
-        origin_y = logical_height * 0.5
-        pixels_per_unit = WORLD_UI_PIXELS_PER_UNIT
+        from Infernux.engine.ui.ui_rect_manipulation import resolve_world_ui_frame
+
+        frame = resolve_world_ui_frame(self)
+        if frame is None:
+            return
+        center = frame["center"]
+        axis_u = frame["axis_u"]
+        axis_v = frame["axis_v"]
+        half_u, half_v = frame["half_size"]
+
+        def add(*vectors):
+            return tuple(sum(float(vector[index]) for vector in vectors) for index in range(3))
+
+        neg_u = tuple(-float(value) * half_u for value in axis_u)
+        pos_u = tuple(float(value) * half_u for value in axis_u)
+        neg_v = tuple(-float(value) * half_v for value in axis_v)
+        pos_v = tuple(float(value) * half_v for value in axis_v)
         corners = [
-            (
-                (x - origin_x) / pixels_per_unit,
-                -(y - origin_y) / pixels_per_unit,
-                0.0,
-            )
-            for x, y in (
-                (0.0, 0.0),
-                (logical_width, 0.0),
-                (logical_width, logical_height),
-                (0.0, logical_height),
-            )
+            add(center, neg_u, pos_v),
+            add(center, pos_u, pos_v),
+            add(center, pos_u, neg_v),
+            add(center, neg_u, neg_v),
         ]
 
         previous_color = Gizmos.color
         previous_matrix = Gizmos.matrix
         try:
             Gizmos.color = (1.0, 0.62, 0.22)
-            Gizmos.matrix = self.world_ui_matrix()
+            Gizmos.matrix = None
             for index in range(4):
                 Gizmos.draw_line(corners[index], corners[(index + 1) % 4])
         finally:

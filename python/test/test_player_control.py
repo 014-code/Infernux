@@ -192,6 +192,32 @@ def test_standalone_player_dispatches_runtime_ui_without_desktop_hover(monkeypat
     assert len(routed) == 2 and all(frame is mouse_frame for frame in routed)
 
 
+def test_scene_publication_discards_retired_player_input_state_once():
+    discarded = []
+    player = PlayerGUI.__new__(PlayerGUI)
+    player._ui_event_processor = type(
+        "_UIProcessor", (), {"discard": lambda self: discarded.append("ui")}
+    )()
+    player._mouse_event_dispatcher = type(
+        "_MouseProcessor", (), {"discard": lambda self: discarded.append("mouse")}
+    )()
+    player._input_scene_token = (7, 2)
+    player._has_shared_scene_query = True
+    scene = type(
+        "_Scene", (), {
+            "world_id": 7,
+            "temporal_discontinuity_revision": 3,
+        }
+    )()
+
+    player._synchronize_input_scene(scene)
+    player._synchronize_input_scene(scene)
+
+    assert discarded == ["ui", "mouse"]
+    assert player._input_scene_token == (7, 3)
+    assert player._has_shared_scene_query is False
+
+
 def _player_gui_for_play_gate(session):
     player = PlayerGUI.__new__(PlayerGUI)
     player._engine = type("_PlayerEngine", (), {

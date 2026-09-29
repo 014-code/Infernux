@@ -90,14 +90,19 @@ class PlayerBootstrap:
             phase_started = now
 
         phase("force player mode", self._force_player_mode)
+        from Infernux.engine.startup_warmup import start_cpu_runtime_preload
+
+        start_cpu_runtime_preload()
         phase("load runtime contract", self._load_runtime_contract)
         phase("initialize engine", self._init_engine)
+        phase("prewarm builtin GPU pipelines", self._prewarm_builtin_pipelines)
         phase("load runtime asset catalog", self._load_runtime_asset_catalog)
         self._pump_startup_events()
         phase("create runtime managers", self._create_managers)
         self._pump_startup_events()
         # Preloads may resolve cooked assets before any scene is loaded.
         phase("preload project plugins", self._load_plugins)
+        phase("schedule project CPU and GPU declarations", self._schedule_project_warmup)
         self._pump_startup_events()
         phase("setup game camera", self._setup_game_camera)
         phase("register player GUI", self._register_player_gui)
@@ -118,10 +123,68 @@ class PlayerBootstrap:
         if getattr(self, "runtime_session", None) is not None and not getattr(self, "splash_items", ()):
             phase("activate runtime scene", self._enter_play_mode)
             self._pump_startup_events()
+            phase("prewarm first GPU frame", self._prewarm_first_frame)
+            self._pump_startup_events()
+        phase("finish project CPU and GPU declarations", self._finish_project_warmup)
         _plog(
             f"[Startup] bootstrap ready: "
             f"{(time.perf_counter() - startup_started) * 1000.0:.1f} ms"
         )
+
+    def _prewarm_builtin_pipelines(self) -> None:
+        """Build the builtin material pipelines before Player is visible."""
+        if self.engine is None:
+            raise RuntimeError("Player GPU pipeline prewarm requires an Engine")
+        native = self.engine.get_native_engine()
+        if native is None:
+            raise RuntimeError("Player GPU pipeline prewarm requires a native Engine")
+        from Infernux.lib import AssetRegistry
+
+        registry = AssetRegistry.instance()
+        for name in ("DefaultLit", "SkyboxProcedural"):
+            material = registry.get_builtin_material(name)
+            if material is None:
+                raise RuntimeError(f"Required builtin material is unavailable: {name}")
+            if name == "SkyboxProcedural":
+                native.refresh_material_pipeline(material)
+        _plog(
+            "[Startup] builtin GPU material pipelines prewarmed "
+            "default_lit=engine-init skybox=explicit"
+        )
+
+    def _prewarm_first_frame(self) -> None:
+        """Submit one hidden zero-delta frame to establish GPU state."""
+        if self.engine is None:
+            raise RuntimeError("Player first-frame GPU prewarm requires an Engine")
+        started = time.perf_counter()
+        self.engine.tick(0.0)
+        _plog(
+            "[Startup] first GPU frame prewarmed: "
+            f"{(time.perf_counter() - started) * 1000.0:.1f} ms"
+        )
+
+    def _schedule_project_warmup(self) -> None:
+        """Queue build-selected declarations for post-present materialization."""
+        from Infernux.engine.startup_warmup import create_player_startup_warmup
+
+        if self.runtime_session is None:
+            raise RuntimeError("Player startup warmup requires a runtime session")
+        self.runtime_session.schedule_startup_warmup(
+            create_player_startup_warmup(project_path=self.project_path)
+        )
+
+    def _finish_project_warmup(self) -> None:
+        """Finish the build-authored queue before the Player becomes interactive."""
+        runtime_session = self.runtime_session
+        engine = self.engine
+        if runtime_session is None or engine is None:
+            raise RuntimeError("Player startup warmup requires an initialized runtime")
+        while not runtime_session.pump_startup_warmup():
+            pump = getattr(engine, "pump_events", None)
+            if callable(pump) and pump() is False:
+                raise RuntimeError("Player startup cancelled")
+            # Yield the GIL when only the CPU declaration worker remains.
+            time.sleep(0.001)
 
     @staticmethod
     def _force_player_mode() -> None:
@@ -433,6 +496,9 @@ class PlayerBootstrap:
         pump = getattr(engine, "pump_events", None)
         if callable(pump) and pump() is False:
             raise RuntimeError("Player startup cancelled")
+        runtime_session = self.runtime_session
+        if runtime_session is not None:
+            runtime_session.pump_startup_warmup()
 
     def _load_plugins(self) -> None:
         from Infernux.plugins import PluginManager

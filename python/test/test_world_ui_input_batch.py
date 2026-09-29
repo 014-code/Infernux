@@ -10,6 +10,8 @@ from Infernux.engine.runtime_screen_ui import (
     WorldUIElementTarget, collect_runtime_ui_input_surfaces, map_runtime_ui_pointer,
     map_runtime_ui_pointers, map_world_ui_ray, pick_world_ui_object_ids,
 )
+from Infernux.engine.runtime_event_queue import clear as clear_runtime_events
+from Infernux.engine.runtime_event_queue import drain as drain_runtime_events
 from Infernux.ui.ui_event_system import UIEventProcessor, UIPointerFrame
 from Infernux.ui.ui_event_data import PointerType
 
@@ -36,7 +38,10 @@ def map_pointer(surfaces, view=None):
 @pytest.fixture(autouse=True)
 def no_occlusion(monkeypatch):
     from Infernux.physics import Physics
+    clear_runtime_events()
     monkeypatch.setattr(Physics, 'raycast', lambda *_a, **_kw: None)
+    yield
+    clear_runtime_events()
 
 
 def test_batch_reads_native_pose_not_python_component_properties(scene, monkeypatch):
@@ -397,6 +402,7 @@ def test_captured_slider_keeps_coordinates_beyond_quad(scene, pointer_type):
         processor.process_pointers(surfaces, (UIPointerFrame(
             pointer_id=7, pointer_type=pointer_type,
             canvas_positions=map_pointer(surfaces, camera((origin_x, 0, 5))), **state),), .01)
+        drain_runtime_events()
     frame(0, down=True, held=True)
     assert slider.value == pytest.approx(.5)
     frame(3, held=True)

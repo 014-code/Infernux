@@ -926,7 +926,9 @@ void InxVkCoreModular::SetPresentMode(int mode)
     };
     if (mode < 0 || mode > 3)
         return;
-    m_backend.Presentation().SetPreferredPresentMode(kModes[mode]);
+    if (!m_backend.Presentation().SetPreferredPresentMode(kModes[mode])) {
+        return;
+    }
     RecreateSwapchain();
 }
 

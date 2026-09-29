@@ -117,6 +117,21 @@ def test_reset_retires_capture_before_failed_exit(mouse, monkeypatch):
         update.rollback()
 
 
+def test_discard_drops_retired_capture_without_reading_the_object(mouse):
+    probe, dispatcher, hit, state, _queries = mouse
+    state[:] = [True, True, False]
+    run(dispatcher, hit)
+
+    hit.game_object.get_py_components = lambda: (_ for _ in ()).throw(
+        ReferenceError("retired")
+    )
+    dispatcher.discard()
+
+    assert dispatcher._hover_object is None
+    assert dispatcher._pressed_object is None
+    assert probe.events == ["enter", "old-over", "down", "drag"]
+
+
 def test_input_snapshot_is_read_once_and_explicit_snapshot_is_reused(mouse, monkeypatch):
     probe, dispatcher, hit, state, _queries = mouse
     reads = []

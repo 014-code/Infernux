@@ -1190,6 +1190,11 @@ def test_android_engine_staging_excludes_desktop_runtime_payloads(
         encoding="utf-8"
     )
     assert (destination / "engine/platform_player_bootstrap.py").is_file()
+    assert Path(
+        importlib.util.cache_from_source(
+            str(destination / "engine/platform_player_bootstrap.py")
+        )
+    ).is_file()
     assert (destination / "resources/shaders/standard.vert").is_file()
     assert not (destination / "_runtime_packs").exists()
     assert not (destination / "_runtime_modules").exists()

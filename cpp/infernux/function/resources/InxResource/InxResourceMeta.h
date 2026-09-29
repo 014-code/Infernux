@@ -1,12 +1,12 @@
 #pragma once
-#include <core/reflection/InxTypeRegistry.h>
 #include <core/types/InxFwdType.h>
 #include <function/resources/AssetRuntimeApi.h>
 
-#include <any>
 #include <nlohmann/json.hpp>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
+#include <variant>
 
 namespace infernux
 {
@@ -18,7 +18,8 @@ class InxResourceMeta
 {
   public:
     // Type definitions
-    using MetadataType = std::pair<std::string, std::any>;
+    using MetadataValue = std::variant<std::string, int, bool, size_t, float, ResourceType>;
+    using MetadataType = std::pair<std::string, MetadataValue>;
     using MetadataMap = std::unordered_map<std::string, MetadataType>;
 
     InxResourceMeta() = default;
@@ -36,7 +37,14 @@ class InxResourceMeta
     InxResourceMeta &operator=(InxResourceMeta &&other) noexcept = default;
 
     // Metadata operations
-    INFERNUX_ASSET_RUNTIME_API void AddMetadata(const std::string &key, const std::any &value);
+    INFERNUX_ASSET_RUNTIME_API void AddMetadata(const std::string &key, const std::string &value);
+    INFERNUX_ASSET_RUNTIME_API void AddMetadata(const std::string &key, const char *value);
+    INFERNUX_ASSET_RUNTIME_API void AddMetadata(const std::string &key, int value);
+    INFERNUX_ASSET_RUNTIME_API void AddMetadata(const std::string &key, bool value);
+    INFERNUX_ASSET_RUNTIME_API void AddMetadata(const std::string &key, size_t value);
+    INFERNUX_ASSET_RUNTIME_API void AddMetadata(const std::string &key, float value);
+    INFERNUX_ASSET_RUNTIME_API void AddMetadata(const std::string &key, ResourceType value);
+    INFERNUX_ASSET_RUNTIME_API void AddMetadata(const std::string &key, const nlohmann::json &value);
 
     /// Copy one metadata entry without changing its persisted type tag.
     /// Returns false when the source has no such key or this instance already
@@ -48,6 +56,16 @@ class InxResourceMeta
     /// @param key type key to retrieve the value for
     /// @return The metadata value of type T
     template <typename T> T GetDataAs(const std::string &key) const;
+
+    // Metadata has one closed, deterministic value representation. Android
+    // hosts the asset runtime and Python bindings in separate DSOs, so an
+    // open-ended RTTI container is not a valid ABI boundary.
+    INFERNUX_ASSET_RUNTIME_API std::string GetStringData(const std::string &key) const;
+    INFERNUX_ASSET_RUNTIME_API int GetIntData(const std::string &key) const;
+    INFERNUX_ASSET_RUNTIME_API bool GetBoolData(const std::string &key) const;
+    INFERNUX_ASSET_RUNTIME_API size_t GetSizeData(const std::string &key) const;
+    INFERNUX_ASSET_RUNTIME_API float GetFloatData(const std::string &key) const;
+    INFERNUX_ASSET_RUNTIME_API nlohmann::json GetJsonData(const std::string &key) const;
 
     // Fixed getters
     INFERNUX_ASSET_RUNTIME_API const std::string &GetResourceName() const;

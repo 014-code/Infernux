@@ -267,6 +267,7 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
             "ProjectSettings/BuildSettings.json",
             "ProjectSettings/PhysicsSettings.json",
             "ProjectSettings/TagLayerSettings.json",
+            "Library/StartupWarmup.json",
         }
     )
     _EXCLUDE_PATTERNS = {
@@ -417,6 +418,9 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
         self._build_output_transaction: dict[str, str] | None = None
         self._asset_index_entries_snapshot: list[dict] | None = None
         self._build_scene_guids_snapshot = copy.deepcopy(build_scene_guids)
+        # Platform cooks set this before content staging.  It controls which
+        # native CPU JIT cache is eligible for the immutable Player package.
+        self._runtime_platform = host_platform
 
     def _build_scene_guids(self) -> list[str]:
         """Use one ordered scene identity selection throughout this build."""
@@ -539,6 +543,7 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
             self._validate()
             final_dir = self.output_dir
             os.makedirs(os.path.join(final_dir, "Data"), exist_ok=False)
+            self._runtime_platform = str(platform_host.get("platform", "")).strip().casefold()
 
             report("Cooking project assets", 0.1)
             self._copy_game_data(final_dir, package_builtin_resources=True)
@@ -629,6 +634,18 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
         _p(t("build.step.compiling_scripts"), 0.91)
         self._compile_user_scripts(final_dir)
         self._compile_player_plugin_scripts(final_dir)
+        from Infernux.engine.build.compute_aot import stage_compute_artifacts
+
+        stage_compute_artifacts(
+            self.project_path,
+            self.cooked_python_source_paths(),
+            os.path.join(final_dir, "Data"),
+            target=(
+                "Player/Windows"
+                if self._runtime_platform == "windows"
+                else "Player/Linux"
+            ),
+        )
         self._write_runtime_asset_records(final_dir)
 
         _p(t("build.step.processing_splash"), 0.93)
@@ -1463,6 +1480,8 @@ finally:
             os.makedirs(os.path.dirname(destination), exist_ok=True)
             shutil.copy2(source, destination)
 
+        self._prepare_startup_warmup_registry(data_dir)
+
         self._copy_cooked_assets(
             data_dir,
             package_builtin_resources=package_builtin_resources,
@@ -1471,11 +1490,67 @@ finally:
         self._stage_player_plugins(data_dir)
         self._stage_library_runtime_artifacts(data_dir)
         self._stage_library_runtime_documents(data_dir)
+        self._stage_cpu_jit_cache(data_dir)
 
         self._write_particle_runtime_index(data_dir)
         self._copy_particle_data_interface_artifacts(data_dir)
 
         self._filter_shipped_requirements(data_dir)
+
+    def _prepare_startup_warmup_registry(self, data_dir: str) -> None:
+        """Seal editor-confirmed warmups for the exact Player target."""
+        path = os.path.join(data_dir, "Library", "StartupWarmup.json")
+        if not os.path.isfile(path):
+            return
+        with open(path, "r", encoding="utf-8") as stream:
+            document = json.load(stream)
+        if document.get("schema") != "infernux.startup-warmup":
+            raise RuntimeError(f"Invalid startup warmup registry: {path}")
+        entries = document.get("entries")
+        if not isinstance(entries, dict):
+            raise RuntimeError(f"Startup warmup registry entries are invalid: {path}")
+        target = str(getattr(self, "_runtime_platform", "")).strip().casefold()
+        if not target:
+            target = "windows" if sys.platform == "win32" else "linux"
+        target = {"win32": "windows", "emscripten": "web"}.get(target, target)
+        for record in entries.values():
+            if not isinstance(record, dict) or record.get("status") != "ready":
+                raise RuntimeError("Player build requires every startup warmup to be ready")
+            record["platform"] = target
+            record.pop("source_sha256", None)
+        document["platform"] = target
+        _write_json_atomic(path, document, indent=None)
+
+    def _stage_cpu_jit_cache(self, data_dir: str) -> None:
+        """Pack precompiled CPU JIT entries for same-ABI desktop Players.
+
+        Numba cache records contain target ABI data, so a Windows cache must
+        never be copied into Android/Web packages.  The platform cook sets
+        ``_runtime_platform``; ordinary desktop builds use the host platform.
+        The Player extracts these small entries into its writable cache root
+        on first use, avoiding a compiler hit on the first scene.
+        """
+        platform_name = str(getattr(self, "_runtime_platform", "")).casefold()
+        host_name = "windows" if sys.platform == "win32" else "linux"
+        if platform_name != host_name:
+            return
+        source_root = os.path.join(
+            self.project_path, "Library", "Artifacts", "Compute", "CPU"
+        )
+        if not os.path.isdir(source_root):
+            return
+        files = [
+            name for name in os.listdir(source_root)
+            if name.startswith("inx-") and name.endswith((".nbi", ".nbc"))
+        ]
+        if not files:
+            return
+        destination_root = os.path.join(
+            data_dir, "Library", "Artifacts", "Compute", "CPU"
+        )
+        os.makedirs(destination_root, exist_ok=True)
+        for name in sorted(files):
+            shutil.copy2(os.path.join(source_root, name), os.path.join(destination_root, name))
 
     def cooked_python_source_paths(self) -> tuple[str, ...]:
         """Return Python sources selected by this build's frozen cook closure.
@@ -2787,6 +2862,11 @@ finally:
                 if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
                 and child.name in lifecycle_names
             )
+            startup_warmup = any(
+                isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and child.name == "_infernux_startup_warmup"
+                for child in node.body
+            )
             records.append(
                 {
                     "script_guid": script_guid,
@@ -2798,6 +2878,7 @@ finally:
                     "qualname": node.name,
                     "runtime_path": runtime_path,
                     "lifecycle": lifecycle,
+                    "startup_warmup": startup_warmup,
                 }
             )
         return records
@@ -2811,6 +2892,10 @@ finally:
             cooked = _jit_kernels.build_auto_parallel_embedded_source(cooked) or cooked
         else:
             cooked = _jit_kernels.build_interpreted_cpu_source(cooked)
+        if str(getattr(self, "_runtime_platform", "")).casefold() == "web":
+            from Infernux.engine.build.compute_cpu import build_cpu_compute_source
+
+            cooked = build_cpu_compute_source(cooked)
         return embed_compute_sources(cooked)
 
     @staticmethod

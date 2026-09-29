@@ -3,6 +3,7 @@
 import pytest
 
 from Infernux.lib import Vector3
+from Infernux.resources import engine_font_path
 from Infernux.ui import (
     UIFrame,
     UIGroup,
@@ -269,7 +270,9 @@ def test_text_intrinsic_layout_is_derived_and_shared_with_hit_testing(scene, wor
     assert text.get_rect(1920.0, 1080.0)[2:] == pytest.approx((123.0, 29.0))
     assert text.contains_point(122.0, 20.0, 1920.0, 1080.0)
     assert not text.contains_point(124.0, 20.0, 1920.0, 1080.0)
-    assert measurements == [("New Text", 36.0, 0.0, "", 1.2, 0.0)]
+    assert measurements == [
+        ("New Text", 36.0, 0.0, str(engine_font_path), 1.2, 0.0)
+    ]
 
     # A different preview scale produces the same logical box and never writes
     # the authored size back into the scene document.

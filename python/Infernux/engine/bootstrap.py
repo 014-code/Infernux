@@ -262,7 +262,11 @@ class EditorBootstrap(BootstrapPanelsMixin, BootstrapSelectionMixin, BootstrapWi
             material = registry.get_builtin_material(name)
             if material is None:
                 raise RuntimeError(f"Required builtin material is unavailable: {name}")
-            native.refresh_material_pipeline(material)
+            # DefaultLit is created by native InitializeMaterialSystem during
+            # renderer initialization. Refreshing it here destroys and
+            # rebuilds the pipeline we just compiled.
+            if name == "SkyboxProcedural":
+                native.refresh_material_pipeline(material)
 
     def _create_managers(self):
         from Infernux.engine.interaction import EditorInteractionCore

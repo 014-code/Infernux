@@ -2641,6 +2641,10 @@ class TestUICanvasCollectionCache:
             self.world_id = id(self)
             self.temporal_discontinuity_revision = 0
             self.root_queries = 0
+            if canvas is not None:
+                canvas._set_game_object(self._root)
+                canvas._native_scene = self
+                canvas._try_get_game_object = lambda: self._root
 
         def get_root_objects(self):
             self.root_queries += 1
@@ -2670,7 +2674,11 @@ class TestUICanvasCollectionCache:
         invalidate_canvas_cache()
         assert collect_canvases(scene) == [first_canvas]
 
+        first_canvas._set_game_object(None)
         scene._root = self._Root(second_canvas)
+        second_canvas._set_game_object(scene._root)
+        second_canvas._native_scene = scene
+        second_canvas._try_get_game_object = lambda: scene._root
         scene.temporal_discontinuity_revision += 1
         assert collect_canvases(scene) == [second_canvas]
 
@@ -2741,6 +2749,8 @@ class TestUICanvasCollectionCache:
         canvas = UICanvas()
         scene._root._components.append(canvas)
         canvas._set_game_object(scene._root)
+        canvas._native_scene = scene
+        canvas._try_get_game_object = lambda: scene._root
         assert canvas_utils.collect_runtime_canvases_with_go(scene) == [
             (scene._root, canvas),
         ]
@@ -2761,11 +2771,11 @@ class TestUICanvasCollectionCache:
         invalidate_canvas_cache()
 
         assert collect_sorted_runtime_canvases(scene) == [canvas]
-        assert scene.root_queries == 1
+        assert scene.root_queries == 0
 
         scene.structure_version += 100_000
         assert collect_sorted_runtime_canvases(scene) == [canvas]
-        assert scene.root_queries == 1
+        assert scene.root_queries == 0
 
 
 def test_screen_ui_rect_cache_survives_frames_and_invalidates_on_geometry_change(scene, monkeypatch):

@@ -284,11 +284,14 @@ def canvas_elements(canvas):
     result = []
 
     def visit(node):
+        if not node:
+            return
         for component in node.get_py_components():
             if is_ui_screen_component(component):
                 result.append(component)
         for child in node.get_children():
-            visit(child)
+            if child:
+                visit(child)
 
     visit(owner)
     return tuple(result)

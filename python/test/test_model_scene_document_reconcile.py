@@ -24,6 +24,10 @@ class _Meta:
         assert key == "model_meshes"
         return json.dumps(self._manifest)
 
+    def get_bool(self, key):
+        assert key == "generate_colliders"
+        return self._generate_colliders
+
     def serialize_document(self):
         return {
             "metadata": {

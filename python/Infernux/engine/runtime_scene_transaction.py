@@ -265,8 +265,16 @@ class SceneDocumentTransaction:
             if any(not ticket.complete for ticket in self._asset_load_tickets):
                 return False
             for ticket in self._asset_load_tickets:
-                if not ticket.committed and not registry.try_commit_asset_load(ticket):
-                    return False
+                if ticket.committed:
+                    continue
+                try:
+                    if not registry.try_commit_asset_load(ticket):
+                        return False
+                except Exception as exc:
+                    raise RuntimeError(
+                        "asset preload commit failed for "
+                        f"{ticket.resource_type}:{ticket.guid}: {exc}"
+                    ) from exc
             self._asset_load_tickets.clear()
 
         if not self._linked_shader_preload_started:
@@ -417,11 +425,16 @@ class SceneDocumentTransaction:
                 )
 
                 assert self._document is not None
-                self._document_reconciliation_count += (
-                    reconcile_scene_document_model_source_graphs(
-                        self._document, self._asset_database
+                try:
+                    self._document_reconciliation_count += (
+                        reconcile_scene_document_model_source_graphs(
+                            self._document, self._asset_database
+                        )
                     )
-                )
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"model source graph reconciliation failed: {exc}"
+                    ) from exc
                 self._state = SceneDocumentTransactionState.PREFLIGHTING
                 phase_started = time.perf_counter()
                 self._prepared_graph = preflight_scene_python_components(
@@ -509,10 +522,12 @@ class SceneDocumentTransaction:
 
             raise RuntimeError(f"invalid transaction state {self.status}")
         except Exception as exc:
+            failure_phase = self.status
             if self._native_committed:
                 self._rollback_after_commit(exc)
             else:
                 self._fail(exc)
+            self._error = f"{failure_phase}: {self._error}"
             return True
 
     def cancel(self) -> bool:

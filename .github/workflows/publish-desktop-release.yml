@@ -126,9 +126,21 @@ jobs:
           version = os.environ["RELEASE_VERSION"]
           build = os.environ["WHEEL_BUILD"]
           root = Path("dist") / version
+          wheel_prefix = f"infernux-{version}-{build}-cp313-cp313-"
+          windows_wheel = f"{wheel_prefix}win_amd64.whl"
+          linux_wheels = sorted(
+              path.name
+              for path in root.glob(f"{wheel_prefix}*.whl")
+              if path.name != windows_wheel
+          )
+          if len(linux_wheels) != 1:
+              raise SystemExit(
+                  "Desktop release must contain exactly one audited Linux wheel: "
+                  f"{linux_wheels}"
+              )
           expected = {
-              f"infernux-{version}-{build}-cp313-cp313-win_amd64.whl": "zip",
-              f"infernux-{version}-{build}-cp313-cp313-manylinux_2_35_x86_64.whl": "zip",
+              windows_wheel: "zip",
+              linux_wheels[0]: "zip",
               f"InfernuxHubInstaller-{version}-windows-x64.exe": "file",
               f"InfernuxHubInstaller-{version}-linux-x64": "file",
               f"InfernuxHub-{version}-windows-x64-full.zip": "zip",

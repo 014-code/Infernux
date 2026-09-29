@@ -157,6 +157,7 @@ def cook_platform_content(
     python_sources = tuple(
         Path(path) for path in builder.cooked_python_source_paths()
     )
+    builder._runtime_platform = str(platform_host.get("platform", "")).strip().casefold()
     return PlatformContentCookResult(
         game_name,
         cooked,

@@ -7,9 +7,11 @@ import numpy as np
 
 from Infernux import compute
 from Infernux._compiler.taichi import frontend
+from Infernux.engine.build import compute_aot
 from Infernux.engine.build.compute_aot import (
     ComputeAotBuildError,
     declared_kernel_names,
+    ensure_engine_compute_artifacts,
     stage_compute_artifacts,
 )
 from Infernux.engine.game_builder import GameBuilder
@@ -25,6 +27,7 @@ def _write_artifact(path: Path, function: str) -> None:
             "argument_layout": {"size": 0, "parameters": []},
             "required_capabilities": {"spirv_version": 0x10500},
             "diagnostic_locations": [{"function": function}],
+            "specialization": "[]",
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -183,7 +186,8 @@ def test_kernel_contract_fixture_accepts_the_same_static_kernel_for_native_targe
     )
 
 
-def test_stage_compute_artifacts_seals_selected_and_engine_kernels(tmp_path):
+def test_stage_compute_artifacts_seals_selected_and_engine_kernels(tmp_path, monkeypatch):
+    monkeypatch.setattr(compute_aot, "ensure_engine_compute_artifacts", lambda _root: 0.0)
     source = _write_kernel(tmp_path)
     cache = tmp_path / "Library/Artifacts/Compute"
     _write_artifact(cache / "selected.inxgpu", "Scripts.Jelly.step")
@@ -201,9 +205,34 @@ def test_stage_compute_artifacts_seals_selected_and_engine_kernels(tmp_path):
         "selected.inxgpu",
     ]
     assert (destination / "AotOnly").is_file()
+    manifest = json.loads((destination / "AotManifest.json").read_text(encoding="utf-8"))
+    assert [record["function"] for record in manifest["artifacts"]] == [
+        "Infernux.compute._transform_anchor_points",
+        "Scripts.Jelly.step",
+    ]
 
 
-def test_stage_compute_artifacts_rejects_incomplete_selected_closure(tmp_path):
+def test_engine_compute_aot_prewarms_all_player_specializations(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        frontend,
+        "compile_kernel",
+        lambda function, params: calls.append((function.__qualname__, params)),
+    )
+
+    ensure_engine_compute_artifacts(tmp_path)
+
+    assert [name for name, _params in calls] == [
+        "_transform_anchor_points",
+        "_transform_anchor_vectors",
+        "_mesh_attribute_kernel",
+    ]
+    assert calls[0][1][1].dtype == "vector3"
+    assert calls[-1][1][1].shape == (1, 25)
+
+
+def test_stage_compute_artifacts_rejects_incomplete_selected_closure(tmp_path, monkeypatch):
+    monkeypatch.setattr(compute_aot, "ensure_engine_compute_artifacts", lambda _root: 0.0)
     source = _write_kernel(tmp_path)
     cache = tmp_path / "Library/Artifacts/Compute"
     _write_artifact(cache / "other.inxgpu", "Scripts.Other.step")
@@ -215,7 +244,8 @@ def test_stage_compute_artifacts_rejects_incomplete_selected_closure(tmp_path):
     assert not (tmp_path / "build/Data/Library/Artifacts/Compute").exists()
 
 
-def test_stage_compute_artifacts_uses_platform_target_for_source_diagnostics(tmp_path):
+def test_stage_compute_artifacts_uses_platform_target_for_source_diagnostics(tmp_path, monkeypatch):
+    monkeypatch.setattr(compute_aot, "ensure_engine_compute_artifacts", lambda _root: 0.0)
     source = tmp_path / "Assets/Scripts/Jelly.py"
     source.parent.mkdir(parents=True)
     source.write_text(
@@ -249,7 +279,6 @@ def test_aot_only_player_never_falls_back_to_private_compiler(tmp_path, monkeypa
     domain._shape = (1,)
     domain._device = "gpu"
     monkeypatch.setattr(frontend, "_cache_root", lambda: tmp_path)
-    monkeypatch.setattr(frontend, "_load_artifact", lambda _key: None)
     monkeypatch.setattr(
         frontend,
         "_load_vendor",

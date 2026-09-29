@@ -119,6 +119,7 @@ def test_plugin_preload_resolves_cooked_assets_before_scene_startup(
             for name in (
                 "_force_player_mode", "_load_runtime_contract", "_init_engine",
                 "_pump_startup_events", "_load_runtime_asset_catalog",
+                "_prewarm_builtin_pipelines",
             ):
                 monkeypatch.setattr(bootstrap, name, lambda: None)
             run = bootstrap.run
@@ -251,7 +252,7 @@ def test_player_bootstrap_uses_boot_validated_archive_size(monkeypatch):
     )
 
 
-def test_player_run_loads_scene_without_starting_play():
+def test_player_run_prewarms_before_revealing_a_no_splash_scene():
     from Infernux.engine.player_bootstrap import PlayerBootstrap
 
     calls = []
@@ -265,26 +266,46 @@ def test_player_run_loads_scene_without_starting_play():
     bootstrap._force_player_mode = lambda: calls.append("force")
     bootstrap._load_runtime_contract = lambda: calls.append("contract")
     bootstrap._init_engine = lambda: calls.append("engine")
+    bootstrap._prewarm_builtin_pipelines = lambda: calls.append("builtin_gpu")
     bootstrap._load_runtime_asset_catalog = lambda: calls.append("catalog")
     bootstrap._create_managers = lambda: calls.append("managers")
+    bootstrap._load_plugins = lambda: calls.append("plugins")
+    bootstrap._schedule_project_warmup = lambda: calls.append("project_warmup")
+    bootstrap._finish_project_warmup = lambda: calls.append("finish_warmup")
     bootstrap._setup_game_camera = lambda: calls.append("camera")
     bootstrap._register_player_gui = lambda: calls.append("gui")
     bootstrap._load_initial_scene = lambda: calls.append("scene")
     bootstrap._enter_play_mode = lambda: calls.append("play")
+    bootstrap._prewarm_first_frame = lambda: calls.append("first_gpu_frame")
+    bootstrap._pump_startup_events = lambda: calls.append("pump")
+    bootstrap.runtime_session = object()
+    bootstrap.splash_items = []
 
     bootstrap.run()
 
-    assert "play" not in calls
     assert calls == [
         "force",
         "contract",
         "engine",
+        "builtin_gpu",
         "catalog",
+        "pump",
         "managers",
+        "pump",
+        "plugins",
+        "project_warmup",
+        "pump",
         "camera",
         "gui",
+        "pump",
         "scene",
         "prepare",
+        "pump",
+        "play",
+        "pump",
+        "first_gpu_frame",
+        "pump",
+        "finish_warmup",
     ]
 
 

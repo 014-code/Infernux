@@ -572,6 +572,11 @@ class Engine():
         # Same policy as _pre_gui_tick: failures propagate to the C++
         # DrawFrame boundary instead of being swallowed step by step.
         def _post_draw_tick():
+            # UI pointer callbacks may replace scenes or destroy renderables.
+            # Drain them only after native GUI drawing and present have
+            # released the current renderable traversal.
+            from Infernux.engine.runtime_event_queue import drain
+            drain()
             if _plugin_install_progress is not None:
                 _plugin_install_progress.post_present_tick()
             if _plugin_reload_progress is not None:

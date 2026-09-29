@@ -392,7 +392,8 @@ std::shared_ptr<InxMesh> MeshArtifact::Deserialize(std::string_view bytes, std::
         throw std::invalid_argument("mesh artifact has an unsupported schema");
     const std::string sourceContentHash = reader.ReadString();
     if (sourceContentHash.empty() || sourceContentHash != expectedSourceContentHash)
-        throw std::invalid_argument("mesh artifact does not match the imported source content");
+        throw std::invalid_argument("mesh artifact source content hash '" + sourceContentHash +
+                                    "' does not match metadata hash '" + std::string(expectedSourceContentHash) + "'");
 
     auto mesh = std::make_shared<InxMesh>(reader.ReadString());
 

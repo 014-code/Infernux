@@ -3,10 +3,15 @@
 #include "DescriptorBindTrace.h"
 #include "RhiVulkanTypes.h"
 
+#include <core/log/InxLog.h>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <mutex>
 
 namespace infernux::vk
@@ -696,6 +701,7 @@ VulkanRhiDevice::VulkanRhiDevice(VkDevice device, VmaAllocator allocator, const 
       m_transferQueueFamily(transferQueueFamily), m_capabilityState(capabilityState),
       m_descriptorManager(device, m_deviceId)
 {
+    CreatePipelineCache();
 }
 
 VulkanRhiDevice::~VulkanRhiDevice()
@@ -737,6 +743,7 @@ void VulkanRhiDevice::Reset(VkDevice device, VmaAllocator allocator, const rhi::
     m_computeQueueFamily = computeQueueFamily;
     m_transferQueueFamily = transferQueueFamily;
     m_descriptorManager.Reset(device, m_deviceId);
+    CreatePipelineCache();
     ResetSlots(m_buffers, m_freeBuffer);
     ResetSlots(m_textures, m_freeTexture);
     ResetSlots(m_textureViews, m_freeTextureView);
@@ -747,6 +754,90 @@ void VulkanRhiDevice::Reset(VkDevice device, VmaAllocator allocator, const rhi::
     ResetSlots(m_graphicsPipelines, m_freeGraphicsPipeline);
     ResetSlots(m_computePipelines, m_freeComputePipeline);
     ResetSlots(m_renderTargetLayouts, m_freeRenderTargetLayout);
+}
+
+void VulkanRhiDevice::CreatePipelineCache() noexcept
+{
+    m_pipelineCache = VK_NULL_HANDLE;
+    m_pipelineCachePath.clear();
+    if (m_device == VK_NULL_HANDLE)
+        return;
+
+    const char *root = std::getenv("_INFERNUX_PLAYER_PERSISTENT_DATA_ROOT");
+    std::vector<char> initialData;
+    if (root != nullptr && *root != '\0') {
+        try {
+            const auto directory = std::filesystem::path(root) / "Cache";
+            std::filesystem::create_directories(directory);
+            m_pipelineCachePath = (directory / "VulkanPipelineCache.bin").string();
+            std::ifstream input(m_pipelineCachePath, std::ios::binary | std::ios::ate);
+            if (input) {
+                const auto size = input.tellg();
+                if (size > 0) {
+                    initialData.resize(static_cast<size_t>(size));
+                    input.seekg(0);
+                    input.read(initialData.data(), static_cast<std::streamsize>(size));
+                    if (!input)
+                        initialData.clear();
+                }
+            }
+        } catch (const std::exception &error) {
+            INXLOG_WARN("VulkanRhiDevice: failed to read pipeline cache: ", error.what());
+            m_pipelineCachePath.clear();
+            initialData.clear();
+        } catch (...) {
+            INXLOG_WARN("VulkanRhiDevice: failed to read pipeline cache: unknown filesystem error");
+            m_pipelineCachePath.clear();
+            initialData.clear();
+        }
+    }
+
+    VkPipelineCacheCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+    info.initialDataSize = initialData.size();
+    info.pInitialData = initialData.empty() ? nullptr : initialData.data();
+    VkResult result = vkCreatePipelineCache(m_device, &info, nullptr, &m_pipelineCache);
+    if (result != VK_SUCCESS && !initialData.empty()) {
+        // Driver/device changes invalidate the Vulkan-defined cache header.
+        // Recreate the one authoritative cache for the current device.
+        info.initialDataSize = 0;
+        info.pInitialData = nullptr;
+        result = vkCreatePipelineCache(m_device, &info, nullptr, &m_pipelineCache);
+    }
+    if (result != VK_SUCCESS)
+        m_pipelineCache = VK_NULL_HANDLE;
+}
+
+void VulkanRhiDevice::SaveAndDestroyPipelineCache() noexcept
+{
+    if (m_device == VK_NULL_HANDLE || m_pipelineCache == VK_NULL_HANDLE)
+        return;
+    if (!m_pipelineCachePath.empty()) {
+        try {
+            size_t size = 0;
+            if (vkGetPipelineCacheData(m_device, m_pipelineCache, &size, nullptr) == VK_SUCCESS && size > 0) {
+                std::vector<char> data(size);
+                if (vkGetPipelineCacheData(m_device, m_pipelineCache, &size, data.data()) == VK_SUCCESS) {
+                    const auto temporary = m_pipelineCachePath + ".tmp";
+                    std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+                    output.write(data.data(), static_cast<std::streamsize>(size));
+                    output.close();
+                    if (output) {
+                        std::filesystem::remove(m_pipelineCachePath);
+                        std::filesystem::rename(temporary, m_pipelineCachePath);
+                    } else {
+                        std::filesystem::remove(temporary);
+                    }
+                }
+            }
+        } catch (const std::exception &error) {
+            INXLOG_WARN("VulkanRhiDevice: failed to persist pipeline cache: ", error.what());
+        } catch (...) {
+            INXLOG_WARN("VulkanRhiDevice: failed to persist pipeline cache: unknown filesystem error");
+        }
+    }
+    vkDestroyPipelineCache(m_device, m_pipelineCache, nullptr);
+    m_pipelineCache = VK_NULL_HANDLE;
 }
 
 rhi::BufferHandle VulkanRhiDevice::RegisterBuffer(VkBuffer buffer, uint64_t byteSize)
@@ -1380,7 +1471,7 @@ rhi::ComputePipelineHandle VulkanRhiDevice::CreateComputePipeline(const rhi::Com
     pipelineInfo.layout = layout;
 
     VkPipeline pipeline = VK_NULL_HANDLE;
-    if (vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
+    if (vkCreateComputePipelines(m_device, m_pipelineCache, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
         vkDestroyPipelineLayout(m_device, layout, nullptr);
         return {};
     }
@@ -1517,7 +1608,7 @@ rhi::GraphicsPipelineHandle VulkanRhiDevice::CreateGraphicsPipeline(const rhi::G
     pipelineInfo.subpass = 0;
 
     VkPipeline pipeline = VK_NULL_HANDLE;
-    if (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
+    if (vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
         vkDestroyPipelineLayout(m_device, layout, nullptr);
         return {};
     }
@@ -1799,6 +1890,7 @@ void VulkanRhiDevice::DestroyOwnedResources() noexcept
         }
     }
     m_descriptorManager.Destroy();
+    SaveAndDestroyPipelineCache();
 }
 
 rhi::GraphicsCommandEncoder VulkanRhiDevice::MakeGraphicsCommandEncoder(VulkanGraphicsCommandContext &context,

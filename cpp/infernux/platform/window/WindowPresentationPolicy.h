@@ -11,6 +11,7 @@ struct WindowPresentationPolicy
     bool focusable = true;
     bool activateWhenShown = true;
     bool showBeforeSurface = false;
+    bool syncInitialMaximize = true;
 };
 
 enum class WindowVisibility
@@ -28,6 +29,19 @@ inline constexpr bool ShouldSuspendWindowRendering(WindowVisibility visibility, 
                                                    bool surfaceRecreationPending) noexcept
 {
     return visibility == WindowVisibility::Minimized || applicationInBackground || surfaceRecreationPending;
+}
+
+/// Android emits an initial pixel-size event after the Vulkan surface already
+/// exists. Rebinding that unchanged surface destroys and rebuilds the complete
+/// swapchain during startup. A foreground pixel event is a presentation
+/// boundary only when its native pixel extent actually changed; background
+/// SurfaceView replacement is handled by the application lifecycle boundary.
+inline constexpr bool ShouldRecreateAndroidSurfaceForPixelExtent(bool hasCreatedSurface, int surfaceWidth,
+                                                                 int surfaceHeight, int eventWidth,
+                                                                 int eventHeight) noexcept
+{
+    return hasCreatedSurface && eventWidth > 0 && eventHeight > 0 &&
+           (surfaceWidth <= 0 || surfaceHeight <= 0 || eventWidth != surfaceWidth || eventHeight != surfaceHeight);
 }
 
 /// Validate the instance extensions returned by SDL against the selected
@@ -75,10 +89,21 @@ inline bool ValidateVulkanWindowExtensions(std::string_view videoDriver,
 inline WindowPresentationPolicy ResolveWindowPresentationPolicy(bool hasPlayerControlChannel,
                                                                 std::string_view videoDriver)
 {
-    if (!hasPlayerControlChannel)
-        return {};
-
     WindowPresentationPolicy policy;
+    // SDL's X11 show path waits synchronously for the window manager while it
+    // also requests activation.  A normal focusable editor launched from an
+    // existing desktop session can therefore block forever in XIfEvent.  Map
+    // the window without the activation request; the compositor and the user
+    // can still focus it normally after the map completes.
+    if (videoDriver == "x11") {
+        policy.activateWhenShown = false;
+        policy.syncInitialMaximize = false;
+    }
+    policy.showBeforeSurface = videoDriver == "x11";
+
+    if (!hasPlayerControlChannel)
+        return policy;
+
     // SDL's X11 backend waits for a MapNotify from the compositor while
     // showing a non-focusable window.  On headless/Xvfb validation displays
     // there may be no focus-stealing window manager, so that wait blocks the
@@ -88,9 +113,10 @@ inline WindowPresentationPolicy ResolveWindowPresentationPolicy(bool hasPlayerCo
     policy.focusable = videoDriver == "x11";
     policy.activateWhenShown = false;
     // Wayland does not assign an xdg-surface size until the toplevel is mapped
-    // and configured. Vulkan surface preparation therefore cannot precede the
-    // show handshake for an automated Player, even though X11 permits it.
-    policy.showBeforeSurface = videoDriver == "wayland";
+    // and configured. X11 must also map before hidden-window maximize/surface
+    // setup, otherwise a later SDL_ShowWindow can wait for a second MapNotify
+    // that the window manager will never emit.
+    policy.showBeforeSurface = videoDriver == "wayland" || videoDriver == "x11";
     return policy;
 }
 

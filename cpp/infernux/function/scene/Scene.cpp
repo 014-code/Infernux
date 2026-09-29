@@ -1802,6 +1802,7 @@ bool Scene::DeserializeDocument(const nlohmann::json &j, std::unordered_map<uint
             m_mainCamera = static_cast<Camera *>(stagedMainCamera);
 
         ++m_structureVersion; // Scene was fully rebuilt
+        MarkTemporalDiscontinuity();
 
         const auto profileEnd = ProfileClock::now();
         if (elapsedMs(profileStart, profileEnd) >= 20.0) {

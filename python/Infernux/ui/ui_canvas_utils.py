@@ -47,6 +47,46 @@ def _is_uicanvas_component(component, canvas_type) -> bool:
     )
 
 
+def _registered_canvas_entries(*scenes) -> list[tuple]:
+    """Return live Canvas owners from the component lifecycle registry.
+
+    Canvas discovery is component discovery, so walking every GameObject and
+    RTTI-scanning every native component each frame boundary is both wasteful
+    and unsafe while a scene transaction retires the previous graph. Python
+    component publication already owns an exact live-instance registry. Scene
+    world IDs make that registry a deterministic query for active and
+    DontDestroyOnLoad worlds, including nested Canvases.
+    """
+    from Infernux.components import InxComponent
+    from Infernux.ui import UICanvas
+
+    world_order = {
+        int(scene.world_id): index
+        for index, scene in enumerate(scenes)
+        if scene is not None
+    }
+    if not world_order:
+        return []
+
+    result = []
+    seen = set()
+    for components in tuple(InxComponent._active_instances.values()):
+        for component in tuple(components):
+            if id(component) in seen or not _is_uicanvas_component(component, UICanvas):
+                continue
+            seen.add(id(component))
+            native_scene = getattr(component, "_native_scene", None)
+            world_id = int(getattr(native_scene, "world_id", 0) or 0)
+            if world_id not in world_order:
+                continue
+            owner = component._try_get_game_object()
+            if owner is None:
+                continue
+            result.append((world_order[world_id], int(owner.id), owner, component))
+    result.sort(key=lambda entry: (entry[0], entry[1], int(entry[3].component_id)))
+    return [(owner, component) for _, _, owner, component in result]
+
+
 def scene_canvas_cache_key(scene) -> tuple[int, int] | None:
     """Return the stable scene epoch used by Canvas discovery.
 
@@ -74,20 +114,7 @@ def _rebuild_cache(scene) -> None:
     global _canvas_cache, _canvas_sorted_cache, _canvas_with_go_cache
     global _canvas_cache_scene, _canvas_cache_scene_key
     global _canvas_cache_membership_revision
-    from Infernux.ui import UICanvas
-
-    result: list = []
-
-    def _walk(go):
-        for comp in go.get_py_components():
-            if _is_uicanvas_component(comp, UICanvas):
-                result.append((go, comp))
-        for child in go.get_children():
-            _walk(child)
-
-    if scene is not None:
-        for root in scene.get_root_objects():
-            _walk(root)
+    result = _registered_canvas_entries(scene)
 
     _canvas_with_go_cache = result
     _canvas_cache = [comp for _, comp in result]
@@ -195,20 +222,7 @@ def collect_sorted_runtime_canvases(
             )
         return _runtime_canvas_cache
 
-    from Infernux.ui import UICanvas
-
-    result = []
-
-    def _walk(game_object):
-        for component in game_object.get_py_components():
-            if _is_uicanvas_component(component, UICanvas):
-                result.append((game_object, component))
-        for child in game_object.get_children():
-            _walk(child)
-
-    for scene in scenes:
-        for root in scene.get_root_objects():
-            _walk(root)
+    result = _registered_canvas_entries(*scenes)
 
     _runtime_canvas_with_go_cache = result
     _runtime_canvas_cache = sorted(

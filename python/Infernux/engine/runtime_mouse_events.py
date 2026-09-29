@@ -105,3 +105,10 @@ class MouseEventDispatcher:
         self._reset_revision += 1
         if previous is not None:
             self._call(self._components(previous), "on_mouse_exit", current_runtime_epoch(), self._reset_revision)
+
+    def discard(self) -> None:
+        """Forget captures after their scene graph has been retired."""
+
+        self._hover_object = None
+        self._pressed_object = None
+        self._reset_revision += 1

@@ -40,6 +40,8 @@ def test_mouse_route_uses_live_play_manager_and_newly_focused_panel(monkeypatch)
         # A render stack does not multiply pointer queries: input belongs to
         # the one effective output camera for this Game View.
         active_game_cameras=(object(), object(), camera, object()),
+        world_id=17,
+        temporal_discontinuity_revision=1,
     )
     monkeypatch.setattr(lib, 'SceneManager', SimpleNamespace(instance=lambda: SimpleNamespace(
         get_active_scene=lambda: scene)))
@@ -55,10 +57,12 @@ def test_mouse_route_uses_live_play_manager_and_newly_focused_panel(monkeypatch)
     hit = SimpleNamespace(game_object=object())
     monkeypatch.setattr(Physics, 'raycast', lambda *args, **kwargs: hits.append(args) or hit)
     calls = []
-    panel._ui_event_processor = SimpleNamespace(reset=lambda: None, process=lambda *args: None)
+    panel._ui_event_processor = SimpleNamespace(
+        discard=lambda: None, reset=lambda: None, process=lambda *args: None
+    )
     panel._mouse_event_dispatcher = SimpleNamespace(
         process=lambda *args, **kwargs: calls.append((args, kwargs)),
-        reset=lambda: calls.append('reset'))
+        reset=lambda: calls.append('reset'), discard=lambda: None)
     panel._process_ui_events(1920, 1080)
     assert hits == [(1, 2)]
     assert calls == [((camera, (20, 40), (1920., 1080.)), dict(hit=hit, button_state=(True, True, False)))]

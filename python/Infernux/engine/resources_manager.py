@@ -660,12 +660,35 @@ class ResourceChangeHandler(FileSystemEventHandler):
         Debug.clear_source_entries(result.path)
         rm = ResourcesManager.instance()
         if rm is not None:
+            # The initial project scan only registers the current source and
+            # must preserve a matching persisted warmup record.  Dependency
+            # members are likewise publication bookkeeping for the root edit;
+            # the root change owns invalidation and the warmup run.  Clearing
+            # the cache here made every fresh editor start compile all hooks
+            # again, even when the source hash was unchanged.
+            change = result.change
+            origins = (change.origin, *change.merged_origins)
+            kinds = (change.change_kind, *change.merged_change_kinds)
+            warmup_required = any(
+                value not in {"initial_scan", "dependency"}
+                for value in (*origins, *kinds)
+            )
+            if warmup_required:
+                from Infernux.engine.startup_warmup import invalidate_source
+                invalidate_source(result.path, project_path=rm._project_path)
             catalog_event = result.change.effective_catalog_event
             if catalog_event is not None:
                 rm.notify_script_catalog_changed(result.path, catalog_event)
             abs_path = path_key(result.path)
             for callback in list(rm._script_reload_callbacks.get(abs_path, [])):
                 callback(result.path)
+            if warmup_required:
+                from Infernux.engine.startup_warmup import run_script_warmup
+                run_script_warmup(
+                    result.path,
+                    project_path=rm._project_path,
+                    scope="script-save",
+                )
 
     def _rollback_script_publication(self, token: _ScriptPublicationRollback) -> None:
         rollback_errors: list[str] = []
@@ -1519,12 +1542,20 @@ class ResourceChangeHandler(FileSystemEventHandler):
             return True
         _clear_script_error(file_path)
         rm = ResourcesManager.instance()
-        if rm is not None and catalog_event is not None:
-            rm.notify_script_catalog_changed(file_path, catalog_event)
+        if rm is not None:
+            from Infernux.engine.startup_warmup import invalidate_source, run_script_warmup
+            invalidate_source(file_path, project_path=rm._project_path)
+            if catalog_event is not None:
+                rm.notify_script_catalog_changed(file_path, catalog_event)
         abs_path = path_key(file_path)
         if rm is not None:
             for cb in list(rm._script_reload_callbacks.get(abs_path, [])):
                 cb(file_path)
+            run_script_warmup(
+                file_path,
+                project_path=rm._project_path,
+                scope="script-save",
+            )
         return True
 
     def _notify_shader_reloaded(self, file_path: str):

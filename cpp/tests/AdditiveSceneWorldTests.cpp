@@ -129,8 +129,10 @@ int main()
     const uint64_t documentObjectId = sourceObject->GetID();
     const auto identityDocument = identitySource->SerializeDocument();
     Scene *identityCopy = manager.CreateScene("IdentityCopy");
+    const uint64_t revisionBeforeCommit = identityCopy->GetTemporalDiscontinuityRevision();
     auto identityCommit = identityCopy->CommitDocumentRetainingCurrentWorld(identityDocument);
     assert(identityCommit);
+    assert(identityCopy->GetTemporalDiscontinuityRevision() == revisionBeforeCommit + 1);
     const auto &objectIdRemap = identityCommit->GetObjectIdRemap();
     const auto remapped = objectIdRemap.find(documentObjectId);
     assert(remapped != objectIdRemap.end());

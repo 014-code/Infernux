@@ -238,6 +238,8 @@ class InxView
     std::atomic_bool m_applicationInBackground{false};
     std::atomic_bool m_surfaceRecreationPending{false};
     std::atomic_bool m_hasCreatedSurface{false};
+    std::atomic_int m_surfaceFramebufferWidth{0};
+    std::atomic_int m_surfaceFramebufferHeight{0};
     bool m_eventWatchInstalled = false;
     bool m_isPlayMode = false;
     bool m_activateWhenShown = true;

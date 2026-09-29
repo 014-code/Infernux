@@ -234,9 +234,6 @@ py::dict EncodePropertyChanges(const std::vector<PropertyChange> &changes)
 
 void RegisterGUIBindings(py::module_ &m)
 {
-    m.def(
-        "is_frame_profile_enabled", []() { return INFERNUX_FRAME_PROFILE != 0; },
-        "Return whether this native module was built with detailed frame profiling enabled.");
     m.def("set_gui_semantic_capture_enabled", &InxGUISemantics::SetCaptureEnabled, py::arg("enabled"),
           "Enable or disable the read-only editor UI semantic capture registry.");
     m.def(

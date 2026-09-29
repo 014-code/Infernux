@@ -5662,7 +5662,9 @@ def test_player_type_registry_is_derived_from_script_ast_without_execution(tmp_p
         "    def awake(self):\n"
         "        raise RuntimeError('must not execute during build')\n"
         "    def update(self, delta_time):\n"
-        "        pass\n",
+        "        pass\n"
+        "    def _infernux_startup_warmup(self):\n"
+        "        return True\n",
         script_guid=script_guid,
         runtime_path="Assets/Scripts/mover.pyc",
     )
@@ -5671,7 +5673,40 @@ def test_player_type_registry_is_derived_from_script_ast_without_execution(tmp_p
     assert records[0]["module"] == "Scripts.mover"
     assert records[0]["qualname"] == "Mover"
     assert records[0]["lifecycle"] == ["awake", "update"]
+    assert records[0]["startup_warmup"] is True
     assert records[0]["type_id"].startswith(f"python:{script_guid}:")
+
+
+def test_player_build_seals_startup_warmups_for_target_platform(tmp_path):
+    builder = _make_builder(tmp_path, tmp_path / "build_output")
+    builder._runtime_platform = "android"
+    data_dir = tmp_path / "build_output" / "Data"
+    registry = data_dir / "Library" / "StartupWarmup.json"
+    registry.parent.mkdir(parents=True)
+    registry.write_text(
+        json.dumps(
+            {
+                "schema": "infernux.startup-warmup",
+                "platform": "windows",
+                "entries": {
+                    "Scripts.Compute:Compute._infernux_startup_warmup": {
+                        "platform": "windows",
+                        "status": "ready",
+                        "source_sha256": "obsolete",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    builder._prepare_startup_warmup_registry(str(data_dir))
+
+    document = json.loads(registry.read_text(encoding="utf-8"))
+    entry = next(iter(document["entries"].values()))
+    assert document["platform"] == "android"
+    assert entry["platform"] == "android"
+    assert "source_sha256" not in entry
 
 
 def test_player_type_registry_cooks_published_component_semantics(tmp_path):
@@ -7513,6 +7548,12 @@ class TestGameBuilderAutoParallelExport:
         import Infernux.application as application
 
         player_data = tmp_path / "player-data"
+        cache = player_data / "Cache" / "Compute" / "CPU"
+        cache.mkdir(parents=True)
+        # This test exercises the embedded bytecode contract rather than the
+        # Player package reader.  A real Player materializes this directory
+        # from Content.inxpkg before importing cached JIT declarations.
+        (cache / "inx-test-ready.nbi").write_bytes(b"ready")
         monkeypatch.setattr(application, "_runtime_kind", "player")
         monkeypatch.setenv("_INFERNUX_PLAYER_PERSISTENT_DATA_ROOT", str(player_data))
         monkeypatch.setitem(sys.modules, loader.name, module)

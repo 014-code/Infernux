@@ -209,6 +209,12 @@ void RegisterAssetRegistryBindings(py::module_ &m)
         .def("contains_path", &AssetDatabase::ContainsPath, py::arg("path"))
         .def("get_guid_from_path", &AssetDatabase::GetGuidFromPath, py::arg("path"))
         .def("get_path_from_guid", &AssetDatabase::GetPathFromGuid, py::arg("guid"))
+        .def(
+            "get_meta_by_guid",
+            [](const AssetDatabase &database, const std::string &guid) {
+                return std::const_pointer_cast<InxResourceMeta>(database.GetMetaByGuid(guid));
+            },
+            py::arg("guid"), py::call_guard<py::gil_scoped_release>(), "Get immutable meta by GUID")
         .def("get_all_guids", &AssetDatabase::GetAllGuids, py::call_guard<py::gil_scoped_release>(),
              "Get all cooked Player GUIDs in one published generation")
         .def("get_resource_type", &AssetDatabase::GetResourceTypeForPath, py::arg("file_path"))
