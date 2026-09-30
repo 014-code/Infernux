@@ -15,7 +15,7 @@
     "url": "https://github.com/ChenlizheMe/Infernux/compare/v0.4.0...v0.4.1"
   },
   "section_count": 13,
-  "item_count": 64,
+  "item_count": 63,
   "sections": [
     {
       "id": "multi-scene-worlds-and-gameplay",
@@ -39,8 +39,8 @@
         },
         {
           "title": "Exercise larger scenes.",
-          "detail": "Expand Labv2 with interactive examples of CPU JIT, GPUJelly, models and materials, cameras, lighting, world/screen UI, physics and multi-scene operations.",
-          "text": "Exercise larger scenes. Expand Labv2 with interactive examples of CPU JIT, GPUJelly, models and materials, cameras, lighting, world/screen UI, physics and multi-scene operations."
+          "detail": "Expand Labv2 with interactive examples of CPU JIT, models and materials, cameras, lighting, world/screen UI, physics and multi-scene operations. Its XPBD soft-body example (GPUJelly.py) is a project script demonstrating the compute, physics-query and mesh APIs, not a built-in engine component or a general-purpose soft-body solver.",
+          "text": "Exercise larger scenes. Expand Labv2 with interactive examples of CPU JIT, models and materials, cameras, lighting, world/screen UI, physics and multi-scene operations. Its XPBD soft-body example (GPUJelly.py) is a project script demonstrating the compute, physics-query and mesh APIs, not a built-in engine component or a general-purpose soft-body solver."
         }
       ]
     },
@@ -173,15 +173,10 @@
       ]
     },
     {
-      "id": "physics-and-gpujelly",
-      "title": "Physics and GPUJelly",
+      "id": "physics-queries-and-lifecycle",
+      "title": "Physics Queries and Lifecycle",
       "kind": "changes",
       "items": [
-        {
-          "title": "Improve soft-body continuity.",
-          "detail": "Fix GPUJelly simulation, collision and mesh-update paths across scene entry, reset, unload and supported platform execution paths.",
-          "text": "Improve soft-body continuity. Fix GPUJelly simulation, collision and mesh-update paths across scene entry, reset, unload and supported platform execution paths."
-        },
         {
           "title": "Scale scene queries.",
           "detail": "Add batched ray work and shared query snapshots with explicit world generations, while reducing repeated compound lookup and body locking.",

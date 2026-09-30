@@ -13,7 +13,7 @@ Infernux is working toward a **Neural Network-Native Engine (3N)**. Here, “Neu
 - **Author several scenes together.** Open scenes additively, choose the active scene, inspect scene ownership in the Hierarchy, and move objects between scenes without treating the editor document as one global world.
 - **Make scene transitions coherent.** Commit scene changes at safe points, update component membership and lifecycle plans, and replace the rendered world together with its UI. Fix transitions that changed interface content while leaving old GameObjects visible.
 - **Preserve the right state.** Keep persistent objects across loads, isolate Edit and Play state, and release scene-owned resources and callbacks on unload.
-- **Exercise larger scenes.** Expand Labv2 with interactive examples of CPU JIT, GPUJelly, models and materials, cameras, lighting, world/screen UI, physics and multi-scene operations.
+- **Exercise larger scenes.** Expand Labv2 with interactive examples of CPU JIT, models and materials, cameras, lighting, world/screen UI, physics and multi-scene operations. Its XPBD soft-body example (`GPUJelly.py`) is a project script demonstrating the compute, physics-query and mesh APIs, not a built-in engine component or a general-purpose soft-body solver.
 
 ### Prefab Authoring
 
@@ -47,9 +47,8 @@ Infernux is working toward a **Neural Network-Native Engine (3N)**. Here, “Neu
 - **Build for the target.** Prepare native GPU payloads for supported targets, including Android. For supported kernels on Web, prepare CPU execution during the build because the native Taichi GPU runtime is unavailable there; projects keep the same authored compute entry points.
 - **Make boundaries explicit.** Validate supported kernel and closure contracts during preparation. This is not unrestricted Taichi support in the browser, and Android GPU computation does not require a CPU fallback.
 
-### Physics and GPUJelly
+### Physics Queries and Lifecycle
 
-- **Improve soft-body continuity.** Fix GPUJelly simulation, collision and mesh-update paths across scene entry, reset, unload and supported platform execution paths.
 - **Scale scene queries.** Add batched ray work and shared query snapshots with explicit world generations, while reducing repeated compound lookup and body locking.
 - **Broaden collider queries.** Improve static mesh closest-point queries and the handling of rotated, scaled and non-convex shapes; invalidate query state when collider cooking replaces geometry.
 - **Keep callbacks and tools in the same world.** Tighten contact/impulse delivery and scene ownership, and use consistent scene data for runtime queries and editor inspection.

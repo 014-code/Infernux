@@ -76,7 +76,7 @@
 <li><strong>Author several scenes together.</strong> Open scenes additively, choose the active scene, inspect scene ownership in the Hierarchy, and move objects between scenes without treating the editor document as one global world.</li>
 <li><strong>Make scene transitions coherent.</strong> Commit scene changes at safe points, update component membership and lifecycle plans, and replace the rendered world together with its UI. Fix transitions that changed interface content while leaving old GameObjects visible.</li>
 <li><strong>Preserve the right state.</strong> Keep persistent objects across loads, isolate Edit and Play state, and release scene-owned resources and callbacks on unload.</li>
-<li><strong>Exercise larger scenes.</strong> Expand Labv2 with interactive examples of CPU JIT, GPUJelly, models and materials, cameras, lighting, world/screen UI, physics and multi-scene operations.</li>
+<li><strong>Exercise larger scenes.</strong> Expand Labv2 with interactive examples of CPU JIT, models and materials, cameras, lighting, world/screen UI, physics and multi-scene operations. Its XPBD soft-body example (<code>GPUJelly.py</code>) is a project script demonstrating the compute, physics-query and mesh APIs, not a built-in engine component or a general-purpose soft-body solver.</li>
 </ul>
 <h2 id="en-prefab-authoring">Prefab Authoring</h2>
 <ul>
@@ -110,9 +110,8 @@
 <li><strong>Build for the target.</strong> Prepare native GPU payloads for supported targets, including Android. For supported kernels on Web, prepare CPU execution during the build because the native Taichi GPU runtime is unavailable there; projects keep the same authored compute entry points.</li>
 <li><strong>Make boundaries explicit.</strong> Validate supported kernel and closure contracts during preparation. This is not unrestricted Taichi support in the browser, and Android GPU computation does not require a CPU fallback.</li>
 </ul>
-<h2 id="en-physics-and-gpujelly">Physics and GPUJelly</h2>
+<h2 id="en-physics-queries-and-lifecycle">Physics Queries and Lifecycle</h2>
 <ul>
-<li><strong>Improve soft-body continuity.</strong> Fix GPUJelly simulation, collision and mesh-update paths across scene entry, reset, unload and supported platform execution paths.</li>
 <li><strong>Scale scene queries.</strong> Add batched ray work and shared query snapshots with explicit world generations, while reducing repeated compound lookup and body locking.</li>
 <li><strong>Broaden collider queries.</strong> Improve static mesh closest-point queries and the handling of rotated, scaled and non-convex shapes; invalidate query state when collider cooking replaces geometry.</li>
 <li><strong>Keep callbacks and tools in the same world.</strong> Tighten contact/impulse delivery and scene ownership, and use consistent scene data for runtime queries and editor inspection.</li>
@@ -184,7 +183,7 @@
 <li><strong>一起编辑多个场景。</strong> 支持叠加打开场景、指定活动场景、在 Hierarchy 中检查场景归属，以及跨场景移动对象，不再把编辑器文档视为一个全局世界。</li>
 <li><strong>让场景切换完整生效。</strong> 在安全点提交场景变化，同步组件成员关系与生命周期执行计划，让渲染世界和 UI 一起切换；修复 UI 已变化但旧 GameObject 仍留在画面中的问题。</li>
 <li><strong>保留应该保留的状态。</strong> 跨场景保留持久对象，隔离 Edit/Play 状态，在卸载时释放场景所属资源和回调。</li>
-<li><strong>扩展真实场景示例。</strong> Labv2 加入 CPU JIT、GPUJelly、模型与材质、相机、灯光、世界/屏幕 UI、物理及多场景操作等交互示例。</li>
+<li><strong>扩展真实场景示例。</strong> Labv2 加入 CPU JIT、模型与材质、相机、灯光、世界/屏幕 UI、物理及多场景操作等交互示例。其中 XPBD 软体示例（<code>GPUJelly.py</code>）是演示计算、物理查询与网格 API 的项目脚本，不是引擎内置组件，也不是通用软体求解器。</li>
 </ul>
 <h2 id="zh-prefab">Prefab 创作</h2>
 <ul>
@@ -218,9 +217,8 @@
 <li><strong>面向目标平台构建。</strong> 为包含 Android 在内的受支持原生平台准备 GPU 产物；Web 没有原生 Taichi GPU 运行时，因此在构建时将受支持内核准备为 CPU 执行，项目保持同一套计算入口。</li>
 <li><strong>明确支持边界。</strong> 在准备阶段检查内核和闭包约束；这不等于浏览器能够运行任意 Taichi 代码，Android 的 GPU 计算也不需要 CPU 回退。</li>
 </ul>
-<h2 id="zh-gpujelly">物理与 GPUJelly</h2>
+<h2 id="zh-_3">物理查询与生命周期</h2>
 <ul>
-<li><strong>改善软体生命周期。</strong> 修复 GPUJelly 在场景进入、重置、卸载及受支持平台路径中的模拟、碰撞和网格更新。</li>
 <li><strong>扩展场景查询能力。</strong> 加入批量射线任务和带明确世界代次的共享查询快照，减少重复的复合体查找和刚体加锁。</li>
 <li><strong>完善碰撞体查询。</strong> 改进静态网格最近点，以及旋转、缩放和非凸形状的处理；碰撞体 Cook 替换几何后及时使旧查询状态失效。</li>
 <li><strong>让回调和工具观察同一世界。</strong> 完善接触/冲量传递与场景归属，使运行时查询和编辑器检查使用一致的场景数据。</li>
@@ -241,13 +239,13 @@
 <li><strong>完善物理相机和 Gizmo。</strong> 改善传感器、镜头、Gate Fit，以及图标大小、颜色、公告牌朝向和拾取。</li>
 <li><strong>适应窄面板。</strong> Game 工具栏先压缩缩放滑条再隐藏 FPS，移除多余空行，汉化布局选项，避免 Hierarchy 重复可见控件 ID。</li>
 </ul>
-<h2 id="zh-_3">音频运行时</h2>
+<h2 id="zh-_4">音频运行时</h2>
 <ul>
 <li><strong>无需提前解码整个文件。</strong> 在常驻 PCM 音频之外加入有界缓冲的文件流式播放，并将音频运行时归属与编辑器服务分离。</li>
 <li><strong>管理声部与总线。</strong> 完善声部生命周期、空间增益/声像、总线/主增益和参数自动化，提供输出电平和流式播放诊断。</li>
 <li><strong>明确实时线程边界。</strong> 限定音频回调状态，通过明确的数据交接发布控制变化；建立原生输出 DSP 阶段，但不将其宣称为已完成的用户特效图系统。</li>
 </ul>
-<h2 id="zh-_4">插件、组件与热重载</h2>
+<h2 id="zh-_5">插件、组件与热重载</h2>
 <ul>
 <li><strong>保留熟悉的目录职责。</strong> 继续支持 Runtime、Editor 和一般文件、文件夹右键导出 <code>.inxpkg</code>，以及仓库中的 <code>package/</code> + <code>package.py</code> 工作流。</li>
 <li><strong>构建场景前注册 Player 类型。</strong> 将已打包和本地编写的运行时组件纳入 Cook 类型表，按正确顺序执行 Runtime preload；Player 启动不发现宿主构建工具，也不激活编辑器导出器。</li>
@@ -257,7 +255,7 @@
 <li><strong>让工具出现在作者指定的位置。</strong> 支持自定义面板放置和任意层级菜单路径；作者菜单段按文本显示，引擎菜单显式使用本地化键，插件可提供自己的编辑器词条表。</li>
 <li><strong>讲清楚完整制作流程。</strong> 更新线上插件模板及 <code>plugin_pages</code> 教程，解释目录职责、组件注册、preload 清理、本地化和 File Manager 打包步骤。</li>
 </ul>
-<h2 id="zh-_5">编辑器可靠性与创作体验</h2>
+<h2 id="zh-_6">编辑器可靠性与创作体验</h2>
 <ul>
 <li><strong>改善启动与窗口变化。</strong> 加载序列准备好之前保持编辑器窗口隐藏，修复 Windows 社区报告的拉伸/最大化处理问题。</li>
 <li><strong>改善检查与调试。</strong> 完善只读/临时 Inspector 字段、组件发布、相机/灯光本地化，以及 Console 选择、复制和源码跳转。</li>
@@ -274,7 +272,7 @@
 <li><strong>交付匹配的运行时产物。</strong> 保持跨动态库资源/音频运行时归属一致，打包必要 Python 扩展；通过自有 fork 和仓库内修改落实依赖修复，不在 CMake 配置时改写依赖源码。</li>
 <li><strong>改善 Hub 管理的交付。</strong> 扩展受管 Blender/构建工具集成和发布目录同步；保持已发布版本单调递增，Linux wheel 使用实际审计的兼容标签，不强制标记 manylinux。</li>
 </ul>
-<h2 id="zh-_6">升级须知与本期范围</h2>
+<h2 id="zh-_7">升级须知与本期范围</h2>
 <ul>
 <li><strong>引擎与平台插件一起更新。</strong> 预编译 Player 必须匹配引擎约定；升级后重新导出 Player，不要把新引擎动态库直接复制进旧构建。</li>
 <li><strong>检查插件职责与生命周期。</strong> 运行时组件/服务放 Runtime，面板、本地网页工具和导出器放 Editor。清理、本地化和 <code>plugin_pages</code> 以新模板为准；包内角色目录使用小写 <code>runtime</code>/<code>editor</code>，本地创作的 Runtime/Editor 目录保持原拼写。</li>

@@ -28,7 +28,7 @@ Our destination is a **Neural Network-Native Engine (3N)**: an engine where mode
 
 Write gameplay components with Inspector fields, lifecycle callbacks and coroutines. Assemble prefabs, edit multiple scenes, and iterate while the editor is running. Extend the editor with your own panels and nested menus. Project scripts and plugin components participate in the same transactional hot-reload workflow.
 
-Python is also the home of render authoring, asset workflows and numerical code. CPU/GPU JIT and Taichi integration connect computation to gameplay, including GPUJelly soft-body simulation. Startup warmup and build preparation move supported compilation work out of the first interaction.
+Python is also the home of render authoring, asset workflows and numerical code. CPU/GPU JIT and Taichi integration let project scripts run numerical workloads and connect their results to gameplay. Startup warmup and build preparation move supported compilation work out of the first interaction.
 
 ### Shape the look, own the pipeline
 
@@ -63,7 +63,7 @@ Platform plugins declare their build options in the editor and supply their runt
 
 ## What 041 brings
 
-The 041 development line deepens the everyday workflow: multi-scene editing, model import and source synchronization, CPU/GPU JIT preparation, GPUJelly, world UI, more reliable Player startup and scene switching, and a reworked plugin lifecycle.
+The 041 development line deepens the everyday workflow: multi-scene editing, model import and source synchronization, CPU/GPU JIT preparation, physics queries, world UI, more reliable Player startup and scene switching, and a reworked plugin lifecycle.
 
 Plugin work includes Player component registration, live updates to existing component behavior, cleanup of panels and callbacks, plugin localization, and platform-owned build settings. Read the full [English](UpdateLog.md) or [Chinese](UpdateLog-zh.md) changelog for the scope and upgrade notes.
 
