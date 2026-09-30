@@ -3,14 +3,14 @@
   "project": "Infernux",
   "canonical_origin": "https://infernux-engine.com",
   "repository": "https://github.com/ChenlizheMe/Infernux",
-  "documented_release": "0.4.0",
+  "documented_release": "0.4.1",
   "release_status": "stable",
-  "last_verified": "2026-09-06",
+  "last_verified": "2026-09-30",
   "build": {
     "status": "stamped",
-    "source_commit": "8e30428d83c668c61ab0b09dcfb6f3e233b60840",
-    "source_url": "https://github.com/ChenlizheMe/Infernux/commit/8e30428d83c668c61ab0b09dcfb6f3e233b60840",
-    "generated_at": "2026-09-30T11:30:31.000Z",
+    "source_commit": "95e6c32c58cc924bc5d8618b97479af5889e2490",
+    "source_url": "https://github.com/ChenlizheMe/Infernux/commit/95e6c32c58cc924bc5d8618b97479af5889e2490",
+    "generated_at": "2026-09-30T12:59:27.000Z",
     "timestamp_source": "source-commit"
   },
   "languages": [
@@ -24,7 +24,8 @@
     "release_notes": "/release-notes.json",
     "sitemap": "/sitemap.xml",
     "code_signing_policy": "/code-signing-policy.html",
-    "community": "https://infernux-engine.discourse.group/"
+    "community": "https://infernux-engine.discourse.group/",
+    "changelog": "/changelog.html"
   },
   "documentation_layers": {
     "start": "A short guide maintained directly in docs/start.html",

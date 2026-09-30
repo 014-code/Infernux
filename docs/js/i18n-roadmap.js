@@ -2,7 +2,7 @@
 globalThis.INFERNUX_PAGE_TRANSLATIONS = {
     "en": {
         "pageTitle.roadmap": "熔炉 · Infernux — Roadmap",
-        "roadmap.hero.badge": "CURRENT CYCLE · 0.4.0 → 0.5.2",
+        "roadmap.hero.badge": "CURRENT CYCLE · 0.4.1 → 0.5.2",
         "roadmap.hero.description": "Our destination is a Neural Network-Native Engine (3N). This roadmap connects world authoring to model workflows, inference, replay and batch simulation; the 041 line strengthens the engine foundation.",
         "roadmap.hero.kicker": "Roadmap",
         "roadmap.hero.primary": "Track issues",
@@ -47,14 +47,14 @@ globalThis.INFERNUX_PAGE_TRANSLATIONS = {
         "roadmap.release.mid.item2": "Each stage needs usable public APIs and measurable behavior so games, tools and model workflows can build on the same contracts.",
         "roadmap.release.mid.tag": "0.4.1–0.4.4 · PLUMBING",
         "roadmap.release.mid.title": "Headless, semantics, replay, batch data",
-        "roadmap.release.next.item1": "0.4.0 adds Windows and Linux Editors and Player exports for Windows, Linux, Android, and Web. The shared MultiPlatform040 project exercises gameplay, input, UI, and packaged asset reads.",
-        "roadmap.release.next.item2": "Platform plugins carry their reusable build payloads. Hub manages Python and shared Android toolchains, while GUID-backed runtime content stays packed instead of exposing the project directory tree.",
-        "roadmap.release.next.tag": "0.4.0 · MULTIPLATFORM",
-        "roadmap.release.next.title": "Four targets, one build workflow"
+        "roadmap.release.next.item1": "0.4.1 brings larger worlds, live Python authoring and target-aware computation into the same engine workflow. This release expands multi-scene editing, prefab authoring, model import, rendering and audio, then carries their resource and component lifecycles into exported Players. It also rebuilds key parts of the plugin experience in response to community reports.",
+        "roadmap.release.next.item2": "Read the Changelog for features, fixes, platform boundaries and upgrade notes.",
+        "roadmap.release.next.tag": "0.4.1 · PUBLISHED",
+        "roadmap.release.next.title": "Worlds, Compute and Live Tools"
     },
     "zh": {
         "pageTitle.roadmap": "熔炉 · Infernux — 路线图",
-        "roadmap.hero.badge": "当前周期 · 0.4.0 → 0.5.2",
+        "roadmap.hero.badge": "当前周期 · 0.4.1 → 0.5.2",
         "roadmap.hero.description": "我们致力于成为 Neural Network-Native Engine（3N），即神经网络原生引擎。路线图将世界创作连接到模型工作流、推理、回放与批量模拟；041 继续完善引擎基础。",
         "roadmap.hero.kicker": "路线图",
         "roadmap.hero.primary": "查看 Issues",
@@ -99,9 +99,9 @@ globalThis.INFERNUX_PAGE_TRANSLATIONS = {
         "roadmap.release.mid.item2": "每个阶段都需要可用的公开 API 与可测量的行为，让游戏、工具和模型工作流建立在同一套契约之上。",
         "roadmap.release.mid.tag": "0.4.1–0.4.4 · 地基",
         "roadmap.release.mid.title": "无窗口、语义、回放、批量数据",
-        "roadmap.release.next.item1": "0.4.0 加入 Windows/Linux 编辑器，以及 Windows、Linux、Android、Web 四端 Player 导出。共享 MultiPlatform040 项目覆盖玩法、输入、UI 与包内资产读取。",
-        "roadmap.release.next.item2": "平台插件携带可复用构建载荷，Hub 管理 Python 与共享安卓工具链。运行时内容通过 GUID 索引访问，保留资产封包，不再展开项目目录树。",
-        "roadmap.release.next.tag": "0.4.0 · 多平台",
-        "roadmap.release.next.title": "四个目标，一条构建流程"
+        "roadmap.release.next.item1": "0.4.1 把更大的世界、实时 Python 创作与面向目标平台的计算带进同一套引擎工作流。本期扩展了多场景、Prefab、模型导入、渲染和音频能力，并把资源与组件的生命周期贯通到导出的 Player；同时根据社区反馈，完善了插件开发和热重载的关键环节。",
+        "roadmap.release.next.item2": "详细能力、问题修复、平台边界与升级须知请查看更新日志。",
+        "roadmap.release.next.tag": "0.4.1 · 已发布",
+        "roadmap.release.next.title": "世界、计算与实时创作工具"
     }
 };

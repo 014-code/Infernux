@@ -1,7 +1,7 @@
 <p align="center"><img src="docs/assets/logo.png" width="112" alt="Infernux 标志"></p>
 
 <h1 align="center">Infernux · 熔炉</h1>
-<p align="center"><a href="https://github.com/ChenlizheMe/Infernux/releases"><img src="https://img.shields.io/badge/version-0.4.0-orange.svg" alt="Published release 0.4.0"></a></p>
+<p align="center"><a href="https://github.com/ChenlizheMe/Infernux/releases"><img src="https://img.shields.io/badge/version-0.4.1-orange.svg" alt="Published release 0.4.1"></a></p>
 <p align="center"><strong>创造世界，让智能成为世界的一部分。</strong><br>以 Python 为主要创作语言，致力于成为 Neural Network-Native Engine。</p>
 
 <p align="center">
@@ -17,7 +17,7 @@ Infernux 是一款开源游戏引擎，让你用熟悉的 Python 创造可以游
 
 我们的目标是 **Neural Network-Native Engine（3N）：神经网络原生引擎**，让神经网络从引擎设计开始就参与世界数据、计算和运行。模型能够观察世界、参与模拟，并成为最终游戏的一部分。这条路从完整的游戏开发能力出发，以明确、可检查的接口连接世界数据、神经计算与创作工具。
 
-**MIT 开源协议。Windows、Linux 编辑器。Windows、Linux、Android、Web 四端 Player。** 引擎仍在积极开发；041 是当前开发主线，当前公开发布版本为 **0.4.0**。
+**MIT 开源协议。Windows、Linux 编辑器。Windows、Linux、Android、Web 四端 Player。** 引擎仍在积极开发；041 是当前开发主线，当前公开发布版本为 **0.4.1**。
 
 <img src="docs/assets/demo.png" width="1920" height="1032" alt="Infernux 编辑器中的 65,536 个 GameObject">
 *0.3.4 技术展示的真实截图：65,536 个普通 GameObject，配合 Python 编写的 RenderStack。*
@@ -117,7 +117,7 @@ Infernux 使用 [MIT 协议](LICENSE)。[SignPath.io](https://signpath.io/) 提�
   author  = {Chen, Lizhe},
   title   = {Infernux},
   year    = {2026},
-  version = {0.4.0},
+  version = {0.4.1},
   url     = {https://github.com/ChenlizheMe/Infernux}
 }
 ```

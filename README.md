@@ -1,7 +1,7 @@
 <p align="center"><img src="docs/assets/logo.png" width="112" alt="Infernux logo"></p>
 
 <h1 align="center">Infernux · 熔炉</h1>
-<p align="center"><a href="https://github.com/ChenlizheMe/Infernux/releases"><img src="https://img.shields.io/badge/version-0.4.0-orange.svg" alt="Published release 0.4.0"></a></p>
+<p align="center"><a href="https://github.com/ChenlizheMe/Infernux/releases"><img src="https://img.shields.io/badge/version-0.4.1-orange.svg" alt="Published release 0.4.1"></a></p>
 <p align="center"><strong>Build worlds. Give them intelligence.</strong><br>A Python-first engine advancing toward a Neural Network-Native Engine.</p>
 
 <p align="center">
@@ -17,7 +17,7 @@ Infernux is an open-source game engine for building playable worlds and bringing
 
 Our destination is a **Neural Network-Native Engine (3N)**: an engine where models can observe a world, influence its simulation and become part of the game you ship. The route starts with a capable game engine, then connects world data, neural computation and authoring tools through explicit, inspectable interfaces.
 
-**MIT licensed. Windows and Linux Editors. Windows, Linux, Android and Web Players.** Infernux is in active development; 041 is the current development line, the published release is **0.4.0**.
+**MIT licensed. Windows and Linux Editors. Windows, Linux, Android and Web Players.** Infernux is in active development; 041 is the current development line, the published release is **0.4.1**.
 
 <img src="docs/assets/demo.png" width="1920" height="1032" alt="An Infernux editor scene containing 65,536 GameObjects">
 *A real capture from the 0.3.4 showcase: 65,536 ordinary GameObjects, with a Python-authored RenderStack.*
@@ -117,7 +117,7 @@ Infernux is released under the [MIT license](LICENSE). Free code signing is prov
   author  = {Chen, Lizhe},
   title   = {Infernux},
   year    = {2026},
-  version = {0.4.0},
+  version = {0.4.1},
   url     = {https://github.com/ChenlizheMe/Infernux}
 }
 ```

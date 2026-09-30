@@ -1,125 +1,430 @@
 {
   "schema_version": 1,
-  "version": "0.4.0",
-  "tag": "v0.4.0",
-  "title": "Infernux v0.4.0 · Multiplatform Builds and Distribution",
-  "codename": "Multiplatform Builds and Distribution",
+  "version": "0.4.1",
+  "tag": "v0.4.1",
+  "title": "Infernux v0.4.1 · Worlds, Compute and Live Tools",
+  "codename": "Worlds, Compute and Live Tools",
   "language": "en",
-  "published_at": "2026-09-06T17:56:54Z",
-  "release_url": "https://github.com/ChenlizheMe/Infernux/releases/tag/v0.4.0",
+  "published_at": "2026-09-30T13:01:59Z",
+  "release_url": "https://github.com/ChenlizheMe/Infernux/releases/tag/v0.4.1",
   "source": "UpdateLog.md",
-  "summary": "0.4.0 adds Windows, Linux, Android, and Web Player builds, expands InxPackage authoring and runtime asset delivery, and puts shared build environments under Hub management.",
+  "summary": "0.4.1 brings larger worlds, live Python authoring and target-aware computation into the same engine workflow. This release expands multi-scene editing, prefab authoring, model import, rendering and audio, then carries their resource and component lifecycles into exported Players. It also rebuilds key parts of the plugin experience in response to community reports.",
   "comparison": {
-    "from": "0.3.7",
-    "to": "0.4.0",
-    "url": "https://github.com/ChenlizheMe/Infernux/compare/v0.3.7...v0.4.0"
+    "from": "0.4.0",
+    "to": "0.4.1",
+    "url": "https://github.com/ChenlizheMe/Infernux/compare/v0.4.0...v0.4.1"
   },
-  "section_count": 3,
-  "item_count": 17,
+  "section_count": 13,
+  "item_count": 64,
   "sections": [
     {
-      "id": "multiplatform",
-      "title": "Multiplatform",
+      "id": "multi-scene-worlds-and-gameplay",
+      "title": "Multi-scene Worlds and Gameplay",
       "kind": "changes",
       "items": [
         {
-          "title": "Build Windows and Linux Editors and Players, Android APK/AAB packages, and Web Players from the shared build service.",
-          "detail": "",
-          "text": "Build Windows and Linux Editors and Players, Android APK/AAB packages, and Web Players from the shared build service."
+          "title": "Author several scenes together.",
+          "detail": "Open scenes additively, choose the active scene, inspect scene ownership in the Hierarchy, and move objects between scenes without treating the editor document as one global world.",
+          "text": "Author several scenes together. Open scenes additively, choose the active scene, inspect scene ownership in the Hierarchy, and move objects between scenes without treating the editor document as one global world."
         },
         {
-          "title": "Deliver precompiled Players, runtimes, and target tools in the four platform plugins; normal exports require no engine checkout, submodules, CMake, or native engine compilation.",
-          "detail": "",
-          "text": "Deliver precompiled Players, runtimes, and target tools in the four platform plugins; normal exports require no engine checkout, submodules, CMake, or native engine compilation."
+          "title": "Make scene transitions coherent.",
+          "detail": "Commit scene changes at safe points, update component membership and lifecycle plans, and replace the rendered world together with its UI. Fix transitions that changed interface content while leaving old GameObjects visible.",
+          "text": "Make scene transitions coherent. Commit scene changes at safe points, update component membership and lifecycle plans, and replace the rendered world together with its UI. Fix transitions that changed interface content while leaving old GameObjects visible."
         },
         {
-          "title": "Run native targets on Vulkan and browser targets on WebGPU, including Python gameplay, rendering, input, UI, audio, and particles.",
-          "detail": "",
-          "text": "Run native targets on Vulkan and browser targets on WebGPU, including Python gameplay, rendering, input, UI, audio, and particles."
+          "title": "Preserve the right state.",
+          "detail": "Keep persistent objects across loads, isolate Edit and Play state, and release scene-owned resources and callbacks on unload.",
+          "text": "Preserve the right state. Keep persistent objects across loads, isolate Edit and Play state, and release scene-owned resources and callbacks on unload."
         },
         {
-          "title": "Exercise the same MultiPlatform040 project across targets, including button-triggered reads of packaged text assets.",
-          "detail": "",
-          "text": "Exercise the same MultiPlatform040 project across targets, including button-triggered reads of packaged text assets."
-        },
-        {
-          "title": "Add Windows/Linux desktop and platform Player CI builds, plus Web browser acceptance.",
-          "detail": "",
-          "text": "Add Windows/Linux desktop and platform Player CI builds, plus Web browser acceptance."
+          "title": "Exercise larger scenes.",
+          "detail": "Expand Labv2 with interactive examples of CPU JIT, GPUJelly, models and materials, cameras, lighting, world/screen UI, physics and multi-scene operations.",
+          "text": "Exercise larger scenes. Expand Labv2 with interactive examples of CPU JIT, GPUJelly, models and materials, cameras, lighting, world/screen UI, physics and multi-scene operations."
         }
       ]
     },
     {
-      "id": "plugins-and-assets",
-      "title": "Plugins and Assets",
+      "id": "prefab-authoring",
+      "title": "Prefab Authoring",
       "kind": "changes",
       "items": [
         {
-          "title": "Package only a repository's package/ directory using a standalone package.py; keep README and language-specific build configuration outside the archive.",
-          "detail": "",
-          "text": "Package only a repository's package/ directory using a standalone package.py; keep README and language-specific build configuration outside the archive."
+          "title": "Work in isolated Prefab Mode.",
+          "detail": "Edit prefab contents independently of scene instances, including nested prefabs and variants.",
+          "text": "Work in isolated Prefab Mode. Edit prefab contents independently of scene instances, including nested prefabs and variants."
         },
         {
-          "title": "Preserve direct local-folder authoring and generate default package metadata from the output filename when no manifest is supplied.",
-          "detail": "",
-          "text": "Preserve direct local-folder authoring and generate default package metadata from the output filename when no manifest is supplied."
+          "title": "Apply and revert precisely.",
+          "detail": "Track property and structural overrides, including object/component additions, removals and references, against stable source identities and saved baselines.",
+          "text": "Apply and revert precisely. Track property and structural overrides, including object/component additions, removals and references, against stable source identities and saved baselines."
         },
         {
-          "title": "Include scripts, materials, shaders, and arbitrary runtime files in plugins, with explicit asset metadata and live refresh under Packages/.",
-          "detail": "",
-          "text": "Include scripts, materials, shaders, and arbitrary runtime files in plugins, with explicit asset metadata and live refresh under Packages/."
+          "title": "Keep instances synchronized.",
+          "detail": "Propagate source edits through loaded scenes and variant relationships while preserving authored overrides; retain the same relationships after save and reopen.",
+          "text": "Keep instances synchronized. Propagate source edits through loaded scenes and variant relationships while preserving authored overrides; retain the same relationships after save and reopen."
         },
         {
-          "title": "Keep Player assets in Content.inxpkg instead of expanding the project's authoring directory tree. Resolve engine asset paths through cooked GUID identities and provide filesystem access for payloads that need it.",
-          "detail": "",
-          "text": "Keep Player assets in Content.inxpkg instead of expanding the project's authoring directory tree. Resolve engine asset paths through cooked GUID identities and provide filesystem access for payloads that need it."
-        },
-        {
-          "title": "Separate editor-only content from Player payloads and distribute platform build support as optional packages.",
-          "detail": "",
-          "text": "Separate editor-only content from Player payloads and distribute platform build support as optional packages."
-        },
-        {
-          "title": "Check compatible GitHub releases and explicitly select plugin updates while preserving GUIDs, enabled state, and user-added files; require consent before replacing local edits.",
-          "detail": "",
-          "text": "Check compatible GitHub releases and explicitly select plugin updates while preserving GUIDs, enabled state, and user-added files; require consent before replacing local edits."
-        },
-        {
-          "title": "Refresh the independent official catalog without upgrading project-pinned packages, and resolve former platform sources to their independent repositories.",
-          "detail": "",
-          "text": "Refresh the independent official catalog without upgrading project-pinned packages, and resolve former platform sources to their independent repositories."
+          "title": "Undo shared-asset edits.",
+          "detail": "Connect prefab editing and scene changes to the editor transaction and journal infrastructure instead of leaving shared assets outside Undo/Redo.",
+          "text": "Undo shared-asset edits. Connect prefab editing and scene changes to the editor transaction and journal infrastructure instead of leaving shared assets outside Undo/Redo."
         }
       ]
     },
     {
-      "id": "hub-and-build-environments",
-      "title": "Hub and Build Environments",
+      "id": "models-materials-and-animation",
+      "title": "Models, Materials and Animation",
       "kind": "changes",
       "items": [
         {
-          "title": "Provide Windows and Linux Hub distributions and managed Python 3.13 environments.",
-          "detail": "",
-          "text": "Provide Windows and Linux Hub distributions and managed Python 3.13 environments."
+          "title": "Import FBX and Blender sources through one model workflow.",
+          "detail": "Organize settings into Model, Rig, Animation and Materials pages, with explicit Apply and worker-based import rather than repeating expensive work while browsing settings.",
+          "text": "Import FBX and Blender sources through one model workflow. Organize settings into Model, Rig, Animation and Materials pages, with explicit Apply and worker-based import rather than repeating expensive work while browsing settings."
         },
         {
-          "title": "Install Android support from the Hub channel on Windows and Linux, sharing SDK, NDK, JDK, Gradle, and target Python dependencies; supply toolchain paths automatically and require installed support before enabling Android plugin import.",
-          "detail": "",
-          "text": "Install Android support from the Hub channel on Windows and Linux, sharing SDK, NDK, JDK, Gradle, and target Python dependencies; supply toolchain paths automatically and require installed support before enabling Android plugin import."
+          "title": "Preserve source structure and identity.",
+          "detail": "Keep node-local mesh geometry and hierarchy, stable mesh/subasset references, and external-source synchronization across supported renames and reparenting. Preserve user overrides when the source changes.",
+          "text": "Preserve source structure and identity. Keep node-local mesh geometry and hierarchy, stable mesh/subasset references, and external-source synchronization across supported renames and reparenting. Preserve user overrides when the source changes."
         },
         {
-          "title": "Reuse downloads through the Hub Library while keeping project build caches inside the project.",
-          "detail": "",
-          "text": "Reuse downloads through the Hub Library while keeping project build caches inside the project."
+          "title": "Control materials and textures.",
+          "detail": "Extract, find and remap materials; retain embedded textures and external texture references as persistent assets; carry PBR factors, texture sampling and alpha/shadow behavior through import.",
+          "text": "Control materials and textures. Extract, find and remap materials; retain embedded textures and external texture references as persistent assets; carry PBR factors, texture sampling and alpha/shadow behavior through import."
         },
         {
-          "title": "Group engine, Python, and Android installations into tabs under Installs, with background jobs, a compact progress strip, an expandable queue, and system-tray support.",
-          "detail": "",
-          "text": "Group engine, Python, and Android installations into tabs under Installs, with background jobs, a compact progress strip, an expandable queue, and system-tray support."
+          "title": "Control mesh shading.",
+          "detail": "Add normal/tangent import policies, smoothing-angle and weighted-normal handling, and MikkTSpace tangent generation.",
+          "text": "Control mesh shading. Add normal/tangent import policies, smoothing-angle and weighted-normal handling, and MikkTSpace tangent generation."
         },
         {
-          "title": "Keep interrupted Android kit downloads in Hub's shared cache so an explicitly restarted installation resumes the download; remove the download cache after successful installation.",
-          "detail": "",
-          "text": "Keep interrupted Android kit downloads in Hub's shared cache so an explicitly restarted installation resumes the download; remove the download cache after successful installation."
+          "title": "Prepare animated assets.",
+          "detail": "Improve skeleton and skin-weight import, generic/humanoid rig settings, trimmed clips, morph target names and animation asset cooking. Preview imported animation in an isolated GPU-skinned view using the same clip assets.",
+          "text": "Prepare animated assets. Improve skeleton and skin-weight import, generic/humanoid rig settings, trimmed clips, morph target names and animation asset cooking. Preview imported animation in an isolated GPU-skinned view using the same clip assets."
+        },
+        {
+          "title": "Inspect imported content.",
+          "detail": "Expose structured model/subasset inventory to Python and MCP, and make imported resources easier to inspect and reuse.",
+          "text": "Inspect imported content. Expose structured model/subasset inventory to Python and MCP, and make imported resources easier to inspect and reuse."
+        }
+      ]
+    },
+    {
+      "id": "guid-resources-and-player-content",
+      "title": "GUID Resources and Player Content",
+      "kind": "changes",
+      "items": [
+        {
+          "title": "Use one internal asset identity.",
+          "detail": "Extend GUID references through scenes, prefabs, material shaders, camera target textures, UI assets, effects and build settings. Resolve controlled authoring paths into that identity before runtime delivery.",
+          "text": "Use one internal asset identity. Extend GUID references through scenes, prefabs, material shaders, camera target textures, UI assets, effects and build settings. Resolve controlled authoring paths into that identity before runtime delivery."
+        },
+        {
+          "title": "Cook the actual dependency graph.",
+          "detail": "Include resources reachable from the current documents and package components, preserve required raw runtime files and licenses, and reject uncooked model dependencies instead of relying on editor files being present.",
+          "text": "Cook the actual dependency graph. Include resources reachable from the current documents and package components, preserve required raw runtime files and licenses, and reject uncooked model dependencies instead of relying on editor files being present."
+        },
+        {
+          "title": "Keep project and package access explicit.",
+          "detail": "Improve package asset indexing and Application.asset_path / Application.package_path handling, including Windows path aliases.",
+          "text": "Keep project and package access explicit. Improve package asset indexing and Application.asset_path / Application.package_path handling, including Windows path aliases."
+        },
+        {
+          "title": "Repair asset command timing.",
+          "detail": "Run confirmed deletion through the editor command lifecycle after modal interaction; improve DataAsset authoring, inspection and deferred asset operations.",
+          "text": "Repair asset command timing. Run confirmed deletion through the editor command lifecycle after modal interaction; improve DataAsset authoring, inspection and deferred asset operations."
+        }
+      ]
+    },
+    {
+      "id": "cpu-gpu-compute-and-jit-preparation",
+      "title": "CPU/GPU Compute and JIT Preparation",
+      "kind": "changes",
+      "items": [
+        {
+          "title": "Integrate compute into the engine.",
+          "detail": "Move the internal Taichi computation path into the engine and retire the separate integration path; keep Python as the authoring interface for CPU and GPU work.",
+          "text": "Integrate compute into the engine. Move the internal Taichi computation path into the engine and retire the separate integration path; keep Python as the authoring interface for CPU and GPU work."
+        },
+        {
+          "title": "Prepare before interaction.",
+          "detail": "Connect startup, Play entry, script updates and target builds to warmup discovery. Reuse valid prepared results and report preparation timings rather than recompiling every time Play starts.",
+          "text": "Prepare before interaction. Connect startup, Play entry, script updates and target builds to warmup discovery. Reuse valid prepared results and report preparation timings rather than recompiling every time Play starts."
+        },
+        {
+          "title": "Strengthen CPU execution.",
+          "detail": "Improve LLVM specialization, buffer lifetime and alias handling, detached compilation and proven row-local parallel work, with observable compilation/optimization results.",
+          "text": "Strengthen CPU execution. Improve LLVM specialization, buffer lifetime and alias handling, detached compilation and proven row-local parallel work, with observable compilation/optimization results."
+        },
+        {
+          "title": "Keep GPU work resident.",
+          "detail": "Improve compute buffers, kernel dispatch, queue ownership and storage bindings; reuse readback ownership and avoid unchanged transfers where supported.",
+          "text": "Keep GPU work resident. Improve compute buffers, kernel dispatch, queue ownership and storage bindings; reuse readback ownership and avoid unchanged transfers where supported."
+        },
+        {
+          "title": "Build for the target.",
+          "detail": "Prepare native GPU payloads for supported targets, including Android. For supported kernels on Web, prepare CPU execution during the build because the native Taichi GPU runtime is unavailable there; projects keep the same authored compute entry points.",
+          "text": "Build for the target. Prepare native GPU payloads for supported targets, including Android. For supported kernels on Web, prepare CPU execution during the build because the native Taichi GPU runtime is unavailable there; projects keep the same authored compute entry points."
+        },
+        {
+          "title": "Make boundaries explicit.",
+          "detail": "Validate supported kernel and closure contracts during preparation. This is not unrestricted Taichi support in the browser, and Android GPU computation does not require a CPU fallback.",
+          "text": "Make boundaries explicit. Validate supported kernel and closure contracts during preparation. This is not unrestricted Taichi support in the browser, and Android GPU computation does not require a CPU fallback."
+        }
+      ]
+    },
+    {
+      "id": "physics-and-gpujelly",
+      "title": "Physics and GPUJelly",
+      "kind": "changes",
+      "items": [
+        {
+          "title": "Improve soft-body continuity.",
+          "detail": "Fix GPUJelly simulation, collision and mesh-update paths across scene entry, reset, unload and supported platform execution paths.",
+          "text": "Improve soft-body continuity. Fix GPUJelly simulation, collision and mesh-update paths across scene entry, reset, unload and supported platform execution paths."
+        },
+        {
+          "title": "Scale scene queries.",
+          "detail": "Add batched ray work and shared query snapshots with explicit world generations, while reducing repeated compound lookup and body locking.",
+          "text": "Scale scene queries. Add batched ray work and shared query snapshots with explicit world generations, while reducing repeated compound lookup and body locking."
+        },
+        {
+          "title": "Broaden collider queries.",
+          "detail": "Improve static mesh closest-point queries and the handling of rotated, scaled and non-convex shapes; invalidate query state when collider cooking replaces geometry.",
+          "text": "Broaden collider queries. Improve static mesh closest-point queries and the handling of rotated, scaled and non-convex shapes; invalidate query state when collider cooking replaces geometry."
+        },
+        {
+          "title": "Keep callbacks and tools in the same world.",
+          "detail": "Tighten contact/impulse delivery and scene ownership, and use consistent scene data for runtime queries and editor inspection.",
+          "text": "Keep callbacks and tools in the same world. Tighten contact/impulse delivery and scene ownership, and use consistent scene data for runtime queries and editor inspection."
+        }
+      ]
+    },
+    {
+      "id": "rendering-and-rendergraph",
+      "title": "Rendering and RenderGraph",
+      "kind": "changes",
+      "items": [
+        {
+          "title": "Align Vulkan and WebGPU contracts.",
+          "detail": "Correct fullscreen resource binding, storage buffers, reflection/descriptor layouts and resource updates across the two graphics paths. Fix initial scene state that could leave the browser background different from later scene loads.",
+          "text": "Align Vulkan and WebGPU contracts. Correct fullscreen resource binding, storage buffers, reflection/descriptor layouts and resource updates across the two graphics paths. Fix initial scene state that could leave the browser background different from later scene loads."
+        },
+        {
+          "title": "Scope rendering resources to the view.",
+          "detail": "Improve per-view RenderGraph buffers, camera light lists, shadow resources and deferred normal/geometry coverage, so multiple views do not share the wrong frame state.",
+          "text": "Scope rendering resources to the view. Improve per-view RenderGraph buffers, camera light lists, shadow resources and deferred normal/geometry coverage, so multiple views do not share the wrong frame state."
+        },
+        {
+          "title": "Extend custom passes.",
+          "detail": "Support GUID texture imports and compute-buffer inputs in fullscreen passes, and improve material property, custom sampler and texture-update handling.",
+          "text": "Extend custom passes. Support GUID texture imports and compute-buffer inputs in fullscreen passes, and improve material property, custom sampler and texture-update handling."
+        },
+        {
+          "title": "Retire resources in order.",
+          "detail": "Correct render-resource replacement and teardown, including scene changes and device shutdown, and initialize forward resources before dependent shadow variants.",
+          "text": "Retire resources in order. Correct render-resource replacement and teardown, including scene changes and device shutdown, and initialize forward resources before dependent shadow variants."
+        }
+      ]
+    },
+    {
+      "id": "cameras-text-and-ui",
+      "title": "Cameras, Text and UI",
+      "kind": "changes",
+      "items": [
+        {
+          "title": "Separate gameplay from observation.",
+          "detail": "Gameplay camera queries and camera-facing world UI use the game camera. Scene view rendering, navigation and selection rays continue to use the editor view's camera.",
+          "text": "Separate gameplay from observation. Gameplay camera queries and camera-facing world UI use the game camera. Scene view rendering, navigation and selection rays continue to use the editor view's camera."
+        },
+        {
+          "title": "Author world UI explicitly.",
+          "detail": "Expose fixed or game-camera-facing orientation, constant screen-size behavior and on-top/occlusion policies. Keep world UI Inspector controls appropriate to world-space content.",
+          "text": "Author world UI explicitly. Expose fixed or game-camera-facing orientation, constant screen-size behavior and on-top/occlusion policies. Keep world UI Inspector controls appropriate to world-space content."
+        },
+        {
+          "title": "Make what you see selectable.",
+          "detail": "Align rendered text, local UI bounds, rectangle handles and click picking; improve enlarged world text clarity and engine-font use.",
+          "text": "Make what you see selectable. Align rendered text, local UI bounds, rectangle handles and click picking; improve enlarged world text clarity and engine-font use."
+        },
+        {
+          "title": "Keep screen UI isolated.",
+          "detail": "Correct canvas placement and scene ancestry interactions, and improve custom UI material/shader resources and descriptor ownership.",
+          "text": "Keep screen UI isolated. Correct canvas placement and scene ancestry interactions, and improve custom UI material/shader resources and descriptor ownership."
+        },
+        {
+          "title": "Refine physical cameras and Gizmos.",
+          "detail": "Improve sensor, lens and gate-fit behavior, plus icon scale, tint, billboard orientation and picking.",
+          "text": "Refine physical cameras and Gizmos. Improve sensor, lens and gate-fit behavior, plus icon scale, tint, billboard orientation and picking."
+        },
+        {
+          "title": "Make editor panels fit.",
+          "detail": "Shrink the Game view scale slider before hiding FPS, remove excess toolbar spacing, localize layout controls and avoid duplicated visible Hierarchy IDs.",
+          "text": "Make editor panels fit. Shrink the Game view scale slider before hiding FPS, remove excess toolbar spacing, localize layout controls and avoid duplicated visible Hierarchy IDs."
+        }
+      ]
+    },
+    {
+      "id": "audio-runtime",
+      "title": "Audio Runtime",
+      "kind": "changes",
+      "items": [
+        {
+          "title": "Stream without decoding everything up front.",
+          "detail": "Add file-backed audio streaming with bounded buffering alongside resident PCM clips, and separate audio runtime ownership from editor-only services.",
+          "text": "Stream without decoding everything up front. Add file-backed audio streaming with bounded buffering alongside resident PCM clips, and separate audio runtime ownership from editor-only services."
+        },
+        {
+          "title": "Control voices and buses.",
+          "detail": "Improve voice lifetime, spatial gain/panning, bus/master gain and parameter automation, with output meters and streaming diagnostics.",
+          "text": "Control voices and buses. Improve voice lifetime, spatial gain/panning, bus/master gain and parameter automation, with output meters and streaming diagnostics."
+        },
+        {
+          "title": "Define the real-time boundary.",
+          "detail": "Keep audio callback state bounded and publish control changes through explicit handoff. Establish a native output DSP stage; this is not a finished user-facing effects graph.",
+          "text": "Define the real-time boundary. Keep audio callback state bounded and publish control changes through explicit handoff. Establish a native output DSP stage; this is not a finished user-facing effects graph."
+        }
+      ]
+    },
+    {
+      "id": "plugins-components-and-hot-reload",
+      "title": "Plugins, Components and Hot Reload",
+      "kind": "changes",
+      "items": [
+        {
+          "title": "Retain familiar package roles.",
+          "detail": "Keep Runtime, Editor and general files, folder-context-menu export to .inxpkg, and the repository package/ + package.py workflow.",
+          "text": "Retain familiar package roles. Keep Runtime, Editor and general files, folder-context-menu export to .inxpkg, and the repository package/ + package.py workflow."
+        },
+        {
+          "title": "Register Player types before scene construction.",
+          "detail": "Include packaged and locally authored runtime components in the cooked type registry and run runtime preloads in the proper order. Player startup does not discover host build tools or activate editor-only exporters.",
+          "text": "Register Player types before scene construction. Include packaged and locally authored runtime components in the cooked type registry and run runtime preloads in the proper order. Player startup does not discover host build tools or activate editor-only exporters."
+        },
+        {
+          "title": "Update existing behavior.",
+          "detail": "Reload Runtime/Editor components and their dependency modules transactionally, replacing behavior on live instances rather than retaining an old update implementation after a save. Reject a failed candidate before publishing a mixed module state.",
+          "text": "Update existing behavior. Reload Runtime/Editor components and their dependency modules transactionally, replacing behavior on live instances rather than retaining an old update implementation after a save. Reject a failed candidate before publishing a mixed module state."
+        },
+        {
+          "title": "Own the whole plugin lifetime.",
+          "detail": "Track panels, menus, commands, shortcuts, subscriptions and cleanup callbacks through activation, reload, disable and unload, including failed preload cleanup.",
+          "text": "Own the whole plugin lifetime. Track panels, menus, commands, shortcuts, subscriptions and cleanup callbacks through activation, reload, disable and unload, including failed preload cleanup."
+        },
+        {
+          "title": "Load dependencies once when appropriate.",
+          "detail": "Allow preload to import substantial Python dependencies and manage reversible services; identify native extensions that require an editor restart when their owning package changes.",
+          "text": "Load dependencies once when appropriate. Allow preload to import substantial Python dependencies and manage reversible services; identify native extensions that require an editor restart when their owning package changes."
+        },
+        {
+          "title": "Place tools where authors need them.",
+          "detail": "Support custom panel placement and arbitrarily nested menu paths. Treat author-provided menu segments as text; use explicit localization keys for engine menus and plugin-owned editor translation catalogs.",
+          "text": "Place tools where authors need them. Support custom panel placement and arbitrarily nested menu paths. Treat author-provided menu segments as text; use explicit localization keys for engine menus and plugin-owned editor translation catalogs."
+        },
+        {
+          "title": "Teach the complete workflow.",
+          "detail": "Update the online plugin template and plugin_pages tutorials with directory roles, component registration, preload cleanup, localization and File Manager packaging instructions.",
+          "text": "Teach the complete workflow. Update the online plugin template and plugin_pages tutorials with directory roles, component registration, preload cleanup, localization and File Manager packaging instructions."
+        }
+      ]
+    },
+    {
+      "id": "editor-reliability-and-authoring",
+      "title": "Editor Reliability and Authoring",
+      "kind": "changes",
+      "items": [
+        {
+          "title": "Improve window startup and resizing.",
+          "detail": "Keep the editor hidden until its loading sequence is ready and fix resize/maximize handling reported on Windows.",
+          "text": "Improve window startup and resizing. Keep the editor hidden until its loading sequence is ready and fix resize/maximize handling reported on Windows."
+        },
+        {
+          "title": "Make inspection more useful.",
+          "detail": "Improve read-only/transient Inspector fields, component publication, localized camera/light settings and Console selection, copying and source navigation.",
+          "text": "Make inspection more useful. Improve read-only/transient Inspector fields, component publication, localized camera/light settings and Console selection, copying and source navigation."
+        },
+        {
+          "title": "Make hot editing observable.",
+          "detail": "Improve deferred task errors, scene failure reporting, frame/compute diagnostics and MCP inspection so a successful launch is not mistaken for correct simulation.",
+          "text": "Make hot editing observable. Improve deferred task errors, scene failure reporting, frame/compute diagnostics and MCP inspection so a successful launch is not mistaken for correct simulation."
+        },
+        {
+          "title": "Refresh learning material.",
+          "detail": "Recheck tutorial parameters and API usage against the implementation, expand hands-on examples, and publish bilingual, versioned release history on the website.",
+          "text": "Refresh learning material. Recheck tutorial parameters and API usage against the implementation, expand hands-on examples, and publish bilingual, versioned release history on the website."
+        }
+      ]
+    },
+    {
+      "id": "builds-platforms-and-hub",
+      "title": "Builds, Platforms and Hub",
+      "kind": "changes",
+      "items": [
+        {
+          "title": "Give each target its own settings.",
+          "detail": "Let Windows, Linux, Web and Android exporters declare their build options through a shared editor interface.",
+          "text": "Give each target its own settings. Let Windows, Linux, Web and Android exporters declare their build options through a shared editor interface."
+        },
+        {
+          "title": "Present a ready first frame.",
+          "detail": "Repair initialization in fresh export directories, packed resource startup and scene switching; delay Player presentation until the initial scene is ready to avoid premature black frames.",
+          "text": "Present a ready first frame. Repair initialization in fresh export directories, packed resource startup and scene switching; delay Player presentation until the initial scene is ready to avoid premature black frames."
+        },
+        {
+          "title": "Keep desktop window semantics predictable.",
+          "detail": "Use borderless desktop mode for fullscreen and client/render-area dimensions for windowed mode, retaining the configured windowed resolution and taskbar behavior.",
+          "text": "Keep desktop window semantics predictable. Use borderless desktop mode for fullscreen and client/render-area dimensions for windowed mode, retaining the configured windowed resolution and taskbar behavior."
+        },
+        {
+          "title": "Follow the active Linux window backend.",
+          "detail": "Enable the Vulkan surface extensions required by SDL's actual X11/Wayland backend without forcing fullscreen or changing Player dimensions. Address dependency nullability warning noise at the dependency boundary.",
+          "text": "Follow the active Linux window backend. Enable the Vulkan surface extensions required by SDL's actual X11/Wayland backend without forcing fullscreen or changing Player dimensions. Address dependency nullability warning noise at the dependency boundary."
+        },
+        {
+          "title": "Tighten mobile/browser input and lifecycle.",
+          "detail": "Improve Android surface pause/resume, native IME input, Back-to-Escape routing, same-frame touch delivery and persistent user-data placement; align browser touch and screen UI event ownership.",
+          "text": "Tighten mobile/browser input and lifecycle. Improve Android surface pause/resume, native IME input, Back-to-Escape routing, same-frame touch delivery and persistent user-data placement; align browser touch and screen UI event ownership."
+        },
+        {
+          "title": "Ship matching runtime payloads.",
+          "detail": "Keep native asset/audio ownership consistent across library boundaries and bundle required Python extensions. Use owned dependency forks and checked-in source fixes instead of editing dependency sources during CMake configuration.",
+          "text": "Ship matching runtime payloads. Keep native asset/audio ownership consistent across library boundaries and bundle required Python extensions. Use owned dependency forks and checked-in source fixes instead of editing dependency sources during CMake configuration."
+        },
+        {
+          "title": "Improve Hub-managed delivery.",
+          "detail": "Expand managed Blender/build-tool integration and release catalog synchronization. Keep published versions monotonic and preserve actual audited Linux wheel tags rather than forcing a compatibility label.",
+          "text": "Improve Hub-managed delivery. Expand managed Blender/build-tool integration and release catalog synchronization. Keep published versions monotonic and preserve actual audited Linux wheel tags rather than forcing a compatibility label."
+        }
+      ]
+    },
+    {
+      "id": "upgrade-notes-and-scope",
+      "title": "Upgrade Notes and Scope",
+      "kind": "changes",
+      "items": [
+        {
+          "title": "Update engine and platform plugins together.",
+          "detail": "A precompiled Player payload must match its engine contract. Rebuild exported Players after upgrading rather than copying a new engine library into an old export.",
+          "text": "Update engine and platform plugins together. A precompiled Player payload must match its engine contract. Rebuild exported Players after upgrading rather than copying a new engine library into an old export."
+        },
+        {
+          "title": "Review plugin roles and lifecycle.",
+          "detail": "Put shipped components/services in Runtime and panels/local web tools/exporters in Editor. Follow the current template for cleanup, translations and plugin_pages; archive role directories are lowercase runtime/editor, while local authored Runtime/Editor folders retain their spelling.",
+          "text": "Review plugin roles and lifecycle. Put shipped components/services in Runtime and panels/local web tools/exporters in Editor. Follow the current template for cleanup, translations and plugin_pages; archive role directories are lowercase runtime/editor, while local authored Runtime/Editor folders retain their spelling."
+        },
+        {
+          "title": "Reimport and recook from source.",
+          "detail": "Preserve your project sources and GUID metadata, then regenerate imported/cooked output with the new engine. The release strengthens the current data path rather than maintaining every experimental intermediate format.",
+          "text": "Reimport and recook from source. Preserve your project sources and GUID metadata, then regenerate imported/cooked output with the new engine. The release strengthens the current data path rather than maintaining every experimental intermediate format."
+        },
+        {
+          "title": "Understand compute portability.",
+          "detail": "Web's supported CPU preparation path differs from native GPU execution. Kernel support is checked at build time; numerical/performance identity across devices is not promised.",
+          "text": "Understand compute portability. Web's supported CPU preparation path differs from native GPU execution. Kernel support is checked at build time; numerical/performance identity across devices is not promised."
+        },
+        {
+          "title": "Keep the roadmap separate.",
+          "detail": "Full neural model deployment, the tensor data plane, batch worlds and deterministic replay remain future work. The deferred vk-torch delay optimization and a complete theme system are not part of 041.",
+          "text": "Keep the roadmap separate. Full neural model deployment, the tensor data plane, batch worlds and deterministic replay remain future work. The deferred vk-torch delay optimization and a complete theme system are not part of 041."
         }
       ]
     }
