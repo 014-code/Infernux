@@ -19,7 +19,7 @@ Our destination is a **Neural Network-Native Game Engine**. The three Ns in **3N
 
 **MIT licensed. Windows and Linux Editors. Windows, Linux, Android and Web Players.** Infernux is in active development; 041 is the current development line, the published release is **0.4.0**.
 
-![An Infernux editor scene containing 65,536 GameObjects](docs/assets/demo.png)
+<img src="docs/assets/demo.png" width="1920" height="1032" alt="An Infernux editor scene containing 65,536 GameObjects">
 *A real capture from the 0.3.4 showcase: 65,536 ordinary GameObjects, with a Python-authored RenderStack.*
 
 ## A world you can build today

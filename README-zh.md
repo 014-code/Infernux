@@ -19,7 +19,7 @@ Infernux 是一款开源游戏引擎，让你用熟悉的 Python 创造可以游
 
 **MIT 开源协议。Windows、Linux 编辑器。Windows、Linux、Android、Web 四端 Player。** 引擎仍在积极开发；041 是当前开发主线，当前公开发布版本为 **0.4.0**。
 
-![Infernux 编辑器中的 65,536 个 GameObject](docs/assets/demo.png)
+<img src="docs/assets/demo.png" width="1920" height="1032" alt="Infernux 编辑器中的 65,536 个 GameObject">
 *0.3.4 技术展示的真实截图：65,536 个普通 GameObject，配合 Python 编写的 RenderStack。*
 
 ## 今天就能创造的世界
