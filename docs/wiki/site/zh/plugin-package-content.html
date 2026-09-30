@@ -224,6 +224,7 @@
 <a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="p">}</span>
 </code></pre></div>
 <p>manifest 目前不声明 <code>requirements</code> 或 <code>dependencies</code>。可选的 <code>requirements.txt</code> 只按固定文件名识别。</p>
+<p>在 Editor 中打包时，在 Project/File Manager 中选中包根文件夹，右键选择<strong>导出 InxPackage...</strong>，再指定目标位置。被选中的文件夹本身就是包根，不要额外套一层目录。生成后可在 Project 中双击 <code>.inxpkg</code>，安装前检查角色、路径与 GUID。</p>
 <p>在 File Manager 中多选文件或目录后导出，会保留选中项相对于共同父目录的路径。普通内容导入时直接在 <code>Assets/Plugins</code> 下展开，不会按包名额外套一层目录。例如同时选择 <code>materials/</code> 和 <code>web/</code>，导入结果就是 <code>Assets/Plugins/materials/</code> 和 <code>Assets/Plugins/web/</code>。</p>
 <h2 id="git">Git 仓库结构<a class="headerlink" href="#git" title="Permanent link">&para;</a></h2>
 <p>Git 仓库只比本地包根多一层：</p>
@@ -300,22 +301,47 @@
 <p>生命周期代码继承 <code>InxPreload</code>。包内 Python 使用显式相对导入，每个已安装插件拥有隔离且确定的模块命名空间。<code>runtime/</code> 参与玩法组件加载和热刷新；<code>editor/</code> 只由 Editor 生命周期加载。</p>
 <p>直接在 <code>Packages/&lt;name&gt;/runtime/</code> 编写本地包，不需要先安装自己才能构建 Player。构建会包含当前已索引的 runtime 文件及编译后的预载脚本，不会改写项目的安装所有权记录。简单包可以不写 manifest；<code>Packages/studio/tool/</code> 这样的命名空间目录需用 <code>inx_package.json</code> 明确包边界。即使 manifest 为未来分发 <code>.inxpkg</code> 指定了不同 reference，Player 仍保持当前项目目录对应的模块身份。</p>
 <p>这里没有 include/exclude fallback 清单。<code>.pyd</code> 或 <code>.wasm</code> 放在 <code>runtime/</code> 就属于运行时，放在 <code>editor/</code> 就只属于编辑器。材质、Shader、HTML 和其它普通资产安装到 <code>Assets/Plugins</code>，再通过正常资产管线进入 Player。</p>
+<p>Player 构建会把项目脚本和所有已启用插件的 <code>runtime/</code> 脚本编译到唯一的 GUID 映射与 <code>RuntimeTypeRegistry.json</code> 中。插件组件、嵌套 <code>SerializableObject</code>、生命周期方法、启动预热以及序列化字段结构与项目代码使用同一份注册表，插件作者无需另写 Player 类型注册。运行时脚本如果没有冻结资产 GUID 或稳定的包模块身份，构建会直接报告具体路径并停止。</p>
+<h2 id="preload">Preload、热重载与资源所有权<a class="headerlink" href="#preload" title="Permanent link">&para;</a></h2>
+<p>Editor 和 Player 都需要的服务使用 runtime <code>InxPreload</code>；面板、命令、导入器、本地 HTTP 工具等创作服务使用独立的 Editor preload。runtime preload 不应再用条件分支导入 Editor 模块，目录边界已经准确表达平台契约。</p>
+<p><code>preload(context)</code> 取得进程资源，<code>unload()</code> 释放插件自行管理的状态。其它可逆资源应在取得后立刻通过 <code>context.add_cleanup(callback)</code> 登记。清理函数会在 <code>unload()</code> 后按登记逆序各运行一次；如果 <code>preload()</code> 中途失败也会运行。HTTP 服务、线程、文件监听、事件订阅与回调因此和 preload 共享同一个事务生命周期。</p>
+<div class="language-python highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">ToolPreload</span><span class="p">(</span><span class="n">inx</span><span class="o">.</span><span class="n">InxPreload</span><span class="p">):</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">preload</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">context</span><span class="p">:</span> <span class="n">inx</span><span class="o">.</span><span class="n">PreloadContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>        <span class="n">service</span> <span class="o">=</span> <span class="n">start_service</span><span class="p">()</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>        <span class="n">context</span><span class="o">.</span><span class="n">add_cleanup</span><span class="p">(</span><span class="n">service</span><span class="o">.</span><span class="n">stop</span><span class="p">)</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">unload</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>        <span class="k">pass</span>
+</code></pre></div>
+<p>热重载会先解析候选代码。候选存在语法错误时，当前正常运行的版本不会被卸载；有效替换才会依次卸载旧生命周期、移除其拥有的 Editor 贡献与包模块，再发布新版本。公共 <code>infernux</code> 模块在进程内保持同一对象身份；插件如果替换 <code>sys.modules["infernux"]</code>，该候选会被拒绝。</p>
+<p><code>requirements.txt</code> 会在 preload 前完成安装。插件确实需要 <code>torch</code> 等大型依赖时，可以在 preload 中导入，让一次性加载发生在场景脚本前，而不是第一次 Play 操作时。引擎会自动检测 preload 新载入的原生 Python 扩展，并在替换或卸载前要求重启 Editor。只有其它无法撤销的进程状态才主动调用 <code>context.require_restart(reason)</code>；纯 Python 服务或能够完整限时关闭的 Flask 服务应使用 <code>add_cleanup</code>，不需要重启。</p>
+<p>Editor 专用 Flask 窗口应绑定 <code>127.0.0.1</code>，让操作系统分配可用端口，关闭 Flask 开发重载器，在插件拥有的线程中运行；清理函数必须 shutdown、等待线程退出并关闭 socket。除非 Player 明确需要提供该服务，否则服务端和浏览器 UI 都放在 <code>editor/</code>。</p>
 <h2 id="_6">编辑器命令与快捷键<a class="headerlink" href="#_6" title="Permanent link">&para;</a></h2>
 <p>请在编辑器预载脚本的导入阶段或 <code>preload(context)</code> 中注册工具。面板、<code>EditorCommandRegistry.register()</code> 注册的命令和 <code>ShortcutRouter.register()</code> 注册的快捷键都归属当前预载脚本：重载时先移除旧注册，禁用、卸载插件或关闭项目时一并清理。命令和快捷键 ID 应稳定且带有包名前缀；不能通过 <code>replace=True</code> 覆盖其它插件或引擎的注册。</p>
 <p>例如在 <code>preload(context)</code> 中：</p>
-<div class="language-python highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">infernux</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">inx</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">inx</span><span class="o">.</span><span class="n">editor</span><span class="o">.</span><span class="n">EditorCommandRegistry</span><span class="o">.</span><span class="n">instance</span><span class="p">()</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">inx</span><span class="o">.</span><span class="n">editor</span><span class="o">.</span><span class="n">EditorCommand</span><span class="p">(</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="s2">"studio.level.create"</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">create_level</span><span class="p">,</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">display_name</span><span class="o">=</span><span class="s2">"创建关卡"</span><span class="p">,</span> <span class="n">default_shortcut</span><span class="o">=</span><span class="s2">"Ctrl+Alt+K"</span><span class="p">,</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="n">can_execute</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">can_create_level</span><span class="p">,</span>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="p">))</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="n">inx</span><span class="o">.</span><span class="n">editor</span><span class="o">.</span><span class="n">ShortcutRouter</span><span class="o">.</span><span class="n">instance</span><span class="p">()</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">inx</span><span class="o">.</span><span class="n">editor</span><span class="o">.</span><span class="n">ShortcutBinding</span><span class="p">(</span>
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>    <span class="s2">"studio.level.create"</span><span class="p">,</span> <span class="n">inx</span><span class="o">.</span><span class="n">editor</span><span class="o">.</span><span class="n">KeyChord</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="s2">"Ctrl+Alt+K"</span><span class="p">),</span>
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>    <span class="n">binding_id</span><span class="o">=</span><span class="s2">"studio.level.create.shortcut"</span><span class="p">,</span>
-<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="p">))</span>
+<div class="language-python highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">infernux</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">inx</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">inx</span><span class="o">.</span><span class="n">editor</span><span class="o">.</span><span class="n">EditorCommandRegistry</span><span class="o">.</span><span class="n">instance</span><span class="p">()</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">inx</span><span class="o">.</span><span class="n">editor</span><span class="o">.</span><span class="n">EditorCommand</span><span class="p">(</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="s2">"studio.level.create"</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">create_level</span><span class="p">,</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">display_name</span><span class="o">=</span><span class="s2">"创建关卡"</span><span class="p">,</span> <span class="n">default_shortcut</span><span class="o">=</span><span class="s2">"Ctrl+Alt+K"</span><span class="p">,</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="n">can_execute</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">can_create_level</span><span class="p">,</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="p">))</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="n">inx</span><span class="o">.</span><span class="n">editor</span><span class="o">.</span><span class="n">ShortcutRouter</span><span class="o">.</span><span class="n">instance</span><span class="p">()</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">inx</span><span class="o">.</span><span class="n">editor</span><span class="o">.</span><span class="n">ShortcutBinding</span><span class="p">(</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="s2">"studio.level.create"</span><span class="p">,</span> <span class="n">inx</span><span class="o">.</span><span class="n">editor</span><span class="o">.</span><span class="n">KeyChord</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="s2">"Ctrl+Alt+K"</span><span class="p">),</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>    <span class="n">binding_id</span><span class="o">=</span><span class="s2">"studio.level.create.shortcut"</span><span class="p">,</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="p">))</span>
 </code></pre></div>
 <p>两个回调都接收 <code>CommandContext</code>。<code>default_shortcut</code> 用于显示提示，实际按键路由由快捷键绑定负责。切换快捷键设置不会清空插件独立注册的绑定。<code>ShortcutBinding.owner_id</code> 表示面板或输入焦点范围，不是插件归属。不要等到任意后续回调中才注册工具，那时已不在预载归属范围内。</p>
+<h2 id="editor">Editor 面板位置与插件词条<a class="headerlink" href="#editor" title="Permanent link">&para;</a></h2>
+<p><code>@editor_panel</code> 和 <code>@editor_window</code> 的 <code>menu_path</code> 使用斜杠分隔，可声明任意实用
+深度。每一段都是作者提供的默认显示文本。平行的 <code>menu_path_keys</code> 元组按级提供可选
+词条键，空条目表示保持默认文本。引擎拥有的菜单级使用 <code>menu.extensions</code> 等引擎键，
+插件拥有的菜单级使用包自己的命名空间键。</p>
+<p>插件的 Editor 词条表固定放在 <code>editor/translations.json</code>，使用
+<code>infernux.editor_translations</code> schema，包含全部受支持的 Editor 语言，并在每种语言中
+声明完全相同的键集合。包生命周期会在导入 Editor preload 前发布该表，并在热重载、禁用、
+卸载及关闭项目时移除。与引擎或其它包发生键冲突会明确失败。Player Cook 会随整个
+<code>editor/</code> 角色排除该词条表。</p>
 <h2 id="_7">按作者路径读取资产<a class="headerlink" href="#_7" title="Permanent link">&para;</a></h2>
 <p><code>inx.Application.asset_path("Assets/Data/message.txt")</code> 和 <code>inx.Application.asset_path("Packages/studio/server/runtime/config.json")</code> 使用同一个通用资产读取入口，不限于某种语言或 <code>Resources</code> 目录。Editor 解析 <code>Assets</code> 或 <code>Packages</code> 中的作者文件；Player 通过构建时冻结的作者路径、GUID 和 Cook 产物绑定解析，找不到绑定会明确失败，不会扫描松散文件来补齐。</p>
 <p>这个入口返回实际文件路径，可交给 <code>Path(...).read_text(encoding="utf-8")</code> 等读取函数。插件的 <code>preload()</code> 执行前，Player 已准备好这份资产目录，因此预载代码也可以读取 Cook 后的资产。路径只是查找键，作者目录不必原样存在于发行包旁边。</p>
