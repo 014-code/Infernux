@@ -259,7 +259,7 @@ jobs:
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Verify the bilingual changelog and signing disclosure
+      - name: Verify the English changelog and signing disclosure
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
@@ -271,7 +271,7 @@ jobs:
           actual = json.loads(Path("dist/github-release-body.json").read_text())["body"]
           expected = Path("dist/release-notes.md").read_text(encoding="utf-8")
           if actual.replace("\r\n", "\n").strip() != expected.strip():
-              raise SystemExit("GitHub Release body does not match the bilingual changelog and signing disclosure")
+              raise SystemExit("GitHub Release body does not match the English changelog and signing disclosure")
           PY
 
       - name: Upload to the GitHub Release
