@@ -1,121 +1,95 @@
-<p align="center">
-  <img src="docs/assets/logo.png" alt="Infernux logo" width="128" />
-</p>
+<p align="center"><img src="docs/assets/logo.png" width="112" alt="Infernux 标志"></p>
 
-<h1 align="center">熔炉 · Infernux</h1>
-
-<p align="center">
-  <strong>C++ / Vulkan / WebGPU 跑游戏，Python 写玩法和编辑器。</strong>
-</p>
-
-<p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License" /></a>
-  <img src="https://img.shields.io/badge/version-0.4.0-orange.svg" alt="Version 0.4.0" />
-  <img src="https://img.shields.io/badge/status-active_development-yellow.svg" alt="持续开发" />
-  <img src="https://img.shields.io/badge/platforms-Windows_|_Linux_|_Android_|_Web-lightgrey.svg" alt="Windows、Linux、Android 和 Web" />
-  <img src="https://img.shields.io/badge/python-3.13-brightgreen.svg" alt="Python 3.13" />
-  <img src="https://img.shields.io/badge/graphics-Vulkan_|_WebGPU-red.svg" alt="Vulkan 和 WebGPU" />
-</p>
+<h1 align="center">Infernux · 熔炉</h1>
+<p align="center"><a href="https://github.com/ChenlizheMe/Infernux/releases"><img src="https://img.shields.io/badge/version-0.4.0-orange.svg" alt="Published release 0.4.0"></a></p>
+<p align="center"><strong>创造世界，让智能成为世界的一部分。</strong><br>以 Python 为主要创作语言，致力于成为 Neural Network-Native Engine。</p>
 
 <p align="center">
   <a href="README.md">English</a> ·
   <a href="https://infernux-engine.com/">官网</a> ·
+  <a href="https://infernux-engine.com/start.html">开始使用</a> ·
   <a href="https://infernux-engine.com/wiki.html">文档</a> ·
-  <a href="https://infernux-engine.discourse.group/">论坛</a> ·
-  <a href="https://github.com/ChenlizheMe/Infernux/releases">Release</a>
+  <a href="https://infernux-engine.com/roadmap.html">路线图</a> ·
+  <a href="https://infernux-engine.discourse.group/">社区</a>
 </p>
 
-<p align="center">
-  <img src="docs/assets/demo.png" alt="Infernux 编辑器使用自定义 RenderStack 渲染 65,536 个物体的体素场景" width="100%" />
-</p>
+Infernux 是一款开源游戏引擎，让你用熟悉的 Python 创造可以游玩的世界，并把 Python 的计算生态带进游戏。用 Python 编写玩法、编辑器工具和渲染管线；由 C++ 承担底层运行时，Vulkan 驱动原生图形，WebGPU 把作品带到浏览器。
 
-上图是 0.3.4 的真实编辑器截图：65536 个普通 GameObject，一份网格和材质，RenderStack 同时做光照、雾、调色、移轴和 MSAA。
+我们的目标是 **Neural Network-Native Engine（3N）：神经网络原生引擎**，让神经网络从引擎设计开始就参与世界数据、计算和运行。模型能够观察世界、参与模拟，并成为最终游戏的一部分。这条路从完整的游戏开发能力出发，以明确、可检查的接口连接世界数据、神经计算与创作工具。
 
-## 这是什么
+**MIT 开源协议。Windows、Linux 编辑器。Windows、Linux、Android、Web 四端 Player。** 引擎仍在积极开发；041 是当前开发主线，当前公开发布版本为 **0.4.0**。
 
-通用游戏引擎。不是在别人编辑器外面套一层聊天框。
+<img src="docs/assets/demo.png" width="1920" height="1032" alt="Infernux 编辑器中的 65,536 个 GameObject">
+*0.3.4 技术展示的真实截图：65,536 个普通 GameObject，配合 Python 编写的 RenderStack。*
 
-运行时使用 C++17，原生平台采用 Vulkan，浏览器采用 WebGPU。玩法、组件、编辑器、资源和渲染编排用 Python 3.13 编写。
+## 今天就能创造的世界
 
-**0.4.0** 带来了 Windows 和 Linux 编辑器、Windows/Linux/Android/Web 四端游戏构建、自包含插件载荷、运行时资产封包，以及 Hub 托管的构建环境。四个 Player 目标使用同一个项目验证玩法、UI、输入与包内文件读取。
+### 从第一个组件，到你自己的工具，都用 Python
 
-## 现在能干什么
+编写带 Inspector 字段、生命周期回调和协程的玩法组件；组织 Prefab，同时编辑多个场景，在编辑器运行时持续迭代。用自定义面板和多级菜单扩展工作流。项目脚本与插件组件共同进入事务式热重载流程。
 
-- 场景、组件、物理、音频、UI、动画、粒子、Prefab
-- Vulkan Forward / Forward+ / Deferred、PBR、RenderGraph、RenderStack
-- Windows 和 Linux 的 Hub、编辑器与独立游戏构建
-- 通过同一构建服务导出 Android APK/AAB 和 Web Player
-- InxPackage 插件，区分运行时与编辑器内容，支持资产与脚本实时刷新
-- 按路径访问资产，运行时通过 GUID 索引读取封包内容
-- Hub 托管 Python 与安卓支持，安装任务在后台排队执行
+渲染编排、资源流程和数值计算同样可以在 Python 中完成。CPU/GPU JIT 与 Taichi 集成把计算接到玩法上，GPUJelly 软体模拟就是其中一种用法。启动预热与构建准备将受支持的编译工作提前，减少第一次操作时的等待。
 
-| 目标 | 编辑器 | Player | 图形后端 | 0.4.0 状态 |
-|---|---:|---:|---|---|
-| Windows x64 | 有 | 有 | Vulkan | 构建与 CI 通过 |
-| Linux x86_64 | 有 | 有 | Vulkan | 构建与 CI 通过 |
-| Android arm64/x86_64 | 无 | APK/AAB | Vulkan | 构建与 CI 通过 |
-| Web | 无 | HTML/JS/WASM | WebGPU | 构建与 CI 通过 |
+### 塑造画面，也掌握渲染管线
 
-此表遵循[可审计的支持矩阵](docs/platform-support.json)。
-[证据与发布边界](SUPPORT.md#platform-support)区分 CI 验收、公开发行和设备覆盖范围。
-macOS 和原生 iOS 不属于受支持目标。
+使用 PBR 材质、灯光、阴影、相机和后处理构建画面。用 Python 定义 RenderStack，由原生 RenderGraph 执行。引擎提供 Forward、Forward+、Deferred 渲染路径，以及模型、骨骼动画、GPU 粒子、屏幕 UI 和世界空间文本。
 
-平台导出器是拥有独立仓库和 Release 的官方 InxPackage：[Windows](https://github.com/ChenlizheMe/infernux_windows)、[Linux](https://github.com/ChenlizheMe/infernux_linux)、[Android](https://github.com/ChenlizheMe/infernux_android)、[Web](https://github.com/ChenlizheMe/infernux_web)。各仓库提供配图安装文档和可导入的 `.inxpkg` 发布制品。
+Vulkan 与 WebGPU 共用面向引擎的渲染接口。不同平台仍有真实的能力边界：浏览器的计算环境与 Python 扩展支持不同于桌面和 Android。目标平台的准备工作由引擎和平台插件承担，让游戏项目尽量共用创作代码。
 
-各平台插件携带预编译 Player，以及对应目标的运行时或构建工具。普通游戏导出使用已安装的引擎与插件，不需要引擎源码、Git 子模块、CMake 或原生引擎编译。构建 Android 时，先在 Hub 的“安装”页面安装“安卓支持”，再导入安卓插件。Hub 统一管理 SDK、NDK、JDK、Gradle 和目标 Python 依赖，并向编辑器提供路径。OpenGL、OpenGL ES 和 WebGL 都不是产品 fallback。
+### 把玩法组织成多个场景
 
-MCP 以官方默认插件 [`infernux/mcp`](https://github.com/ChenlizheMe/infernux_mcp) 的形式分发。新项目默认安装；不需要 Agent 操作的项目可以单独禁用或卸载，不影响引擎本体。
+一起编辑、加载和卸载场景，在场景间移动对象，并保留需要持续存在的对象。导入 FBX 与 Blender 内容，拆分网格、配置材质和贴图，同步外部源文件的修改。组合 Jolt 刚体、碰撞回调、动画、音频与交互 UI，通过 Scene/Game 视图、Gizmo、Hierarchy 和 Console 检查结果。
 
-独立动画 FBX 可以驱动关节一致的蒙皮模型，能够处理 Assimp 生成的 pivot 辅助节点；骨架不兼容时会明确失败，不再按几何形状猜测关节对应关系。
+资源从导入、编辑到 Cook 始终保有 **GUID 身份**。Player 使用构建后的资源索引与封包，携带游戏真正需要的内容，不依赖编辑器里的项目目录布局。
 
-## 插件
+### 让编辑器适应你的工作方式
 
-插件就是一个 InxPackage。丢 `.inxpkg`、选本地目录、贴 GitHub 地址，或从官方列表里装。
+InxPackage 插件可以包含组件、工具、资源和平台导出器。玩法放在 `runtime/`，创作工具放在 `editor/`，一般文件与它们并列。插件可以提供本地化面板和菜单，通过 `plugin_pages/` 提供编辑器内教程，并通过 Project/File Manager 的文件夹右键菜单打包成 `.inxpkg`。本地文件夹可用 `inx_package.json` 指定元数据，未提供时由导出器生成。GitHub 模板将分发内容放在 `package/` 中，独立打包脚本 `package.py` 放在包外。
 
-官方插件优先从 Infernux 分发服务下载；如果该渠道发生网络故障，再使用同一版本的 GitHub Release。两个渠道始终对应同一个插件标识与版本。
+可选 MCP 插件让 Agent 通过界面使用的同一套命令与撤销路径操作编辑器。自动化场景编辑、检查日志、捕获真实视口画面，同时保持操作可观察。
 
-“刷新官方列表”只更新发现目录，不升级已安装插件。GitHub 插件可在“版本”页检查兼容 Release，再显式选择更新。更新保留资产 GUID、启用状态和用户新增文件；覆盖本地修改前会征求确认。已安装插件可继续离线使用。
+## 一个项目，多种游玩方式
 
-```text
-MyPluginRepository/
-  README.md          # 仅供仓库展示
-  package.py         # 独立打包脚本
-  package/
-    inx_package.json # 可选，覆盖默认元数据
-    runtime/         # 进游戏
-    editor/          # 只在编辑器里
-    plugin_pages/    # 插件窗口里的额外页
-```
+| 平台 | 编辑器 | Player | 图形后端 |
+| --- | --- | --- | --- |
+| Windows x64 | 有 | 有 | Vulkan |
+| Linux x86_64 | 有 | 有 | Vulkan |
+| Android arm64/x86_64 | 无 | APK/AAB | Vulkan |
+| Web | 无 | HTML/JS/WASM | WebGPU |
 
-本地作者选中的文件夹本身就是包根目录，不要求再套 `package/` 或手写 manifest。
-未填写元数据时，输出 `.inxpkg` 的文件名决定默认 name 和 reference。
-Git 仓库只打包 `package/`，CMake、Gradle、Cargo、README 和临时构建产物都留在外层。
+各平台的要求与限制见[平台支持说明](SUPPORT.md#platform-support)及[平台支持矩阵](docs/platform-support.json)。
 
-`runtime` 和普通资源会进 Player。编辑器脚本留在编辑器。
+各平台插件声明自己的构建选项，在编辑器中统一呈现，并提供对应运行时载荷。InfernuxHub 管理引擎安装、Python 环境和共享安卓工具。导出的 Player 包含运行时组件与资产，编辑器工具留在编辑器中。
 
-插件资产拥有显式 `.meta` 身份，与项目资产参与同一套刷新流程。插件不只可以携带 Python 脚本，也可以携带材质、Shader、文本、网页和原生库等运行时文件。
+## 041 带来了什么
 
-Player 内容保留在 `Content.inxpkg` 中，不再直接展开 `Assets/` 和 `Library/` 目录树。引擎资产 API 通过构建时生成的 GUID 索引解析原始路径；需要真实文件路径的内容可以按需导出，并保留内部相对目录关系。这是二进制资产封包，不是密码学加密承诺。
+041 主线深入完善日常开发流程：多场景编辑、模型导入与外部源同步、CPU/GPU JIT 准备、GPUJelly、世界 UI、更可靠的 Player 启动和场景切换，以及重新梳理的插件生命周期。
 
-[插件说明](https://infernux-engine.com/wiki/site/zh/plugin-package-content.html)
+插件改进覆盖 Player 组件注册、已有组件行为的实时更新、面板与回调的明确清理、插件词条表，以及由平台插件拥有的构建设置。完整范围与升级说明见[中文更新日志](UpdateLog-zh.md)和[英文更新日志](UpdateLog.md)。
 
-官方插件仓库（源码、使用文档及 `.inxpkg` 制品）：
+## 走向 3N
 
-- [Windows](https://github.com/ChenlizheMe/infernux_windows) · [Linux](https://github.com/ChenlizheMe/infernux_linux) · [Android](https://github.com/ChenlizheMe/infernux_android) · [Web](https://github.com/ChenlizheMe/infernux_web)
-- [MCP 编辑器集成](https://github.com/ChenlizheMe/infernux_mcp)
-- [插件模板](https://github.com/ChenlizheMe/infernux_plugin_template) · [制作你的第一个插件](https://infernux-engine.com/learn/plugin-authoring.html)
+现在的引擎已经提供 Python 创作、原生渲染与模拟、批量世界数据 API、计算集成和可编程编辑器工具。接下来，这些基础将直接服务于神经网络系统：
 
-## 开始用
+| 方向 | 带来的能力 |
+| --- | --- |
+| 模型工作流与可移植推理 | 利用 Python 机器学习生态开发，按目标平台分发所需推理运行时。 |
+| 统一世界 Schema | 让工具和模型准确理解世界状态与合法操作。 |
+| 快照、增量与确定性回放 | 复现交互、诊断模拟，为学习任务提供可重复的环境。 |
+| 批量世界与张量数据面 | 同时推进多个环境，高效交换模型与世界的数据。 |
+| 有明确治理边界的工具与模型包 | 让扩展的能力、归属与生命周期随分发一同明确。 |
 
-从 [GitHub Releases](https://github.com/ChenlizheMe/Infernux/releases/latest) 下载已发布的 Windows x64 安装器，让 InfernuxHub 管理引擎版本。
+**这些是路线图目标，完整的神经网络训练与部署闭环仍在前方。** [路线图](https://infernux-engine.com/roadmap.html)列出了通往 0.5.2 的阶段。正确性、可观测性和明确的平台行为贯穿实现过程。
 
-全新安装的 Hub 会直接带上隔离的 Python 3.13 运行环境。每个 Infernux 版本都严格
-绑定到 wheel 声明的 Python ABI；Hub 只有在对应的托管运行环境已经安装后，才允许
-安装该引擎版本。旧版本所需的其它运行环境可以在 Hub 的“安装”页面中按需安装。
+## 开始创作
 
-Hub 在“安装”入口内分别提供引擎版本、Python 运行环境和安卓支持页面。安装在后台执行，底部用紧凑进度条展示任务，悬停即可展开队列；Hub 也可以保留在系统托盘。使用托管安装不需要先学 Python 或 Conda。
+安装 [InfernuxHub](https://infernux-engine.com/download.html)，选择引擎版本并创建项目。Hub 管理 Python 环境，使用编辑器无需先配置原生编译器。接下来可以阅读[学习指南](https://infernux-engine.com/learn.html)与 [API 文档](https://infernux-engine.com/wiki/site/en/api/index.html)。
 
-源码构建需要 Windows 10/11 x64、Python 3.13、Vulkan SDK 1.3+、CMake 3.25+、Visual Studio 2022、MSVC v143：
+插件作者入口：[创作指南](https://infernux-engine.com/wiki/site/en/plugin-package-content.html) · [插件模板](https://github.com/ChenlizheMe/infernux_plugin_template)。
+
+### 从源码构建引擎
+
+Windows 需要带 MSVC v143 的 Visual Studio 2022、CMake 3.25+、Vulkan SDK 与 Python 3.13 开发环境。通过 preset 构建并安装：
 
 ```powershell
 git clone --recurse-submodules https://github.com/ChenlizheMe/Infernux.git
@@ -123,39 +97,18 @@ cd Infernux
 ./scripts/setup/configure_development.ps1
 conda activate infernux
 cmake --preset windows-msvc-release
-cmake --build --preset windows-msvc-wheel
+cmake --build --preset windows-msvc-release
+cmake --build --preset windows-msvc-install-wheel
 python packaging/launcher.py
 ```
 
-Ubuntu 或 Debian 下先安装原生依赖，再运行初始化脚本。脚本会补齐
-子模块，并按照 `environment.yml` 创建项目统一使用的 Python 3.13 Conda 环境；如果已有
-`infernux` 环境使用不同的 Python ABI，脚本会重建它，不会勉强沿用旧环境。
+Linux 先运行 `scripts/setup/install_linux_dependencies.sh` 安装原生依赖，再运行 `bash scripts/setup/configure_development.sh`，激活 `infernux`，使用 `linux-clang-release` 配置和构建 preset，最后运行 `linux-clang-install-wheel`。preset 选择匹配的配置并安装打包后的引擎；开发细节见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
-```bash
-scripts/setup/install_linux_dependencies.sh
-bash scripts/setup/configure_development.sh
-conda activate infernux
-cmake --preset linux-clang-release
-cmake --build --preset linux-clang-release
-```
+## 加入熔炉
 
-两端都可以运行 Python 测试。下面的原生测试示例使用 Windows preset；Linux 下改用 `linux-clang-dev`。
+做一款游戏，分享一个插件，或展示你希望改进的工作流。欢迎在[社区](https://infernux-engine.discourse.group/)讨论和展示作品，在 [GitHub](https://github.com/ChenlizheMe/Infernux/issues) 提交可复现的问题，也欢迎参与引擎、文档和示例的建设。
 
-```powershell
-python -m pytest python/test/ -v
-cmake --preset windows-msvc-dev
-cmake --build --preset windows-msvc-dev
-ctest --preset windows-msvc-dev --output-on-failure
-```
-
-## 文档
-
-- [文档入口](https://infernux-engine.com/wiki.html)
-- [API](https://infernux-engine.com/wiki/site/zh/api/index.html)
-- [插件](https://infernux-engine.com/wiki/site/zh/plugin-package-content.html)
-- [更新日志](UpdateLog-zh.md)
-- [路线图](https://infernux-engine.com/roadmap.html)
-- [论文](https://arxiv.org/pdf/2604.10263)
+Infernux 使用 [MIT 协议](LICENSE)。[SignPath.io](https://signpath.io/) 提供免费代码签名，[SignPath Foundation](https://signpath.org/) 提供证书，详见[代码签名政策](CODE_SIGNING_POLICY.md)。
 
 ## 引用
 
@@ -168,7 +121,3 @@ ctest --preset windows-msvc-dev --output-on-failure
   url     = {https://github.com/ChenlizheMe/Infernux}
 }
 ```
-
-## 许可证
-
-MIT，见 [LICENSE](LICENSE)。报 Bug 请带上引擎版本、系统和复现步骤。大改之前先看 [CONTRIBUTING.md](CONTRIBUTING.md)。

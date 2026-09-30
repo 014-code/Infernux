@@ -35,16 +35,23 @@ def _request(tmp_path: Path, **options) -> BuildRequest:
     (project / "Assets").mkdir(parents=True)
     (project / "ProjectSettings").mkdir()
     (project / "ProjectSettings" / "BuildSettings.json").write_text(
-        json.dumps({"scenes": []}), encoding="utf-8"
+        json.dumps({"scene_guids": []}), encoding="utf-8"
     )
     entries = options.pop("asset_catalog_entries", ())
+    presentation = {
+        "display_mode": "fullscreen_borderless",
+        "window_width": 1280,
+        "window_height": 720,
+        "window_resizable": True,
+    }
+    presentation.update(options)
     return BuildRequest(
         str(project),
         target.id,
         str(tmp_path / "Player"),
         BuildProfile(
             configuration=BuildConfiguration.RELEASE,
-            options=options,
+            options=presentation,
         ),
         asset_catalog_entries=entries,
     )
@@ -118,14 +125,14 @@ def test_host_exporter_routes_settings_catalog_progress_and_cancellation(
         tmp_path,
         build_settings={
             "game_name": "Balance040",
-            "display_mode": "windowed",
-            "window_width": 960,
-            "window_height": 540,
-            "window_resizable": False,
+            "scene_guids": ["requested-scene-guid"],
             "lto": False,
-            "enable_jit": True,
             "splash_items": [],
         },
+        display_mode="windowed",
+        window_width=960,
+        window_height=540,
+        window_resizable=False,
         asset_catalog_entries=[{"guid": "a" * 32}],
     )
     object.__setattr__(request, "progress", progress.append)
@@ -136,6 +143,7 @@ def test_host_exporter_routes_settings_catalog_progress_and_cancellation(
     assert result.success
     assert result.artifacts[0].kind == "player-directory"
     assert captured["kwargs"]["game_name"] == "Balance040"
+    assert captured["kwargs"]["build_scene_guids"] == ["requested-scene-guid"]
     assert captured["kwargs"]["display_mode"] == "windowed"
     assert captured["kwargs"]["debug_mode"] is False
     assert captured["entries"] == [{"guid": "a" * 32}]

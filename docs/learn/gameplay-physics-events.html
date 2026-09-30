@@ -35,7 +35,7 @@
         <div data-page-language="en" class="learn-article-body"><p><span class="mini-tag">Gameplay Foundations · Chapter 5</span></p>
 <h1 id="physics-and-collision-callbacks">Physics and collision callbacks</h1>
 <p>Physics becomes predictable when shape, motion, and reaction each have one clear owner. A <code>Collider</code> supplies the shape, a <code>Rigidbody</code> supplies simulated motion, <code>fixed_update</code> supplies fixed-step gameplay input, and collision or Trigger callbacks report changes in contact state.</p>
-<p>In this chapter you will build a rolling probe that lands on a floor, moves through a Trigger volume, and reports every callback phase in the Console.</p>
+<p>In this chapter you will build a sliding probe that lands on a floor, moves through a Trigger volume, and reports every callback phase in the Console.</p>
 <div class="learn-article-toc"><strong>In this chapter</strong><a href="#physics-parts">Collider and Rigidbody roles</a><a href="#build-physics-scene">Build the test scene</a><a href="#physics-probe-script">Write the component</a><a href="#collision-trigger-phases">Read the callbacks</a><a href="#verify-physics">Verify the result</a><a href="#physics-errors">Common errors</a></div>
 
 <figure class="learn-figure">
@@ -79,11 +79,54 @@
 <p>Start from a scene with a Camera that can see the origin, then create these objects:</p>
 <ol>
 <li>Create a <strong>Cube</strong> named <code>Ground</code>. Set Position to <code>(0, -0.5, 0)</code> and Scale to <code>(12, 1, 4)</code>. The primitive already has a <code>BoxCollider</code>; leave its <strong>Is Trigger</strong> disabled and do not add a Rigidbody.</li>
-<li>Create a <strong>Sphere</strong> named <code>Probe</code>. Set Position to <code>(-4, 2, 0)</code>. The primitive already has a <code>SphereCollider</code>; use <strong>Add Component</strong> to add only <code>Rigidbody</code>. Keep <strong>Use Gravity</strong> enabled and <strong>Is Kinematic</strong> disabled. Enable the Rigidbody's <strong>Freeze Position Z</strong> and all three <strong>Freeze Rotation</strong> controls so the example stays on one line.</li>
+<li>Create a <strong>Sphere</strong> named <code>Probe</code>. Set Position to <code>(-4, 2, 0)</code>. The primitive already has a <code>SphereCollider</code>; use <strong>Add Component</strong> to add only <code>Rigidbody</code>. Set <strong>Mass</strong> to <code>1</code> and <strong>Drag</strong> to <code>0</code>, keep <strong>Use Gravity</strong> enabled and <strong>Is Kinematic</strong> disabled. Enable the Rigidbody's <strong>Freeze Position Z</strong> and all three <strong>Freeze Rotation</strong> controls so the example stays on one line. Leave Position X and Y unfrozen and use the default physics material on both Probe and Ground.</li>
 <li>Create another <strong>Cube</strong> named <code>Sensor</code>. Set Position to <code>(2, 0.75, 0)</code> and Scale to <code>(1, 1.5, 4)</code>. On its existing <code>BoxCollider</code>, enable <strong>Is Trigger</strong>. You may disable its MeshRenderer after placing it so it behaves as an invisible gameplay volume.</li>
 <li>Save the scene before entering Play mode.</li>
 </ol>
 <p>The floor and sensor do not need a Rigidbody for this setup. The moving <code>Probe</code> supplies the active Rigidbody for both interactions.</p>
+<h3 id="match-the-complete-parameter-set">Match the complete parameter set</h3>
+<p>Use fresh, unparented primitives, not objects reused from another lesson. Keep every Rotation at <code>(0, 0, 0)</code>, each collider Center at <code>(0, 0, 0)</code>, and <code>Probe</code> Scale at <code>(1, 1, 1)</code>. Ground and Sensor BoxCollider <strong>Size</strong> stays <code>(1, 1, 1)</code>; their Transform Scale already supplies the dimensions. Probe SphereCollider <strong>Radius</strong> stays <code>0.5</code>. Scaling both the Transform and collider dimensions would change the experiment.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Baseline</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Gravity</td>
+<td><code>(0, -9.81, 0)</code></td>
+</tr>
+<tr>
+<td>Fixed timestep / Time Scale</td>
+<td><code>0.02</code> seconds / <code>1</code></td>
+</tr>
+<tr>
+<td>Probe Mass / Drag</td>
+<td><code>1</code> / <code>0</code></td>
+</tr>
+<tr>
+<td>Continuous X force</td>
+<td><code>10 N</code> in every fixed update</td>
+</tr>
+<tr>
+<td>Probe constraints</td>
+<td>Freeze Position Z and all Rotation; leave X/Y free</td>
+</tr>
+<tr>
+<td>Ground / Probe material</td>
+<td>No assigned PhysicMaterial: friction <code>0.6</code>, bounce <code>0</code></td>
+</tr>
+<tr>
+<td>Trigger</td>
+<td>Sensor only; all three objects on mutually colliding layers</td>
+</tr>
+</tbody>
+</table>
+<p>With this baseline, allow <strong>five simulated seconds</strong> for the Probe to cross the Sensor and leave the end of the floor. Expect <code>collision exit: Ground</code> after it leaves the floor as well as the three Sensor phases. Enter/Stay/Exit are ordered within a contact pair; do not require one global ordering across different colliders. A reduced Time Scale increases the wall-clock wait.</p>
+<h3 id="try-a-controlled-friction-change">Try a controlled friction change</h3>
+<p>After completing the baseline, create a <strong>Physic Material</strong> asset, set <strong>Friction</strong> to <code>0.1</code>, <strong>Bounciness</strong> to <code>0</code>, and <strong>Friction Combine</strong> to <strong>Average</strong>. Assign that same asset to <strong>both</strong> Ground's BoxCollider and Probe's SphereCollider, then try <code>3 N</code>. With this combine mode, changing only one side leaves effective friction at <code>(0.1 + 0.6) / 2 = 0.35</code>, so a <code>3 N</code> force is still below the approximate <code>3.43 N</code> sliding threshold for this 1 kg setup. Friction is an exposed material parameter; changing the shape scale is not a substitute for configuring it. Restore the baseline before the next chapter.</p>
 <h2 id="physics-probe-script">Write the component</h2>
 <p>Create <code>Assets/Scripts/physics_probe.py</code> with the following complete component:</p>
 <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">infernux</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">inx</span>
@@ -105,7 +148,7 @@
             <span class="k">return</span>
 
         <span class="c1"># add_force defaults to ForceMode.Force.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_body</span><span class="o">.</span><span class="n">add_force</span><span class="p">(</span><span class="n">inx</span><span class="o">.</span><span class="n">Vector3</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_body</span><span class="o">.</span><span class="n">add_force</span><span class="p">(</span><span class="n">inx</span><span class="o">.</span><span class="n">Vector3</span><span class="p">(</span><span class="mf">10.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">))</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">on_collision_enter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">collision</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_collision_stay_steps</span> <span class="o">=</span> <span class="mi">0</span>
@@ -141,6 +184,7 @@
 
 <p>Return to the editor, select <code>Probe</code>, choose <strong>Add Component</strong>, and attach <code>PhysicsProbe</code>. The component stores its Rigidbody reference in <code>start</code>; Infernux components manage their own initialization, so gameplay scripts use <code>awake</code> or <code>start</code> instead of defining <code>__init__</code>.</p>
 <p>The <code>fixed_delta_time</code> parameter is available when a calculation needs the duration of one fixed step. <code>add_force</code> already applies a force through the physics solver, so this example does not multiply the force vector by <code>fixed_delta_time</code>.</p>
+<p>Rotation is frozen, so the sphere slides rather than rolls. The default friction coefficient is <code>0.6</code>; at mass <code>1</code> and default gravity, the force needed to overcome ground friction is about <code>5.9 N</code>. The example uses <code>10 N</code>. A smaller force such as <code>3 N</code> moves the Probe while airborne but lets ground friction stop it before the Sensor.</p>
 <h2 id="collision-trigger-phases">Read the callbacks</h2>
 <p>Solid contacts receive a <code>CollisionInfo</code> value:</p>
 <table>
@@ -207,6 +251,7 @@
 <p><strong>The Probe falls through the floor.</strong> Confirm that both objects have concrete colliders, the collider shapes cover the visible meshes, and the involved layers are allowed to interact in the Physics Layer Matrix.</p>
 <p><strong>No callback appears.</strong> Confirm that <code>PhysicsProbe</code> is enabled on <code>Probe</code>, Play mode is running, and <code>Probe</code> has an enabled Rigidbody. Also check that the objects actually overlap; selecting a collider shows its shape gizmo.</p>
 <p><strong>Only Trigger callbacks appear.</strong> Inspect <strong>Is Trigger</strong> on every collider. A Trigger overlap follows the <code>on_trigger_*</code> path and does not create solid contact.</p>
+<p><strong>Only Collision callbacks appear; the Probe stops after landing.</strong> <code>collision enter/stay: Ground</code> confirms solid contact, not a Trigger overlap. First watch Position X: the Probe must reach the Sensor at X = <code>2</code>. Use the complete <code>10 N</code> script above, Mass <code>1</code>, Drag <code>0</code>, and leave Position X unfrozen; heavier bodies or a different physics material may need more force. A previous <code>3 N</code> version of this exercise was too weak with frozen rotation and default friction. If the Probe reaches the Sensor but receives collision callbacks for <code>Sensor</code>, enable <strong>Is Trigger</strong> on that object's BoxCollider. If it passes without any Sensor callbacks, check the collider overlap and Physics Layer Matrix. This script intentionally prints only the first Stay, so a quiet Console does not by itself mean physics has stopped.</p>
 <p><strong>The Console floods with Stay messages.</strong> <code>on_collision_stay</code> and <code>on_trigger_stay</code> run on fixed steps while the relationship remains active. Count, throttle, or use the phase to maintain state instead of logging every call.</p>
 <p><strong>Motion changes with rendering frame rate.</strong> Apply continuous force in <code>fixed_update</code>. For a kinematic Rigidbody, call <code>move_position</code> or <code>move_rotation</code> from the same fixed-step callback.</p>
 <p><strong><code>collision.impulse</code> raises an attribute error.</strong> The current <code>CollisionInfo</code> API exposes <code>collider</code>, <code>game_object</code>, <code>contact_point</code>, <code>contact_normal</code>, and <code>relative_velocity</code>. Use only those documented fields.</p>
@@ -259,11 +304,54 @@
 <p>先准备一个能看见原点的 Camera，再创建以下物体：</p>
 <ol>
 <li>创建 <strong>Cube</strong>，命名为 <code>Ground</code>。把 Position 设为 <code>(0, -0.5, 0)</code>，Scale 设为 <code>(12, 1, 4)</code>。该基础几何体已经带有 <code>BoxCollider</code>；保持 <strong>Is Trigger</strong> 关闭，不添加 Rigidbody。</li>
-<li>创建 <strong>Sphere</strong>，命名为 <code>Probe</code>。把 Position 设为 <code>(-4, 2, 0)</code>。该基础几何体已经带有 <code>SphereCollider</code>；通过 <strong>Add Component</strong> 只添加 <code>Rigidbody</code>。保持 <strong>Use Gravity</strong> 开启、<strong>Is Kinematic</strong> 关闭。开启 Rigidbody 的 <strong>Freeze Position Z</strong> 和三个 <strong>Freeze Rotation</strong>，让运动稳定在一条直线上。</li>
+<li>创建 <strong>Sphere</strong>，命名为 <code>Probe</code>。把 Position 设为 <code>(-4, 2, 0)</code>。该基础几何体已经带有 <code>SphereCollider</code>；通过 <strong>Add Component</strong> 只添加 <code>Rigidbody</code>。把 <strong>Mass</strong> 设为 <code>1</code>、<strong>Drag</strong> 设为 <code>0</code>，保持 <strong>Use Gravity</strong> 开启、<strong>Is Kinematic</strong> 关闭。开启 Rigidbody 的 <strong>Freeze Position Z</strong> 和三个 <strong>Freeze Rotation</strong>，让运动稳定在一条直线上。Position X、Y 不冻结，Probe 和 Ground 都使用默认物理材质。</li>
 <li>再创建一个 <strong>Cube</strong>，命名为 <code>Sensor</code>。把 Position 设为 <code>(2, 0.75, 0)</code>，Scale 设为 <code>(1, 1.5, 4)</code>。在已有的 <code>BoxCollider</code> 上开启 <strong>Is Trigger</strong>。定位完成后可以关闭它的 MeshRenderer，把它作为不可见的玩法区域。</li>
 <li>进入 Play 模式前保存场景。</li>
 </ol>
 <p>这个场景中的地面与 Sensor 无需 Rigidbody。移动的 <code>Probe</code> 为两次交互提供活动刚体。</p>
+<h3 id="_2">对齐完整参数</h3>
+<p>使用新建、没有父物体的基础几何体，不复用其他课程里改过的对象。所有 Rotation 保持 <code>(0, 0, 0)</code>，Collider Center 保持 <code>(0, 0, 0)</code>，Probe Scale 为 <code>(1, 1, 1)</code>。Ground 和 Sensor 的 BoxCollider <strong>Size</strong> 保持 <code>(1, 1, 1)</code>，实际尺寸已经由 Transform Scale 提供；Probe 的 SphereCollider <strong>Radius</strong> 保持 <code>0.5</code>。同时放大 Transform 和碰撞体尺寸，会改变整个实验。</p>
+<table>
+<thead>
+<tr>
+<th>设置</th>
+<th>基线值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Gravity</td>
+<td><code>(0, -9.81, 0)</code></td>
+</tr>
+<tr>
+<td>固定时间步 / Time Scale</td>
+<td><code>0.02</code> 秒 / <code>1</code></td>
+</tr>
+<tr>
+<td>Probe Mass / Drag</td>
+<td><code>1</code> / <code>0</code></td>
+</tr>
+<tr>
+<td>持续 X 方向推力</td>
+<td>每次 fixed_update 施加 <code>10 N</code></td>
+</tr>
+<tr>
+<td>Probe 约束</td>
+<td>冻结位置 Z 和全部旋转，位置 X/Y 保持自由</td>
+</tr>
+<tr>
+<td>Ground / Probe 物理材质</td>
+<td>不指定 PhysicMaterial：摩擦 <code>0.6</code>、弹性 <code>0</code></td>
+</tr>
+<tr>
+<td>Trigger</td>
+<td>只有 Sensor 开启；三者所在层允许相互碰撞</td>
+</tr>
+</tbody>
+</table>
+<p>按照这组参数，观察<strong>五秒模拟时间</strong>，让 Probe 穿过 Sensor 并离开地板边缘。除 Sensor 的三个阶段外，离开地板后也应出现 <code>collision exit: Ground</code>。Enter/Stay/Exit 的顺序针对同一对接触，不要求不同碰撞体之间存在统一日志顺序。降低 Time Scale 会延长现实中的等待时间。</p>
+<h3 id="_3">做一次受控的摩擦实验</h3>
+<p>基线完成后，新建 <strong>Physic Material（物理材质）</strong>，将 <strong>Friction</strong> 设为 <code>0.1</code>、<strong>Bounciness</strong> 设为 <code>0</code>、<strong>Friction Combine</strong> 设为 <strong>Average</strong>，把同一资产<strong>同时</strong>赋给 Ground 的 BoxCollider 与 Probe 的 SphereCollider，再尝试 <code>3 N</code>。采用该合成方式时，只修改一边会得到 <code>(0.1 + 0.6) / 2 = 0.35</code> 的有效摩擦；对这个 1 kg 场景而言，<code>3 N</code> 仍低于约 <code>3.43 N</code> 的滑动阈值。摩擦是公开的物理材质参数，改变形状缩放不能替代对它的设置。进入下一章前恢复基线参数。</p>
 <h2 id="physics-probe-script_1">编写物理组件</h2>
 <p>创建 <code>Assets/Scripts/physics_probe.py</code>，写入以下完整组件：</p>
 <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">infernux</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">inx</span>
@@ -285,7 +373,7 @@
             <span class="k">return</span>
 
         <span class="c1"># add_force 默认使用 ForceMode.Force。</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_body</span><span class="o">.</span><span class="n">add_force</span><span class="p">(</span><span class="n">inx</span><span class="o">.</span><span class="n">Vector3</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_body</span><span class="o">.</span><span class="n">add_force</span><span class="p">(</span><span class="n">inx</span><span class="o">.</span><span class="n">Vector3</span><span class="p">(</span><span class="mf">10.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">))</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">on_collision_enter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">collision</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_collision_stay_steps</span> <span class="o">=</span> <span class="mi">0</span>
@@ -321,6 +409,7 @@
 
 <p>回到编辑器，选中 <code>Probe</code>，通过 <strong>Add Component</strong> 挂载 <code>PhysicsProbe</code>。组件在 <code>start</code> 中保存 Rigidbody 引用。Infernux 会管理组件初始化，因此玩法组件应使用 <code>awake</code> 或 <code>start</code>，不要定义 <code>__init__</code>。</p>
 <p>需要固定步时长时，可以读取 <code>fixed_delta_time</code>。<code>add_force</code> 会把力交给物理解算器，本例无需再用 <code>fixed_delta_time</code> 乘以力向量。</p>
+<p>由于冻结了旋转，球体会滑动而不是滚动。默认摩擦系数为 <code>0.6</code>；质量为 <code>1</code>、使用默认重力时，克服地面摩擦约需 <code>5.9 N</code>，因此本例使用 <code>10 N</code>。若只施加 <code>3 N</code>，Probe 会在空中横移，但落地后会被摩擦力制停，无法到达 Sensor。</p>
 <h2 id="collision-trigger-phases_1">理解六个回调阶段</h2>
 <p>实体接触会收到 <code>CollisionInfo</code>：</p>
 <table>
@@ -387,10 +476,11 @@
 <p><strong>Probe 穿过地面。</strong> 确认两个物体都有具体 Collider，碰撞形状覆盖可见 Mesh，并检查 Physics Layer Matrix 是否允许相关 Layer 交互。</p>
 <p><strong>没有任何回调。</strong> 确认 <code>PhysicsProbe</code> 已启用并挂在 <code>Probe</code> 上，当前处于 Play 模式，<code>Probe</code> 具有启用的 Rigidbody。还要检查物体是否真的相交；选中 Collider 可以查看它的形状 Gizmo。</p>
 <p><strong>只出现 Trigger 回调。</strong> 检查每个 Collider 的 <strong>Is Trigger</strong>。Trigger 重叠只走 <code>on_trigger_*</code> 路径，也不会产生实体阻挡。</p>
+<p><strong>只出现 Collision，Probe 落地后停住。</strong> <code>collision enter/stay: Ground</code> 只能证明地面实体接触，不能证明已经进入 Trigger。先观察 Position X：Probe 必须移动到 X = <code>2</code> 的 Sensor。使用上面完整的 <code>10 N</code> 脚本、Mass <code>1</code>、Drag <code>0</code>，并保持 Position X 不冻结；更大的质量或不同物理材质可能需要更大的力。旧版练习中的 <code>3 N</code> 在冻结旋转、默认摩擦的条件下不足以持续移动。如果已经到达 Sensor，却收到针对 <code>Sensor</code> 的 Collision，检查该物体 BoxCollider 的 <strong>Is Trigger</strong>。如果穿过时没有任何 Sensor 回调，检查碰撞形状是否相交及 Physics Layer Matrix。本脚本只打印第一个 Stay，Console 安静本身不表示物理已经停止。</p>
 <p><strong>Console 被 Stay 消息占满。</strong> <code>on_collision_stay</code> 与 <code>on_trigger_stay</code> 会在关系保持期间按固定步运行。可以计数、限频，或用它维护状态。</p>
 <p><strong>运动随渲染帧率变化。</strong> 把连续施力放进 <code>fixed_update</code>。运动学 Rigidbody 可在同一回调中调用 <code>move_position</code> 或 <code>move_rotation</code>。</p>
 <p><strong>访问 <code>collision.impulse</code> 报错。</strong> 当前 <code>CollisionInfo</code> 提供 <code>collider</code>、<code>game_object</code>、<code>contact_point</code>、<code>contact_normal</code> 与 <code>relative_velocity</code>，请使用这些公开字段。</p>
-<h2 id="_2">下一章</h2>
+<h2 id="_4">下一章</h2>
 <p>现在，Probe 已经把底层物理变化整理成清晰的玩法事件。下一章 <a href="gameplay-ui-scenes.html">UI 操作与场景流程</a> 会把组件的公开方法交给 Button，并通过它发起安全的运行时场景切换。</p></div>
 
         <nav class="learn-course-pager" aria-label="Previous and next chapters">

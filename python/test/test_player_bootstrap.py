@@ -89,6 +89,7 @@ def test_plugin_preload_resolves_cooked_assets_before_scene_startup(
         }]},
     )
     session = PlayerRuntimeSession(
+        asset_database=object(),
         scheduler=types.SimpleNamespace(),
         scene_service=types.SimpleNamespace(bind_runtime_catalog=lambda _catalog: None),
     )
@@ -118,6 +119,7 @@ def test_plugin_preload_resolves_cooked_assets_before_scene_startup(
             for name in (
                 "_force_player_mode", "_load_runtime_contract", "_init_engine",
                 "_pump_startup_events", "_load_runtime_asset_catalog",
+                "_prewarm_builtin_pipelines",
             ):
                 monkeypatch.setattr(bootstrap, name, lambda: None)
             run = bootstrap.run
@@ -135,7 +137,7 @@ def test_plugin_preload_resolves_cooked_assets_before_scene_startup(
                 "_player_session": None,
                 "_prepare_player_asset_contract": lambda: None,
                 "_runtime_data_root": str(tmp_path),
-                "_player_asset_database": None,
+                "_player_asset_database": session.get_asset_database(),
                 "_player_runtime_manifest": manifest,
                 "_player_runtime_catalog": catalog,
             }
@@ -151,6 +153,10 @@ def test_plugin_preload_resolves_cooked_assets_before_scene_startup(
         with pytest.raises(PreloadObserved):
             run()
     finally:
+        from Infernux.core.assets import AssetManager
+
+        AssetManager.release_engine()
+        Application._unbind_engine(session)
         set_project_root(None)
 
 
@@ -246,7 +252,7 @@ def test_player_bootstrap_uses_boot_validated_archive_size(monkeypatch):
     )
 
 
-def test_player_run_loads_scene_without_starting_play():
+def test_player_run_prewarms_before_revealing_a_no_splash_scene():
     from Infernux.engine.player_bootstrap import PlayerBootstrap
 
     calls = []
@@ -260,27 +266,64 @@ def test_player_run_loads_scene_without_starting_play():
     bootstrap._force_player_mode = lambda: calls.append("force")
     bootstrap._load_runtime_contract = lambda: calls.append("contract")
     bootstrap._init_engine = lambda: calls.append("engine")
+    bootstrap._prewarm_builtin_pipelines = lambda: calls.append("builtin_gpu")
     bootstrap._load_runtime_asset_catalog = lambda: calls.append("catalog")
     bootstrap._create_managers = lambda: calls.append("managers")
+    bootstrap._load_plugins = lambda: calls.append("plugins")
+    bootstrap._schedule_project_warmup = lambda: calls.append("project_warmup")
+    bootstrap._finish_project_warmup = lambda: calls.append("finish_warmup")
     bootstrap._setup_game_camera = lambda: calls.append("camera")
     bootstrap._register_player_gui = lambda: calls.append("gui")
     bootstrap._load_initial_scene = lambda: calls.append("scene")
     bootstrap._enter_play_mode = lambda: calls.append("play")
+    bootstrap._prewarm_first_frame = lambda: calls.append("first_gpu_frame")
+    bootstrap._pump_startup_events = lambda: calls.append("pump")
+    bootstrap.runtime_session = object()
+    bootstrap.splash_items = []
 
     bootstrap.run()
 
-    assert "play" not in calls
     assert calls == [
         "force",
         "contract",
         "engine",
+        "builtin_gpu",
         "catalog",
+        "pump",
         "managers",
+        "pump",
+        "plugins",
+        "project_warmup",
+        "pump",
         "camera",
         "gui",
+        "pump",
         "scene",
         "prepare",
+        "pump",
+        "play",
+        "pump",
+        "first_gpu_frame",
+        "pump",
+        "finish_warmup",
     ]
+
+
+def test_player_first_frame_prewarm_builds_target_before_composition():
+    from Infernux.engine.player_bootstrap import PlayerBootstrap
+
+    deltas = []
+
+    class Engine:
+        def tick(self, delta):
+            deltas.append(delta)
+
+    bootstrap = PlayerBootstrap.__new__(PlayerBootstrap)
+    bootstrap.engine = Engine()
+
+    bootstrap._prewarm_first_frame()
+
+    assert deltas == [0.0, 0.0]
 
 
 def test_player_bootstrap_does_not_discover_project_requirements(monkeypatch):
@@ -376,26 +419,25 @@ def test_player_supervisor_scene_override_resolves_cooked_catalog_artifact(
 
     bootstrap = PlayerBootstrap.__new__(PlayerBootstrap)
     bootstrap.project_path = str(tmp_path)
-    bootstrap.scenes = [
-        "Assets/Scenes/Start.scene",
-        "Assets/Scenes/VoxelContinent.scene",
+    bootstrap.scene_guids = [
+        "start-guid",
+        "voxel-guid",
     ]
     bootstrap._runtime_manifest = Manifest()
     bootstrap.runtime_session = RuntimeSession()
     bootstrap._resolve_runtime_scene = lambda reference: (
         str(cooked)
-        if str(reference).replace("\\", "/")
-        == "Assets/Scenes/VoxelContinent.scene"
+        if reference == "voxel-guid"
         else None
     )
     monkeypatch.setenv(
-        "_INFERNUX_PLAYER_START_SCENE",
-        "Assets/Scenes/VoxelContinent.scene",
+        "_INFERNUX_PLAYER_START_SCENE_GUID",
+        "voxel-guid",
     )
 
     bootstrap._load_initial_scene()
 
-    assert loaded == [str(cooked)]
+    assert loaded == ["voxel-guid"]
 
 
 def test_player_supervisor_scene_override_requires_catalog_entry(
@@ -410,16 +452,16 @@ def test_player_supervisor_scene_override_requires_catalog_entry(
 
     bootstrap = PlayerBootstrap.__new__(PlayerBootstrap)
     bootstrap.project_path = str(tmp_path)
-    bootstrap.scenes = ["Assets/Scenes/Start.scene"]
+    bootstrap.scene_guids = ["start-guid"]
     bootstrap._runtime_manifest = Manifest()
     bootstrap.runtime_session = object()
     bootstrap._resolve_runtime_scene = lambda _reference: None
     monkeypatch.setenv(
-        "_INFERNUX_PLAYER_START_SCENE",
-        "Assets/Scenes/Missing.scene",
+        "_INFERNUX_PLAYER_START_SCENE_GUID",
+        "missing-guid",
     )
 
-    with pytest.raises(RuntimeError, match="not present in the runtime asset catalog"):
+    with pytest.raises(RuntimeError, match="not present in the BuildManifest"):
         bootstrap._load_initial_scene()
 
 
@@ -433,10 +475,13 @@ def test_run_player_reveals_window_without_startup_sleep():
     body = source[start : source.index("\n__all__ =", start)]
     assert "time.sleep" not in body
     assert "_INFERNUX_PLAYER_FULLSCREEN" in body
+    assert "_INFERNUX_PLAYER_WINDOW_RESIZABLE" in body
     assert "_INFERNUX_PLAYER_WINDOW_TITLE" in body
     assert body.index("_INFERNUX_PLAYER_FULLSCREEN") < body.index("bootstrap.run()")
     assert "_signal_engine_loaded" in body
     assert body.index("_set_process_owned_exit()") < body.index("bootstrap.engine.run()")
+    assert "set_maximized" not in body
+    assert "set_resizable" not in body
 
 
 def test_player_build_manifest_is_required_and_strict(tmp_path):
@@ -460,7 +505,7 @@ def test_player_build_manifest_is_required_and_strict(tmp_path):
                 "window_width": 1280,
                 "window_height": 720,
                 "window_resizable": True,
-                "scenes": ["RuntimeAssets/Main.inxscene"],
+                "scene_guids": ["main-scene-guid"],
                 "splash_items": [],
             }
         ),
@@ -482,7 +527,7 @@ def test_player_build_manifest_accepts_the_build_owned_contract(tmp_path):
         "window_width": 1280,
         "window_height": 720,
         "window_resizable": False,
-        "scenes": ["RuntimeAssets/Main.inxscene"],
+        "scene_guids": ["main-scene-guid"],
         "splash_items": [{"type": "image", "path": "Splash/intro.png"}],
     }
     (tmp_path / "BuildManifest.json").write_text(
@@ -493,16 +538,16 @@ def test_player_build_manifest_accepts_the_build_owned_contract(tmp_path):
 
 
 @pytest.mark.parametrize(
-    ("scenes", "error_type", "message"),
+    ("scene_guids", "error_type", "message"),
     [
-        (None, TypeError, "scenes must contain non-empty strings"),
-        ([], ValueError, "scenes must not be empty"),
-        ([""], TypeError, "scenes must contain non-empty strings"),
-        ([7], TypeError, "scenes must contain non-empty strings"),
+        (None, TypeError, "scene_guids must contain non-empty strings"),
+        ([], ValueError, "scene_guids must not be empty"),
+        ([""], TypeError, "scene_guids must contain non-empty strings"),
+        ([7], TypeError, "scene_guids must contain non-empty strings"),
     ],
 )
 def test_player_build_manifest_rejects_invalid_scene_contract(
-    tmp_path, scenes, error_type, message
+    tmp_path, scene_guids, error_type, message
 ):
     import json
 
@@ -515,7 +560,7 @@ def test_player_build_manifest_rejects_invalid_scene_contract(
         "window_width": 1280,
         "window_height": 720,
         "window_resizable": True,
-        "scenes": scenes,
+        "scene_guids": scene_guids,
         "splash_items": [],
     }
     (tmp_path / "BuildManifest.json").write_text(
@@ -537,7 +582,7 @@ def test_player_build_manifest_rejects_absolute_or_parent_icon_paths(tmp_path):
         "window_width": 1280,
         "window_height": 720,
         "window_resizable": True,
-        "scenes": ["RuntimeAssets/Main.inxscene"],
+        "scene_guids": ["main-scene-guid"],
         "splash_items": [],
     }
     for icon_path in ("../icon.png", "/tmp/icon.png", "Branding//icon.png"):
@@ -557,6 +602,7 @@ def test_player_init_engine_publishes_window_chrome_before_native_renderer():
     start = source.index("def _init_engine")
     body = source[start : source.index("\n    def ", start + 1)]
     assert body.index("_INFERNUX_PLAYER_FULLSCREEN") < body.index("init_renderer")
+    assert body.index("_INFERNUX_PLAYER_WINDOW_RESIZABLE") < body.index("init_renderer")
     assert body.index("_INFERNUX_PLAYER_WINDOW_TITLE") < body.index("init_renderer")
 
 

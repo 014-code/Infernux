@@ -19,7 +19,21 @@
 #define VMA_DYNAMIC_VULKAN_FUNCTIONS 0
 #endif
 
+// VMA's public declarations carry Clang nullability annotations, while the
+// private implementation in the same single-header library intentionally
+// leaves its internal pointers unannotated.  Clang consequently emits hundreds
+// of -Wnullability-completeness diagnostics only in the one translation unit
+// that defines VMA_IMPLEMENTATION.  Keep the vendor diagnostic scoped to that
+// include; all Infernux code and the public VMA declarations retain the normal
+// warning policy.
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnullability-completeness"
+#endif
 #include "VmaContext.h"
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 #include <core/log/InxLog.h>
 
 namespace infernux

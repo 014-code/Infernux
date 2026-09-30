@@ -36,6 +36,19 @@ from Infernux.engine.ui import (
 from Infernux.engine.ui import panel_state as _panel_state
 
 
+def _native_shortcut_event(chord: str, text_input: bool, modal: bool):
+    """Translate one native editor key edge with the current game-input owner."""
+    from Infernux.engine.interaction import KeyChord, ShortcutEvent
+    from Infernux.input import Input
+
+    return ShortcutEvent(
+        KeyChord.parse(chord),
+        text_input_active=bool(text_input),
+        modal_active=bool(modal),
+        game_view_captured=bool(Input.is_game_focused()),
+    )
+
+
 class BootstrapWiringMixin:
     """BootstrapWiringMixin method group for EditorBootstrap."""
 
@@ -87,14 +100,14 @@ class BootstrapWiringMixin:
             manager = UndoManager.instance()
             if not manager or not manager.can_undo:
                 return False
-            manager.undo()
+            manager.undo(defer=True)
             return True
 
         def _redo(_context):
             manager = UndoManager.instance()
             if not manager or not manager.can_redo:
                 return False
-            manager.redo()
+            manager.redo(defer=True)
             return True
 
         def _toggle_play(_context):
@@ -114,6 +127,33 @@ class BootstrapWiringMixin:
         def _new_scene(_context):
             sfm.new_scene()
             return True
+
+        def _scene_world(context) -> int:
+            try:
+                return int(context.payload.get("world_id", 0) or 0)
+            except (TypeError, ValueError):
+                return 0
+
+        def _save_scene(context):
+            world_id = _scene_world(context)
+            if world_id <= 0:
+                return False
+            document_id = sfm.document_id_for_scene(world_id)
+            if not document_id:
+                return False
+            from Infernux.engine.interaction import DocumentActionStatus, DocumentRegistry
+            result = DocumentRegistry.instance().request_save(document_id)
+            return result.status is not DocumentActionStatus.REJECTED
+
+        def _unload_scene(context):
+            world_id = _scene_world(context)
+            if world_id <= 0:
+                return False
+            return bool(sfm.request_unload_scene(world_id))
+
+        def _open_scene_additive(context):
+            path = str(context.payload.get("source_path", "") or "").strip()
+            return bool(path and sfm.open_scene_additive(path))
 
         def _pause(_context):
             pmm.toggle_pause()
@@ -139,6 +179,23 @@ class BootstrapWiringMixin:
         def _is_scene_grid_visible(_context) -> bool:
             native = _native_engine()
             return bool(native is not None and native.is_show_grid())
+
+        def _toggle_scene_gizmos(_context) -> bool:
+            engine = self.engine
+            if engine is None:
+                return False
+            current = bool(engine.is_show_gizmos())
+            return self.interaction_core.view_commands.set_value(
+                current,
+                not current,
+                lambda value: engine.set_show_gizmos(bool(value)),
+                description="Toggle Scene Gizmos",
+                owner_view_id="scene_view",
+            )
+
+        def _are_scene_gizmos_visible(_context) -> bool:
+            engine = self.engine
+            return bool(engine is not None and engine.is_show_gizmos())
 
         def _window_target(context) -> str:
             return str(context.payload.get("target_id", "") or "").strip()
@@ -182,12 +239,20 @@ class BootstrapWiringMixin:
             source_path = _console_source_path(context)
             if not source_path:
                 return False
+            try:
+                source_line = max(
+                    int(context.payload.get("source_line", 0) or 0),
+                    0,
+                )
+            except (TypeError, ValueError):
+                source_line = 0
             from Infernux.engine.ui import project_utils
 
             return bool(
-                project_utils.open_file_with_system(
+                project_utils.open_in_vscode(
                     source_path,
                     project_root=self.project_path,
+                    line=source_line,
                 )
             )
 
@@ -1181,6 +1246,38 @@ class BootstrapWiringMixin:
                 ),
             ),
             EditorCommand(
+                "scene.set_active",
+                lambda context: _invoke_target_panel_command(
+                    context, "hierarchy", "scene.set_active"
+                ),
+                display_name="Set Active Scene",
+                category="Scene",
+                can_execute=lambda context: _can_target_panel_command(
+                    context, "hierarchy", "scene.set_active"
+                ),
+            ),
+            EditorCommand(
+                "scene.save",
+                _save_scene,
+                display_name="Save Scene",
+                category="Scene",
+                can_execute=lambda context: _scene_world(context) > 0,
+            ),
+            EditorCommand(
+                "scene.unload",
+                _unload_scene,
+                display_name="Unload Scene",
+                category="Scene",
+                can_execute=lambda context: _scene_world(context) > 0,
+            ),
+            EditorCommand(
+                "scene.open_additive",
+                _open_scene_additive,
+                display_name="Open Scene Additive",
+                category="Scene",
+                can_execute=lambda context: bool(context.payload.get("source_path", "")),
+            ),
+            EditorCommand(
                 "scene.tool.select",
                 lambda context: _invoke_panel_command(
                     context, "scene.tool.select"
@@ -1315,6 +1412,18 @@ class BootstrapWiringMixin:
                 default_shortcut="R",
             ),
             EditorCommand(
+                "scene.tool.rect",
+                lambda context: _invoke_panel_command(
+                    context, "scene.tool.rect"
+                ),
+                display_name="Rect Tool",
+                category="Scene",
+                can_execute=lambda context: _can_panel_command(
+                    context, "scene.tool.rect"
+                ),
+                default_shortcut="T",
+            ),
+            EditorCommand(
                 "scene.align_to_camera",
                 lambda context: _invoke_target_panel_command(
                     context, "scene_view", "scene.align_to_camera"
@@ -1345,6 +1454,14 @@ class BootstrapWiringMixin:
                 category="Scene",
                 can_execute=lambda _context: _native_engine() is not None,
                 is_checked=_is_scene_grid_visible,
+            ),
+            EditorCommand(
+                "scene.toggle_gizmos",
+                _toggle_scene_gizmos,
+                display_name="Toggle Scene Gizmos",
+                category="Scene",
+                can_execute=lambda _context: self.engine is not None,
+                is_checked=_are_scene_gizmos_visible,
             ),
             EditorCommand(
                 "scene.set_coordinate_space",
@@ -1597,8 +1714,6 @@ class BootstrapWiringMixin:
         from Infernux.engine.interaction import (
             CommandSource,
             EditorCommand,
-            KeyChord,
-            ShortcutEvent,
         )
 
         def _payload(argument):
@@ -1624,13 +1739,11 @@ class BootstrapWiringMixin:
                 command_registry.context(CommandSource.MENU, _payload(argument)),
             )
         )
-        self.shortcut_input.route_shortcut = lambda chord, text_input, modal: shortcut_router.route(
-            ShortcutEvent(
-                KeyChord.parse(chord),
-                text_input_active=bool(text_input),
-                modal_active=bool(modal),
-            )
-        ).consumed
+        self.shortcut_input.route_shortcut = (
+            lambda chord, text_input, modal: shortcut_router.route(
+                _native_shortcut_event(chord, text_input, modal)
+            ).consumed
+        )
 
         # Scene file operations
         if sfm:
@@ -1647,6 +1760,7 @@ class BootstrapWiringMixin:
                 wti.type_id = type_id
                 wti.display_name = info.display_name
                 wti.menu_path = info.menu_path
+                wti.menu_path_keys = list(info.menu_path_keys)
                 wti.singleton = info.singleton
                 result.append(wti)
                 seen.add(type_id)

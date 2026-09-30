@@ -201,3 +201,27 @@ def test_main_thread_queue_release_cancels_pending_and_clears_owner():
     assert isinstance(errors[0], TimeoutError)
     assert "owner stopped" in str(errors[0])
     assert queue.wait_until_ready(0) is False
+
+
+def test_main_thread_queue_wakes_graphical_owner_for_background_submission():
+    queue = MainThreadCommandQueue()
+    queue.drain(0)
+    wakes = []
+    queued = []
+    queue.set_wake_callback(lambda: wakes.append(threading.get_ident()))
+
+    def worker():
+        queued.append(queue.submit("wake-owner", lambda: "done"))
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    thread.join(1)
+
+    assert not thread.is_alive()
+    assert len(wakes) == 1
+    assert wakes[0] != threading.get_ident()
+    assert queue.drain() == 1
+    assert queued[0].result(0) == "done"
+
+    queue.release_owner()
+    assert queue._wake_callback is None

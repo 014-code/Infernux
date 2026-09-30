@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "Infernux"
 version = "0.4.0"
-description = "Infernux (熔炉) — open-source game engine with a C++17 / Vulkan runtime and a Python layer for gameplay, tools, and render authoring."
+description = "Infernux (熔炉) — a Python-first game engine advancing toward Neural Network-Native Engine (3N), powered by C++, Vulkan and WebGPU."
 authors = [{name = "Lizhe Chen", email = "chenlizheme@outlook.com"}]
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
@@ -25,6 +25,7 @@ dependencies = [
     "packaging>=24.0",
     "numpy>=1.21.0",
     "numba>=0.61.0",
+    "llvmlite>=0.44.0",
     "watchdog>=1.0.0",
     "Pillow>=10.4.0",
     "imageio>=2.34.0",
@@ -59,14 +60,9 @@ Infernux = [
     "*.so",
     "*.dylib",
     "lib/PlayerNativeContract.json",
-    "**/_InfernuxBootstrap*.pyd",
-    "**/_InfernuxBootstrap*.so",
-    "**/_InfernuxBootstrap*.dylib",
-    "_runtime_packs/*/Player.inxmanifest",
-    "_runtime_packs/*/Runtime.inxrt",
-    "_runtime_modules/*/Player.inxmanifest",
-    "_runtime_modules/*/Parallel.inxmod",
-    "resources/player_runtime/*.exe",
+    "**/_Infernux*.pyd",
+    "**/_Infernux*.so",
+    "**/_Infernux*.dylib",
     "resources/icons/*.png",
     "resources/icons/*.ico",
     "resources/icons/components/*.png",
@@ -75,6 +71,7 @@ Infernux = [
     "resources/fonts/*.txt",
     "resources/pictures/*.png",
     "resources/schemas/*.json",
+    "resources/shaders/**/*",
     "resources/project_templates/*.txt",
     "resources/*.inxpkg",
     "resources/official_packages/*.json",
@@ -87,12 +84,4 @@ Infernux = [
     "**/*.pdb",
     "**/*.lib",
     "**/*.exp",
-    "_runtime_packs/**/*.zip",
-    "_runtime_packs/**/*.inxpack",
-    "_runtime_packs/**/runtime-pack.json",
-    "_runtime_packs/**/*.tmp/*",
-    "_runtime_modules/**/*.zip",
-    "_runtime_modules/**/*.inxpack",
-    "_runtime_modules/**/parallel-module.json",
-    "_runtime_modules/**/*.tmp/*",
 ]

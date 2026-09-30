@@ -32,6 +32,7 @@ from Infernux.ui.ui_texture_cache import get_shared_cache as _get_tex_cache
 from Infernux.ui.ui_render_dispatch import dispatch as _ui_dispatch
 from Infernux.ui.ui_event_system import UIEventProcessor
 from Infernux.ui.ui_button import UIButton
+from Infernux.engine.runtime_mouse_events import MouseEventDispatcher
 from Infernux.ui.inx_ui_screen_component import clear_rect_cache
 from .game_input_policy import should_process_game_ui_events, should_route_game_input
 from .runtime_canvas_snapshot import (
@@ -122,6 +123,8 @@ class GameViewPanel(EditorPanel):
 
         # UI event processor — dispatches pointer events to UI elements
         self._ui_event_processor = UIEventProcessor()
+        self._mouse_event_dispatcher = MouseEventDispatcher()
+        self._input_scene_token = None
 
         # Game resolution selection (Unity-like)
         self._selected_resolution_idx = 0
@@ -141,6 +144,7 @@ class GameViewPanel(EditorPanel):
         # Game-only FPS (excludes editor panel overhead)
         self._display_game_fps = 0.0
         self._display_game_frame_ms = 0.0
+        self._fps_toolbar_hidden = False
 
     def _set_game_render_active(self, active: bool) -> None:
         """Keep C++ game rendering in lockstep with actual panel visibility.
@@ -153,6 +157,7 @@ class GameViewPanel(EditorPanel):
         active = bool(active)
         if not active:
             Input.set_game_focused(False)
+            Input.set_cursor_locked(False)
 
         if not self._engine:
             if not active:
@@ -332,6 +337,14 @@ class GameViewPanel(EditorPanel):
             return max(64, int(self._custom_width)), max(64, int(self._custom_height))
         return int(w), int(h)
 
+    def prepare_render_target(self):
+        """Publish Game pixels before scene lifecycle, even when this tab is hidden."""
+        self._load_resolution_settings()
+        width, height = self._current_target_resolution()
+        self._engine.resize_game_render_target(width, height)
+        self._last_game_width, self._last_game_height = width, height
+        self._game_texture_refresh_required = True
+
     def _fit_scale(self):
         """Toggle Fit mode on."""
         before = self._capture_view_state()
@@ -374,12 +387,32 @@ class GameViewPanel(EditorPanel):
     def on_disable(self):
         self._commit_pending_view_edits()
         self._set_game_render_active(False)
+        self._reset_pointer_input()
+
+    def _reset_pointer_input(self):
+        # Both consumers must release capture, even if an author's UI exit
+        # callback raises. Preserve the error; never replay the interaction.
+        try:
+            self._ui_event_processor.reset()
+        finally:
+            self._mouse_event_dispatcher.reset()
+
+    def _synchronize_input_scene(self, scene) -> None:
+        scene_token = (
+            int(scene.world_id),
+            int(scene.temporal_discontinuity_revision),
+        ) if scene is not None else None
+        if scene_token == getattr(self, "_input_scene_token", None):
+            return
+        self._ui_event_processor.discard()
+        self._mouse_event_dispatcher.discard()
+        self._input_scene_token = scene_token
 
     def _on_not_visible(self, ctx):
         self._commit_pending_view_edits()
         self._was_focused = False
         Input.set_game_focused(False)
-        self._ui_event_processor.reset()
+        self._reset_pointer_input()
         from Infernux.acceptance import RuntimeAcceptance
 
         if RuntimeAcceptance.is_active():
@@ -577,8 +610,9 @@ class GameViewPanel(EditorPanel):
         self._render_resolution_toolbar(ctx, dpi)
         target_w, target_h, fit_scale = self._render_scale_toolbar(ctx, dpi)
         self._render_fps_counter(ctx)
-
-        ctx.new_line()
+        # Keep the viewport close to the controls. ``NewLine`` after a row
+        # that already used SameLine reserves another full row in ImGui.
+        ctx.spacing()
 
         self._render_game_viewport(ctx, target_w, target_h, fit_scale)
 
@@ -643,7 +677,26 @@ class GameViewPanel(EditorPanel):
         scale_label_w, _ = ctx.calc_text_size("200%")
         ctx.label(f"{pct}%")
         ctx.same_line(scale_label_x + scale_label_w + 4.0 * dpi)
-        ctx.set_next_item_width(230.0 * dpi)
+        # Reserve the performance readout while there is room. The slider is
+        # the first control to yield width; FPS is hidden only after the
+        # slider reaches its compact minimum.
+        fit_label = t("game_view.fit")
+        fit_w = max(44.0 * dpi, ctx.calc_text_width(fit_label) + 12.0 * dpi)
+        get_cursor_pos_x = getattr(ctx, "get_cursor_pos_x", None)
+        cursor_x = float(get_cursor_pos_x()) if callable(get_cursor_pos_x) else 0.0
+        window_width = ctx.get_window_width()
+        fps_text = getattr(self, "_cached_fps_text", "FPS: --")
+        fps_w = float(getattr(self, "_cached_fps_text_w", 0.0))
+        fps_reserve = fps_w + 18.0 * dpi
+        compact_slider = max(72.0 * dpi, min(230.0 * dpi,
+            window_width - cursor_x - fit_w - 18.0 * dpi - fps_reserve))
+        self._fps_toolbar_hidden = (
+            window_width - cursor_x - fit_w - 18.0 * dpi - compact_slider < fps_reserve
+        )
+        if self._fps_toolbar_hidden:
+            compact_slider = max(72.0 * dpi, min(230.0 * dpi,
+                window_width - cursor_x - fit_w - 18.0 * dpi))
+        ctx.set_next_item_width(compact_slider)
         scale_before = self._capture_view_state()
         old_scale = self._display_scale
         new_scale = round(ctx.float_slider("##Scale", old_scale, 0.10, 2.0), 3)
@@ -660,8 +713,6 @@ class GameViewPanel(EditorPanel):
         )
         ctx.same_line(0, 6.0 * dpi)
         ctx.align_text_to_frame_padding()
-        fit_label = t("game_view.fit")
-        fit_w = max(44.0 * dpi, ctx.calc_text_width(fit_label) + 12.0 * dpi)
         color_count = Theme.push_inline_button_style(ctx, active=self._fit_mode)
         ctx.push_style_var_float(ImGuiStyleVar.FrameBorderSize, 0.0)
         ctx.button(f"{fit_label}##game_view_fit", self._fit_scale, width=fit_w, height=0)
@@ -726,8 +777,12 @@ class GameViewPanel(EditorPanel):
             self._cached_fps_text_w, _ = ctx.calc_text_size(fps_text)
         text_w = self._cached_fps_text_w
         window_width = ctx.get_window_width()
-        fps_x = max(window_width - text_w - 24.0, 360.0)
-        if fps_x + text_w <= window_width - 12.0:
+        if self._fps_toolbar_hidden:
+            return
+        get_cursor_pos_x = getattr(ctx, "get_cursor_pos_x", None)
+        cursor_x = float(get_cursor_pos_x()) if callable(get_cursor_pos_x) else 0.0
+        fps_x = window_width - text_w - 12.0
+        if fps_x >= cursor_x + 8.0 and fps_x + text_w <= window_width - 8.0:
             ctx.same_line(fps_x)
             ctx.label(fps_text)
             if bool(getattr(ctx, "semantic_capture_enabled", False)):
@@ -771,9 +826,9 @@ class GameViewPanel(EditorPanel):
             panel_focused=panel_focused,
             cursor_locked=cursor_locked,
         ):
-            self._process_ui_events(target_w, target_h, canvases=canvases)
+            self._process_ui_events(target_w, target_h)
         else:
-            self._ui_event_processor.reset()
+            self._reset_pointer_input()
 
     def _render_game_viewport(self, ctx, target_w, target_h, fit_scale):
         """Render the game texture, screen UI, and route input events."""
@@ -847,6 +902,7 @@ class GameViewPanel(EditorPanel):
                 viewport_pressed = bool(ctx.is_mouse_button_clicked(0))
                 viewport_clicked = viewport_hovered and (viewport_clicked or viewport_pressed)
                 Input.set_game_viewport_origin(vp.image_min_x, vp.image_min_y)
+                Input.set_game_viewport_size(float(draw_w), float(draw_h))
 
                 self._render_screen_ui(ctx, vp.image_min_x, vp.image_min_y,
                                        float(draw_w), float(draw_h),
@@ -857,6 +913,7 @@ class GameViewPanel(EditorPanel):
 
             else:
                 Input.set_game_viewport_origin(0.0, 0.0)
+                Input.set_game_viewport_size(0.0, 0.0)
                 ctx.label("")
                 ctx.label("  " + t("game_view.no_camera"))
                 ctx.label("  " + t("game_view.no_camera_detail"))
@@ -1003,21 +1060,28 @@ class GameViewPanel(EditorPanel):
 
     def _process_ui_events(self, game_w: int, game_h: int, canvases=None):
         """Convert Input mouse state to per-canvas pointer events."""
-        if canvases is None:
-            from Infernux.lib import SceneManager
-            scene_manager = SceneManager.instance()
-            scene = scene_manager.get_active_scene()
-            if scene is None:
-                return
-            get_persistent_scene = getattr(
-                scene_manager, "get_runtime_persistent_scene", None
-            )
-            canvases = collect_sorted_runtime_canvas_snapshot(
-                scene,
-                get_persistent_scene() if callable(get_persistent_scene) else None,
-            )
-        if not canvases:
+        from Infernux.lib import SceneManager
+        scene_manager = SceneManager.instance()
+        scene = scene_manager.get_active_scene()
+        self._synchronize_input_scene(scene)
+        if scene is None:
+            self._reset_pointer_input()
             return
+        get_persistent_scene = getattr(
+            scene_manager, "get_runtime_persistent_scene", None
+        )
+        persistent_scene = (
+            get_persistent_scene() if callable(get_persistent_scene) else None
+        )
+        from Infernux.engine.runtime_screen_ui import (
+            collect_runtime_ui_input_surfaces,
+        )
+        surfaces = collect_runtime_ui_input_surfaces(scene, persistent_scene)
+        if not surfaces:
+            # 3D mouse callbacks must still run in scenes without any UI
+            # surface. Reset only the UI path and continue to the shared
+            # collider raycast below.
+            self._ui_event_processor.reset()
 
         # Mouse position in viewport pixels (relative to game image top-left)
         vp_x, vp_y, scroll_x, scroll_y, mouse_held, mouse_down, mouse_up = Input.get_game_mouse_frame_state(0)
@@ -1029,18 +1093,21 @@ class GameViewPanel(EditorPanel):
         game_px = vp_x / display_scale
         game_py = vp_y / display_scale
 
-        # Build per-canvas positions in design (canvas) pixels
-        canvas_positions = []
-        for canvas in canvases:
-            ref_w = float(canvas.reference_width)
-            ref_h = float(canvas.reference_height)
-            if ref_w < 1 or ref_h < 1:
-                canvas_positions.append((0.0, 0.0))
-                continue
-            scale_x, scale_y, _ = canvas.compute_scale(float(game_w), float(game_h))
-            cx = game_px / max(scale_x, 1e-6)
-            cy = game_py / max(scale_y, 1e-6)
-            canvas_positions.append((cx, cy))
+        camera = scene.effective_game_camera if scene is not None else None
+        from Infernux.engine.runtime_screen_ui import map_runtime_ui_pointer
+        route_scene_input = should_route_game_input(
+            is_playing=self._is_playing(),
+            panel_focused=ClosablePanel.get_active_view_id() == self.window_id,
+            cursor_locked=Input.is_cursor_locked(),
+        )
+        mapped_positions = map_runtime_ui_pointer(
+            surfaces, camera, game_px, game_py, game_w, game_h,
+            include_scene_hit=route_scene_input,
+        )
+        if route_scene_input:
+            canvas_positions, scene_hit = mapped_positions
+        else:
+            canvas_positions, scene_hit = mapped_positions, None
 
         scroll = (scroll_x, scroll_y)
 
@@ -1048,7 +1115,21 @@ class GameViewPanel(EditorPanel):
         dt = Time.unscaled_delta_time
 
         self._ui_event_processor.process(
-            canvases, canvas_positions,
+            surfaces, canvas_positions,
             mouse_down, mouse_up, mouse_held,
             scroll, dt,
+        )
+        # UI dispatch remains authoritative: blocking screen UI suppresses a
+        # hidden 3D query, while Canvas-free world UI and ordinary mouse
+        # callbacks consume the one shared physical hit snapshot above.
+        dispatcher = getattr(self, "_mouse_event_dispatcher", None)
+        if dispatcher is None:
+            return
+        if not route_scene_input:
+            dispatcher.reset()
+            return
+        dispatcher.process(
+            camera, (game_px, game_py), (float(game_w), float(game_h)),
+            hit=scene_hit,
+            button_state=(mouse_held, mouse_down, mouse_up),
         )

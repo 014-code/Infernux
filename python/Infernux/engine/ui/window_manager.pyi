@@ -33,6 +33,8 @@ class WindowInfo:
     title_key: Optional[str]
     factory: Callable
     singleton: bool
+    menu_path: str
+    menu_path_keys: tuple[str, ...]
 
     def __init__(
         self,
@@ -41,6 +43,8 @@ class WindowInfo:
         factory: Optional[Callable] = ...,
         singleton: bool = ...,
         title_key: Optional[str] = ...,
+        menu_path: str = ...,
+        menu_path_keys: Optional[tuple[str, ...]] = ...,
     ) -> None: ...
 
     @property
@@ -63,9 +67,13 @@ class WindowManager:
     def register_window_type(
         self,
         type_id: str,
+        window_class: type,
         display_name: str,
-        factory: Optional[Callable] = None,
-        menu_path: Optional[str] = None,
+        factory: Optional[Callable] = ...,
+        singleton: bool = ...,
+        title_key: Optional[str] = ...,
+        menu_path: str = ...,
+        menu_path_keys: Optional[tuple[str, ...]] = ...,
     ) -> None:
         """Register a window type that can be opened from the Window menu.
 
@@ -100,9 +108,16 @@ class WindowManager:
     def set_window_open(self, window_id: str, is_open: bool) -> None: ...
 
     def get_registered_types(self) -> Dict[str, WindowInfo]: ...
+    def refresh_type_labels(self) -> None: ...
     def window_type_id(self, window_id: str) -> str: ...
 
     def get_open_windows(self) -> Dict[str, bool]: ...
+    def capture_open_views_for_types(
+        self, type_ids: tuple[str, ...]
+    ) -> tuple[tuple[str, str], ...]: ...
+    def restore_reloaded_views(
+        self, views: tuple[tuple[str, str], ...]
+    ) -> None: ...
     def presentation_snapshot(self) -> Dict[str, dict]: ...
     def get_window_instance(self, window_id: str) -> Optional[InxGUIRenderable]: ...
     def get_window_state(self, window_id: str) -> WindowState: ...

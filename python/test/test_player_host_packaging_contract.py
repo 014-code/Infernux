@@ -45,6 +45,38 @@ def test_player_host_loads_the_direct_runtime_tree():
     assert launcher.index("#include <windows.h>") < launcher.index("#include <shellapi.h>")
 
 
+def test_source_wheel_never_declares_a_player_host_resource():
+    packaging = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert "resources/player_runtime" not in packaging
+    assert '"_runtime_packs/' not in packaging
+    assert '"_runtime_modules/' not in packaging
+
+
+def test_source_wheel_recursively_includes_both_native_extensions():
+    packaging = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert '"**/_Infernux*.pyd"' in packaging
+    assert '"**/_Infernux*.so"' in packaging
+    assert '"**/_Infernux*.dylib"' in packaging
+
+
+def test_source_wheel_includes_builtin_shader_sources():
+    packaging = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert '"resources/shaders/**/*"' in packaging
+
+
+def test_prebuilt_runtime_requires_an_explicit_build_output():
+    source = (ROOT / "python/Infernux/engine/prebuilt_runtime.py").read_text(
+        encoding="utf-8"
+    )
+
+    output_option = source.split('"--output-root"', 1)[1].split(")", 1)[0]
+    assert "required=True" in output_option
+    assert 'parents[1] / "_runtime_packs"' not in output_option
+
+
 def test_player_pack_codec_builds_only_the_current_zstandard_format():
     external_cmake = (ROOT / "external/CMakeLists.txt").read_text(encoding="utf-8")
 
@@ -94,6 +126,15 @@ def test_runtime_pack_is_compiled_from_the_assembled_wheel_payload():
     assert '/external/plugins/infernux_${_infernux_player_platform}/package/editor/infernux_${_infernux_player_platform}/player"' in install
     assert '"-DINFERNUX_SOURCE_DIR=${INFERNUX_STAGE_DIR}/python-wheel-source"' in install
     assert 'DIRECTORY "${INFERNUX_PREBUILT_RUNTIME_DIR}/"' not in install
+
+
+def test_linux_wheel_repair_uses_auditwheel_compatible_platform_detection():
+    repair = (ROOT / "cmake/repair_linux_wheel.py").read_text(encoding="utf-8")
+
+    assert '"auditwheel"' in repair
+    assert '"repair"' in repair
+    assert '"--plat"' not in repair
+    assert "manylinux_" not in repair
 
 
 def test_player_package_contract_has_bootstrap_archive_and_no_root_bootstrap_files():

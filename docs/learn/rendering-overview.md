@@ -36,6 +36,14 @@ For a second, explicit pipeline check, create **Post Processing > RenderStack** 
 
 <div class="learn-note"><strong>Current API boundary and evidence.</strong><p>The workflow above follows <code>hierarchy_creation_service.py</code> and <code>core_context_menus.py</code> for scene/asset creation, <code>project_file_ops.py</code> for the Material template (Standard vertex + Unlit fragment; this chapter switches the fragment to the built-in Lit), the current MeshRenderer and Material Inspectors for assignment, and <code>render_stack_pipeline.py</code> for the no-RenderStack fallback. Later chapters link the public authoring entry points for custom stages, effects, pipelines, and RenderGraph work.</p></div>
 
+### Verify the asset, not just its preview
+
+For a repeatable color check, keep the Cube Scale at `(1, 1, 1)` and Rotation at `(0, 0, 0)`, and place the game Camera at `(0, 1, -10)` with Rotation `(0, 0, 0)` even when a Camera already exists. Use the default Directional Light and no post-processing. Edit **the Project asset** `FirstCube.mat`: set Base Color RGBA to `(0.9, 0.1, 0.2, 1)`, then `(0.2, 0.7, 0.1, 1)` in normalized 0–1 units. Keep Metallic at `0` and Smoothness at `0.5` for this comparison. Lighting changes brightness, so compare the red-to-green change rather than expecting exact RGB pixels.
+
+After each edit, select the Cube again. **Element 0** must still refer to `FirstCube.mat`, its inline Base Color must show the new value, and the Scene/Game images must both change. Assign the same asset to a second Cube to check that both update. Creating a clone or a separate material instance deliberately breaks this shared-asset comparison.
+
+If the preview changes but the mesh stays white, do not compensate by editing the Cube independently: first check the slot's asset identity and whether a script changes the material during Play. Repeat in Edit mode with both Cubes bound to the same asset. If the shared values still disagree, record the engine version, GPU/driver, OS, asset and screenshots of both Inspectors; this is a synchronization failure, not the expected material workflow.
+
 ## The authored rendering chain {#the-rendering-chain}
 
 Start with one object in a scene:
@@ -135,6 +143,14 @@ Infernux 没有把所有渲染决定塞进一份 Shader。Material、顶点阶�
 再做一次显式 Pipeline 检查：从 Hierarchy 右键菜单创建 **Post Processing > RenderStack**，在 Inspector 中选择 **Default Forward**。Effect 列表为空时，Cube 画面应保持一致。这个对照可以确认显式基线可用；仅凭像素无法证明背后的实际路由。
 
 <div class="learn-note"><strong>当前 API 边界与证据。</strong><p>以上流程依据 <code>hierarchy_creation_service.py</code> 与 <code>core_context_menus.py</code> 的场景/资产创建入口、<code>project_file_ops.py</code> 的 Material 模板（Standard 顶点 + Unlit 片元，本章再把片元切换为内置 Lit）、当前 MeshRenderer 与 Material Inspector 的赋值入口，以及 <code>render_stack_pipeline.py</code> 的无 RenderStack 回退。后续章节会链接自定义阶段、Effect、Pipeline 与 RenderGraph 的公共编写入口。</p></div>
+
+### 检查资产同步，而不只是预览图
+
+为了复现颜色变化，保持 Cube Scale 为 `(1, 1, 1)`、Rotation 为 `(0, 0, 0)`，即使场景已有相机，也将游戏 Camera Position 明确设为 `(0, 1, -10)`、Rotation 设为 `(0, 0, 0)`。使用默认 Directional Light，不加后处理。选择 **Project 中的资产** `FirstCube.mat`，按 0–1 归一化值先将 Base Color RGBA 设为 `(0.9, 0.1, 0.2, 1)`，再改为 `(0.2, 0.7, 0.1, 1)`；对比期间 Metallic 保持 `0`、Smoothness 保持 `0.5`。光照会影响亮度，观察红色变绿色，不要求画面像素等于输入 RGB。
+
+每次修改后重新选择 Cube：**Element 0** 仍应引用 `FirstCube.mat`，内联 Base Color 应显示新值，Scene/Game 画面都应变化。再给第二个 Cube 分配同一资产，检查两者是否一起变化。主动克隆材质或创建独立实例，会使这个共享资产对比失去前提。
+
+如果预览变了、网格却一直白色，不要通过单独修改 Cube 来掩盖问题：先核对材质槽的资产身份，以及 Play 中是否有脚本覆盖材质。在 Edit 模式下让两个 Cube 引用同一资产后复测。共享值仍不一致时，记录引擎版本、GPU/驱动、系统、资产和两处 Inspector 截图；这是同步故障，不是预期的材质工作流。
 
 ## 用户编写的渲染链 {#the-rendering-chain_1}
 

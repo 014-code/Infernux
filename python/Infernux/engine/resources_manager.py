@@ -1,4 +1,5 @@
 import os
+import re
 import threading
 import time
 import types
@@ -42,6 +43,14 @@ class _AssetLocalWritePending(_AssetImportNotReady):
     """A watcher echo is waiting for an editor-owned persistence ticket."""
 
     pass
+
+
+def _is_plugin_editor_translation_catalog(path: str, project_root: str) -> bool:
+    return (
+        os.path.basename(path).casefold() == "translations.json"
+        and os.path.basename(os.path.dirname(path)).casefold() == "editor"
+        and package_script_role(path, project_root) == "editor"
+    )
 
 
 class _ScriptPublicationTransaction:
@@ -133,6 +142,22 @@ class _ScriptPublicationRollback:
 
 def _is_particle_script_path(file_path: str) -> bool:
     return str(file_path or "").lower().endswith(".particle.py")
+
+
+_BLENDER_BACKUP_PATTERN = re.compile(r"\.blend\d+$", re.IGNORECASE)
+
+
+def _is_blender_backup_path(file_path: str) -> bool:
+    """Return whether *file_path* is Blender's numbered save backup.
+
+    Blender normally publishes ``Model.blend`` by first moving the previous
+    generation to ``Model.blend1`` (and may keep higher numbered generations).
+    Those files are not project assets.  Treating that rename as an author
+    asset move transfers the stable GUID away from ``Model.blend`` exactly
+    when an artist saves in Blender.
+    """
+    basename = os.path.basename(os.fspath(file_path or ""))
+    return _BLENDER_BACKUP_PATTERN.search(basename) is not None
 
 
 class ResourceChangeHandler(FileSystemEventHandler):
@@ -246,6 +271,7 @@ class ResourceChangeHandler(FileSystemEventHandler):
             lower.endswith(".meta")
             or lower.endswith(".meta.tmp")
             or lower.endswith(".tmp")
+            or _is_blender_backup_path(file_path)
             or is_document_store_temporary_path(file_path)
         ):
             return True
@@ -256,18 +282,31 @@ class ResourceChangeHandler(FileSystemEventHandler):
             return True
         return False
 
+    def _is_editor_translation_change(self, file_path: str) -> bool:
+        project_root = str(
+            getattr(self._dependency_graph, "project_root", "") or ""
+        )
+        return bool(project_root) and _is_plugin_editor_translation_catalog(
+            file_path, project_root
+        )
+
     def on_created(self, event):
         if event.is_directory or self._should_ignore(event.src_path):
             return
         lower = str(event.src_path or "").lower()
         script_change = lower.endswith(".py") and not _is_particle_script_path(lower)
+        editor_catalog_change = self._is_editor_translation_change(event.src_path)
+        registered_guid = self._asset_database.get_guid_from_path(event.src_path)
         self._coordinator.submit(
-            AssetFsEventKind.CREATED,
+            # Atomic external writers can report a replacement at an already
+            # registered path as CREATED. The existing GUID makes this a
+            # content revision, never a second asset identity.
+            AssetFsEventKind.MODIFIED if registered_guid else AssetFsEventKind.CREATED,
             event.src_path,
-            guid_hint=read_meta_guid(event.src_path),
-            debounce_seconds=0.0 if script_change else None,
+            guid_hint=registered_guid or read_meta_guid(event.src_path),
+            debounce_seconds=0.0 if script_change or editor_catalog_change else None,
         )
-        if script_change:
+        if script_change or editor_catalog_change:
             self._wake_editor()
 
     def on_deleted(self, event):
@@ -289,55 +328,59 @@ class ResourceChangeHandler(FileSystemEventHandler):
             event.src_path,
             guid_hint=self._asset_database.get_guid_from_path(event.src_path),
         )
+        if self._is_editor_translation_change(event.src_path):
+            self._wake_editor()
 
     def on_modified(self, event):
         if event.is_directory or self._should_ignore(event.src_path):
             return
         lower = str(event.src_path or "").lower()
         script_change = lower.endswith(".py") and not _is_particle_script_path(lower)
+        editor_catalog_change = self._is_editor_translation_change(event.src_path)
         self._coordinator.submit(
             AssetFsEventKind.MODIFIED,
             event.src_path,
-            debounce_seconds=0.0 if script_change else None,
+            debounce_seconds=0.0 if script_change or editor_catalog_change else None,
         )
-        if script_change:
+        if script_change or editor_catalog_change:
             self._wake_editor()
 
     def on_moved(self, event):
         if event.is_directory:
             return
-        source_is_document_temp = is_document_store_temporary_path(event.src_path)
-        destination_is_document_temp = is_document_store_temporary_path(event.dest_path)
-        if source_is_document_temp:
-            if destination_is_document_temp or self._should_ignore(event.dest_path):
-                return
-            self._coordinator.submit(
-                AssetFsEventKind.MOVED,
-                event.src_path,
-                destination=event.dest_path,
-                guid_hint=self._asset_database.get_guid_from_path(event.dest_path),
-            )
-            return
         if self._is_meta_sidecar_path(event.src_path) and self._is_meta_sidecar_path(event.dest_path):
             return
-        if self._should_ignore(event.src_path) or self._should_ignore(event.dest_path):
+        if self._should_ignore(event.dest_path):
+            return
+        source_guid = self._asset_database.get_guid_from_path(event.src_path)
+        source_registered = bool(source_guid)
+        # Only a registered source has asset identity to relocate. Editors
+        # may publish via arbitrarily named staging files, including ignored
+        # .tmp files; these writes update/import the destination instead.
+        if source_registered and self._should_ignore(event.src_path):
             return
         self._coordinator.submit(
             AssetFsEventKind.MOVED,
             event.src_path,
             destination=event.dest_path,
-            guid_hint=self._asset_database.get_guid_from_path(event.src_path),
+            guid_hint=(source_guid if source_registered else
+                       self._asset_database.get_guid_from_path(event.dest_path)),
+            source_registered=source_registered,
             debounce_seconds=(
                 0.0
-                if str(event.dest_path or "").lower().endswith(".py")
-                and not _is_particle_script_path(event.dest_path)
+                if (
+                    str(event.dest_path or "").lower().endswith(".py")
+                    and not _is_particle_script_path(event.dest_path)
+                )
+                or self._is_editor_translation_change(event.dest_path)
                 else None
             ),
         )
         destination_lower = str(event.dest_path or "").lower()
-        if destination_lower.endswith(".py") and not _is_particle_script_path(
-            destination_lower
-        ):
+        if (
+            destination_lower.endswith(".py")
+            and not _is_particle_script_path(destination_lower)
+        ) or self._is_editor_translation_change(event.dest_path):
             self._wake_editor()
 
     @property
@@ -641,12 +684,35 @@ class ResourceChangeHandler(FileSystemEventHandler):
         Debug.clear_source_entries(result.path)
         rm = ResourcesManager.instance()
         if rm is not None:
+            # The initial project scan only registers the current source and
+            # must preserve a matching persisted warmup record.  Dependency
+            # members are likewise publication bookkeeping for the root edit;
+            # the root change owns invalidation and the warmup run.  Clearing
+            # the cache here made every fresh editor start compile all hooks
+            # again, even when the source hash was unchanged.
+            change = result.change
+            origins = (change.origin, *change.merged_origins)
+            kinds = (change.change_kind, *change.merged_change_kinds)
+            warmup_required = any(
+                value not in {"initial_scan", "dependency"}
+                for value in (*origins, *kinds)
+            )
+            if warmup_required:
+                from Infernux.engine.startup_warmup import invalidate_source
+                invalidate_source(result.path, project_path=rm._project_path)
             catalog_event = result.change.effective_catalog_event
             if catalog_event is not None:
                 rm.notify_script_catalog_changed(result.path, catalog_event)
             abs_path = path_key(result.path)
             for callback in list(rm._script_reload_callbacks.get(abs_path, [])):
                 callback(result.path)
+            if warmup_required:
+                from Infernux.engine.startup_warmup import run_script_warmup
+                run_script_warmup(
+                    result.path,
+                    project_path=rm._project_path,
+                    scope="script-save",
+                )
 
     def _rollback_script_publication(self, token: _ScriptPublicationRollback) -> None:
         rollback_errors: list[str] = []
@@ -1064,12 +1130,28 @@ class ResourceChangeHandler(FileSystemEventHandler):
                 return
             if AssetManager.is_meta_watcher_suppressed(event.path):
                 return
-        elif AssetManager.is_watcher_echo_suppressed(
-            event.kind.value,
-            event.path,
-            event.destination,
-        ):
-            return
+        else:
+            watcher_echo = AssetManager.is_watcher_echo_suppressed(
+                event.kind.value,
+                event.path,
+                event.destination,
+            )
+            # A create notification at an already registered path is
+            # normalized to MODIFIED above.  Preserve exact self-write echo
+            # suppression for an explicit import which registered that path
+            # immediately before its watcher notification arrived.
+            if (
+                not watcher_echo
+                and event.kind is AssetFsEventKind.MODIFIED
+                and AssetManager.is_watcher_echo_suppressed(
+                    AssetFsEventKind.CREATED.value,
+                    event.path,
+                    event.destination,
+                )
+            ):
+                watcher_echo = True
+            if watcher_echo:
+                return
         from Infernux.engine.interaction import ActionOrigin, action_origin_scope
 
         with action_origin_scope(ActionOrigin.EXTERNAL):
@@ -1108,6 +1190,10 @@ class ResourceChangeHandler(FileSystemEventHandler):
                 manager = ResourcesManager.instance()
                 if manager is not None:
                     manager.notify_script_catalog_changed(path, "created")
+        elif self._is_editor_translation_change(path):
+            manager = ResourcesManager.instance()
+            if manager is not None:
+                manager.notify_script_catalog_changed(path, "created")
         elif path.lower().endswith((".vert", ".frag")):
             # First import only writes metadata. Shader GPU modules are
             # published by reimport, the same edge effect dependencies use.
@@ -1130,6 +1216,7 @@ class ResourceChangeHandler(FileSystemEventHandler):
         from Infernux.engine.interaction import DocumentRegistry
 
         documents = DocumentRegistry.instance()
+        asset_guid = str(self._asset_database.get_guid_from_path(path) or "").strip()
         # A self-write watcher event may arrive before AssetManager has polled
         # its ticket. Acknowledge an exact committed fingerprint and defer an
         # incomplete write; neither path is an external edit.
@@ -1140,14 +1227,17 @@ class ResourceChangeHandler(FileSystemEventHandler):
             raise _AssetLocalWritePending(
                 f"local document write is still pending: {path}"
             )
-        durable_change = documents.durable_resource_content_changed(path)
+        durable_change = documents.durable_resource_content_changed(
+            path,
+            guid=asset_guid,
+        )
         if durable_change is None:
             raise _AssetImportNotReady(
                 f"durable resource identity is not ready: {path}"
             )
         if durable_change is False:
             return
-        if not documents.preflight_external_resource_change(path):
+        if not documents.preflight_external_resource_change(path, guid=asset_guid):
             return
         script_change = path.lower().endswith(".py") and not _is_particle_script_path(path)
         was_registered = self._asset_database.contains_path(path)
@@ -1181,10 +1271,21 @@ class ResourceChangeHandler(FileSystemEventHandler):
             # AssetMutationService normally consumes this preflight while
             # publishing a registered reimport. If it did not, finalize the
             # same successful external change here for both branches.
-            if documents.has_pending_external_change_preflight(path):
-                documents.publish_external_resource_change(path)
+            published_guid = str(getattr(result, "guid", "") or asset_guid).strip()
+            if documents.has_pending_external_change_preflight(
+                path,
+                guid=published_guid,
+            ):
+                documents.publish_external_resource_change(
+                    path,
+                    guid=published_guid,
+                )
         except Exception as exc:
-            documents.fail_external_resource_change(path, message=str(exc))
+            documents.fail_external_resource_change(
+                path,
+                guid=asset_guid,
+                message=str(exc),
+            )
             raise
         if script_change:
             if is_project_component_script(path, self._dependency_graph.project_root):
@@ -1193,8 +1294,18 @@ class ResourceChangeHandler(FileSystemEventHandler):
                 manager = ResourcesManager.instance()
                 if manager is not None:
                     manager.notify_script_catalog_changed(path, "modified")
+        elif self._is_editor_translation_change(path):
+            manager = ResourcesManager.instance()
+            if manager is not None:
+                manager.notify_script_catalog_changed(path, "modified")
         elif path.lower().endswith((".vert", ".frag")):
             self._notify_shader_reloaded(path)
+        elif path.lower().endswith(".prefab"):
+            from Infernux.engine.scene_manager import SceneFileManager
+
+            files = SceneFileManager.instance()
+            if files is not None:
+                files.sync_prefab_dependents(str(result.guid))
 
     def _commit_deleted(self, path: str, *, guid_hint: str = "") -> None:
         from Infernux.core.assets import AssetManager
@@ -1207,8 +1318,12 @@ class ResourceChangeHandler(FileSystemEventHandler):
         from Infernux.engine.interaction import DocumentRegistry
 
         documents = DocumentRegistry.instance()
+        asset_guid = str(
+            guid_hint or self._asset_database.get_guid_from_path(path) or ""
+        ).strip()
         durable_change = documents.durable_resource_content_changed(
             path,
+            guid=asset_guid,
             deleted=True,
         )
         if durable_change is None:
@@ -1217,6 +1332,7 @@ class ResourceChangeHandler(FileSystemEventHandler):
             )
         if not durable_change or not documents.preflight_external_resource_change(
             path,
+            guid=asset_guid,
             deleted=True,
         ):
             return
@@ -1246,10 +1362,24 @@ class ResourceChangeHandler(FileSystemEventHandler):
             manager = ResourcesManager.instance()
             if manager is not None:
                 manager.notify_script_catalog_changed(path, "deleted")
+        elif self._is_editor_translation_change(path):
+            manager = ResourcesManager.instance()
+            if manager is not None:
+                manager.notify_script_catalog_changed(path, "deleted")
 
     def _commit_moved(self, old_path: str, new_path: str) -> None:
         if not os.path.isfile(new_path):
             raise _AssetImportNotReady(f"moved file is not ready: {new_path}")
+        source_guid = self._asset_database.get_guid_from_path(old_path)
+        destination_guid = self._asset_database.get_guid_from_path(new_path)
+        if destination_guid and destination_guid != source_guid:
+            # The filesystem already replaced an existing destination. A
+            # staging file may have lived long enough to be imported, but its
+            # identity must never replace the target's GUID or import type.
+            self._commit_modified(new_path)
+            if source_guid:
+                self._commit_deleted(old_path, guid_hint=source_guid)
+            return
         from Infernux.core.assets import AssetManager
         if not AssetManager.move_asset(
             old_path,
@@ -1259,6 +1389,15 @@ class ResourceChangeHandler(FileSystemEventHandler):
             origin="external",
         ):
             raise RuntimeError(f"asset move failed: {old_path} -> {new_path}")
+        if os.path.splitext(old_path)[1].lower() != os.path.splitext(new_path)[1].lower():
+            # A real move preserves GUID identity, but changing the extension
+            # changes the authoritative importer and resource metadata type.
+            if not AssetManager.reimport_asset(
+                new_path,
+                database=self._asset_database,
+                suppress_watcher_echo=False,
+            ):
+                raise _AssetImportNotReady(f"renamed asset reimport failed: {new_path}")
         if new_path.lower().endswith(".py") and not _is_particle_script_path(new_path):
             if is_project_component_script(
                 new_path,
@@ -1282,6 +1421,13 @@ class ResourceChangeHandler(FileSystemEventHandler):
                 if manager is not None:
                     manager.notify_script_catalog_changed(old_path, "deleted")
                     manager.notify_script_catalog_changed(new_path, "moved")
+        elif self._is_editor_translation_change(
+            old_path
+        ) or self._is_editor_translation_change(new_path):
+            manager = ResourcesManager.instance()
+            if manager is not None:
+                manager.notify_script_catalog_changed(old_path, "deleted")
+                manager.notify_script_catalog_changed(new_path, "moved")
         elif new_path.lower().endswith((".vert", ".frag")):
             if not AssetManager.reimport_asset(
                 new_path,
@@ -1439,12 +1585,20 @@ class ResourceChangeHandler(FileSystemEventHandler):
             return True
         _clear_script_error(file_path)
         rm = ResourcesManager.instance()
-        if rm is not None and catalog_event is not None:
-            rm.notify_script_catalog_changed(file_path, catalog_event)
+        if rm is not None:
+            from Infernux.engine.startup_warmup import invalidate_source, run_script_warmup
+            invalidate_source(file_path, project_path=rm._project_path)
+            if catalog_event is not None:
+                rm.notify_script_catalog_changed(file_path, catalog_event)
         abs_path = path_key(file_path)
         if rm is not None:
             for cb in list(rm._script_reload_callbacks.get(abs_path, [])):
                 cb(file_path)
+            run_script_warmup(
+                file_path,
+                project_path=rm._project_path,
+                scope="script-save",
+            )
         return True
 
     def _notify_shader_reloaded(self, file_path: str):
@@ -1501,6 +1655,11 @@ class ResourcesManager:
         self._initial_scan_artifact = None
         self._startup_prepared = False
         self._skip_initial_scan = False
+
+    @property
+    def project_path(self) -> str:
+        """Return the authoritative root owned by this resource session."""
+        return self._project_path
 
     def _shutdown_observer(self, *, join_timeout: float = 5.0) -> bool:
         """Stop and join the currently published watchdog observer."""
@@ -1852,6 +2011,14 @@ class ResourcesManager:
 
     def notify_script_catalog_changed(self, file_path: str, event_type: str) -> None:
         """Notify listeners that Python script catalog may have changed."""
+        from Infernux.renderstack.discovery import (
+            invalidate_discovery_cache,
+            script_may_affect_pipeline_catalog,
+        )
+        # The catalog belongs to the project, not to whichever scenes currently
+        # contain a RenderStack. Invalidate once before notifying consumers.
+        if script_may_affect_pipeline_catalog(file_path, event_type):
+            invalidate_discovery_cache()
         for cb in list(self._script_catalog_callbacks):
             try:
                 cb(file_path, event_type)

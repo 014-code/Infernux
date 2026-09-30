@@ -11,6 +11,7 @@ from .contracts import (
     BuildRequest,
     BuildResult,
     DiagnosticSeverity,
+    BuildProfile,
 )
 from .registry import BuildExporterRegistry, exporter_registry
 
@@ -29,6 +30,7 @@ class BuildService:
         self.registry = registry or exporter_registry
 
     def create_plan(self, request: BuildRequest) -> BuildPlan:
+        request = self._resolve_request_options(request)
         exporter, _target = self.registry.resolve(request.target)
         request.report("doctor", 0, 1, "Checking target toolchain")
         report = exporter.doctor(request)
@@ -61,6 +63,7 @@ class BuildService:
         *,
         run_smoke: bool = False,
     ) -> BuildResult:
+        request = self._resolve_request_options(request)
         exporter, _target = self.registry.resolve(request.target)
         accepted_plan = plan or self.create_plan(request)
         if accepted_plan.target != request.target:
@@ -90,6 +93,23 @@ class BuildService:
             artifacts=len(result.artifacts),
         )
         return result
+
+    def _resolve_request_options(self, request: BuildRequest) -> BuildRequest:
+        options = self.registry.resolve_options(
+            request.target,
+            dict(request.profile.options),
+        )
+        if options == dict(request.profile.options):
+            return request
+        return replace(
+            request,
+            profile=BuildProfile(
+                configuration=request.profile.configuration,
+                debug_symbols=request.profile.debug_symbols,
+                compress_resources=request.profile.compress_resources,
+                options=options,
+            ),
+        )
 
     @staticmethod
     def _validate_result(

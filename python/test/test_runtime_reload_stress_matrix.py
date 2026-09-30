@@ -33,6 +33,8 @@ from Infernux.engine.project_context import (
     set_project_root,
 )
 from Infernux.engine.runtime_dispatch import current_runtime_epoch
+from Infernux.engine.runtime_event_queue import clear as clear_runtime_events
+from Infernux.engine.runtime_event_queue import drain as drain_runtime_events
 from Infernux.engine.runtime_script_revision import ScriptRevisionJournal
 from Infernux.ui.ui_event_system import UIEventProcessor
 
@@ -92,6 +94,7 @@ class _AssetDatabase:
 class _Canvas:
     game_object = None
     enabled = True
+    input_logical_size = (1920, 1080)
 
     def __init__(self, target):
         self.target = target
@@ -102,6 +105,7 @@ class _Canvas:
 
 @pytest.fixture
 def stress_project(tmp_path):
+    clear_runtime_events()
     previous_root = get_project_root()
     registry_snapshot = snapshot_component_registry_state()
     project = tmp_path / "RuntimeReloadStress"
@@ -118,6 +122,7 @@ def stress_project(tmp_path):
         if module_path and str(Path(module_path).resolve()).casefold().startswith(project_key):
             sys.modules.pop(name, None)
     set_project_root(previous_root)
+    clear_runtime_events()
 
 
 def _write(path, source):
@@ -285,6 +290,7 @@ def test_cross_file_play_pause_step_reload_keeps_identity_and_switches_epoch(
     canvas = _Canvas(a_first)
     processor.process([canvas], [(0.0, 0.0)], True, False, True, (0.0, 0.0), 0.016)
     processor.process([canvas], [(0.0, 0.0)], False, True, False, (0.0, 0.0), 0.016)
+    drain_runtime_events()
     assert a_first.events[-1] == ("ui-new", "A-new")
     a_first._tick_coroutines_update(0.016)
     assert ("old-resume", "A-new") in a_first.coroutine_values
@@ -294,7 +300,14 @@ def test_cross_file_play_pause_step_reload_keeps_identity_and_switches_epoch(
     assert old_coroutine.is_stale_epoch
 
     assert manager.pause() is True
-    manager.step_frame()
+    assert manager.step_frame() is True
+    assert manager.step_sequence == 0
+    assert scene_manager.calls == ["pause"]
+    # Mirror Engine's pre-scene safe point after the authoring transaction.
+    # This adapter has no native frame loop to drain the queued step for it.
+    assert manager.process_pending_step() is True
+    assert manager.step_sequence == 1
+    assert manager.process_pending_step() is False
     assert manager.resume() is True
     assert scene_manager.calls == ["pause", "step", "play"]
 

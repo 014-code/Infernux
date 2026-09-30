@@ -19,6 +19,7 @@ struct WindowTypeInfo
     std::string typeId;
     std::string displayName;
     std::string menuPath = "Window";
+    std::vector<std::string> menuPathKeys;
     bool singleton = true;
 };
 
@@ -57,6 +58,11 @@ class MenuBarPanel : public InxGUIRenderable
 
     // i18n
     std::function<std::string(const std::string &)> translate;
+    std::function<bool(const std::string &)> hasTranslation;
+
+    /// Translate a generated menu key only when the locale explicitly owns it.
+    /// Plugin path segments are authored labels and remain literal otherwise.
+    std::string ResolveMenuLabel(const std::string &key, const std::string &literal) const;
 
     // ── InxGUIRenderable ─────────────────────────────────────────────
     void OnRender(InxGUIContext *ctx) override;
@@ -68,6 +74,7 @@ class MenuBarPanel : public InxGUIRenderable
     void RenderDynamicMenus(InxGUIContext *ctx);
     void RefreshWindowTypeCache();
     void RenderWindowMenu(InxGUIContext *ctx);
+    void RenderMenuContents(InxGUIContext *ctx, const std::string &topMenu, const std::vector<WindowTypeInfo> &types);
 
     /// Render a single top-level menu for panels whose menuPath starts with
     /// @p topMenu.  Panels with exact match become top-level items; those

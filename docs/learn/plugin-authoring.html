@@ -37,7 +37,7 @@
 <p>This chapter turns a component and a text file into a reusable <code>.inxpkg</code>. You
 need Infernux 0.4.0 to test it. Packaging the repository itself only needs Python:
 the official packer uses the standard library, without importing the engine.</p>
-<div class="learn-article-toc"><strong>In this chapter</strong><a href="#layout">Choose a layout</a><a href="#component">Write a component</a><a href="#pages">Add documentation</a><a href="#package">Package and install</a><a href="#release">Publish and update</a></div>
+<div class="learn-article-toc"><strong>In this chapter</strong><a href="#layout">Choose a layout</a><a href="#component">Write a component</a><a href="#pages">Add documentation</a><a href="#panel-localization">Place and translate panels</a><a href="#package">Package and install</a><a href="#release">Publish and update</a></div>
 
 <figure class="learn-figure">
   <img src="../assets/learn/gameplay-first-component.webp" alt="A Python component attached to a GameObject with lifecycle output in the Console" loading="lazy" decoding="async">
@@ -117,6 +117,30 @@ Use <code>Application.persistent_data_path()</code> for writes, not packaged con
 <code>preload(context)</code>, <code>context.package_path("runtime/data/message.txt")</code> resolves
 the same content without hard-coding the reference. See the
 <a href="../wiki/site/en/plugin-package-content.html">plugin API guide</a> for lifecycle details.</p>
+<p>Player build discovers runtime components automatically. It freezes project and
+plugin scripts into the same GUID map and type registry, including serialized
+fields and lifecycle methods. Do not create a second registry or run an import
+side channel for Player.</p>
+<p>A preload is also the owner of long-lived work. Register a cleanup immediately
+after starting a server, thread, file watch or callback:</p>
+<div class="highlight"><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">HelloPreload</span><span class="p">(</span><span class="n">inx</span><span class="o">.</span><span class="n">InxPreload</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">preload</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">context</span><span class="p">:</span> <span class="n">inx</span><span class="o">.</span><span class="n">PreloadContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">service</span> <span class="o">=</span> <span class="n">start_service</span><span class="p">()</span>
+        <span class="n">context</span><span class="o">.</span><span class="n">add_cleanup</span><span class="p">(</span><span class="n">service</span><span class="o">.</span><span class="n">stop</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">unload</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">pass</span>
+</code></pre></div>
+
+<p>Cleanups run in reverse order after <code>unload()</code> and after a partial preload
+failure. Invalid saved Python keeps the last working lifecycle alive. Put Flask
+authoring tools in <code>editor/</code>, bind them to loopback on an operating-system
+allocated port, disable the development reloader, and register a bounded server
+shutdown and thread join. <code>requirements.txt</code> may include large packages such as
+<code>torch</code>; importing one during preload pays its one-time load before scene scripts.
+Infernux detects newly imported native Python extensions and requests a restart
+when they cannot be replaced safely. Use <code>context.require_restart()</code> yourself
+only for other process state that your cleanup cannot reverse.</p>
 <h2 id="pages">Separate runtime, editor and documentation</h2>
 <table>
 <thead>
@@ -160,6 +184,35 @@ inside the package. The repository's README is for GitHub; it is not a plugin
 panel page. Keep existing <code>.meta</code> files when editing, renaming or releasing
 assets: they preserve identity across imports and updates. <code>Packages/</code> scripts
 and assets participate in normal refresh, including newly authored components.</p>
+<h2 id="panel-localization">Place and translate Editor panels</h2>
+<p>Declare a panel's complete location with slash-separated authored labels. The parallel
+<code>menu_path_keys</code> tuple has exactly one entry per level; an empty entry keeps that
+level literal. The renderer builds the path recursively, so one through five levels
+and deeper paths use the same contract.</p>
+<div class="highlight"><pre><span></span><code><span class="nd">@editor_panel</span><span class="p">(</span>
+    <span class="s2">"Live Diagnostics"</span><span class="p">,</span>
+    <span class="n">type_id</span><span class="o">=</span><span class="s2">"studio.example.live_diagnostics"</span><span class="p">,</span>
+    <span class="n">title_key</span><span class="o">=</span><span class="s2">"studio.example.panel_title"</span><span class="p">,</span>
+    <span class="n">menu_path</span><span class="o">=</span><span class="s2">"Extensions/Example/Tools/Diagnostics/Live"</span><span class="p">,</span>
+    <span class="n">menu_path_keys</span><span class="o">=</span><span class="p">(</span>
+        <span class="s2">"menu.extensions"</span><span class="p">,</span>
+        <span class="s2">"studio.example.menu_root"</span><span class="p">,</span>
+        <span class="s2">"studio.example.menu_tools"</span><span class="p">,</span>
+        <span class="s2">"studio.example.menu_diagnostics"</span><span class="p">,</span>
+        <span class="s2">"studio.example.menu_live"</span><span class="p">,</span>
+    <span class="p">),</span>
+    <span class="n">interaction</span><span class="o">=</span><span class="n">PanelInteractionDescriptor</span><span class="p">(),</span>
+<span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">LiveDiagnostics</span><span class="p">(</span><span class="n">EditorPanel</span><span class="p">):</span>
+    <span class="o">...</span>
+</code></pre></div>
+
+<p>Put plugin-owned Editor strings in the fixed file <code>editor/translations.json</code>.
+The file uses the <code>infernux.editor_translations</code> schema, includes every supported
+Editor locale, and declares the same namespaced key set in each locale. Infernux
+publishes it before the package preload and removes it on reload, disable, uninstall,
+or project shutdown. Plugin catalogs cannot replace engine keys or another plugin's
+keys. Because the file belongs to <code>editor/</code>, Player builds exclude it.</p>
 <h2 id="package">Package and verify in a fresh project</h2>
 <p>With the current official template, run these commands at the repository root:</p>
 <div class="highlight"><pre><span></span><code>python<span class="w"> </span>package.py<span class="w"> </span>build<span class="w"> </span>dist/hello_plugin.inxpkg
@@ -204,7 +257,7 @@ Android additionally requires <strong>Android support</strong> installed through
 <h1 id="_1">制作你的第一个插件</h1>
 <p>这一章把一个组件和一份文本资源做成可复用的 <code>.inxpkg</code>。测试需要 Infernux 0.4.0，
 但打包仓库本身只需要 Python：官方打包脚本仅使用标准库，不导入引擎。</p>
-<div class="learn-article-toc"><strong>本章内容</strong><a href="#zh-layout">选择目录结构</a><a href="#zh-component">编写组件</a><a href="#zh-pages">添加文档</a><a href="#zh-package">打包与安装</a><a href="#zh-release">发布与更新</a></div>
+<div class="learn-article-toc"><strong>本章内容</strong><a href="#zh-layout">选择目录结构</a><a href="#zh-component">编写组件</a><a href="#zh-pages">添加文档</a><a href="#zh-panel-localization">放置并翻译 Editor 面板</a><a href="#zh-package">打包与安装</a><a href="#zh-release">发布与更新</a></div>
 
 <figure class="learn-figure">
   <img src="../assets/learn/gameplay-first-component.webp" alt="Python 组件挂在 GameObject 上，并在 Console 中输出生命周期信息" loading="lazy" decoding="async">
@@ -274,6 +327,24 @@ JSON 中也不需要 <code>requirements</code> 或 <code>dependencies</code> 字
 <p>包内 Python 模块之间使用显式相对导入，必要时添加正常的 <code>__init__.py</code>。需要启动钩子时继承
 <code>InxPreload</code>；在 <code>preload(context)</code> 里用 <code>context.package_path("runtime/data/message.txt")</code>
 读取同一份资源，就不需要硬编码 reference。生命周期细节见<a href="../wiki/site/zh/plugin-package-content.html">插件 API 指南</a>。</p>
+<p>Player 构建会自动发现 runtime 组件，把项目与插件脚本统一冻结到同一份 GUID 映射和类型注册表，
+其中包含序列化字段和生命周期方法。不要再建立第二份 Player 注册表，也不要通过额外导入旁路注册。</p>
+<p>preload 同时也是长期任务的所有者。启动服务、线程、文件监听或回调后，应立刻登记清理函数：</p>
+<div class="highlight"><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">HelloPreload</span><span class="p">(</span><span class="n">inx</span><span class="o">.</span><span class="n">InxPreload</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">preload</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">context</span><span class="p">:</span> <span class="n">inx</span><span class="o">.</span><span class="n">PreloadContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">service</span> <span class="o">=</span> <span class="n">start_service</span><span class="p">()</span>
+        <span class="n">context</span><span class="o">.</span><span class="n">add_cleanup</span><span class="p">(</span><span class="n">service</span><span class="o">.</span><span class="n">stop</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">unload</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">pass</span>
+</code></pre></div>
+
+<p>清理函数会在 <code>unload()</code> 后按逆序运行，preload 执行到一半失败时也会运行。保存的 Python
+候选存在语法错误时，最后一次正常运行的生命周期会继续保留。Flask 创作工具应放在 <code>editor/</code>，
+绑定回环地址和操作系统分配的端口，关闭开发重载器，并登记有时间边界的服务关闭与线程等待。
+<code>requirements.txt</code> 可以包含 <code>torch</code> 等大型包；在 preload 中导入可以把一次性加载放在场景脚本前。
+Infernux 会检测新导入的原生 Python 扩展，在无法安全替换时要求重启。只有清理函数无法撤销的其它
+进程状态才由插件主动调用 <code>context.require_restart()</code>。</p>
 <h2 id="zh-pages">区分运行时、编辑器与文档</h2>
 <table>
 <thead>
@@ -313,6 +384,15 @@ JSON 中也不需要 <code>requirements</code> 或 <code>dependencies</code> 字
 图片使用相对路径，并且必须放在包内。仓库 README 只供 GitHub 使用，不会成为插件面板的页面。
 编辑、改名或发新版本时保留已有 <code>.meta</code>，它们维持资产在导入和更新过程中的身份。
 <code>Packages/</code> 的脚本和资产参与正常刷新，新写的组件也一样。</p>
+<h2 id="zh-panel-localization">放置并翻译 Editor 面板</h2>
+<p>用斜杠分隔的作者文本声明面板的完整菜单位置。平行的 <code>menu_path_keys</code> 元组必须为每一级
+提供一个条目；空字符串表示该级保持原文。渲染器递归建立菜单树，因此一至五级以及更深
+路径都使用同一套协议。</p>
+<p>插件自己的 Editor 词条固定放在 <code>editor/translations.json</code>。文件使用
+<code>infernux.editor_translations</code> schema，包含 Editor 支持的全部语言，并在每种语言中
+声明完全相同、带插件命名空间的键集合。Infernux 会在包 preload 前发布词条，并在热重载、
+禁用、卸载或项目关闭时移除。插件不能覆盖引擎词条或其它插件的词条。该文件属于
+<code>editor/</code>，不会进入 Player。</p>
 <h2 id="zh-package">打包并在新项目中验证</h2>
 <p>使用当前官方模板，在仓库根目录执行：</p>
 <div class="highlight"><pre><span></span><code>python<span class="w"> </span>package.py<span class="w"> </span>build<span class="w"> </span>dist/hello_plugin.inxpkg

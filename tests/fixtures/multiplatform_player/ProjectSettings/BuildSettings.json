@@ -1,16 +1,43 @@
 {
+  "build_target": "windows-x64",
   "debug_mode": true,
-  "display_mode": "windowed",
-  "enable_jit": false,
   "game_name": "InfernuxPlatformFixture",
   "icon_guid": "",
   "lto": false,
   "output_dir": "",
-  "scenes": [
-    "Assets/Scenes/Main.scene"
+  "platform_options": {
+    "windows-x64": {
+      "display_mode": "windowed",
+      "window_width": 1280,
+      "window_height": 720,
+      "window_resizable": true
+    },
+    "linux-x64": {
+      "display_mode": "windowed",
+      "window_width": 1280,
+      "window_height": 720,
+      "window_resizable": true
+    },
+    "web-wasm32": {
+      "display_mode": "fullscreen_borderless",
+      "window_width": 1280,
+      "window_height": 720
+    },
+    "android-arm64": {
+      "android_artifact": "apk",
+      "android_orientation": "landscape",
+      "android_resolution_scaling": "fixed_dpi",
+      "android_target_dpi": 320
+    },
+    "android-x64-emulator": {
+      "android_artifact": "apk",
+      "android_orientation": "landscape",
+      "android_resolution_scaling": "fixed_dpi",
+      "android_target_dpi": 320
+    }
+  },
+  "scene_guids": [
+    "04000000000000000000000000000001"
   ],
-  "splash_items": [],
-  "window_height": 720,
-  "window_resizable": true,
-  "window_width": 1280
+  "splash_items": []
 }

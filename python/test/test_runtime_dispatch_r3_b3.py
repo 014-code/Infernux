@@ -6,8 +6,17 @@ import pytest
 
 from Infernux.components import InxComponent
 from Infernux.engine.runtime_dispatch import publish_runtime_dispatch_epoch
+from Infernux.engine.runtime_event_queue import clear as clear_runtime_events
+from Infernux.engine.runtime_event_queue import drain as drain_runtime_events
 from Infernux.ui.ui_event_data import PointerType
 from Infernux.ui.ui_event_system import UIEventProcessor, UIPointerFrame
+
+
+@pytest.fixture(autouse=True)
+def _isolated_runtime_event_queue():
+    clear_runtime_events()
+    yield
+    clear_runtime_events()
 
 
 class _PhysicsProbe(InxComponent):
@@ -94,6 +103,7 @@ class _PointerProbe(InxComponent):
 class _Canvas:
     game_object = None
     enabled = True
+    input_logical_size = (100.0, 100.0)
 
     def __init__(self, target) -> None:
         self.target = target
@@ -110,6 +120,108 @@ def _make_pointer_target():
     return target
 
 
+@pytest.mark.parametrize('reset_all', [False, True])
+def test_ui_failed_release_cannot_leave_pointer_capture(monkeypatch, reset_all):
+    target = _make_pointer_target()
+    canvas = _Canvas(target)
+    def fail(self, event):
+        self.events.append('failed-up')
+        raise ValueError('author release failed')
+    monkeypatch.setattr(_PointerProbe, 'on_pointer_up', fail)
+    publication = publish_runtime_dispatch_epoch((_PointerProbe,))
+    publication.commit()
+    try:
+        processor = UIEventProcessor()
+        processor.process_pointers([canvas], tuple(
+            UIPointerFrame(i, PointerType.Touch, ((0., 0.),), down=True, held=True)
+            for i in (10, 11)), .016)
+        with pytest.raises(ValueError, match='author release failed'):
+            if reset_all:
+                processor.reset()
+            else:
+                processor.process_pointers([canvas], (
+                    UIPointerFrame(10, PointerType.Touch, ((0., 0.),), up=True),), .016)
+            drain_runtime_events()
+        if reset_all:
+            assert processor._pointers == {}
+            processor.reset()
+        else:
+            assert (PointerType.Touch, 10) not in processor._pointers
+        assert target.events.count('failed-up') == 1
+    finally:
+        publication.rollback()
+
+
+def test_ui_destroyed_target_is_not_called_during_reset():
+    target = _make_pointer_target()
+    publication = publish_runtime_dispatch_epoch((_PointerProbe,))
+    publication.commit()
+    try:
+        processor = UIEventProcessor()
+        processor.process([_Canvas(target)], [(0., 0.)], True, False, True, (0., 0.), .016)
+        drain_runtime_events()
+        target._is_destroyed = True
+        processor.reset()
+        drain_runtime_events()
+        assert target.events == ['enter', 'down']
+        assert processor._pointers == {}
+    finally:
+        publication.rollback()
+
+
+def test_ui_discard_drops_retired_targets_without_callbacks():
+    target = _make_pointer_target()
+    publication = publish_runtime_dispatch_epoch((_PointerProbe,))
+    publication.commit()
+    try:
+        processor = UIEventProcessor()
+        processor.process([_Canvas(target)], [(0., 0.)], True, False, True, (0., 0.), .016)
+        processor.discard()
+        target._is_destroyed = True
+        drain_runtime_events()
+        assert target.events == []
+        assert processor._pointers == {}
+        assert processor.debug_state() == {}
+    finally:
+        publication.rollback()
+
+
+@pytest.mark.parametrize(
+    ("press_position", "release_position", "canceled", "expected_clicks"),
+    [
+        ((0.0, 0.0), (0.0, 0.0), False, 1),
+        ((0.0, 0.0), (10.0, 0.0), False, 0),
+        ((10.0, 0.0), (0.0, 0.0), False, 0),
+        ((0.0, 0.0), (0.0, 0.0), True, 0),
+    ],
+)
+def test_ui_same_frame_touch_uses_press_location(
+    press_position, release_position, canceled, expected_clicks
+):
+    target = _make_pointer_target()
+    canvas = _Canvas(target)
+    canvas.raycast = lambda x, _y: target if x < 5.0 else None
+    publication = publish_runtime_dispatch_epoch((_PointerProbe,))
+    publication.commit()
+    try:
+        processor = UIEventProcessor()
+        processor.process_pointers([canvas], (
+            UIPointerFrame(
+                7, PointerType.Touch, (release_position,),
+                down=True, up=True, canceled=canceled,
+                press_canvas_positions=(press_position,),
+            ),
+        ), 0.016)
+        drain_runtime_events()
+        expected_press = int(press_position[0] < 5.0)
+        assert target.events.count("down") == expected_press
+        assert target.events.count("up") == expected_press
+        assert target.events.count("click") == expected_clicks
+        assert (PointerType.Touch, 7) not in processor._pointers
+    finally:
+        publication.rollback()
+
+
 def test_ui_process_routes_all_pointer_hooks_through_one_event_path():
     target = _make_pointer_target()
     canvas = _Canvas(target)
@@ -123,6 +235,7 @@ def test_ui_process_routes_all_pointer_hooks_through_one_event_path():
         processor.process([canvas], [(20.0, 0.0)], False, True, False, (0.0, 0.0), 0.016)
         canvas.hit = False
         processor.process([canvas], [(30.0, 0.0)], False, False, False, (0.0, 0.0), 0.016)
+        drain_runtime_events()
 
         assert target.events == [
             "enter",
@@ -172,6 +285,7 @@ def test_ui_process_keeps_one_epoch_when_a_callback_publishes():
                 (0.0, 0.0),
                 0.016,
             )
+            drain_runtime_events()
             assert target.events == ["enter-old", "down"]
         finally:
             publication.rollback()
@@ -200,7 +314,12 @@ def test_ui_pointer_exception_propagates_without_retry():
         processor.process([canvas], [(0.0, 0.0)], True, False, True, (0.0, 0.0), 0.016)
         with pytest.raises(RuntimeError, match="expected pointer failure"):
             processor.process([canvas], [(0.0, 0.0)], False, True, False, (0.0, 0.0), 0.016)
+            drain_runtime_events()
         assert target.events.count("click-failed") == 1
+        debug = processor.debug_state()
+        assert debug["last_callback"] == "on_pointer_click"
+        assert debug["last_callback_status"] == "exception"
+        assert debug["last_callback_error"] == "RuntimeError: expected pointer failure"
     finally:
         publication.rollback()
         _PointerProbe.on_pointer_click = old_click
@@ -213,6 +332,7 @@ def test_ui_process_keeps_simultaneous_touch_transactions_independent():
     class SplitCanvas:
         game_object = None
         enabled = True
+        input_logical_size = (100.0, 100.0)
 
         @staticmethod
         def raycast(x, _y):
@@ -238,6 +358,7 @@ def test_ui_process_keeps_simultaneous_touch_transactions_independent():
             ),
             0.016,
         )
+        drain_runtime_events()
 
         assert left.events == ["enter", "down", "up", "click", "exit"]
         assert right.events == ["enter", "down", "up", "click", "exit"]
@@ -277,9 +398,91 @@ def test_ui_touch_cancel_releases_capture_without_click():
             ),
             0.016,
         )
+        drain_runtime_events()
 
         assert target.events == ["enter", "down", "up", "exit"]
         assert canceled == [(27, PointerType.Touch, True)]
     finally:
         publication.rollback()
         _PointerProbe.on_pointer_up = old_up
+
+
+def test_ui_group_interactable_change_cancels_active_capture():
+    target = _make_pointer_target()
+    target.accepts_interaction = True
+    target.is_effectively_interactable = lambda: target.accepts_interaction
+    canceled = []
+    old_up = _PointerProbe.on_pointer_up
+
+    def capture_cancel(self, event) -> None:
+        self.events.append("up")
+        canceled.append(event.canceled)
+
+    _PointerProbe.on_pointer_up = capture_cancel
+    publication = publish_runtime_dispatch_epoch((_PointerProbe,))
+    publication.commit()
+    try:
+        processor = UIEventProcessor()
+        canvas = _Canvas(target)
+        processor.process(
+            [canvas], [(0.0, 0.0)], True, False, True, (0.0, 0.0), 0.016
+        )
+        target.accepts_interaction = False
+        processor.process(
+            [canvas], [(1.0, 0.0)], False, False, True, (0.0, 0.0), 0.016
+        )
+        drain_runtime_events()
+
+        assert target.events == ["enter", "down", "up", "exit"]
+        assert canceled == [True]
+    finally:
+        publication.rollback()
+        _PointerProbe.on_pointer_up = old_up
+
+
+def test_ui_process_prefers_screen_canvas_over_world_element():
+    world_target = _make_pointer_target()
+    screen_target = _make_pointer_target()
+    world = _Canvas(world_target)
+    world.input_priority = lambda position, _order: (0, 0, -position[2])
+    screen = _Canvas(screen_target)
+    publication = publish_runtime_dispatch_epoch((_PointerProbe,))
+    publication.commit()
+    try:
+        processor = UIEventProcessor()
+        processor.process_pointers(
+            (world, screen),
+            (UIPointerFrame(-1, PointerType.Mouse, ((20.0, 10.0, 2.0), (20.0, 10.0)), down=True),),
+            0.016,
+        )
+        drain_runtime_events()
+
+        assert world_target.events == []
+        assert screen_target.events == ["enter", "down"]
+    finally:
+        publication.rollback()
+
+
+def test_ui_drag_uses_the_captured_world_element_coordinates():
+    target = _make_pointer_target()
+    world = _Canvas(target)
+    world.input_priority = lambda position, _order: (0, 0, -position[2])
+    publication = publish_runtime_dispatch_epoch((_PointerProbe,))
+    publication.commit()
+    try:
+        processor = UIEventProcessor()
+        processor.process_pointers(
+            (world,),
+            (UIPointerFrame(-1, PointerType.Mouse, ((10.0, 10.0, 2.0),), down=True, held=True),),
+            0.016,
+        )
+        processor.process_pointers(
+            (world,),
+            (UIPointerFrame(-1, PointerType.Mouse, ((20.0, 10.0, 1.8),), held=True),),
+            0.016,
+        )
+        drain_runtime_events()
+
+        assert target.events == ["enter", "down", "begin_drag"]
+    finally:
+        publication.rollback()

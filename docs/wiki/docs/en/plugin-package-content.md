@@ -30,6 +30,8 @@ abc/
 
 The manifest does not currently declare `requirements` or `dependencies`. An optional `requirements.txt` is recognized by its fixed filename.
 
+To package in the Editor, select the package-root folder in Project/File Manager, right click, choose **Export InxPackage...**, and choose the destination. The selected folder itself is the root; do not add another wrapper directory. Double click the generated `.inxpkg` in Project view to inspect its roles, paths, and GUIDs before installing it.
+
 Exporting multiple files or folders selected in File Manager preserves their paths relative to their common parent. Ordinary content is imported directly under `Assets/Plugins`, without adding a directory named after the package. Selecting `materials/` and `web/`, for example, produces `Assets/Plugins/materials/` and `Assets/Plugins/web/`.
 
 ## Git repository layout
@@ -127,6 +129,69 @@ Subclass `InxPreload` for lifecycle work. Use explicit relative imports for pack
 A local package authored directly under `Packages/<name>/runtime/` does not need to be installed before building a Player. The build includes its current indexed runtime files and compiled preloads without changing the project's installation ownership records. A simple package needs no manifest; a namespaced author directory such as `Packages/studio/tool/` needs `inx_package.json` to define its boundary. Player module identity keeps the project's directory name, even if the manifest chooses a different reference for future `.inxpkg` distribution.
 
 No include/exclude fallback list exists. A `.pyd` or `.wasm` under `runtime/` is runtime-owned; the same file under `editor/` is Editor-only. Materials, shaders, HTML, and other ordinary assets are imported under `Assets/Plugins` and included in the Player through the normal asset pipeline.
+
+Player build compiles project scripts and every enabled package `runtime/` script into one authoritative GUID map and one `RuntimeTypeRegistry.json`. Components, nested `SerializableObject` types, lifecycle methods, startup warmups, and serialized field schemas from plugins use the same registry as project code. Plugin authors do not register Player component types separately. A runtime script without a frozen asset GUID or stable package module identity stops the build with the offending path.
+
+## Preload, hot reload, and owned cleanup
+
+Use a runtime `InxPreload` for services required in both Editor and Player. Use a separate Editor preload for panels, commands, importers, local HTTP tools, and other authoring services. A runtime preload must not conditionally import Editor modules; the directory boundary already expresses the platform contract.
+
+`preload(context)` acquires process resources and `unload()` releases plugin-owned state. Register every additional reversible resource immediately with `context.add_cleanup(callback)`. Callbacks run once in reverse registration order after `unload()`, and also run if `preload()` fails partway through. This gives HTTP servers, threads, file watches, event subscriptions, and callbacks the same transaction lifetime as the preload.
+
+```python
+class ToolPreload(inx.InxPreload):
+    def preload(self, context: inx.PreloadContext) -> None:
+        service = start_service()
+        context.add_cleanup(service.stop)
+
+    def unload(self) -> None:
+        pass
+```
+
+Hot reload first parses the candidate. Invalid syntax does not unload the working version. A valid replacement unloads the old lifecycle, removes its owned Editor contributions and package modules, then publishes the new one. The public `infernux` module is process-wide and retains object identity; a plugin that replaces `sys.modules["infernux"]` is rejected.
+
+`requirements.txt` is installed before preload. A large dependency such as `torch` may be imported in preload when the plugin needs it, so its one-time load happens before scene scripts instead of the first Play action. Newly imported native Python extensions are detected automatically and require an Editor restart before replacement or uninstall. Call `context.require_restart(reason)` only for other irreversible process state. A pure Python service or a Flask server with a complete bounded shutdown uses `add_cleanup` and does not require restart.
+
+For an Editor-only Flask window, bind to `127.0.0.1`, ask the operating system for an available port, disable Flask's development reloader, run the server on an owned thread, and register a cleanup that calls shutdown, joins the thread, and closes the socket. Put both the server and browser UI under `editor/` unless the Player deliberately provides that service.
+
+## Editor commands and shortcuts
+
+Register editor tools during an editor preload's import or `preload(context)`. Panel registrations, `EditorCommandRegistry.register()` commands and `ShortcutRouter.register()` bindings share that preload's lifetime: reload removes the old registrations first; disabling, uninstalling or closing the project removes them. Use stable, package-prefixed command and binding IDs. Replacing another contributor's ID is an error, not an override mechanism.
+
+For example, inside `preload(context)`:
+
+```python
+import infernux as inx
+
+inx.editor.EditorCommandRegistry.instance().register(inx.editor.EditorCommand(
+    "studio.level.create", self.create_level,
+    display_name="Create Level", default_shortcut="Ctrl+Alt+K",
+    can_execute=self.can_create_level,
+))
+inx.editor.ShortcutRouter.instance().register(inx.editor.ShortcutBinding(
+    "studio.level.create", inx.editor.KeyChord.parse("Ctrl+Alt+K"),
+    binding_id="studio.level.create.shortcut",
+))
+```
+
+Both callbacks receive a `CommandContext`. `default_shortcut` is display metadata; the binding performs input routing. Shortcut profile changes preserve independently registered plugin bindings. `ShortcutBinding.owner_id` means panel/input focus scope, not plugin ownership. Registrations made later in arbitrary callbacks are not automatically attributed to the preload; register tools during preload instead.
+
+## Editor panel placement and plugin translations
+
+`@editor_panel` and `@editor_window` accept a slash-separated `menu_path`
+with any practical depth. Each segment is authored display text. Supply the
+parallel `menu_path_keys` tuple to localize selected levels; every entry
+corresponds to one segment and an empty entry keeps that segment literal.
+Engine-owned menu levels use engine keys such as `menu.extensions`; plugin-owned
+levels use namespaced keys from the package.
+
+A package's Editor catalog has one fixed location: `editor/translations.json`.
+It uses the `infernux.editor_translations` schema, contains every supported
+Editor locale, and declares an identical key set for every locale. The package
+lifecycle publishes this catalog before importing its Editor preload and removes
+it on reload, disable, uninstall, and shutdown. Conflicts with engine keys or
+another package fail explicitly. Player cook excludes the catalog with the rest
+of the `editor/` role.
 
 ## Read assets by authored path
 

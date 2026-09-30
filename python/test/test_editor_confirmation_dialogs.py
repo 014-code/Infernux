@@ -207,6 +207,31 @@ def test_exit_confirmation_saves_panels_sequentially():
         _close_document_view(second)
 
 
+def test_document_replacement_resolves_multiple_dirty_scenes_in_one_transaction():
+    first = "dirty_replace_first"
+    second = "dirty_replace_second"
+    completed: list[str] = []
+    first_document = _open_dirty_document(first, title="First Scene")
+    second_document = _open_dirty_document(second, title="Second Scene")
+    coordinator = _dirty_confirmation()
+    try:
+        assert coordinator.request_documents_replace(
+            (first_document.document_id, second_document.document_id),
+            lambda: completed.append("replace"),
+        )
+        assert coordinator.active_document_id == first_document.document_id
+
+        coordinator.choose_discard()
+        assert coordinator.active_document_id == second_document.document_id
+        coordinator.choose_discard()
+
+        assert completed == ["replace"]
+        assert coordinator.is_active is False
+    finally:
+        _close_document_view(first)
+        _close_document_view(second)
+
+
 def test_exit_prompts_once_for_a_document_with_two_views():
     from Infernux.engine.interaction import (
         DocumentCapability,
@@ -735,6 +760,50 @@ def test_project_delete_modal_confirms_deduplicated_existing_paths(tmp_path):
     next(callback for label, callback in ctx.buttons.items() if label.endswith("##confirm"))()
 
     assert received == [[str(first.resolve()), str(second.resolve())]]
+    assert coordinator.is_active is False
+    assert ctx.closed is True
+
+
+def test_project_delete_confirmation_waits_for_global_history(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    from Infernux.engine.interaction import EditorInteractionCore
+
+    asset = tmp_path / "Busy.prefab"
+    asset.write_text("prefab", encoding="utf-8")
+    received: list[list[str]] = []
+    coordinator = _project_delete_confirmation()
+    assert coordinator.request([str(asset)], lambda paths: received.append(paths) or True)
+
+    monkeypatch.setattr(
+        EditorInteractionCore,
+        "instance",
+        classmethod(lambda _cls: SimpleNamespace(history_ready=False)),
+    )
+    coordinator._confirm(_ProjectDeleteSemanticContext())
+
+    assert received == []
+    assert coordinator.is_active is True
+    assert coordinator._error == "project.delete_history_busy"
+
+
+def test_project_delete_confirmation_rejects_reentrant_double_submit(tmp_path):
+    asset = tmp_path / "DoubleClick.prefab"
+    asset.write_text("prefab", encoding="utf-8")
+    calls = 0
+    coordinator = _project_delete_confirmation()
+    ctx = _ProjectDeleteSemanticContext()
+
+    def delete(paths):
+        nonlocal calls
+        calls += 1
+        assert paths == [str(asset.resolve())]
+        coordinator._confirm(ctx)
+        return True
+
+    assert coordinator.request([str(asset)], delete)
+    coordinator._confirm(ctx)
+
+    assert calls == 1
     assert coordinator.is_active is False
     assert ctx.closed is True
 

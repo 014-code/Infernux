@@ -457,10 +457,11 @@ class BootstrapPanelsMixin:
             EditorShortcutInput as NativeEditorShortcutInput,
             MenuBarPanel as NativeMenuBarPanel,
         )
-        from Infernux.engine.i18n import t as _t
+        from Infernux.engine.i18n import has_translation, t as _t
         self.shortcut_input = NativeEditorShortcutInput()
         self.menu_bar = NativeMenuBarPanel()
         self.menu_bar.translate = _t
+        self.menu_bar.has_translation = has_translation
         self._wire_menu_bar_callbacks(wm)
         self.interaction_core.panels.bind_view(
             "menu_bar",
@@ -584,6 +585,7 @@ class BootstrapPanelsMixin:
         self.game_view = GameViewPanel(engine=engine)
         self.game_view.set_window_manager(wm)
         wm.register_existing_window("game_view", self.game_view, "game_view")
+        self.game_view.prepare_render_target()
 
         # UI Editor
         self.ui_editor = UIEditorPanel()

@@ -3,10 +3,15 @@
 #include "DescriptorBindTrace.h"
 #include "RhiVulkanTypes.h"
 
+#include <core/log/InxLog.h>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <mutex>
 
 namespace infernux::vk
@@ -337,6 +342,9 @@ VulkanCapabilitySnapshot VulkanCapabilitySnapshot::FromProbe(const VulkanCapabil
     result.timelineSemaphoreExtension = probe.timelineSemaphoreExtension;
     result.dynamicRenderingExtension = probe.dynamicRenderingExtension;
     result.synchronization2Extension = probe.synchronization2Extension;
+    result.supported.shaderInt16 = {probe.coreFeatures.shaderInt16 == VK_TRUE, false};
+    result.supported.shaderInt64 = {probe.coreFeatures.shaderInt64 == VK_TRUE, false};
+    result.supported.shaderFloat64 = {probe.coreFeatures.shaderFloat64 == VK_TRUE, false};
 
     const bool core12 = IsCoreVersionAtLeast(probe.apiVersion, 1, 2);
     const bool core13 = IsCoreVersionAtLeast(probe.apiVersion, 1, 3);
@@ -445,6 +453,9 @@ void VulkanDeviceFeatureChain::ResetChain() noexcept
     m_enabled.timelineSemaphore.enabled = false;
     m_enabled.synchronization2.enabled = false;
     m_enabled.submit2.enabled = false;
+    m_enabled.shaderInt16.enabled = false;
+    m_enabled.shaderInt64.enabled = false;
+    m_enabled.shaderFloat64.enabled = false;
 }
 
 void VulkanDeviceFeatureChain::Link(void *feature) noexcept
@@ -615,6 +626,31 @@ bool VulkanDeviceFeatureChain::Enable(const rhi::DeviceCapabilityRequest &reques
     if (request.submit2) {
         m_enabled.submit2 = {true, true};
     }
+    struct NumericRequest
+    {
+        bool requested;
+        rhi::DeviceCapability capability;
+        rhi::DeviceCapabilityStatus *status;
+        VkBool32 *feature;
+    };
+    const NumericRequest numericRequests[] = {
+        {request.shaderInt16, rhi::DeviceCapability::ShaderInt16, &m_enabled.shaderInt16,
+         &m_features2.features.shaderInt16},
+        {request.shaderInt64, rhi::DeviceCapability::ShaderInt64, &m_enabled.shaderInt64,
+         &m_features2.features.shaderInt64},
+        {request.shaderFloat64, rhi::DeviceCapability::ShaderFloat64, &m_enabled.shaderFloat64,
+         &m_features2.features.shaderFloat64},
+    };
+    for (const auto &numeric : numericRequests) {
+        if (!numeric.requested)
+            continue;
+        if (!numeric.status->supported) {
+            m_failure = {rhi::DeviceCapabilityDiagnosticCode::Unsupported, numeric.capability};
+            return reject();
+        }
+        *numeric.feature = VK_TRUE;
+        numeric.status->enabled = true;
+    }
     return true;
 }
 
@@ -649,6 +685,7 @@ const rhi::TransferCommandEncoder::DispatchTable VulkanRhiDevice::s_transferDisp
     &VulkanRhiDevice::CopyBuffer,
     &VulkanRhiDevice::CopyTexture,
     &VulkanRhiDevice::ResolveTexture,
+    &VulkanRhiDevice::FillBuffer,
 };
 
 VulkanRhiDevice::VulkanRhiDevice() : m_deviceId(rhi::AllocateDeviceId())
@@ -664,6 +701,7 @@ VulkanRhiDevice::VulkanRhiDevice(VkDevice device, VmaAllocator allocator, const 
       m_transferQueueFamily(transferQueueFamily), m_capabilityState(capabilityState),
       m_descriptorManager(device, m_deviceId)
 {
+    CreatePipelineCache();
 }
 
 VulkanRhiDevice::~VulkanRhiDevice()
@@ -705,6 +743,7 @@ void VulkanRhiDevice::Reset(VkDevice device, VmaAllocator allocator, const rhi::
     m_computeQueueFamily = computeQueueFamily;
     m_transferQueueFamily = transferQueueFamily;
     m_descriptorManager.Reset(device, m_deviceId);
+    CreatePipelineCache();
     ResetSlots(m_buffers, m_freeBuffer);
     ResetSlots(m_textures, m_freeTexture);
     ResetSlots(m_textureViews, m_freeTextureView);
@@ -715,6 +754,90 @@ void VulkanRhiDevice::Reset(VkDevice device, VmaAllocator allocator, const rhi::
     ResetSlots(m_graphicsPipelines, m_freeGraphicsPipeline);
     ResetSlots(m_computePipelines, m_freeComputePipeline);
     ResetSlots(m_renderTargetLayouts, m_freeRenderTargetLayout);
+}
+
+void VulkanRhiDevice::CreatePipelineCache() noexcept
+{
+    m_pipelineCache = VK_NULL_HANDLE;
+    m_pipelineCachePath.clear();
+    if (m_device == VK_NULL_HANDLE)
+        return;
+
+    const char *root = std::getenv("_INFERNUX_PLAYER_PERSISTENT_DATA_ROOT");
+    std::vector<char> initialData;
+    if (root != nullptr && *root != '\0') {
+        try {
+            const auto directory = std::filesystem::path(root) / "Cache";
+            std::filesystem::create_directories(directory);
+            m_pipelineCachePath = (directory / "VulkanPipelineCache.bin").string();
+            std::ifstream input(m_pipelineCachePath, std::ios::binary | std::ios::ate);
+            if (input) {
+                const auto size = input.tellg();
+                if (size > 0) {
+                    initialData.resize(static_cast<size_t>(size));
+                    input.seekg(0);
+                    input.read(initialData.data(), static_cast<std::streamsize>(size));
+                    if (!input)
+                        initialData.clear();
+                }
+            }
+        } catch (const std::exception &error) {
+            INXLOG_WARN("VulkanRhiDevice: failed to read pipeline cache: ", error.what());
+            m_pipelineCachePath.clear();
+            initialData.clear();
+        } catch (...) {
+            INXLOG_WARN("VulkanRhiDevice: failed to read pipeline cache: unknown filesystem error");
+            m_pipelineCachePath.clear();
+            initialData.clear();
+        }
+    }
+
+    VkPipelineCacheCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+    info.initialDataSize = initialData.size();
+    info.pInitialData = initialData.empty() ? nullptr : initialData.data();
+    VkResult result = vkCreatePipelineCache(m_device, &info, nullptr, &m_pipelineCache);
+    if (result != VK_SUCCESS && !initialData.empty()) {
+        // Driver/device changes invalidate the Vulkan-defined cache header.
+        // Recreate the one authoritative cache for the current device.
+        info.initialDataSize = 0;
+        info.pInitialData = nullptr;
+        result = vkCreatePipelineCache(m_device, &info, nullptr, &m_pipelineCache);
+    }
+    if (result != VK_SUCCESS)
+        m_pipelineCache = VK_NULL_HANDLE;
+}
+
+void VulkanRhiDevice::SaveAndDestroyPipelineCache() noexcept
+{
+    if (m_device == VK_NULL_HANDLE || m_pipelineCache == VK_NULL_HANDLE)
+        return;
+    if (!m_pipelineCachePath.empty()) {
+        try {
+            size_t size = 0;
+            if (vkGetPipelineCacheData(m_device, m_pipelineCache, &size, nullptr) == VK_SUCCESS && size > 0) {
+                std::vector<char> data(size);
+                if (vkGetPipelineCacheData(m_device, m_pipelineCache, &size, data.data()) == VK_SUCCESS) {
+                    const auto temporary = m_pipelineCachePath + ".tmp";
+                    std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+                    output.write(data.data(), static_cast<std::streamsize>(size));
+                    output.close();
+                    if (output) {
+                        std::filesystem::remove(m_pipelineCachePath);
+                        std::filesystem::rename(temporary, m_pipelineCachePath);
+                    } else {
+                        std::filesystem::remove(temporary);
+                    }
+                }
+            }
+        } catch (const std::exception &error) {
+            INXLOG_WARN("VulkanRhiDevice: failed to persist pipeline cache: ", error.what());
+        } catch (...) {
+            INXLOG_WARN("VulkanRhiDevice: failed to persist pipeline cache: unknown filesystem error");
+        }
+    }
+    vkDestroyPipelineCache(m_device, m_pipelineCache, nullptr);
+    m_pipelineCache = VK_NULL_HANDLE;
 }
 
 rhi::BufferHandle VulkanRhiDevice::RegisterBuffer(VkBuffer buffer, uint64_t byteSize)
@@ -948,15 +1071,13 @@ rhi::BufferHandle VulkanRhiDevice::CreateBuffer(const rhi::BufferDesc &desc)
 
 bool VulkanRhiDevice::ReadBuffer(rhi::BufferHandle handle, uint64_t offset, void *data, uint64_t byteSize)
 {
-    const auto *payload = Resolve(m_buffers, handle);
-    if (!payload || !payload->owned || payload->memory != rhi::BufferMemory::Readback ||
-        payload->allocation == VK_NULL_HANDLE || !payload->mappedData || !data || byteSize == 0 ||
-        offset > payload->byteSize || byteSize > payload->byteSize - offset)
+    if (!data)
         return false;
-    if (vmaInvalidateAllocation(m_allocator, payload->allocation, offset, byteSize) != VK_SUCCESS)
+    const void *mapped = MapBuffer(handle, offset, byteSize, rhi::BufferMapAccess::Read);
+    if (!mapped)
         return false;
-    std::memcpy(data, static_cast<const uint8_t *>(payload->mappedData) + offset, static_cast<size_t>(byteSize));
-    return true;
+    std::memcpy(data, mapped, static_cast<size_t>(byteSize));
+    return UnmapBuffer(handle, offset, byteSize, rhi::BufferMapAccess::Read);
 }
 
 rhi::TextureHandle VulkanRhiDevice::CreateTexture(const rhi::TextureDesc &desc)
@@ -1233,12 +1354,58 @@ rhi::BindGroupHandle VulkanRhiDevice::CreateBindGroup(const rhi::BindGroupDesc &
 
 bool VulkanRhiDevice::WriteBuffer(rhi::BufferHandle handle, uint64_t offset, const void *data, uint64_t byteSize)
 {
-    const auto *buffer = Resolve(m_buffers, handle);
-    if (!buffer || !buffer->owned || !buffer->mappedData || !data || byteSize == 0 || offset > buffer->byteSize ||
-        byteSize > buffer->byteSize - offset)
+    if (!data)
         return false;
-    std::memcpy(static_cast<std::byte *>(buffer->mappedData) + offset, data, static_cast<size_t>(byteSize));
-    return vmaFlushAllocation(m_allocator, buffer->allocation, offset, byteSize) == VK_SUCCESS;
+    void *mapped = MapBuffer(handle, offset, byteSize, rhi::BufferMapAccess::Write);
+    if (!mapped)
+        return false;
+    std::memcpy(mapped, data, static_cast<size_t>(byteSize));
+    return UnmapBuffer(handle, offset, byteSize, rhi::BufferMapAccess::Write);
+}
+
+void *VulkanRhiDevice::MapBuffer(rhi::BufferHandle handle, uint64_t offset, uint64_t byteSize,
+                                 rhi::BufferMapAccess access)
+{
+    const auto *buffer = Resolve(m_buffers, handle);
+    if (!buffer || !buffer->owned || !buffer->mappedData || buffer->memory == rhi::BufferMemory::DeviceLocal ||
+        byteSize == 0 || offset > buffer->byteSize || byteSize > buffer->byteSize - offset)
+        return nullptr;
+    switch (access) {
+    case rhi::BufferMapAccess::Write:
+        break;
+    case rhi::BufferMapAccess::Read:
+    case rhi::BufferMapAccess::ReadWrite:
+        if (buffer->memory != rhi::BufferMemory::Readback ||
+            vmaInvalidateAllocation(m_allocator, buffer->allocation, offset, byteSize) != VK_SUCCESS)
+            return nullptr;
+        break;
+    default:
+        return nullptr;
+    }
+    return static_cast<std::byte *>(buffer->mappedData) + offset;
+}
+
+bool VulkanRhiDevice::UnmapBuffer(rhi::BufferHandle handle, uint64_t offset, uint64_t byteSize,
+                                  rhi::BufferMapAccess access)
+{
+    const auto *buffer = Resolve(m_buffers, handle);
+    if (!buffer || !buffer->owned || !buffer->mappedData || buffer->memory == rhi::BufferMemory::DeviceLocal ||
+        byteSize == 0 || offset > buffer->byteSize || byteSize > buffer->byteSize - offset)
+        return false;
+    // VMA keeps host-visible allocations persistently mapped. End the logical
+    // borrow here; only CPU writes require a cache flush, not a device wait.
+    switch (access) {
+    case rhi::BufferMapAccess::Read:
+        return buffer->memory == rhi::BufferMemory::Readback;
+    case rhi::BufferMapAccess::ReadWrite:
+        if (buffer->memory != rhi::BufferMemory::Readback)
+            return false;
+        [[fallthrough]];
+    case rhi::BufferMapAccess::Write:
+        return vmaFlushAllocation(m_allocator, buffer->allocation, offset, byteSize) == VK_SUCCESS;
+    default:
+        return false;
+    }
 }
 
 rhi::GraphicsPipelineHandle VulkanRhiDevice::RegisterGraphicsPipeline(VkPipeline pipeline, VkPipelineLayout layout)
@@ -1304,7 +1471,7 @@ rhi::ComputePipelineHandle VulkanRhiDevice::CreateComputePipeline(const rhi::Com
     pipelineInfo.layout = layout;
 
     VkPipeline pipeline = VK_NULL_HANDLE;
-    if (vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
+    if (vkCreateComputePipelines(m_device, m_pipelineCache, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
         vkDestroyPipelineLayout(m_device, layout, nullptr);
         return {};
     }
@@ -1441,7 +1608,7 @@ rhi::GraphicsPipelineHandle VulkanRhiDevice::CreateGraphicsPipeline(const rhi::G
     pipelineInfo.subpass = 0;
 
     VkPipeline pipeline = VK_NULL_HANDLE;
-    if (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
+    if (vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
         vkDestroyPipelineLayout(m_device, layout, nullptr);
         return {};
     }
@@ -1723,6 +1890,7 @@ void VulkanRhiDevice::DestroyOwnedResources() noexcept
         }
     }
     m_descriptorManager.Destroy();
+    SaveAndDestroyPipelineCache();
 }
 
 rhi::GraphicsCommandEncoder VulkanRhiDevice::MakeGraphicsCommandEncoder(VulkanGraphicsCommandContext &context,
@@ -1919,6 +2087,18 @@ void VulkanRhiDevice::CopyBuffer(void *context, rhi::BufferHandle source, rhi::B
         return;
     const VkBufferCopy copy{region.sourceOffset, region.destinationOffset, region.byteSize};
     vkCmdCopyBuffer(command.commandBuffer, nativeSource, nativeDestination, 1, &copy);
+}
+
+bool VulkanRhiDevice::FillBuffer(void *context, rhi::BufferHandle destination, uint64_t offset, uint64_t byteSize,
+                                 uint32_t value)
+{
+    auto &command = *static_cast<VulkanTransferCommandContext *>(context);
+    const auto *buffer = command.device ? command.device->Resolve(command.device->m_buffers, destination) : nullptr;
+    if (command.commandBuffer == VK_NULL_HANDLE || !buffer || buffer->buffer == VK_NULL_HANDLE ||
+        offset > buffer->byteSize || byteSize > buffer->byteSize - offset)
+        return false;
+    vkCmdFillBuffer(command.commandBuffer, buffer->buffer, offset, byteSize, value);
+    return true;
 }
 
 void VulkanRhiDevice::CopyTexture(void *context, rhi::TextureHandle source, rhi::TextureHandle destination,

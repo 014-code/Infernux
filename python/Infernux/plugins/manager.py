@@ -898,9 +898,7 @@ class PluginManager:
             location = str(source["repository"])
         else:
             return ""
-        from .official import migrate_official_repository
-
-        return migrate_official_repository(reference, location)
+        return location
 
     def download_update(
         self, reference: str, release_tag: str, *, progress: _InstallProgress | None = None,
@@ -1218,12 +1216,21 @@ class PluginManager:
         values = tuple(str(line) for line in lines)
         executable = self._project_python_executable()
         before = self._python_environment_snapshot(executable)
+        requirements = _pip_requirement_targets(values)
+        requested = tuple(item["requirement"] for item in requirements)
+        if requested and _requirements_satisfied(requested, before):
+            return _PipInstallEffect(
+                before,
+                dict(before),
+                requirements,
+                (),
+                "Requirements already satisfied by the project Python environment.",
+            )
         try:
             with self._pip_requirement_file(values) as filtered:
                 command = (executable, "-m", "pip", "install", "-r", filtered)
                 result = self._run_process(list(command), cwd=self.project_root)
             after = self._python_environment_snapshot(executable)
-            requirements = _pip_requirement_targets(values)
             self._activate_installed_python_paths(before, after, executable=executable)
             return _PipInstallEffect(
                 before,
@@ -2169,12 +2176,19 @@ class PluginManager:
             self._resource_manager = manager
 
     def _on_script_catalog_changed(self, file_path: str, event_type: str) -> None:
-        if not str(file_path).lower().endswith(".py"):
-            return
         if self._installing:
             self._deferred_catalog_changes.add(resolved_path(file_path))
             return
-        self.preloads.reload_path(file_path)
+        normalized = portable_path(str(file_path)).casefold()
+        if normalized.endswith("/editor/translations.json"):
+            reference = self.preloads.package_reference_for_path(file_path)
+            if not reference:
+                return
+            self.preloads.reload_package_translations(reference)
+        elif normalized.endswith(".py"):
+            self.preloads.reload_path(file_path)
+        else:
+            return
         self._rebuild_states()
 
     def _publish_package_runtime_scripts(self, reference: str) -> None:

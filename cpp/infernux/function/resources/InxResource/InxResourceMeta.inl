@@ -9,22 +9,22 @@ namespace infernux
 // Template Function Implementations
 // ----------------------------------
 
-template <typename T> 
-T InxResourceMeta::GetDataAs(const std::string& key) const
+template <typename T>
+T InxResourceMeta::GetDataAs(const std::string &key) const
 {
-    auto it = m_metadata.find(key);
-    if (it != m_metadata.end()) {
-        const auto& metaType = it->second;
-        if (metaType.first == InxTypeRegistry::GetInstance().GetTypeName(typeid(T))) {
-            return std::any_cast<T>(metaType.second);
-        }
-        INXLOG_ERROR("Metadata type mismatch for key: ", key, 
-                     ", expected: ", InxTypeRegistry::GetInstance().GetTypeName(typeid(T)),
-                     ", got: ", metaType.first);
-    } else {
-        INXLOG_ERROR("Metadata not found for key: ", key);
+    if constexpr (std::is_same_v<T, std::string>)
+        return GetStringData(key);
+    else if constexpr (std::is_same_v<T, int>)
+        return GetIntData(key);
+    else if constexpr (std::is_same_v<T, bool>)
+        return GetBoolData(key);
+    else if constexpr (std::is_same_v<T, size_t>)
+        return GetSizeData(key);
+    else if constexpr (std::is_same_v<T, float>)
+        return GetFloatData(key);
+    else {
+        static_assert(!sizeof(T), "InxResourceMeta::GetDataAs does not support this metadata type");
     }
-    return T{}; // Return default-constructed value
 }
 
 } // namespace infernux

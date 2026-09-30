@@ -1,4 +1,4 @@
-"""Give the staged Linux wheel its audited PEP 600 platform tag."""
+"""Bundle Linux wheel dependencies and apply the compatible PEP 600 tags."""
 
 from __future__ import annotations
 
@@ -7,9 +7,6 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-
-
-PLATFORM_TAG = "manylinux_2_35_x86_64"
 
 
 def repair(wheel_dir: Path) -> Path:
@@ -27,8 +24,6 @@ def repair(wheel_dir: Path) -> Path:
             "-m",
             "auditwheel",
             "repair",
-            "--plat",
-            PLATFORM_TAG,
             "--wheel-dir",
             str(staging),
             str(wheels[0]),

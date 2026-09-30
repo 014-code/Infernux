@@ -35,6 +35,8 @@ class _Context:
         self.child_ids: list[str] = []
         self.same_line_count = 0
         self.cursor_x = 0.0
+        self.item_widths: list[float] = []
+        self.input_int_calls: list[tuple[str, int, int, int, int]] = []
 
     def begin_disabled(self, _disabled: bool) -> None:
         self.disabled_depth += 1
@@ -64,9 +66,15 @@ class _Context:
     def combo(_label: str, selected: int, _items: list[str]) -> int:
         return selected
 
-    @staticmethod
-    def set_next_item_width(_width: float) -> None:
-        pass
+    def set_next_item_width(self, width: float) -> None:
+        self.item_widths.append(float(width))
+
+    def input_int(
+        self, label: str, value: int, step: int = 1,
+        step_fast: int = 100, flags: int = 0,
+    ) -> int:
+        self.input_int_calls.append((label, value, step, step_fast, flags))
+        return value
 
     @staticmethod
     def push_style_color(*_args) -> None:
@@ -193,11 +201,20 @@ def test_build_settings_scene_controls_expose_stable_semantic_ids(monkeypatch):
     )
     monkeypatch.setattr(igui.IGUI, "multi_drop_target", staticmethod(lambda *_args, **_kwargs: None))
     monkeypatch.setattr(igui.IGUI, "drop_target", staticmethod(lambda *_args, **_kwargs: None))
+    monkeypatch.setattr(
+        "Infernux.engine.ui.editor_services.EditorServices.instance",
+        staticmethod(lambda: SimpleNamespace(asset_database=SimpleNamespace(
+            get_path_from_guid=lambda guid: {
+                "racetrack-guid": "C:/RacingPilot/Assets/racetrack.scene",
+                "results-guid": "C:/RacingPilot/Assets/results.scene",
+            }.get(guid, "")
+        ))),
+    )
 
     panel = BuildSettingsPanel.__new__(BuildSettingsPanel)
     panel._scenes = [
-        "Assets/racetrack.scene",
-        "Assets/results.scene",
+        "racetrack-guid",
+        "results-guid",
     ]
     panel._save = lambda: None
     ctx = _Context()
@@ -214,8 +231,44 @@ def test_build_settings_scene_controls_expose_stable_semantic_ids(monkeypatch):
         "build_settings.scene.1.move_up",
         "build_settings.scene.1.remove",
     } <= semantic_ids
-    assert ctx.semantic_values["build_settings.scene.0.row"] == "Assets/racetrack.scene"
-    assert ctx.semantic_values["build_settings.scene.1.row"] == "Assets/results.scene"
+    assert ctx.semantic_values["build_settings.scene.0.row"] == "racetrack-guid"
+    assert ctx.semantic_values["build_settings.scene.1.row"] == "results-guid"
+
+
+def test_build_settings_scene_row_survives_a_path_outside_the_project(monkeypatch):
+    import Infernux.engine.scene_manager as scene_manager
+    import Infernux.engine.ui.build_settings_panel as module
+    import Infernux.engine.ui.igui as igui
+
+    monkeypatch.setattr(module, "get_project_root", lambda: "C:/RacingPilot")
+
+    def outside_project(*_args):
+        raise ValueError("outside root")
+
+    monkeypatch.setattr(module, "relative_path", outside_project)
+    monkeypatch.setattr(
+        scene_manager.SceneFileManager, "instance", staticmethod(lambda: None)
+    )
+    monkeypatch.setattr(igui.IGUI, "multi_drop_target", staticmethod(lambda *_args, **_kwargs: None))
+    monkeypatch.setattr(igui.IGUI, "drop_target", staticmethod(lambda *_args, **_kwargs: None))
+    monkeypatch.setattr(
+        "Infernux.engine.ui.editor_services.EditorServices.instance",
+        staticmethod(lambda: SimpleNamespace(asset_database=SimpleNamespace(
+            get_path_from_guid=lambda _guid: "D:/Other/Scene.scene"
+        ))),
+    )
+
+    panel = BuildSettingsPanel.__new__(BuildSettingsPanel)
+    panel._scenes = ["scene-guid"]
+    panel._save = lambda: None
+    ctx = _Context()
+    row_labels = []
+    ctx.selectable = lambda label, *_args: row_labels.append(label) or False
+
+    panel._render_scene_section(ctx)
+
+    assert ctx.semantic_values["build_settings.scene.0.row"] == "scene-guid"
+    assert module.resolved_path("D:/Other/Scene.scene") in row_labels[0]
 
 
 def test_build_settings_does_not_turn_external_splash_deletion_into_user_edit():
@@ -272,6 +325,14 @@ def test_build_settings_add_open_scene_uses_the_button_result(monkeypatch):
     )
     monkeypatch.setattr(igui.IGUI, "multi_drop_target", staticmethod(lambda *_args, **_kwargs: None))
     monkeypatch.setattr(igui.IGUI, "drop_target", staticmethod(lambda *_args, **_kwargs: None))
+    monkeypatch.setattr(
+        "Infernux.engine.ui.editor_services.EditorServices.instance",
+        staticmethod(lambda: SimpleNamespace(asset_database=SimpleNamespace(
+            get_guid_from_path=lambda _path: "racetrack-guid",
+            get_path_from_guid=lambda guid: current_scene
+            if guid == "racetrack-guid" else "",
+        ))),
+    )
 
     panel = BuildSettingsPanel.__new__(BuildSettingsPanel)
     panel._scenes = []
@@ -280,8 +341,8 @@ def test_build_settings_add_open_scene_uses_the_button_result(monkeypatch):
 
     panel._render_scene_section(_Context(button_results=[True]))
 
-    assert panel._scenes == ["Assets/racetrack.scene"]
-    assert saves == [["Assets/racetrack.scene"]]
+    assert panel._scenes == ["racetrack-guid"]
+    assert saves == [["racetrack-guid"]]
 
 
 def test_build_settings_rejects_scene_outside_assets(monkeypatch):
@@ -307,7 +368,6 @@ def test_build_settings_output_controls_expose_stable_semantic_ids(monkeypatch):
     panel._game_name = "RacingPilot"
     panel._debug_mode = False
     panel._lto = True
-    panel._enable_jit = False
     panel._output_dir = "C:/Builds/RacingPilot"
     panel._icon_guid = ""
     panel._save = lambda: None
@@ -320,7 +380,6 @@ def test_build_settings_output_controls_expose_stable_semantic_ids(monkeypatch):
         "build_settings.game_name",
             "build_settings.debug_mode",
             "build_settings.lto",
-            "build_settings.enable_jit",
             "build_settings.output_dir",
         "build_settings.output_dir.browse",
         "build_settings.icon",
@@ -330,7 +389,6 @@ def test_build_settings_output_controls_expose_stable_semantic_ids(monkeypatch):
         "build_settings.game_name": "RacingPilot",
             "build_settings.debug_mode": False,
             "build_settings.lto": True,
-            "build_settings.enable_jit": False,
             "build_settings.output_dir": "C:/Builds/RacingPilot",
         "build_settings.icon": "",
     }
@@ -383,7 +441,7 @@ def test_build_click_cannot_unbalance_the_disabled_stack_mid_frame():
     panel._build_cancelled = False
     panel._build_error = None
     panel._build_output_dir = None
-    panel._scenes = ["Assets/MainMenu.scene"]
+    panel._scenes = ["main-menu-guid"]
     panel._output_dir = "C:/Builds/RacingPilot"
     host_target = _host_build_target()
     panel._build_target = str(host_target.id)
@@ -538,7 +596,7 @@ def test_build_progress_does_not_drive_a_second_status_bar_slider(monkeypatch):
 def test_build_commands_gate_start_and_cancel_without_entering_undo():
     panel = BuildSettingsPanel.__new__(BuildSettingsPanel)
     panel._building = False
-    panel._scenes = ["Assets/Main.scene"]
+    panel._scenes = ["main-scene-guid"]
     panel._output_dir = "C:/Builds/RacingPilot"
     host_target = _host_build_target()
     panel._build_target = str(host_target.id)
@@ -664,7 +722,7 @@ def test_missing_platform_plugin_is_visible_and_blocks_build(monkeypatch):
     panel._android_artifact = "apk"
     panel._settings_controller = None
     panel._building = False
-    panel._scenes = ["Assets/Main.scene"]
+    panel._scenes = ["main-scene-guid"]
     panel._output_dir = "C:/Builds/Game"
     panel._save = lambda: None
     monkeypatch.setattr(panel, "_available_build_targets", lambda: (desktop,))
@@ -822,7 +880,13 @@ def test_build_settings_balances_child_and_style_stacks_when_body_raises():
 
 
 def test_android_target_exposes_artifact_choice_with_stable_semantics(monkeypatch):
-    from Infernux.engine.build import BuildTarget, PlatformCapabilities
+    from Infernux.engine.build import (
+        BuildOption,
+        BuildOptionChoice,
+        BuildOptionKind,
+        BuildTarget,
+        PlatformCapabilities,
+    )
 
     target = BuildTarget(
         "android-arm64",
@@ -833,16 +897,87 @@ def test_android_target_exposes_artifact_choice_with_stable_semantics(monkeypatc
     )
     panel = BuildSettingsPanel.__new__(BuildSettingsPanel)
     panel._build_target = "android-arm64"
-    panel._android_artifact = "apk"
+    panel._platform_options = {"android-arm64": {"android_artifact": "apk"}}
     panel._settings_controller = None
     panel._save = lambda: None
     monkeypatch.setattr(panel, "_available_build_targets", lambda: (target,))
+    descriptor = BuildOption(
+        "android_artifact", "build.android_artifact", BuildOptionKind.ENUM, "apk",
+        choices=(
+            BuildOptionChoice("apk", "APK"),
+            BuildOptionChoice("aab", "AAB"),
+        ),
+    )
+    monkeypatch.setattr(
+        "Infernux.engine.ui.build_settings_panel.exporter_registry.options",
+        lambda _target: (descriptor,),
+    )
+    monkeypatch.setattr(
+        "Infernux.engine.ui.build_settings_panel.exporter_registry.resolve_options",
+        lambda _target, configured, **_kwargs: {
+            "android_artifact": configured.get("android_artifact", "apk")
+        },
+    )
     ctx = _Context()
 
     panel._render_target_section(ctx)
+    panel._render_display_section(ctx)
 
     assert ctx.semantic_values["build_settings.target"] == "android-arm64"
-    assert ctx.semantic_values["build_settings.android_artifact"] == "apk"
+    assert (
+        ctx.semantic_values[
+            "build_settings.platform_options.android-arm64.android_artifact"
+        ]
+        == "apk"
+    )
+
+
+def test_integer_platform_option_uses_the_native_input_int_contract(monkeypatch):
+    from Infernux.engine.build import BuildOption, BuildOptionKind
+
+    panel = BuildSettingsPanel.__new__(BuildSettingsPanel)
+    panel._build_target = "windows-x64"
+    panel._platform_options = {"windows-x64": {"window_width": 1280}}
+    panel._save = lambda: None
+    descriptor = BuildOption(
+        "window_width", "build.window_width", BuildOptionKind.INTEGER, 1280,
+        minimum=320, maximum=16384, step=1,
+    )
+    monkeypatch.setattr(
+        "Infernux.engine.ui.build_settings_panel.exporter_registry.options",
+        lambda _target: (descriptor,),
+    )
+    monkeypatch.setattr(
+        "Infernux.engine.ui.build_settings_panel.exporter_registry.resolve_options",
+        lambda _target, configured, **_kwargs: {
+            "window_width": configured.get("window_width", 1280)
+        },
+    )
+    ctx = _Context()
+
+    panel._render_display_section(ctx)
+
+    assert ctx.item_widths == [180.0]
+    assert ctx.input_int_calls == [("##platform_window_width", 1280, 1, 100, 0)]
+
+
+def test_platform_option_contract_errors_are_not_hidden(monkeypatch):
+    panel = BuildSettingsPanel.__new__(BuildSettingsPanel)
+    panel._build_target = "windows-x64"
+    panel._platform_options = {"windows-x64": {"widht": 1280}}
+    monkeypatch.setattr(
+        "Infernux.engine.ui.build_settings_panel.exporter_registry.options",
+        lambda _target: (),
+    )
+    monkeypatch.setattr(
+        "Infernux.engine.ui.build_settings_panel.exporter_registry.resolve_options",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            ValueError("Unknown build options for windows-x64: widht")
+        ),
+    )
+
+    with pytest.raises(ValueError, match="Unknown build options.*widht"):
+        panel._render_display_section(_Context())
 
 
 def test_platform_progress_mapping_is_phase_aware_and_monotonic(monkeypatch):

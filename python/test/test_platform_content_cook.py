@@ -15,6 +15,17 @@ from Infernux.engine.platform_content_cook import (
 from Infernux.engine.player_package_native import read_manifest, write_pack
 
 
+def _presentation_options(**overrides):
+    options = {
+        "display_mode": "windowed",
+        "window_width": 1280,
+        "window_height": 720,
+        "window_resizable": True,
+    }
+    options.update(overrides)
+    return options
+
+
 def _seal_build_manifest(data: Path, source_root: Path, document: dict) -> None:
     manifest_source = source_root / "BuildManifest.json"
     manifest_source.write_text(json.dumps(document), encoding="utf-8")
@@ -85,7 +96,7 @@ def test_platform_cook_consumes_editor_catalog_snapshot_without_rescanning(
     (project / "Assets").mkdir(parents=True)
     (project / "ProjectSettings").mkdir()
     (project / "ProjectSettings" / "BuildSettings.json").write_text(
-        '{"game_name":"SnapshotGame","scenes":["Assets/Main.scene"]}\n',
+        '{"game_name":"SnapshotGame","scene_guids":["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]}\n',
         encoding="utf-8",
     )
     output = tmp_path / "Cook"
@@ -93,7 +104,7 @@ def test_platform_cook_consumes_editor_catalog_snapshot_without_rescanning(
 
     class _Builder:
         def __init__(self, *_args, **_kwargs):
-            pass
+            captured["builder_kwargs"] = dict(_kwargs)
 
         def freeze_asset_index_entries(self, entries):
             captured["entries"] = entries
@@ -102,6 +113,9 @@ def test_platform_cook_consumes_editor_catalog_snapshot_without_rescanning(
             data = Path(package_root) / "SnapshotGame_Data"
             data.mkdir(parents=True)
             return str(data)
+
+        def cooked_python_source_paths(self):
+            return ()
 
     monkeypatch.setattr("Infernux.engine.platform_content_cook.GameBuilder", _Builder)
     monkeypatch.setattr(
@@ -112,6 +126,7 @@ def test_platform_cook_consumes_editor_catalog_snapshot_without_rescanning(
         str(project),
         "web-wasm32",
         str(tmp_path / "Published"),
+        BuildProfile(options=_presentation_options()),
         asset_catalog_entries=({"guid": "a" * 32},),
     )
 
@@ -128,7 +143,10 @@ def test_platform_cook_consumes_editor_catalog_snapshot_without_rescanning(
 
     assert result.game_name == "SnapshotGame"
     assert captured["entries"] == [{"guid": "a" * 32}]
+    assert captured["builder_kwargs"]["include_jit_runtime"] is False
+    assert "allow_python_jit_fallback" not in captured["builder_kwargs"]
     assert result.data_directory == output / "SnapshotGame_Data"
+    assert result.python_sources == ()
 
 
 def test_platform_cook_releases_headless_catalog_host_before_builder(
@@ -138,7 +156,7 @@ def test_platform_cook_releases_headless_catalog_host_before_builder(
     (project / "Assets").mkdir(parents=True)
     (project / "ProjectSettings").mkdir()
     (project / "ProjectSettings" / "BuildSettings.json").write_text(
-        '{"game_name":"Project","scenes":[]}\n', encoding="utf-8"
+        '{"game_name":"Project","scene_guids":[]}\n', encoding="utf-8"
     )
     output = tmp_path / "Cook"
     lifecycle = []
@@ -159,6 +177,9 @@ def test_platform_cook_releases_headless_catalog_host_before_builder(
             data.mkdir(parents=True)
             return str(data)
 
+        def cooked_python_source_paths(self):
+            return ()
+
     monkeypatch.setattr(
         "Infernux.engine.platform_content_cook.publish_player_asset_catalog_for_host",
         publish,
@@ -166,7 +187,10 @@ def test_platform_cook_releases_headless_catalog_host_before_builder(
     monkeypatch.setattr("Infernux.engine.platform_content_cook.GameBuilder", _Builder)
 
     result = cook_platform_content(
-        BuildRequest(str(project), "web-wasm32", str(tmp_path / "Published")),
+        BuildRequest(
+            str(project), "web-wasm32", str(tmp_path / "Published"),
+            BuildProfile(options=_presentation_options()),
+        ),
         output,
         platform_host={"identity": "fixture"},
     )
@@ -182,10 +206,10 @@ def test_build_request_reads_and_normalizes_project_settings_strictly(tmp_path):
     (settings_dir / "BuildSettings.json").write_text(
         json.dumps(
             {
-                "display_mode": "windowed",
-                "window_width": 1280,
-                "window_height": 720,
-                "scenes": [],
+                "platform_options": {
+                    "windows-x64": _presentation_options()
+                },
+                "scene_guids": [],
             }
         ),
         encoding="utf-8",
@@ -224,7 +248,7 @@ def test_build_request_rejects_invalid_explicit_snapshot_without_disk_fallback(
     settings_dir = project / "ProjectSettings"
     settings_dir.mkdir(parents=True)
     (settings_dir / "BuildSettings.json").write_text(
-        '{"display_mode":"windowed","scenes":[]}\n', encoding="utf-8"
+        '{"display_mode":"windowed","scene_guids":[]}\n', encoding="utf-8"
     )
     request = BuildRequest(
         str(project),
@@ -247,9 +271,10 @@ def test_build_request_rejects_non_positive_render_dimensions(tmp_path):
         BuildProfile(
             options={
                 "build_settings": {
-                    "window_width": 0,
-                    "window_height": 720,
-                    "scenes": [],
+                    "platform_options": {
+                        "windows-x64": _presentation_options(window_width=0)
+                    },
+                    "scene_guids": [],
                 }
             }
         ),
@@ -270,11 +295,10 @@ def test_host_player_uses_the_shared_authoritative_build_settings(
         json.dumps(
             {
                 "game_name": "WindowedGame",
-                "display_mode": "windowed",
-                "window_width": 1280,
-                "window_height": 720,
-                "window_resizable": False,
-                "scenes": [],
+                "platform_options": {
+                    "windows-x64": _presentation_options(window_resizable=False)
+                },
+                "scene_guids": [],
             }
         ),
         encoding="utf-8",
@@ -322,6 +346,7 @@ def test_host_player_does_not_recreate_missing_normalized_settings(
     from Infernux.engine.interaction.project_settings import normalize_build_settings
 
     settings = normalize_build_settings({})
+    settings.update(_presentation_options())
     settings.pop("display_mode")
     monkeypatch.setattr(
         "Infernux.engine.platform_content_cook.build_settings_for_request",
@@ -344,6 +369,7 @@ def test_platform_cook_does_not_recreate_missing_normalized_settings(
     from Infernux.engine.interaction.project_settings import normalize_build_settings
 
     settings = normalize_build_settings({})
+    settings.update(_presentation_options())
     settings.pop("window_width")
     monkeypatch.setattr(
         "Infernux.engine.platform_content_cook.build_settings_for_request",

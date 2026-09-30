@@ -30,6 +30,7 @@ from .ui_event_entry import (
     _UIEventRuntimeBinding,
     _get_serializable_raw_field,
 )
+from .ui_sampled_texture import UISampledTextureField, ui_sampled_texture_source
 
 
 @add_component_menu("UI/Button")
@@ -38,7 +39,7 @@ class UIButton(UISelectable):
 
     Combines **Image** (background) and **Text** (label) capabilities:
 
-    * Background can be a solid ``background_color`` or a ``texture_path`` image.
+    * Background can be a solid ``background_color`` or a managed texture asset.
     * Label text supports full typography: alignment, line-height, letter-spacing.
     * Fires ``on_click`` when the user performs a full click (down + up).
     """
@@ -52,13 +53,23 @@ class UIButton(UISelectable):
         default=18.0, tooltip="Label font size",
         group="Content", range=(4.0, 256.0), drag_speed=0.5,
     )
-    font_path: str = serialized_field(
-        default="", tooltip="Optional font asset path",
-        group="Content",
+    font = serialized_field(
+        default=None, field_type=FieldType.ASSET, asset_type="Font",
+        tooltip="Optional imported Font asset", group="Content",
+    )
+    fallback_fonts: list = list_field(
+        element_type=FieldType.ASSET, asset_type="Font",
+        tooltip="Ordered fallback Font assets", group="Content",
     )
     label_color: list = serialized_field(
         default=[1.0, 1.0, 1.0, 1.0], field_type=FieldType.COLOR,
         hdr=True, tooltip="Label text colour", group="Content",
+    )
+    text_material = serialized_field(
+        default=None,
+        field_type=FieldType.MATERIAL,
+        tooltip="Material used by the button label; empty uses the engine UI text material",
+        group="Content",
     )
     text_align_h: TextAlignH = serialized_field(
         default=TextAlignH.Center,
@@ -80,14 +91,57 @@ class UIButton(UISelectable):
     )
 
     # ── Fill ──
-    texture_path: str = serialized_field(
-        default="", tooltip="Background image texture path",
-        group="Fill",
+    background_texture = UISampledTextureField(
+        name="background_texture",
+        tooltip="Background Texture or RenderTexture asset",
     )
     background_color: list = serialized_field(
         default=[0.922, 0.341, 0.341, 1.0], field_type=FieldType.COLOR,
         hdr=True, tooltip="Background fill colour (RGBA)", group="Fill",
     )
+
+    @property
+    def background_material(self):
+        """The inherited UI material slot used by the button background."""
+        return self.material
+
+    @background_material.setter
+    def background_material(self, value) -> None:
+        self.material = value
+
+    def _image_texture_source(self):
+        return ui_sampled_texture_source(self, type(self).background_texture)
+
+    def _deserialize_fields_document(self, data, **kwargs):
+        if isinstance(data, dict):
+            data = dict(data)
+            data.pop("texture_path", None)
+            data.pop("font_path", None)
+            data.pop("fallback_font_paths", None)
+        super()._deserialize_fields_document(data, **kwargs)
+
+    def prepare_text_layout(self, measure_text, scale: float = 1.0) -> bool:
+        """Publish the button label glyphs before runtime UI records geometry."""
+        label = str(self.label or "")
+        if not label:
+            return False
+        from .ui_font_asset import ui_font_paths
+
+        font_path, fallback_paths = ui_font_paths(self)
+        width, _height = self.get_resolved_size()
+        arguments = (
+            label,
+            max(1.0, float(self.font_size) * float(scale)),
+            max(1.0, float(width) * float(scale)),
+            font_path,
+            float(self.line_height),
+            float(self.letter_spacing) * float(scale),
+        )
+        if fallback_paths:
+            measure_text(*arguments, fallback_paths)
+        else:
+            measure_text(*arguments)
+        return True
 
     # ── Events ──
     on_click_entries: list = list_field(

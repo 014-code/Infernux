@@ -30,6 +30,8 @@ abc/
 
 manifest 目前不声明 `requirements` 或 `dependencies`。可选的 `requirements.txt` 只按固定文件名识别。
 
+在 Editor 中打包时，在 Project/File Manager 中选中包根文件夹，右键选择**导出 InxPackage...**，再指定目标位置。被选中的文件夹本身就是包根，不要额外套一层目录。生成后可在 Project 中双击 `.inxpkg`，安装前检查角色、路径与 GUID。
+
 在 File Manager 中多选文件或目录后导出，会保留选中项相对于共同父目录的路径。普通内容导入时直接在 `Assets/Plugins` 下展开，不会按包名额外套一层目录。例如同时选择 `materials/` 和 `web/`，导入结果就是 `Assets/Plugins/materials/` 和 `Assets/Plugins/web/`。
 
 ## Git 仓库结构
@@ -107,6 +109,65 @@ Hub 设置页提供“迁移旧版共享资源”：先显示来源、目标和�
 直接在 `Packages/<name>/runtime/` 编写本地包，不需要先安装自己才能构建 Player。构建会包含当前已索引的 runtime 文件及编译后的预载脚本，不会改写项目的安装所有权记录。简单包可以不写 manifest；`Packages/studio/tool/` 这样的命名空间目录需用 `inx_package.json` 明确包边界。即使 manifest 为未来分发 `.inxpkg` 指定了不同 reference，Player 仍保持当前项目目录对应的模块身份。
 
 这里没有 include/exclude fallback 清单。`.pyd` 或 `.wasm` 放在 `runtime/` 就属于运行时，放在 `editor/` 就只属于编辑器。材质、Shader、HTML 和其它普通资产安装到 `Assets/Plugins`，再通过正常资产管线进入 Player。
+
+Player 构建会把项目脚本和所有已启用插件的 `runtime/` 脚本编译到唯一的 GUID 映射与 `RuntimeTypeRegistry.json` 中。插件组件、嵌套 `SerializableObject`、生命周期方法、启动预热以及序列化字段结构与项目代码使用同一份注册表，插件作者无需另写 Player 类型注册。运行时脚本如果没有冻结资产 GUID 或稳定的包模块身份，构建会直接报告具体路径并停止。
+
+## Preload、热重载与资源所有权
+
+Editor 和 Player 都需要的服务使用 runtime `InxPreload`；面板、命令、导入器、本地 HTTP 工具等创作服务使用独立的 Editor preload。runtime preload 不应再用条件分支导入 Editor 模块，目录边界已经准确表达平台契约。
+
+`preload(context)` 取得进程资源，`unload()` 释放插件自行管理的状态。其它可逆资源应在取得后立刻通过 `context.add_cleanup(callback)` 登记。清理函数会在 `unload()` 后按登记逆序各运行一次；如果 `preload()` 中途失败也会运行。HTTP 服务、线程、文件监听、事件订阅与回调因此和 preload 共享同一个事务生命周期。
+
+```python
+class ToolPreload(inx.InxPreload):
+    def preload(self, context: inx.PreloadContext) -> None:
+        service = start_service()
+        context.add_cleanup(service.stop)
+
+    def unload(self) -> None:
+        pass
+```
+
+热重载会先解析候选代码。候选存在语法错误时，当前正常运行的版本不会被卸载；有效替换才会依次卸载旧生命周期、移除其拥有的 Editor 贡献与包模块，再发布新版本。公共 `infernux` 模块在进程内保持同一对象身份；插件如果替换 `sys.modules["infernux"]`，该候选会被拒绝。
+
+`requirements.txt` 会在 preload 前完成安装。插件确实需要 `torch` 等大型依赖时，可以在 preload 中导入，让一次性加载发生在场景脚本前，而不是第一次 Play 操作时。引擎会自动检测 preload 新载入的原生 Python 扩展，并在替换或卸载前要求重启 Editor。只有其它无法撤销的进程状态才主动调用 `context.require_restart(reason)`；纯 Python 服务或能够完整限时关闭的 Flask 服务应使用 `add_cleanup`，不需要重启。
+
+Editor 专用 Flask 窗口应绑定 `127.0.0.1`，让操作系统分配可用端口，关闭 Flask 开发重载器，在插件拥有的线程中运行；清理函数必须 shutdown、等待线程退出并关闭 socket。除非 Player 明确需要提供该服务，否则服务端和浏览器 UI 都放在 `editor/`。
+
+## 编辑器命令与快捷键
+
+请在编辑器预载脚本的导入阶段或 `preload(context)` 中注册工具。面板、`EditorCommandRegistry.register()` 注册的命令和 `ShortcutRouter.register()` 注册的快捷键都归属当前预载脚本：重载时先移除旧注册，禁用、卸载插件或关闭项目时一并清理。命令和快捷键 ID 应稳定且带有包名前缀；不能通过 `replace=True` 覆盖其它插件或引擎的注册。
+
+例如在 `preload(context)` 中：
+
+```python
+import infernux as inx
+
+inx.editor.EditorCommandRegistry.instance().register(inx.editor.EditorCommand(
+    "studio.level.create", self.create_level,
+    display_name="创建关卡", default_shortcut="Ctrl+Alt+K",
+    can_execute=self.can_create_level,
+))
+inx.editor.ShortcutRouter.instance().register(inx.editor.ShortcutBinding(
+    "studio.level.create", inx.editor.KeyChord.parse("Ctrl+Alt+K"),
+    binding_id="studio.level.create.shortcut",
+))
+```
+
+两个回调都接收 `CommandContext`。`default_shortcut` 用于显示提示，实际按键路由由快捷键绑定负责。切换快捷键设置不会清空插件独立注册的绑定。`ShortcutBinding.owner_id` 表示面板或输入焦点范围，不是插件归属。不要等到任意后续回调中才注册工具，那时已不在预载归属范围内。
+
+## Editor 面板位置与插件词条
+
+`@editor_panel` 和 `@editor_window` 的 `menu_path` 使用斜杠分隔，可声明任意实用
+深度。每一段都是作者提供的默认显示文本。平行的 `menu_path_keys` 元组按级提供可选
+词条键，空条目表示保持默认文本。引擎拥有的菜单级使用 `menu.extensions` 等引擎键，
+插件拥有的菜单级使用包自己的命名空间键。
+
+插件的 Editor 词条表固定放在 `editor/translations.json`，使用
+`infernux.editor_translations` schema，包含全部受支持的 Editor 语言，并在每种语言中
+声明完全相同的键集合。包生命周期会在导入 Editor preload 前发布该表，并在热重载、禁用、
+卸载及关闭项目时移除。与引擎或其它包发生键冲突会明确失败。Player Cook 会随整个
+`editor/` 角色排除该词条表。
 
 ## 按作者路径读取资产
 

@@ -4,12 +4,102 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Optional
+import copy
+from typing import Any, Optional
 
 from Infernux.engine.project_context import get_project_root
+from Infernux.engine.build_target import BuildTargetId
 
 
 BUILD_SETTINGS_FILE = "BuildSettings.json"
+
+
+# This schema is consumed by both Editor authoring and the Player runtime.
+# Keep the normalizer in this runtime-neutral module so a cooked Player never
+# imports the editor-only interaction package merely to resolve its scene list.
+BUILD_SETTINGS_DEFAULTS: dict[str, Any] = {
+    "build_target": "",
+    "game_name": "",
+    "scene_guids": [],
+    "output_dir": "",
+    "icon_guid": "",
+    "platform_options": {},
+    "debug_mode": False,
+    "lto": True,
+    "splash_items": [],
+}
+
+
+def _json_copy(value: Any) -> Any:
+    return json.loads(json.dumps(value, ensure_ascii=False, allow_nan=False))
+
+
+def normalize_build_settings(value: Any) -> dict[str, Any]:
+    """Validate and project the current BuildSettings schema.
+
+    This function intentionally has no Editor/document imports: scene loading
+    and Player bootstrap use it from the runtime package directly.
+    """
+    if not isinstance(value, dict):
+        raise TypeError("build settings must be a JSON object")
+    value = copy.deepcopy(value)
+    result = copy.deepcopy(BUILD_SETTINGS_DEFAULTS)
+    result.update(copy.deepcopy({
+        key: item for key, item in value.items() if key in BUILD_SETTINGS_DEFAULTS
+    }))
+    if not isinstance(result["scene_guids"], list) or not all(
+        isinstance(item, str) and item for item in result["scene_guids"]
+    ):
+        raise TypeError("build settings scene_guids must contain non-empty strings")
+    if not isinstance(result["splash_items"], list):
+        raise TypeError("build settings splash_items must be an array")
+    splash_keys = {"type", "asset_guid", "duration", "fade_in", "fade_out"}
+    for index, item in enumerate(result["splash_items"]):
+        if not isinstance(item, dict) or set(item) != splash_keys:
+            raise TypeError(
+                f"build settings splash_items[{index}] must use the current asset GUID schema"
+            )
+        if item["type"] not in {"image", "video"}:
+            raise ValueError(f"build settings splash_items[{index}].type is invalid")
+        if not isinstance(item["asset_guid"], str) or not item["asset_guid"]:
+            raise TypeError(
+                f"build settings splash_items[{index}].asset_guid must be a non-empty string"
+            )
+        for field in ("duration", "fade_in", "fade_out"):
+            if isinstance(item[field], bool) or not isinstance(item[field], (int, float)):
+                raise TypeError(
+                    f"build settings splash_items[{index}].{field} must be numeric"
+                )
+            if item[field] < 0:
+                raise ValueError(
+                    f"build settings splash_items[{index}].{field} must not be negative"
+                )
+    for field in ("build_target", "game_name", "output_dir", "icon_guid"):
+        if not isinstance(result[field], str):
+            raise TypeError(f"build settings {field} must be a string")
+    if result["build_target"]:
+        BuildTargetId(result["build_target"])
+    platform_options = result["platform_options"]
+    if not isinstance(platform_options, dict):
+        raise TypeError("build settings platform_options must be an object")
+    for target_id, options in platform_options.items():
+        BuildTargetId(target_id)
+        if not isinstance(options, dict):
+            raise TypeError(
+                f"build settings platform_options.{target_id} must be an object"
+            )
+        for key, option_value in options.items():
+            if not isinstance(key, str) or not key:
+                raise TypeError("build option keys must be non-empty strings")
+            if not isinstance(option_value, (str, int, float, bool)) or option_value is None:
+                raise TypeError(
+                    f"build settings platform_options.{target_id}.{key} "
+                    "must be a JSON scalar"
+                )
+    for field in ("debug_mode", "lto"):
+        if not isinstance(result[field], bool):
+            raise TypeError(f"build settings {field} must be a boolean")
+    return _json_copy(result)
 
 
 def build_settings_path(project_path: Optional[str] = None) -> Optional[str]:
@@ -33,11 +123,6 @@ def load_build_settings(project_path: Optional[str] = None) -> dict:
         raise ValueError(f"Build settings are unreadable: {path}: {error}") from error
     if not isinstance(data, dict):
         raise TypeError("Build settings must be a JSON object")
-    scenes = data.get("scenes")
-    if not isinstance(scenes, list) or not all(
-        isinstance(scene, str) and scene for scene in scenes
-    ):
-        raise TypeError("Build settings scenes must contain non-empty strings")
     return data
 
 
@@ -54,10 +139,6 @@ def load_build_settings_for_build(project_path: Optional[str] = None) -> dict:
     if not path:
         raise ValueError("Player build requires an explicit project root")
     data = load_build_settings(project_path)
-
-    from Infernux.engine.interaction.project_settings import (
-        normalize_build_settings,
-    )
 
     try:
         return normalize_build_settings(data)

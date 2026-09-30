@@ -7,6 +7,7 @@ import uuid
 from dataclasses import dataclass
 
 from .contracts import (
+    BuildOption,
     BuildTarget,
     BuildTargetId,
     PlatformExporter,
@@ -121,6 +122,56 @@ class BuildExporterRegistry:
                 raise KeyError(f"Unknown build target: {target_id}")
             descriptor = next(item for item in entry.targets if item.id == target_id)
             return entry.exporter, descriptor
+
+    def options(self, target: BuildTargetId | str) -> tuple[BuildOption, ...]:
+        exporter, descriptor = self.resolve(target)
+        options = tuple(exporter.build_options(descriptor))
+        if any(not isinstance(item, BuildOption) for item in options):
+            raise TypeError(
+                f"Exporter {exporter.exporter_id!r} returned an invalid build option"
+            )
+        keys = tuple(item.key for item in options)
+        if len(set(keys)) != len(keys):
+            raise ValueError(
+                f"Exporter {exporter.exporter_id!r} declares duplicate build options"
+            )
+        known = set(keys)
+        for option in options:
+            missing = sorted(set(option.visible_when) - known)
+            if missing:
+                raise ValueError(
+                    f"Build option {option.key!r} references unknown visibility options: "
+                    + ", ".join(missing)
+                )
+        return options
+
+    def resolve_options(
+        self,
+        target: BuildTargetId | str,
+        configured: dict[str, object] | object,
+        *,
+        reserved: tuple[str, ...] = ("build_settings",),
+    ) -> dict[str, object]:
+        if not isinstance(configured, dict):
+            try:
+                configured = dict(configured)
+            except (TypeError, ValueError) as error:
+                raise TypeError("Build profile options must be a mapping") from error
+        descriptors = self.options(target)
+        by_key = {item.key: item for item in descriptors}
+        unknown = sorted(set(configured) - set(by_key) - set(reserved))
+        if unknown:
+            raise ValueError(
+                f"Unknown build options for {BuildTargetId(target)}: "
+                + ", ".join(unknown)
+            )
+        result = {item.key: item.default for item in descriptors}
+        for key, value in configured.items():
+            if key in by_key:
+                result[key] = by_key[key].normalize(value)
+            else:
+                result[key] = value
+        return result
 
     def clear(self) -> None:
         with self._lock:

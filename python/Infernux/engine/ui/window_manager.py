@@ -34,13 +34,16 @@ class WindowInfo:
                  factory: Optional[Callable[[], InxGUIRenderable]] = None,
                  singleton: bool = True,
                  title_key: Optional[str] = None,
-                 menu_path: str = "Window"):
+                 menu_path: str = "Window",
+                 menu_path_keys: tuple[str, ...] | None = None):
         self.window_class = window_class
         self._display_name = display_name
         self.title_key = title_key
         self.factory = factory or (lambda: window_class())
         self.singleton = singleton  # If True, only one instance allowed
-        self.menu_path = menu_path  # Slash-separated menu path, e.g. "Animation/2D Animation"
+        self.menu_path, self.menu_path_keys = _normalize_menu_contract(
+            menu_path, menu_path_keys
+        )
 
     @property
     def display_name(self) -> str:
@@ -48,6 +51,32 @@ class WindowInfo:
             from Infernux.engine.i18n import t
             return t(self.title_key)
         return self._display_name
+
+
+def _normalize_menu_contract(
+    menu_path: str,
+    menu_path_keys: tuple[str, ...] | list[str] | None,
+) -> tuple[str, tuple[str, ...]]:
+    path = str(menu_path or "")
+    if not path:
+        if menu_path_keys:
+            raise ValueError("hidden editor panels cannot declare menu_path_keys")
+        return "", ()
+    segments = path.split("/")
+    if any(not segment or segment != segment.strip() for segment in segments):
+        raise ValueError(
+            "menu_path segments must be non-empty author labels without surrounding whitespace"
+        )
+    if menu_path_keys is None:
+        return path, tuple("" for _segment in segments)
+    if isinstance(menu_path_keys, (str, bytes)):
+        raise TypeError("menu_path_keys must be a sequence parallel to menu_path")
+    keys = tuple(str(key or "").strip() for key in menu_path_keys)
+    if len(keys) != len(segments):
+        raise ValueError("menu_path_keys must contain exactly one entry per menu_path segment")
+    if any("/" in key for key in keys):
+        raise ValueError("menu_path_keys entries cannot contain '/'")
+    return path, keys
 
 
 class WindowManager:
@@ -299,6 +328,11 @@ class WindowManager:
     def _notify_type_changed(self) -> None:
         for callback in tuple(self._type_change_listeners):
             callback()
+
+    def refresh_type_labels(self) -> None:
+        """Invalidate native menu labels after an Editor locale catalog change."""
+
+        self._notify_type_changed()
 
     def observe_native_panel_focus(
         self,
@@ -560,7 +594,8 @@ class WindowManager:
                              factory: Optional[Callable[[], InxGUIRenderable]] = None,
                              singleton: bool = True,
                              title_key: Optional[str] = None,
-                             menu_path: str = "Window"):
+                             menu_path: str = "Window",
+                             menu_path_keys: tuple[str, ...] | list[str] | None = None):
         """
         Register a window type that can be created from the Window menu.
         
@@ -571,12 +606,32 @@ class WindowManager:
             factory: Optional factory function to create instances
             singleton: If True, only one instance of this window is allowed
             title_key: Optional i18n key for dynamic title resolution
-            menu_path: Slash-separated menu path (e.g. "Window", "Animation/2D Animation")
+            menu_path: Slash-separated authored labels.
+            menu_path_keys: Optional translation key for each path segment.
         """
         if not type_id:
             raise ValueError("window type_id cannot be empty")
         if type_id in self._registered_types:
             raise ValueError(f"Window type already registered: {type_id}")
+        menu_path, normalized_keys = _normalize_menu_contract(
+            menu_path, menu_path_keys
+        )
+        new_segments = menu_path.split("/") if menu_path else []
+        for existing in self._registered_types.values():
+            existing_segments = (
+                existing.menu_path.split("/") if existing.menu_path else []
+            )
+            for index in range(min(len(new_segments), len(existing_segments))):
+                if new_segments[: index + 1] != existing_segments[: index + 1]:
+                    break
+                old_key = existing.menu_path_keys[index]
+                new_key = normalized_keys[index]
+                if old_key and new_key and old_key != new_key:
+                    prefix = "/".join(new_segments[: index + 1])
+                    raise ValueError(
+                        f"conflicting translation keys for editor menu '{prefix}': "
+                        f"{old_key!r} and {new_key!r}"
+                    )
         self._registered_types[type_id] = WindowInfo(
             window_class=window_class,
             display_name=display_name,
@@ -584,6 +639,7 @@ class WindowManager:
             singleton=singleton,
             title_key=title_key,
             menu_path=menu_path,
+            menu_path_keys=normalized_keys,
         )
         self._notify_type_changed()
 
@@ -924,13 +980,20 @@ class WindowManager:
         self._enqueue_action(_unregister_instance)
         return True
 
-    def close_deleted_resource_editors(self, resource_path: str) -> tuple[str, ...]:
+    def close_deleted_resource_editors(
+        self,
+        resource_path: str,
+        *,
+        guid: str = "",
+    ) -> tuple[str, ...]:
         """Close authoring views whose durable non-scene asset was deleted."""
         from Infernux.engine.interaction import DocumentKind, DocumentRegistry
 
         registry = DocumentRegistry.instance()
         closed: list[str] = []
-        for document in tuple(registry.documents_for_resource(resource_path)):
+        for document in tuple(
+            registry.documents_for_resource(resource_path, guid=guid)
+        ):
             if document.kind is DocumentKind.SCENE:
                 continue
             view_ids = registry.retire_deleted_resource_document(
@@ -976,7 +1039,10 @@ class WindowManager:
 
         for mutation in iter_asset_mutations(change):
             if mutation.kind is AssetMutationKind.DELETED:
-                self.close_deleted_resource_editors(mutation.source_path)
+                self.close_deleted_resource_editors(
+                    mutation.source_path,
+                    guid=mutation.guid,
+                )
     
     def is_window_open(self, window_id: str) -> bool:
         """Check if a window is currently open."""
@@ -1038,6 +1104,40 @@ class WindowManager:
             window_id: state in _VISIBLE_STATES
             for window_id, state in self._window_states.items()
         }
+
+    def capture_open_views_for_types(
+        self,
+        type_ids: tuple[str, ...],
+    ) -> tuple[tuple[str, str], ...]:
+        """Capture stable view identities before dynamic types reload."""
+
+        targets = {
+            str(type_id).strip()
+            for type_id in type_ids
+            if str(type_id).strip()
+        }
+        if not targets:
+            return ()
+        views = (
+            (type_id, window_id)
+            for window_id, type_id in tuple(self._window_type_ids.items())
+            if type_id in targets and self.is_window_open(window_id)
+        )
+        return tuple(sorted(set(views)))
+
+    def restore_reloaded_views(
+        self,
+        views: tuple[tuple[str, str], ...],
+    ) -> None:
+        """Reopen captured views after their new classes are registered."""
+
+        for type_id, window_id in views:
+            if type_id not in self._registered_types:
+                continue
+            self.open_window(
+                type_id,
+                instance_id=None if window_id == type_id else window_id,
+            )
 
     def presentation_snapshot(self) -> Dict[str, dict]:
         """Return read-only evidence used by interaction and MCP regression tests.

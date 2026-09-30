@@ -30,6 +30,7 @@ class _PanelRegistration:
     display_name: str
     title_key: Optional[str]
     menu_path: str
+    menu_path_keys: Optional[tuple[str, ...]]
     factory: Optional[Callable]
     singleton: bool
     interaction: Optional[PanelInteractionDescriptor]
@@ -44,6 +45,8 @@ class _PanelRegistration:
         singleton: bool,
         title_key: Optional[str] = ...,
         interaction: Optional[PanelInteractionDescriptor] = ...,
+        owner: str = ...,
+        menu_path_keys: Optional[tuple[str, ...]] = ...,
     ) -> None: ...
 
 
@@ -71,6 +74,16 @@ class PanelRegistry:
         ...
 
     @classmethod
+    def capture_open_views_for_owners(
+        cls, owners: tuple[str, ...]
+    ) -> tuple[tuple[str, str], ...]: ...
+
+    @classmethod
+    def restore_reloaded_views(
+        cls, views: tuple[tuple[str, str], ...]
+    ) -> None: ...
+
+    @classmethod
     def clear(cls) -> None:
         """Clear all registrations (for testing)."""
         ...
@@ -82,6 +95,7 @@ def editor_panel(
     type_id: Optional[str] = ...,
     title_key: Optional[str] = ...,
     menu_path: str = ...,
+    menu_path_keys: Optional[tuple[str, ...]] = ...,
     factory: Optional[Callable] = ...,
     singleton: bool = ...,
     interaction: Optional[PanelInteractionDescriptor] = ...,

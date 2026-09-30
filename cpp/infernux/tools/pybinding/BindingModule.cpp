@@ -1,7 +1,12 @@
 #include "BindingRegistration.h"
+#include <function/renderer/ProfileConfig.h>
 
 PYBIND11_MODULE(_Infernux, module)
 {
+    module.def(
+        "is_frame_profile_enabled", []() { return INFERNUX_FRAME_PROFILE != 0; },
+        "Return whether this native module was built with detailed frame profiling enabled.");
+    infernux::RegisterSemanticCatalogBindings(module);
 #if defined(INFERNUX_PYBIND_WEB_PLAYER)
     module.attr("__runtime_profile__") = "web-player";
     infernux::RegisterVector2Bindings(module);
