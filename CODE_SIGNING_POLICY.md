@@ -38,9 +38,12 @@ signatures.
 The engine and editor do not upload project files, scenes, scripts, assets, or
 gameplay content to Infernux services by default.
 
-Automatic update checks are disabled by default. If the user enables them, the
+Automatic update checks are enabled by default and can be disabled in Hub settings.
+Existing disabled preferences are preserved. When checks are enabled, the
 installed InfernuxHub requests the public Hub update catalog and release notices
 from `infernux-engine.com` at startup. A manual update check requests the catalog.
+If the catalog cannot be reached, Hub may request the same document from
+`raw.githubusercontent.com`. Installing a Hub update requires confirmation.
 The Hub requests public release metadata from PyPI and GitHub when the user
 opens the engine installation workflow. These services
 receive ordinary HTTPS request metadata, such as the client's IP address, user
@@ -72,4 +75,4 @@ reports may use the repository's
 Reports concerning a SignPath Foundation certificate may also be sent to
 [`support@signpath.io`](mailto:support@signpath.io).
 
-Last updated: 2026-09-12.
+Last updated: 2026-09-30.

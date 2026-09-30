@@ -1,5 +1,8 @@
 # 代码签名策略（Code signing policy）
 
+**当前状态：**SignPath 尚在审核，Infernux 0.4.1 本次按 Windows 未签名包发布。
+以下政策说明获批后的签名流程，不代表本期已经签名。
+
 本策略适用于从
 [`ChenlizheMe/Infernux`](https://github.com/ChenlizheMe/Infernux)
 仓库发布的 Infernux 官方制品，不覆盖社区插件、第三方包、下游构建或用户使用引擎导出的游戏。
@@ -28,8 +31,9 @@ Infernux 软件包可以携带上游开源依赖，但不会把这些依赖重�
 
 引擎和编辑器默认不会向 Infernux 服务上传项目文件、场景、脚本、资产或玩法内容。
 
-自动检查更新默认关闭。用户启用该选项后，安装版 InfernuxHub 会在启动时向
-`infernux-engine.com` 请求公开的 Hub 更新目录与发布通知；手动检查更新会请求更新目录。用户打开引擎安装流程时，
+自动检查更新默认开启，可在 Hub 设置中关闭；用户已有的关闭选择会被保留。启用检查时，安装版 InfernuxHub 会在启动时向
+`infernux-engine.com` 请求公开的 Hub 更新目录与发布通知；手动检查更新会请求更新目录。
+若目录无法访问，Hub 可以从 `raw.githubusercontent.com` 请求同一份文档。安装 Hub 更新前仍需用户确认。用户打开引擎安装流程时，
 Hub 还会向 PyPI 和 GitHub 请求公开的 Release 元数据。这些服务会收到普通的
 HTTPS 请求元数据，例如客户端 IP 地址、User-Agent 和所请求的网址，但请求中不包含项目内容。
 相关元数据分别适用 [GitHub 隐私声明](https://docs.github.com/zh/site-policy/privacy-policies/github-general-privacy-statement)
@@ -54,4 +58,4 @@ HTTPS 请求元数据，例如客户端 IP 地址、User-Agent 和所请求的�
 与 SignPath Foundation 证书有关的问题也可以发送至
 [`support@signpath.io`](mailto:support@signpath.io)。
 
-最后更新：2026-09-12。
+最后更新：2026-09-30。
