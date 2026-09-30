@@ -5,6 +5,7 @@ on:
     paths:
       - "docs/**"
       - "UpdateLog.md"
+      - "UpdateLog-zh.md"
       - ".github/workflows/website-quality.yml"
       - ".github/workflows/build-wiki.yml"
       - ".github/workflows/website-health.yml"
@@ -65,6 +66,9 @@ jobs:
 
       - name: Verify hand-authored learning chapters
         run: python docs/tools/build-learning-guides.py --check
+
+      - name: Verify bilingual release history
+        run: python docs/tools/build-changelog.py --check
 
       - name: Build Wiki in strict mode
         env:

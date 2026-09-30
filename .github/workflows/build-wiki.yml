@@ -18,8 +18,10 @@ on:
       - "docs/js/**"
       - "docs/learn/**"
       - "docs/tools/**"
+      - "docs/changelog/**"
       - "docs/docs-manifest.json"
       - "UpdateLog.md"
+      - "UpdateLog-zh.md"
   workflow_dispatch:
 
 permissions:
@@ -69,6 +71,9 @@ jobs:
 
       - name: Build hand-authored learning chapters
         run: python docs/tools/build-learning-guides.py
+
+      - name: Build bilingual release history
+        run: python docs/tools/build-changelog.py
 
       - name: Generate API index
         run: node docs/tools/build-api-index.mjs
@@ -162,6 +167,7 @@ jobs:
           git add docs/wiki/docs docs/wiki/site docs/wiki/mkdocs.yml docs/wiki/mkdocs_api_nav.yml docs/docs-manifest.json docs/api-index.json docs/release-notes.json docs/wiki.html docs/start.html
           git add -A -- ':(glob)docs/css/wiki-template.*.css'
           git add docs/sw.js docs/sitemap.xml docs/js/i18n*.js
+          git add docs/changelog.html docs/changelog/*.html
 
           if git diff --cached --quiet; then
             echo "No generated wiki changes to commit."

@@ -25,6 +25,7 @@ const shellPages = [
     "/learn.html",
     ...learningCourses.map((course) => `/learn/${course.slug}.html`),
     "/roadmap.html",
+    "/changelog.html",
     "/community.html",
     "/download.html",
 ];

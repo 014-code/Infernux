@@ -1,5 +1,9 @@
 # Code signing policy
 
+**Current status:** SignPath approval is pending. Infernux 0.4.1 is being
+published without Windows code signing. The policy below describes the signing
+process once the service is approved; it is not a claim that this release is signed.
+
 This policy applies to official Infernux release artifacts published from the
 [`ChenlizheMe/Infernux`](https://github.com/ChenlizheMe/Infernux) repository.
 It does not cover community plugins, third-party packages, downstream builds,

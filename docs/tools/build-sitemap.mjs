@@ -1,4 +1,4 @@
-import { readFile, stat, writeFile } from "node:fs/promises";
+import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
@@ -20,6 +20,8 @@ const rootPages = [
     ...learningCourses.map((course) => `learn/${course.slug}.html`),
     ...learningChapters.map((chapter) => `learn/${chapter.slug}.html`),
     "roadmap.html",
+    "changelog.html",
+    ...(await readdir(path.join(docsRoot, "changelog"))).filter((name) => name.endsWith(".html")).sort().map((name) => `changelog/${name}`),
     "download.html",
     "code-signing-policy.html",
 ];

@@ -141,3 +141,24 @@ def test_desktop_ci_exposes_one_click_publication():
     assert "publish_release:" in workflow
     assert "uses: ./.github/workflows/publish-desktop-release.yml" in workflow
     assert "needs: [portable-hub, windows-desktop, linux-desktop]" in workflow
+
+
+def test_release_body_contains_both_changelogs_and_actual_signing_state(tmp_path):
+    module = _load("infernux_release_notes", "scripts/release/build_release_notes.py")
+    (tmp_path / "pyproject.toml").write_text('[project]\nversion = "1.2.3"\n', encoding="utf-8")
+    for name, text in (("UpdateLog.md", "New worlds"), ("UpdateLog-zh.md", "新的世界")):
+        (tmp_path / name).write_text(
+            f"# Infernux v1.2.3 · Worlds\n\n{text}\n\n---\n\n# Infernux v1.2.2 · Old\n",
+            encoding="utf-8",
+        )
+    unsigned = module.build_notes(tmp_path, signed=False)
+    assert "New worlds" in unsigned and "新的世界" in unsigned
+    assert "v1.2.2" not in unsigned
+    assert "this release is unsigned" in unsigned
+    assert module.SIGNING_CREDIT not in unsigned
+    signed = module.build_notes(tmp_path, signed=True)
+    assert module.SIGNING_CREDIT in signed
+    assert "this release is unsigned" not in signed
+    (tmp_path / "UpdateLog-zh.md").write_text("# Infernux v1.2.2 · Old\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="must begin with the release"):
+        module.build_notes(tmp_path, signed=False)

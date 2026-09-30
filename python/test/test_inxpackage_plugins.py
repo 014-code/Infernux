@@ -12,6 +12,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from Infernux.version import ENGINE_VERSION
 
 import Infernux.plugins.manager as plugin_manager_module
 import Infernux.plugins.preload as preload_module
@@ -751,7 +752,7 @@ def test_engine_compatibility_is_validated_and_enforced_before_install(tmp_path)
     package = _export(incompatible, tmp_path / "future.inxpkg")
     project = _project(tmp_path / "project")
     manager = PluginManager(str(project))
-    with pytest.raises(RuntimeError, match="current engine is 0.4.0"):
+    with pytest.raises(RuntimeError, match=f"current engine is {ENGINE_VERSION}"):
         manager.install_package(str(package), install_dependencies=False)
     assert manager.registry.installed() == ()
     assert not (project / "Assets/Plugins/Data.bin").exists()

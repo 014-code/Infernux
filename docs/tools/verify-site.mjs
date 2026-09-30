@@ -29,7 +29,11 @@ if (docsManifest.documented_release !== currentVersion) {
     fail(`docs-manifest.json: documented_release ${docsManifest.documented_release} does not match release.json ${currentVersion}`);
 }
 if (packageVersion !== currentVersion) {
-    fail(`release.json: version ${currentVersion} does not match engine version ${packageVersion}`);
+    const compare = (version) => version.split(".").reduce((value, part) => value * 1000 + Number(part), 0);
+    const notes = await readFile(path.resolve("UpdateLog.md"), "utf8");
+    if (compare(packageVersion) <= compare(currentVersion) || !notes.startsWith(`# Infernux v${packageVersion} `)) {
+        fail(`release.json: ${currentVersion} must be the public release; upcoming engine ${packageVersion} must have release notes`);
+    }
 }
 if (releaseNotes.version !== currentVersion || releaseNotes.tag !== `v${currentVersion}`) {
     fail(`release-notes.json: version/tag does not match current release ${currentVersion}`);
@@ -50,12 +54,12 @@ else if (currentSnapshot.release !== currentVersion) {
 }
 
 const readmeVersionContracts = [
-    ["README.md", `version-${packageVersion}-orange.svg`],
-    ["README.md", `**${packageVersion}**`],
-    ["README.md", `version = {${packageVersion}}`],
-    ["README-zh.md", `version-${packageVersion}-orange.svg`],
-    ["README-zh.md", `**${packageVersion}**`],
-    ["README-zh.md", `version = {${packageVersion}}`],
+    ["README.md", `version-${currentVersion}-orange.svg`],
+    ["README.md", `**${currentVersion}**`],
+    ["README.md", `version = {${currentVersion}}`],
+    ["README-zh.md", `version-${currentVersion}-orange.svg`],
+    ["README-zh.md", `**${currentVersion}**`],
+    ["README-zh.md", `version = {${currentVersion}}`],
 ];
 const packageVersionContracts = [
     ["packaging/windows_version_info.txt", `'${packageVersion}.0'`],
@@ -87,6 +91,8 @@ const rootPages = [
     ...learningCourses.map((course) => `learn/${course.slug}.html`),
     ...learningChapters.map((chapter) => `learn/${chapter.slug}.html`),
     "roadmap.html",
+    "changelog.html",
+    ...(await readdir(path.join(docsRoot, "changelog"))).filter((name) => name.endsWith(".html")).map((name) => `changelog/${name}`),
     "community.html",
     "download.html",
     "code-signing-policy.html",
@@ -214,11 +220,15 @@ for (const [page, html] of [["index.html", homepage], ["download.html", download
 }
 const releasePath = ".github/workflows/publish-desktop-release.yml";
 const releaseDefinition = await readFile(path.resolve(releasePath), "utf8");
+const releaseNotesBuilder = await readFile(path.resolve("scripts/release/build_release_notes.py"), "utf8");
+if (!releaseDefinition.includes("python scripts/release/build_release_notes.py") || !releaseDefinition.includes("--notes-file dist/release-notes.md")) {
+    fail(`${releasePath}: releases must use the authoritative bilingual changelog`);
+}
 for (const contract of [
     "https://infernux-engine.com/code-signing-policy.html",
     "Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).",
 ]) {
-    if (!releaseDefinition.includes(contract)) fail(`${releasePath}: release notes are missing '${contract}'`);
+    if (!releaseNotesBuilder.includes(contract)) fail(`build_release_notes.py: release notes are missing '${contract}'`);
 }
 
 for (const language of ["en", "zh"]) {

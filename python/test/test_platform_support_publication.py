@@ -19,6 +19,13 @@ def test_engine_and_current_release_metadata_use_one_version():
     runtime = ast.parse((ROOT / "python/Infernux/version.py").read_text(encoding="utf-8"))
     assignment = next(node for node in runtime.body if isinstance(node, ast.Assign) and node.targets[0].id == "ENGINE_VERSION")
     assert ast.literal_eval(assignment.value) == version
+    # Published downloads stay on the last public version while the next
+    # release is being built. All published metadata must still agree.
+    published = json.loads((ROOT / "docs/release.json").read_text(encoding="utf-8"))["version"]
+    assert tuple(map(int, published.split("."))) <= tuple(map(int, version.split(".")))
+    if published != version:
+        for filename in ("UpdateLog.md", "UpdateLog-zh.md"):
+            assert (ROOT / filename).read_text(encoding="utf-8").startswith(f"# Infernux v{version} ")
     for filename, key in (
         ("release.json", "version"),
         ("hub-catalog.json", "stable"),
@@ -26,7 +33,7 @@ def test_engine_and_current_release_metadata_use_one_version():
         ("release-notes.json", "version"),
         ("platform-support.json", "released_version"),
     ):
-        assert json.loads((ROOT / "docs" / filename).read_text(encoding="utf-8"))[key] == version
+        assert json.loads((ROOT / "docs" / filename).read_text(encoding="utf-8"))[key] == published
 
 
 def test_wheel_classifiers_match_supported_host_targets():

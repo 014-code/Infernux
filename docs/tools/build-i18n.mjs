@@ -9,6 +9,7 @@ const pageConfigs = {
     "404": [],
     index: [],
     start: ["bilingual-page.js"],
+    changelog: ["bilingual-page.js"],
     learn: ["learn.js", "bilingual-page.js"],
     roadmap: [],
     download: ["download.js", "bilingual-page.js"],

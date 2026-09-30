@@ -6,6 +6,11 @@ on:
     branches: [master, main]
   workflow_call:
     inputs:
+      sign_windows_release:
+        description: Request SignPath signing for Windows release artifacts
+        required: false
+        type: boolean
+        default: false
       publish_release:
         description: Publish verified artifacts to GitHub, PyPI and R2
         required: false
@@ -25,6 +30,11 @@ on:
         required: false
   workflow_dispatch:
     inputs:
+      sign_windows_release:
+        description: Request SignPath signing for Windows release artifacts
+        required: true
+        type: boolean
+        default: false
       publish_release:
         description: Publish verified artifacts to GitHub, PyPI and R2
         required: true
@@ -328,5 +338,6 @@ jobs:
     uses: ./.github/workflows/publish-desktop-release.yml
     with:
       run_id: ${{ github.run_id }}
+      sign_windows_release: ${{ inputs.sign_windows_release }}
       replace_existing_release: ${{ inputs.replace_existing_release }}
     secrets: inherit

@@ -1,69 +1,115 @@
 # Infernux v0.4.1 · Worlds, Compute and Live Tools
 
-041 brings multi-scene workflows, deeper model import, CPU/GPU computation and a stronger plugin foundation together. It advances the game-engine foundations of a Neural Network-Native Engine (3N): worlds you can author, simulate, inspect and ship from Python.
+0.4.1 brings larger worlds, live Python authoring and target-aware computation into the same engine workflow. This release expands multi-scene editing, prefab authoring, model import, rendering and audio, then carries their resource and component lifecycles into exported Players. It also rebuilds key parts of the plugin experience in response to community reports.
 
-**Development notes:** these entries describe the 041 branch. Published downloads keep their existing release version until 0.4.1 is released.
+Infernux is working toward a **Neural Network-Native Engine (3N)**. Here, “Neural Network” is one concept: neural networks should eventually participate directly in gameplay and simulation. 041 builds the world, compute and tooling foundations for that direction; it does not claim that the full neural inference and tensor runtime is already delivered.
 
 [简体中文更新日志](UpdateLog-zh.md)
 
-**Baseline for comparison:** [`v0.4.0...041/prepare_for_my_game_1kg`](https://github.com/ChenlizheMe/Infernux/compare/v0.4.0...041/prepare_for_my_game_1kg)
+**Baseline for comparison:** [`v0.4.0...v0.4.1`](https://github.com/ChenlizheMe/Infernux/compare/v0.4.0...v0.4.1)
 
-### Scenes and Gameplay
+### Multi-scene Worlds and Gameplay
 
-- Edit multiple scenes in one workspace, choose the active scene, load and unload scenes additively, and move objects across scene boundaries.
-- Preserve persistent objects during scene changes and improve isolation between Edit and Play state, scene ownership, lifecycle callbacks and teardown.
-- Strengthen scene transitions in exported Players, including resource release and replacement of the rendered world alongside UI.
-- Expand Labv2 into a multi-scene playground for materials, models, physics, CPU JIT, GPUJelly, cameras, lighting and UI.
+- **Author several scenes together.** Open scenes additively, choose the active scene, inspect scene ownership in the Hierarchy, and move objects between scenes without treating the editor document as one global world.
+- **Make scene transitions coherent.** Commit scene changes at safe points, update component membership and lifecycle plans, and replace the rendered world together with its UI. Fix transitions that changed interface content while leaving old GameObjects visible.
+- **Preserve the right state.** Keep persistent objects across loads, isolate Edit and Play state, and release scene-owned resources and callbacks on unload.
+- **Exercise larger scenes.** Expand Labv2 with interactive examples of CPU JIT, GPUJelly, models and materials, cameras, lighting, world/screen UI, physics and multi-scene operations.
 
-### Models, Animation and Assets
+### Prefab Authoring
 
-- Expand FBX and Blender import workflows with mesh splitting, material and texture assignment, animation handling and external source synchronization.
-- Improve imported subasset identity, material remapping, animation clip workflows, collider generation and model inspection.
-- Extend GUID-based resource identity through project and package indexing, asset cooking and packed Player delivery.
-- Improve DataAsset authoring and inspection, package asset visibility, and deferred asset commands; asset deletion now follows the editor command lifecycle beyond the confirmation dialog.
+- **Work in isolated Prefab Mode.** Edit prefab contents independently of scene instances, including nested prefabs and variants.
+- **Apply and revert precisely.** Track property and structural overrides, including object/component additions, removals and references, against stable source identities and saved baselines.
+- **Keep instances synchronized.** Propagate source edits through loaded scenes and variant relationships while preserving authored overrides; retain the same relationships after save and reopen.
+- **Undo shared-asset edits.** Connect prefab editing and scene changes to the editor transaction and journal infrastructure instead of leaving shared assets outside Undo/Redo.
 
-### Compute and Simulation
+### Models, Materials and Animation
 
-- Integrate CPU/GPU JIT preparation with startup, Play entry, script changes and target builds; reuse valid compiled results and record warmup timing.
-- Prepare supported compute work before first scene interaction and carry target-appropriate compiled payloads into Player builds.
-- Retain GPU computation on supported native targets, including Android. Prepare supported kernels for CPU execution on Web, where the native Taichi GPU runtime is unavailable.
-- Improve GPUJelly simulation, collision behavior and scene lifecycle handling across native and browser paths.
-- Keep Jolt physics, collision callbacks, scene queries and Gizmo inspection connected to the same scene data.
+- **Import FBX and Blender sources through one model workflow.** Organize settings into Model, Rig, Animation and Materials pages, with explicit Apply and worker-based import rather than repeating expensive work while browsing settings.
+- **Preserve source structure and identity.** Keep node-local mesh geometry and hierarchy, stable mesh/subasset references, and external-source synchronization across supported renames and reparenting. Preserve user overrides when the source changes.
+- **Control materials and textures.** Extract, find and remap materials; retain embedded textures and external texture references as persistent assets; carry PBR factors, texture sampling and alpha/shadow behavior through import.
+- **Control mesh shading.** Add normal/tangent import policies, smoothing-angle and weighted-normal handling, and MikkTSpace tangent generation.
+- **Prepare animated assets.** Improve skeleton and skin-weight import, generic/humanoid rig settings, trimmed clips, morph target names and animation asset cooking. Preview imported animation in an isolated GPU-skinned view using the same clip assets.
+- **Inspect imported content.** Expose structured model/subasset inventory to Python and MCP, and make imported resources easier to inspect and reuse.
 
-### Rendering, Cameras and UI
+### GUID Resources and Player Content
 
-- Improve Vulkan/WebGPU rendering consistency, including initial scene presentation, camera state, lighting, shadows and resource updates.
-- Separate gameplay camera queries from editor camera access. World UI facing policies use the game camera while each view still renders through its own camera.
-- Align world text rendering, local selection bounds and click picking; expose fixed and game-camera-facing orientation in the Inspector.
-- Improve text clarity when enlarged, engine font use, world UI controls and layout labels; simplify unused width/height strategy controls.
-- Make the Game toolbar adapt to narrow panels, reduce the slider before hiding FPS, and remove excess spacing.
-- Address duplicate Hierarchy item IDs, editor resize/maximize handling and startup window visibility.
+- **Use one internal asset identity.** Extend GUID references through scenes, prefabs, material shaders, camera target textures, UI assets, effects and build settings. Resolve controlled authoring paths into that identity before runtime delivery.
+- **Cook the actual dependency graph.** Include resources reachable from the current documents and package components, preserve required raw runtime files and licenses, and reject uncooked model dependencies instead of relying on editor files being present.
+- **Keep project and package access explicit.** Improve package asset indexing and `Application.asset_path` / `Application.package_path` handling, including Windows path aliases.
+- **Repair asset command timing.** Run confirmed deletion through the editor command lifecycle after modal interaction; improve DataAsset authoring, inspection and deferred asset operations.
 
-### Plugins and Hot Reload
+### CPU/GPU Compute and JIT Preparation
 
-- Keep Runtime, Editor and general-file authoring roles, with folder-context-menu packaging to .inxpkg and explicit runtime-only Player content.
-- Build and publish the Player component type registry before scene construction, including locally authored package components and runtime preloads.
-- Refresh Runtime/Editor components and dependency modules transactionally, updating behavior on existing instances instead of leaving old class implementations active.
-- Tie panels, commands, shortcuts, subscriptions and other plugin resources to their preload lifetime; clean up on failed activation, reload, disable and unload.
-- Add cleanup registration for reversible services and automatic restart requirements for newly loaded native extensions; allow large Python dependencies to load once during preload.
-- Support custom panel placement and nested menu paths. Display author-provided menu text literally, with explicit localization for engine menus and plugin-owned translation catalogs.
-- Update the online plugin template and in-editor plugin_pages tutorials with package structure, lifecycle, localization, component registration and folder packaging instructions.
+- **Integrate compute into the engine.** Move the internal Taichi computation path into the engine and retire the separate integration path; keep Python as the authoring interface for CPU and GPU work.
+- **Prepare before interaction.** Connect startup, Play entry, script updates and target builds to warmup discovery. Reuse valid prepared results and report preparation timings rather than recompiling every time Play starts.
+- **Strengthen CPU execution.** Improve LLVM specialization, buffer lifetime and alias handling, detached compilation and proven row-local parallel work, with observable compilation/optimization results.
+- **Keep GPU work resident.** Improve compute buffers, kernel dispatch, queue ownership and storage bindings; reuse readback ownership and avoid unchanged transfers where supported.
+- **Build for the target.** Prepare native GPU payloads for supported targets, including Android. For supported kernels on Web, prepare CPU execution during the build because the native Taichi GPU runtime is unavailable there; projects keep the same authored compute entry points.
+- **Make boundaries explicit.** Validate supported kernel and closure contracts during preparation. This is not unrestricted Taichi support in the browser, and Android GPU computation does not require a CPU fallback.
 
-### Builds, Players and Platforms
+### Physics and GPUJelly
 
-- Let each Windows, Linux, Android and Web exporter declare its own build options through a shared editor interface.
-- Improve first launch from a newly exported directory, packed asset initialization and scene switching; remove premature black startup windows and initial black presentation frames.
-- Treat desktop fullscreen as borderless desktop mode and retain configured windowed resolution semantics. Windowed dimensions describe the client/render area.
-- Enable the Vulkan surface extensions required by the active SDL window backend on Linux, without forcing Player fullscreen or changing configured dimensions.
-- Reduce third-party nullability-warning noise at its dependency boundary and keep dependency changes in their owned repositories.
-- Update platform runtime payloads and package dependencies together with the engine; remove configure-time source patching from the affected build paths.
+- **Improve soft-body continuity.** Fix GPUJelly simulation, collision and mesh-update paths across scene entry, reset, unload and supported platform execution paths.
+- **Scale scene queries.** Add batched ray work and shared query snapshots with explicit world generations, while reducing repeated compound lookup and body locking.
+- **Broaden collider queries.** Improve static mesh closest-point queries and the handling of rotated, scaled and non-convex shapes; invalidate query state when collider cooking replaces geometry.
+- **Keep callbacks and tools in the same world.** Tighten contact/impulse delivery and scene ownership, and use consistent scene data for runtime queries and editor inspection.
 
-### Upgrade Notes
+### Rendering and RenderGraph
 
-- Update platform plugins with the engine so their packaged native runtime and Player contracts match.
-- Use Runtime for shipped components and services; keep panels, local web tools and build exporters in Editor. Player startup does not discover host build tools.
-- Follow the current plugin template for preload cleanup, translations and plugin_pages. Package archive role directories use lowercase runtime/editor; existing authored Runtime/Editor folders retain their spelling.
-- Neural model deployment, the full tensor data plane, batch worlds and deterministic replay remain roadmap work. The deferred vk-torch delay optimization is not part of this delivery.
+- **Align Vulkan and WebGPU contracts.** Correct fullscreen resource binding, storage buffers, reflection/descriptor layouts and resource updates across the two graphics paths. Fix initial scene state that could leave the browser background different from later scene loads.
+- **Scope rendering resources to the view.** Improve per-view RenderGraph buffers, camera light lists, shadow resources and deferred normal/geometry coverage, so multiple views do not share the wrong frame state.
+- **Extend custom passes.** Support GUID texture imports and compute-buffer inputs in fullscreen passes, and improve material property, custom sampler and texture-update handling.
+- **Retire resources in order.** Correct render-resource replacement and teardown, including scene changes and device shutdown, and initialize forward resources before dependent shadow variants.
+
+### Cameras, Text and UI
+
+- **Separate gameplay from observation.** Gameplay camera queries and camera-facing world UI use the game camera. Scene view rendering, navigation and selection rays continue to use the editor view's camera.
+- **Author world UI explicitly.** Expose fixed or game-camera-facing orientation, constant screen-size behavior and on-top/occlusion policies. Keep world UI Inspector controls appropriate to world-space content.
+- **Make what you see selectable.** Align rendered text, local UI bounds, rectangle handles and click picking; improve enlarged world text clarity and engine-font use.
+- **Keep screen UI isolated.** Correct canvas placement and scene ancestry interactions, and improve custom UI material/shader resources and descriptor ownership.
+- **Refine physical cameras and Gizmos.** Improve sensor, lens and gate-fit behavior, plus icon scale, tint, billboard orientation and picking.
+- **Make editor panels fit.** Shrink the Game view scale slider before hiding FPS, remove excess toolbar spacing, localize layout controls and avoid duplicated visible Hierarchy IDs.
+
+### Audio Runtime
+
+- **Stream without decoding everything up front.** Add file-backed audio streaming with bounded buffering alongside resident PCM clips, and separate audio runtime ownership from editor-only services.
+- **Control voices and buses.** Improve voice lifetime, spatial gain/panning, bus/master gain and parameter automation, with output meters and streaming diagnostics.
+- **Define the real-time boundary.** Keep audio callback state bounded and publish control changes through explicit handoff. Establish a native output DSP stage; this is not a finished user-facing effects graph.
+
+### Plugins, Components and Hot Reload
+
+- **Retain familiar package roles.** Keep Runtime, Editor and general files, folder-context-menu export to `.inxpkg`, and the repository `package/` + `package.py` workflow.
+- **Register Player types before scene construction.** Include packaged and locally authored runtime components in the cooked type registry and run runtime preloads in the proper order. Player startup does not discover host build tools or activate editor-only exporters.
+- **Update existing behavior.** Reload Runtime/Editor components and their dependency modules transactionally, replacing behavior on live instances rather than retaining an old `update` implementation after a save. Reject a failed candidate before publishing a mixed module state.
+- **Own the whole plugin lifetime.** Track panels, menus, commands, shortcuts, subscriptions and cleanup callbacks through activation, reload, disable and unload, including failed preload cleanup.
+- **Load dependencies once when appropriate.** Allow preload to import substantial Python dependencies and manage reversible services; identify native extensions that require an editor restart when their owning package changes.
+- **Place tools where authors need them.** Support custom panel placement and arbitrarily nested menu paths. Treat author-provided menu segments as text; use explicit localization keys for engine menus and plugin-owned editor translation catalogs.
+- **Teach the complete workflow.** Update the online plugin template and `plugin_pages` tutorials with directory roles, component registration, preload cleanup, localization and File Manager packaging instructions.
+
+### Editor Reliability and Authoring
+
+- **Improve window startup and resizing.** Keep the editor hidden until its loading sequence is ready and fix resize/maximize handling reported on Windows.
+- **Make inspection more useful.** Improve read-only/transient Inspector fields, component publication, localized camera/light settings and Console selection, copying and source navigation.
+- **Make hot editing observable.** Improve deferred task errors, scene failure reporting, frame/compute diagnostics and MCP inspection so a successful launch is not mistaken for correct simulation.
+- **Refresh learning material.** Recheck tutorial parameters and API usage against the implementation, expand hands-on examples, and publish bilingual, versioned release history on the website.
+
+### Builds, Platforms and Hub
+
+- **Give each target its own settings.** Let Windows, Linux, Web and Android exporters declare their build options through a shared editor interface.
+- **Present a ready first frame.** Repair initialization in fresh export directories, packed resource startup and scene switching; delay Player presentation until the initial scene is ready to avoid premature black frames.
+- **Keep desktop window semantics predictable.** Use borderless desktop mode for fullscreen and client/render-area dimensions for windowed mode, retaining the configured windowed resolution and taskbar behavior.
+- **Follow the active Linux window backend.** Enable the Vulkan surface extensions required by SDL's actual X11/Wayland backend without forcing fullscreen or changing Player dimensions. Address dependency nullability warning noise at the dependency boundary.
+- **Tighten mobile/browser input and lifecycle.** Improve Android surface pause/resume, native IME input, Back-to-Escape routing, same-frame touch delivery and persistent user-data placement; align browser touch and screen UI event ownership.
+- **Ship matching runtime payloads.** Keep native asset/audio ownership consistent across library boundaries and bundle required Python extensions. Use owned dependency forks and checked-in source fixes instead of editing dependency sources during CMake configuration.
+- **Improve Hub-managed delivery.** Expand managed Blender/build-tool integration and release catalog synchronization. Keep published versions monotonic and preserve actual audited Linux wheel tags rather than forcing a compatibility label.
+
+### Upgrade Notes and Scope
+
+- **Update engine and platform plugins together.** A precompiled Player payload must match its engine contract. Rebuild exported Players after upgrading rather than copying a new engine library into an old export.
+- **Review plugin roles and lifecycle.** Put shipped components/services in Runtime and panels/local web tools/exporters in Editor. Follow the current template for cleanup, translations and `plugin_pages`; archive role directories are lowercase `runtime`/`editor`, while local authored Runtime/Editor folders retain their spelling.
+- **Reimport and recook from source.** Preserve your project sources and GUID metadata, then regenerate imported/cooked output with the new engine. The release strengthens the current data path rather than maintaining every experimental intermediate format.
+- **Understand compute portability.** Web's supported CPU preparation path differs from native GPU execution. Kernel support is checked at build time; numerical/performance identity across devices is not promised.
+- **Keep the roadmap separate.** Full neural model deployment, the tensor data plane, batch worlds and deterministic replay remain future work. The deferred vk-torch delay optimization and a complete theme system are not part of 041.
 
 ---
 

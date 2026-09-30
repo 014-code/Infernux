@@ -8,6 +8,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+from Infernux.version import ENGINE_VERSION
 
 from Infernux.engine.build import (
     BuildConfiguration,
@@ -136,7 +137,7 @@ def _write_native_payload(root: Path, *, abi: str) -> Path:
     for name in payload.NATIVE_LIBRARIES:
         (native / name).write_bytes(b"\\x7fELFfixture")
     (root / abi / "Player.inxmanifest").write_text(json.dumps({
-        "engine_version": "0.4.0", "platform": "android", "abi": abi,
+        "engine_version": ENGINE_VERSION, "platform": "android", "abi": abi,
         "python_abi": "cp313", "minimum_api": 26, "configuration": "Release",
         "native_libraries": list(payload.NATIVE_LIBRARIES),
     }), encoding="utf-8")

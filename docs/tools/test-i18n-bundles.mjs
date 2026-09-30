@@ -10,6 +10,7 @@ const routeKeys = {
     "404": "error.title",
     index: "home.hero.title",
     start: "pageTitle.start",
+    changelog: "pageTitle.changelog",
     roadmap: "roadmap.hero.title",
     download: "pageTitle.download",
 };

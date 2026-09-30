@@ -14,6 +14,7 @@ import pytest
 
 from Infernux.engine.build import BuildProfile, BuildRequest
 from Infernux.plugins import player_file_exported
+from Infernux.version import ENGINE_VERSION
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -258,7 +259,7 @@ def _installed_web_payload(tmp_path):
     root = tmp_path / "installed-plugin"
     player = root / "player"
     player.mkdir(parents=True)
-    manifest = {"$schema": "infernux.web_player", "engine": "0.4.0",
+    manifest = {"$schema": "infernux.web_player", "engine": ENGINE_VERSION,
                 "platform": "web", "architecture": "wasm32", "python_abi": "cp313",
                 "configuration": "Release",
                 "python_runtime": _web_python_runtime_manifest()}
@@ -376,7 +377,7 @@ def test_web_doctor_rejects_incompatible_engine(monkeypatch, tmp_path):
     doctor = importlib.import_module("infernux_web.doctor")
     root = _installed_web_payload(tmp_path)
     manifest = root / "player/Player.inxmanifest"
-    manifest.write_text(manifest.read_text().replace("0.4.0", "0.3.7"))
+    manifest.write_text(manifest.read_text().replace(ENGINE_VERSION, "0.3.7"))
     monkeypatch.setattr(doctor, "__file__", str(root / "doctor.py"))
     report = module.inspect_web_toolchain("web-wasm32")
     assert not report.available

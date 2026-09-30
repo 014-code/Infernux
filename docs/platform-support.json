@@ -1,6 +1,6 @@
 {
   "$schema": "infernux.platform_support",
-  "development_version": "0.4.0",
+  "development_version": "0.4.1",
   "released_version": "0.4.0",
   "python_abi": "cp313",
   "evidence": {
@@ -53,6 +53,13 @@
       "status_zh": "构建与 CI 通过"
     }
   ],
-  "unsupported": ["macos", "ios-native", "headless-player"],
-  "deferred": ["torch", "model-runner"]
+  "unsupported": [
+    "macos",
+    "ios-native",
+    "headless-player"
+  ],
+  "deferred": [
+    "torch",
+    "model-runner"
+  ]
 }
