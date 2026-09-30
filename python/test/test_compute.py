@@ -57,6 +57,69 @@ def solve(domain, positions, limits, shifts, bins, totals, contacts, count):
     assert int(contacts.numpy(copy=False)[0]) == 7
 
 
+def test_web_cpu_atomic_add_preserves_lane_and_scalar_reductions(monkeypatch):
+    from Infernux.engine.build.compute_cpu import build_cpu_compute_source
+
+    source = """
+import Infernux as inx
+
+@inx.compute.kernel
+def accumulate(domain, bins, values, vectors, count):
+    i = inx.compute.index(domain)
+    inx.compute.atomic_add(vectors[bins[i]][0], values[i][0])
+    inx.compute.atomic_add(vectors[bins[i]][1], values[i][1])
+    inx.compute.atomic_add(vectors[bins[i]][2], values[i][2])
+    inx.compute.atomic_add(count[0], 1)
+"""
+    cooked = build_cpu_compute_source(source)
+    assert cooked.count("_cpu_atomic_add") == 4
+    namespace = {}
+    exec(compile(cooked, "<web-cpu-atomic-test>", "exec"), namespace)
+    monkeypatch.setenv("INFERNUX_WEB_RUNTIME", "1")
+
+    domain = inx.buffer(shape=4, dtype=np.int32, device="gpu")
+    bins = inx.buffer(shape=4, dtype=np.int32, device="gpu", data=(0, 1, 0, 1))
+    values = inx.buffer(
+        shape=4, dtype=inx.vector3, device="gpu",
+        data=np.arange(12, dtype=np.float32).reshape(4, 3),
+    )
+    vectors = inx.buffer(shape=2, dtype=inx.vector3, device="gpu")
+    count = inx.buffer(shape=1, dtype=np.int32, device="gpu")
+
+    inx.compute.launch(namespace["accumulate"], (domain, bins, values, vectors, count))
+
+    np.testing.assert_allclose(
+        vectors.numpy(copy=False), ((6.0, 8.0, 10.0), (12.0, 14.0, 16.0))
+    )
+    assert int(count.numpy(copy=False)[0]) == 4
+
+
+def test_web_cpu_atomic_add_never_indexes_inactive_lanes(monkeypatch):
+    from Infernux.engine.build.compute_cpu import build_cpu_compute_source
+
+    source = """
+import Infernux as inx
+
+@inx.compute.kernel
+def accumulate(domain, bins, totals):
+    i = inx.compute.index(domain)
+    if i < 2:
+        inx.compute.atomic_add(totals[bins[i]], 1)
+"""
+    cooked = build_cpu_compute_source(source)
+    namespace = {}
+    exec(compile(cooked, "<web-cpu-masked-atomic-test>", "exec"), namespace)
+    monkeypatch.setenv("INFERNUX_WEB_RUNTIME", "1")
+
+    domain = inx.buffer(shape=4, dtype=np.int32, device="gpu")
+    bins = inx.buffer(shape=4, dtype=np.int32, device="gpu", data=(0, 1, 99, 99))
+    totals = inx.buffer(shape=2, dtype=np.int32, device="gpu")
+
+    inx.compute.launch(namespace["accumulate"], (domain, bins, totals))
+
+    np.testing.assert_array_equal(totals.numpy(copy=False), (1, 1))
+
+
 def test_gpu_index_declaration_accepts_public_and_imported_spellings():
     from Infernux._compiler.taichi.frontend import _index_declaration
 

@@ -44,7 +44,8 @@ class MouseEventDispatcher:
                 method.invoke(component)
 
     def process(self, camera, screen_position, viewport_size, *, button: int = 0,
-                enabled: bool = True, hit=_UNSET_HIT, button_state=None) -> None:
+                enabled: bool = True, hit=_UNSET_HIT, button_state=None,
+                canceled: bool = False) -> None:
         """Dispatch a top-left viewport sample through one published epoch.
 
         Callers sharing UI input can pass its hit and button snapshot. Object
@@ -95,7 +96,7 @@ class MouseEventDispatcher:
         if up:
             if pressed is not None:
                 call(pressed, "on_mouse_up")
-                if self._same_object(pressed, target):
+                if not canceled and self._same_object(pressed, target):
                     call(pressed, "on_mouse_up_as_button")
 
     def reset(self) -> None:

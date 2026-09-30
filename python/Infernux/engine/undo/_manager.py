@@ -183,6 +183,7 @@ class UndoManager:
         *,
         origin: Optional[ActionOrigin] = None,
         transaction_id: str = "",
+        raise_errors: bool = False,
     ) -> bool:
         from Infernux.debug import Debug
         from Infernux.engine.interaction import current_action_origin
@@ -190,6 +191,11 @@ class UndoManager:
         origin = ActionOrigin(current_action_origin() if origin is None else origin)
 
         if self._pending_replay is not None:
+            if raise_errors:
+                cmd.dispose()
+                raise RuntimeError(
+                    f"Editor action '{cmd.description}' cannot run while Undo/Redo restores context"
+                )
             Debug.log_warning(
                 f"Editor action '{cmd.description}' ignored while Undo/Redo is restoring context"
             )
@@ -201,6 +207,8 @@ class UndoManager:
         if not self._enabled:
             if origin != ActionOrigin.SYSTEM:
                 cmd.dispose()
+                if raise_errors:
+                    raise RuntimeError("Global editor history is disabled")
                 return False
             try:
                 inspector_revision = _inspector_snapshot_revision()
@@ -209,6 +217,8 @@ class UndoManager:
             except Exception as exc:
                 Debug.log_exception(exc)
                 cmd.dispose()
+                if raise_errors:
+                    raise
                 return False
             cmd.dispose()
             return True
@@ -220,6 +230,8 @@ class UndoManager:
         except Exception as exc:
             Debug.log_exception(exc)
             cmd.dispose()
+            if raise_errors:
+                raise
             return False
         finally:
             self._is_executing = False
@@ -245,8 +257,10 @@ class UndoManager:
             except Exception as rollback_exc:
                 Debug.log_exception(rollback_exc)
             cmd.dispose()
+            if raise_errors:
+                raise
             return False
-        self._push(
+        recorded = self._push(
             journal_command,
             before_context=before_context,
             after_context=after_context,
@@ -254,7 +268,15 @@ class UndoManager:
             transaction_id=transaction_id,
             operation_id=journal_command.operation_id,
         )
-        return True
+        if origin is ActionOrigin.EXTERNAL:
+            # External synchronization applies data but deliberately never
+            # enters the user's Undo/Redo journal.
+            return True
+        if not recorded and raise_errors:
+            raise RuntimeError(
+                f"Editor action '{cmd.description}' was not accepted by the action journal"
+            )
+        return recorded
 
     def record(
         self,

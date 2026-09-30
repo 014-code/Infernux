@@ -57,14 +57,6 @@ from .theme import Theme, ImGuiCol, ImGuiStyleVar, ImGuiTreeNodeFlags
 #  Constants
 # ═══════════════════════════════════════════════════════════════════════════
 
-# White colour for drop-target outline and reorder indicator line
-_DROP_OUTLINE_COLOR = Theme.DND_DROP_OUTLINE
-_DROP_OUTLINE_THICKNESS = Theme.DND_DROP_OUTLINE_THICKNESS
-_REORDER_LINE_COLOR = Theme.DND_REORDER_LINE
-_REORDER_LINE_THICKNESS = Theme.DND_REORDER_LINE_THICKNESS
-_REORDER_SEPARATOR_H = Theme.DND_REORDER_SEPARATOR_H
-
-
 class _PickerLabels:
     """Lazy label view consumed only for rows selected by ImGuiListClipper."""
 
@@ -126,7 +118,9 @@ class IGUI:
         ctx.push_style_color(ImGuiCol.DragDropTarget, 0.0, 0.0, 0.0, 0.0)
         if ctx.begin_drag_drop_target():
             if outline:
-                IGUI._draw_item_outline(ctx, *_DROP_OUTLINE_COLOR, _DROP_OUTLINE_THICKNESS)
+                IGUI._draw_item_outline(
+                    ctx, *Theme.DND_DROP_OUTLINE, Theme.DND_DROP_OUTLINE_THICKNESS
+                )
             payload = ctx.accept_drag_drop_payload(accept_type)
             if payload is not None:
                 on_drop(payload)
@@ -151,7 +145,9 @@ class IGUI:
         ctx.push_style_color(ImGuiCol.DragDropTarget, 0.0, 0.0, 0.0, 0.0)
         if ctx.begin_drag_drop_target():
             if outline:
-                IGUI._draw_item_outline(ctx, *_DROP_OUTLINE_COLOR, _DROP_OUTLINE_THICKNESS)
+                IGUI._draw_item_outline(
+                    ctx, *Theme.DND_DROP_OUTLINE, Theme.DND_DROP_OUTLINE_THICKNESS
+                )
             for dt in accept_types:
                 payload = ctx.accept_drag_drop_payload(dt)
                 if payload is not None:
@@ -598,7 +594,7 @@ class IGUI:
         Returns True if a payload was accepted.
         """
         avail_w = ctx.get_content_region_avail_width()
-        ctx.invisible_button(sep_id, avail_w, _REORDER_SEPARATOR_H)
+        ctx.invisible_button(sep_id, avail_w, Theme.DND_REORDER_SEPARATOR_H)
         accepted = False
         ctx.push_style_color(ImGuiCol.DragDropTarget, 0.0, 0.0, 0.0, 0.0)
         if ctx.begin_drag_drop_target():
@@ -813,5 +809,15 @@ class IGUI:
         mid_y = (min_y + max_y) * 0.5
         x1 = ctx.get_item_rect_min_x()
         x2 = x1 + width
-        r, g, b, a = _REORDER_LINE_COLOR
-        ctx.draw_line(x1, mid_y, x2, mid_y, r, g, b, a, _REORDER_LINE_THICKNESS)
+        r, g, b, a = Theme.DND_REORDER_LINE
+        ctx.draw_line(
+            x1,
+            mid_y,
+            x2,
+            mid_y,
+            r,
+            g,
+            b,
+            a,
+            Theme.DND_REORDER_LINE_THICKNESS,
+        )

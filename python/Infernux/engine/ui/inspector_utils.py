@@ -33,12 +33,6 @@ from .theme import Theme, ImGuiCol, ImGuiStyleVar, ImGuiTreeNodeFlags
 #  Constants
 # ═══════════════════════════════════════════════════════════════════════════
 
-LABEL_PAD: float = Theme.INSPECTOR_LABEL_PAD
-"""Extra pixels added after the widest label text."""
-
-MIN_LABEL_WIDTH: float = Theme.INSPECTOR_MIN_LABEL_WIDTH
-"""Absolute lower bound for the label column so the inspector never looks cramped."""
-
 DRAG_SPEED_DEFAULT: float = 0.1
 """Default drag-float speed — matches Unity feel."""
 
@@ -216,13 +210,13 @@ def max_label_w(ctx: InxGUIContext, labels, *, min_width: float = 0.0) -> float:
     cached = _LABEL_W_CACHE.get(key)
     if cached is not None:
         return cached
-    _min = min_width if min_width > 0 else MIN_LABEL_WIDTH
+    _min = min_width if min_width > 0 else Theme.INSPECTOR_MIN_LABEL_WIDTH
     w = 0.0
     for lb in labels:
         tw = ctx.calc_text_width(lb)
         if tw > w:
             w = tw
-    result = max(w + LABEL_PAD, _min)
+    result = max(w + Theme.INSPECTOR_LABEL_PAD, _min)
     _LABEL_W_CACHE[key] = result
     return result
 
@@ -234,7 +228,10 @@ def field_label(ctx: InxGUIContext, label: str, width: float = 0.0):
     narrower than ``MIN_LABEL_WIDTH``).
     """
     if width <= 0.0:
-        width = max(ctx.calc_text_width(label) + LABEL_PAD, MIN_LABEL_WIDTH)
+        width = max(
+            ctx.calc_text_width(label) + Theme.INSPECTOR_LABEL_PAD,
+            Theme.INSPECTOR_MIN_LABEL_WIDTH,
+        )
     ctx.align_text_to_frame_padding()
     ctx.label(label)
     ctx.same_line(width)

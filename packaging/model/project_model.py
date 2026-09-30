@@ -327,17 +327,15 @@ def _create_default_project_content(
     _write_json_document(
         os.path.join(staging_dir, "ProjectSettings", "BuildSettings.json"),
         {
+            "build_target": "",
             "debug_mode": False,
-            "display_mode": "windowed",
             "game_name": project_name,
             "icon_guid": "",
             "lto": True,
             "output_dir": "",
             "scene_guids": [scene_guid],
             "splash_items": [],
-            "window_height": 720,
-            "window_resizable": True,
-            "window_width": 1280,
+            "platform_options": {},
         },
     )
     _write_json_document(

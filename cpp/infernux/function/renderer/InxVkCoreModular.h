@@ -412,12 +412,20 @@ class InxVkCoreModular
         return m_maxFramesInFlight == 0 ? 0 : m_currentFrame % m_maxFramesInFlight;
     }
 
-    /// The hidden startup frame has already populated the swapchain. Mark the
-    /// next successful present after the native window is revealed so startup
-    /// measurements observe actual user-visible readiness.
+    /// Arm the next successful hidden-window presentation as the complete
+    /// startup frame. The native Windows Player is revealed only after this
+    /// boundary, so the compositor never exposes an unpainted client area.
     void ObserveNextPresentationAsFirstVisible() noexcept
     {
         m_firstVisiblePresentationPending = true;
+        m_firstVisiblePresentationCompleted = false;
+    }
+
+    [[nodiscard]] bool ConsumeFirstVisiblePresentation() noexcept
+    {
+        const bool completed = m_firstVisiblePresentationCompleted;
+        m_firstVisiblePresentationCompleted = false;
+        return completed;
     }
 
     /// @brief Update material UBO with current material properties (stub)
@@ -1218,6 +1226,7 @@ class InxVkCoreModular
     uint32_t m_currentFrame = 0;
     bool m_framebufferResized = false;
     bool m_firstVisiblePresentationPending = false;
+    bool m_firstVisiblePresentationCompleted = false;
     bool m_presentationReadbackRequested = false;
     std::shared_ptr<vk::ImageReadbackTicket> m_presentationReadback;
     std::string m_presentationReadbackError;

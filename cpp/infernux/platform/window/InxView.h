@@ -8,6 +8,7 @@
 #include <functional>
 #include <mutex>
 #include <string>
+#include <vector>
 
 #include <core/log/InxLog.h>
 #include <core/types/InxApplication.h>
@@ -101,6 +102,11 @@ class InxView
     int GetUserEvent();
     void Show();
     void Hide();
+    [[nodiscard]] bool ShouldRevealAfterFirstPresentation() const noexcept
+    {
+        return m_revealAfterFirstPresentation;
+    }
+    void RevealAfterFirstPresentation();
 
     /// Pump the OS queue during long startup work while the native window is
     /// still hidden. Returns false if the user requested close/quit.
@@ -243,9 +249,13 @@ class InxView
     bool m_eventWatchInstalled = false;
     bool m_isPlayMode = false;
     bool m_activateWhenShown = true;
+    bool m_revealAfterFirstPresentation = false;
+    bool m_activateAfterFirstPresentation = false;
     bool m_needsImmediateGuiRefresh = false;
     std::function<void()> m_presentationSuspendHandler;
     InxAppMetadata m_appMetadata;
+    std::vector<std::string> m_vkInstanceExtensionNames;
+    std::vector<const char *> m_vkInstanceExtensions;
 
     // ---- Power-save idle state ----
     FpsIdling m_idling;

@@ -2289,3 +2289,20 @@ def test_ui_editor_nudge_shortcuts_share_panel_commands_and_respect_capture():
         assert calls == [(-1, 0), (0, 10)]
     finally:
         bootstrap.interaction_core.shutdown()
+
+
+def test_native_shortcut_event_blocks_editor_commands_while_game_view_owns_input():
+    from Infernux.engine._bootstrap_wiring import _native_shortcut_event
+    from Infernux.input import Input
+
+    previous = Input.is_game_focused()
+    try:
+        Input.set_game_focused(True)
+        captured = _native_shortcut_event("Left", False, False)
+        assert captured.game_view_captured is True
+
+        Input.set_game_focused(False)
+        editor = _native_shortcut_event("Left", False, False)
+        assert editor.game_view_captured is False
+    finally:
+        Input.set_game_focused(previous)

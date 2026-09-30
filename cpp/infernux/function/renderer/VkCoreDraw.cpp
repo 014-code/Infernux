@@ -529,7 +529,8 @@ void InxVkCoreModular::DrawFrame(const float *viewPos, const float *viewLookAt, 
     result = m_backend.Presentation().Present(m_backend.Queues(), imageIndex);
     if (result == vk::SwapchainResult::Success && m_firstVisiblePresentationPending) {
         m_firstVisiblePresentationPending = false;
-        SDL_Log("INFERNUX_FIRST_VISIBLE_PRESENT");
+        m_firstVisiblePresentationCompleted = true;
+        SDL_Log("INFERNUX_FIRST_REVEAL_PRESENT");
     }
     if (result == vk::SwapchainResult::SurfaceLost) {
         m_presentationSurfaceLost = true;

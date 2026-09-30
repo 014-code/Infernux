@@ -105,12 +105,10 @@ _GRAPH_NODE_HEADER_COLOR = (0.105, 0.105, 0.11, 1.0)
 _GRAPH_NODE_CONTEXT_BODY = (0.055, 0.055, 0.058, 0.98)
 _GRAPH_NODE_CONTEXT_SLOT = (0.085, 0.085, 0.090, 0.95)
 _NODE_SHADOW_COLOR = (0.0, 0.0, 0.0, 0.5)
-_NODE_SELECTED_BORDER = Theme.APPLY_BUTTON
 _NODE_BORDER_COLOR = (0.28, 0.28, 0.30, 1.0)
 _PIN_HOVER_COLOR = (0.88, 0.88, 0.90, 0.75)
 
 _LINK_DEFAULT_COLOR = (0.42, 0.42, 0.44, 0.88)
-_LINK_SELECTED_COLOR = Theme.APPLY_BUTTON
 _LINK_HOVER_COLOR = (0.55, 0.55, 0.58, 1.0)
 _PENDING_LINK_COLOR = (0.65, 0.65, 0.68, 0.5)
 
@@ -158,13 +156,6 @@ _MINIMAP_SIZE = 120.0
 _MINIMAP_PAD = 8.0
 _MINIMAP_BG = (0.06, 0.06, 0.07, 0.75)
 _MINIMAP_NODE = (0.38, 0.38, 0.40, 0.65)
-_MINIMAP_VIEW = (
-    Theme.APPLY_BUTTON[0],
-    Theme.APPLY_BUTTON[1],
-    Theme.APPLY_BUTTON[2],
-    0.45,
-)
-
 # ImGuiKey constants (see imgui_keys.py)
 # ═══════════════════════════════════════════════════════════════════════════
 # Bezier helper
@@ -1164,14 +1155,14 @@ class NodeGraphView:
 
         # Border — instant hover/selection feedback (no per-frame easing; cheap).
         if is_selected:
-            ctx.draw_rect(sx, sy, sx + w, sy + h, *_NODE_SELECTED_BORDER, 2.5 * z, rounding)
+            ctx.draw_rect(sx, sy, sx + w, sy + h, *Theme.APPLY_BUTTON, 2.5 * z, rounding)
         else:
             mx = ctx.get_mouse_pos_x()
             my = ctx.get_mouse_pos_y()
             hovered = (sx <= mx <= sx + w) and (sy <= my <= sy + h)
             if hovered:
                 base = _NODE_BORDER_COLOR
-                acc = _NODE_SELECTED_BORDER
+                acc = Theme.APPLY_BUTTON
                 bcol = (
                     base[0] + (acc[0] - base[0]) * 0.5,
                     base[1] + (acc[1] - base[1]) * 0.5,
@@ -1864,7 +1855,7 @@ class NodeGraphView:
             is_hov = lk.uid == self._hovered_link
 
             if is_sel:
-                color, thick = _LINK_SELECTED_COLOR, 3.0 * self.zoom
+                color, thick = Theme.APPLY_BUTTON, 3.0 * self.zoom
             elif is_hov:
                 color, thick = _LINK_HOVER_COLOR, 2.6 * self.zoom
             else:
@@ -2159,7 +2150,19 @@ class NodeGraphView:
         vy0 = off_y + (v_gy0 - total_y0) * s
         vx1 = off_x + (v_gx1 - total_x0) * s
         vy1 = off_y + (v_gy1 - total_y0) * s
-        ctx.draw_rect(vx0, vy0, vx1, vy1, *_MINIMAP_VIEW, 1.0, 2.0)
+        accent = Theme.APPLY_BUTTON
+        ctx.draw_rect(
+            vx0,
+            vy0,
+            vx1,
+            vy1,
+            accent[0],
+            accent[1],
+            accent[2],
+            0.45,
+            1.0,
+            2.0,
+        )
 
         ctx.pop_draw_list_clip_rect()
 

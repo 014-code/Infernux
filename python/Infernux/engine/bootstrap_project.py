@@ -194,7 +194,7 @@ def wire_project_callbacks(bs: EditorBootstrap) -> None:
         from Infernux.engine.interaction import ContextMenuBuilder
         from Infernux.engine.ui.core_context_menus import project_context_menu
 
-        ContextMenuBuilder(bs.interaction_core.commands).render(
+        result = ContextMenuBuilder(bs.interaction_core.commands).render(
             ctx_arg,
             project_context_menu(
                 _t,
@@ -204,6 +204,14 @@ def wire_project_callbacks(bs: EditorBootstrap) -> None:
             ),
             payload={"directory": str(current_path or "")},
         )
+        if result is not None and not result.result.accepted:
+            from Infernux.debug import Debug
+
+            detail = result.result.message or result.result.status.value
+            Debug.log_error(
+                f"Project context command failed "
+                f"[{result.result.command_id}]: {detail}"
+            )
 
     pp.render_context_menu = _render_project_context_menu
 

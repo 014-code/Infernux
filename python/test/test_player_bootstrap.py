@@ -309,6 +309,23 @@ def test_player_run_prewarms_before_revealing_a_no_splash_scene():
     ]
 
 
+def test_player_first_frame_prewarm_builds_target_before_composition():
+    from Infernux.engine.player_bootstrap import PlayerBootstrap
+
+    deltas = []
+
+    class Engine:
+        def tick(self, delta):
+            deltas.append(delta)
+
+    bootstrap = PlayerBootstrap.__new__(PlayerBootstrap)
+    bootstrap.engine = Engine()
+
+    bootstrap._prewarm_first_frame()
+
+    assert deltas == [0.0, 0.0]
+
+
 def test_player_bootstrap_does_not_discover_project_requirements(monkeypatch):
     from Infernux.engine.player_bootstrap import PlayerBootstrap
 
@@ -458,10 +475,13 @@ def test_run_player_reveals_window_without_startup_sleep():
     body = source[start : source.index("\n__all__ =", start)]
     assert "time.sleep" not in body
     assert "_INFERNUX_PLAYER_FULLSCREEN" in body
+    assert "_INFERNUX_PLAYER_WINDOW_RESIZABLE" in body
     assert "_INFERNUX_PLAYER_WINDOW_TITLE" in body
     assert body.index("_INFERNUX_PLAYER_FULLSCREEN") < body.index("bootstrap.run()")
     assert "_signal_engine_loaded" in body
     assert body.index("_set_process_owned_exit()") < body.index("bootstrap.engine.run()")
+    assert "set_maximized" not in body
+    assert "set_resizable" not in body
 
 
 def test_player_build_manifest_is_required_and_strict(tmp_path):
@@ -582,6 +602,7 @@ def test_player_init_engine_publishes_window_chrome_before_native_renderer():
     start = source.index("def _init_engine")
     body = source[start : source.index("\n    def ", start + 1)]
     assert body.index("_INFERNUX_PLAYER_FULLSCREEN") < body.index("init_renderer")
+    assert body.index("_INFERNUX_PLAYER_WINDOW_RESIZABLE") < body.index("init_renderer")
     assert body.index("_INFERNUX_PLAYER_WINDOW_TITLE") < body.index("init_renderer")
 
 

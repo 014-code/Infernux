@@ -69,6 +69,15 @@ void MergeMouseMotion(SDL_Event &accumulated, const SDL_Event &latest)
     accumulated.motion.xrel += latest.motion.xrel;
     accumulated.motion.yrel += latest.motion.yrel;
 }
+
+bool RequiredPlayerBooleanEnvironment(const char *name)
+{
+    const char *value = std::getenv(name);
+    if (value == nullptr || !((value[0] == '0' || value[0] == '1') && value[1] == '\0')) {
+        throw std::runtime_error(std::string("Player startup requires ") + name + " to be exactly 0 or 1");
+    }
+    return value[0] == '1';
+}
 } // namespace
 
 InxView::InxView()
@@ -106,17 +115,53 @@ const char *const *InxView::GetVkExtensions(uint32_t *count)
         INXLOG_DEBUG("  Vulkan instance extension: ", extension);
     }
 
-    if (!infernux::ValidateVulkanWindowExtensions(videoDriver, extensionViews)) {
+    std::vector<VkExtensionProperties> availableProperties;
+    if (videoDriver == "x11") {
+        const auto getInstanceProcAddr =
+            reinterpret_cast<PFN_vkGetInstanceProcAddr>(SDL_Vulkan_GetVkGetInstanceProcAddr());
+        const auto enumerateExtensions =
+            getInstanceProcAddr ? reinterpret_cast<PFN_vkEnumerateInstanceExtensionProperties>(
+                                      getInstanceProcAddr(VK_NULL_HANDLE, "vkEnumerateInstanceExtensionProperties"))
+                                : nullptr;
+        uint32_t availableCount = 0;
+        if (!enumerateExtensions || enumerateExtensions(nullptr, &availableCount, nullptr) != VK_SUCCESS) {
+            INXLOG_ERROR("Cannot enumerate Vulkan instance extensions for the X11 window contract");
+            return nullptr;
+        }
+        availableProperties.resize(availableCount);
+        if (enumerateExtensions(nullptr, &availableCount, availableProperties.data()) != VK_SUCCESS) {
+            INXLOG_ERROR("Cannot read Vulkan instance extensions for the X11 window contract");
+            return nullptr;
+        }
+    }
+    std::vector<std::string_view> availableViews;
+    availableViews.reserve(availableProperties.size());
+    for (const auto &property : availableProperties)
+        availableViews.emplace_back(property.extensionName);
+    const auto resolvedExtensions = ResolveVulkanWindowExtensions(videoDriver, extensionViews, availableViews);
+
+    if (!infernux::ValidateVulkanWindowExtensions(videoDriver, resolvedExtensions)) {
         INXLOG_ERROR("SDL/Vulkan window backend contract rejected: backend=", videoDriver,
                      " does not provide the required native surface extensions");
         return nullptr;
     }
-    INXLOG_DEBUG("SDL/Vulkan window backend contract accepted: backend=", videoDriver, ", extensions=", extensionCount);
+    m_vkInstanceExtensionNames.clear();
+    m_vkInstanceExtensionNames.reserve(resolvedExtensions.size());
+    for (const auto extension : resolvedExtensions)
+        m_vkInstanceExtensionNames.emplace_back(extension);
+    m_vkInstanceExtensions.clear();
+    m_vkInstanceExtensions.reserve(m_vkInstanceExtensionNames.size());
+    for (const auto &extension : m_vkInstanceExtensionNames) {
+        m_vkInstanceExtensions.push_back(extension.c_str());
+        INXLOG_DEBUG("  Enabled Vulkan instance extension: ", extension);
+    }
+    INXLOG_INFO("SDL/Vulkan window backend contract accepted: backend=", videoDriver,
+                ", extensions=", m_vkInstanceExtensions.size());
 
     if (count) {
-        *count = extensionCount;
+        *count = static_cast<uint32_t>(m_vkInstanceExtensions.size());
     }
-    return extensions;
+    return m_vkInstanceExtensions.data();
 }
 
 void InxView::Init(int width, int height)
@@ -827,6 +872,27 @@ void InxView::Show()
     }
 }
 
+void InxView::RevealAfterFirstPresentation()
+{
+    if (!m_window || !m_revealAfterFirstPresentation)
+        return;
+    m_revealAfterFirstPresentation = false;
+
+    if (!ShowNativeWindow()) {
+        INXLOG_ERROR("Could not reveal the Player after its first complete presentation: ", SDL_GetError());
+        return;
+    }
+    SDL_Log("INFERNUX_WINDOW_SHOWN_AFTER_FIRST_PRESENT");
+
+    if (!m_activateAfterFirstPresentation)
+        return;
+    m_activateAfterFirstPresentation = false;
+    if (!SDL_RaiseWindow(m_window))
+        INXLOG_ERROR("Could not activate the Player after its first complete presentation: ", SDL_GetError());
+    else
+        SDL_Log("INFERNUX_WINDOW_ACTIVATED_AFTER_FIRST_PRESENT");
+}
+
 bool InxView::ShowNativeWindow()
 {
     if (!m_window)
@@ -999,12 +1065,16 @@ void InxView::SDLInit()
 
     const char *playerModeFlag = std::getenv("_INFERNUX_PLAYER_MODE");
     const bool playerMode = playerModeFlag != nullptr && playerModeFlag[0] == '1' && playerModeFlag[1] == '\0';
+    const bool playerResizable =
+        playerMode ? RequiredPlayerBooleanEnvironment("_INFERNUX_PLAYER_WINDOW_RESIZABLE") : true;
     const char *controlFile = std::getenv("_INFERNUX_PLAYER_CONTROL_FILE");
     const bool hasControlChannel = controlFile != nullptr && *controlFile != '\0';
     const char *videoDriver = SDL_GetCurrentVideoDriver();
     const WindowPresentationPolicy presentation =
-        ResolveWindowPresentationPolicy(hasControlChannel, videoDriver ? videoDriver : "");
+        ResolveWindowPresentationPolicy(playerMode, hasControlChannel, videoDriver ? videoDriver : "");
     m_activateWhenShown = presentation.activateWhenShown;
+    m_revealAfterFirstPresentation = presentation.revealAfterFirstPresentation;
+    m_activateAfterFirstPresentation = presentation.activateAfterFirstPresentation;
     if (!playerMode) {
         const SDL_DisplayID primaryDisplay = SDL_GetPrimaryDisplay();
         if (primaryDisplay == 0)
@@ -1023,8 +1093,11 @@ void InxView::SDLInit()
     }
 
     INXLOG_DEBUG("Window engine: SDL Vulkan");
-    SDL_WindowFlags windowFlags =
-        SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+    SDL_WindowFlags windowFlags = SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+    if (!playerMode || playerResizable)
+        windowFlags |= SDL_WINDOW_RESIZABLE;
+    if (!playerMode && presentation.createMaximized)
+        windowFlags |= SDL_WINDOW_MAXIMIZED;
     if (!presentation.focusable)
         windowFlags |= SDL_WINDOW_NOT_FOCUSABLE;
     m_window = SDL_CreateWindow(m_appMetadata.appName, m_windowWidth, m_windowHeight, windowFlags);
@@ -1046,12 +1119,12 @@ void InxView::SDLInit()
     }
 
     if (!playerMode) {
-        if (!SDL_MaximizeWindow(m_window))
+        if (!presentation.createMaximized && !SDL_MaximizeWindow(m_window))
             throw std::runtime_error(std::string("Cannot maximize the Editor window: ") + SDL_GetError());
         if (presentation.syncInitialMaximize && !SDL_SyncWindow(m_window))
             throw std::runtime_error(std::string("Cannot commit the maximized Editor window: ") + SDL_GetError());
-        SDL_GetWindowSize(m_window, &m_windowWidth, &m_windowHeight);
     }
+    SDL_GetWindowSize(m_window, &m_windowWidth, &m_windowHeight);
     SDL_GetWindowSizeInPixels(m_window, &m_framebufferWidth, &m_framebufferHeight);
 }
 

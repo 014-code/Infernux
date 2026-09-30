@@ -14,8 +14,10 @@ def test_managed_player_control_keeps_native_window_hidden() -> None:
     init_end = source.index("void InxView::CreateSurface", init_start)
     init_body = source[init_start:init_end]
     assert '_INFERNUX_PLAYER_CONTROL_FILE' in init_body
-    assert "ResolveWindowPresentationPolicy(hasControlChannel" in init_body
+    assert "ResolveWindowPresentationPolicy(playerMode, hasControlChannel" in init_body
     assert "m_activateWhenShown = presentation.activateWhenShown" in init_body
+    assert "SDL_CreateWindow(m_appMetadata.appName, m_windowWidth, m_windowHeight" in init_body
+    assert "ApplyRequiredWindowsOuterWindowSize" not in init_body
     assert "if (!presentation.focusable)" in init_body
     assert "windowFlags |= SDL_WINDOW_NOT_FOCUSABLE" in init_body
 

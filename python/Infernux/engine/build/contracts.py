@@ -11,22 +11,10 @@ from types import MappingProxyType
 from typing import Callable, Mapping, Sequence
 
 from Infernux.engine.build_cancellation import BuildCancelled
+from Infernux.engine.build_target import BuildTargetId
 
 
-_TARGET_ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-
-
-class BuildTargetId(str):
-    """Stable, portable identifier for one Player build target."""
-
-    def __new__(cls, value: str) -> "BuildTargetId":
-        normalized = str(value or "").strip()
-        if not _TARGET_ID_PATTERN.fullmatch(normalized):
-            raise ValueError(
-                "Build target IDs must be lowercase dash-separated tokens: "
-                f"{value!r}"
-            )
-        return str.__new__(cls, normalized)
+_OPTION_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
 class BuildConfiguration(str, Enum):
@@ -38,6 +26,115 @@ class DiagnosticSeverity(str, Enum):
     INFO = "info"
     WARNING = "warning"
     ERROR = "error"
+
+
+class BuildOptionKind(str, Enum):
+    BOOLEAN = "boolean"
+    INTEGER = "integer"
+    STRING = "string"
+    PATH = "path"
+    ENUM = "enum"
+
+
+@dataclass(frozen=True, slots=True)
+class BuildOptionChoice:
+    value: str
+    label: str
+
+    def __post_init__(self) -> None:
+        value = str(self.value or "").strip()
+        label = str(self.label or "").strip()
+        if not value or not label:
+            raise ValueError("Build option choices require a value and label")
+        object.__setattr__(self, "value", value)
+        object.__setattr__(self, "label", label)
+
+
+@dataclass(frozen=True, slots=True)
+class BuildOption:
+    """One exporter-owned, typed Player packaging option."""
+
+    key: str
+    label: str
+    kind: BuildOptionKind
+    default: object
+    description: str = ""
+    choices: tuple[BuildOptionChoice, ...] = ()
+    minimum: int | None = None
+    maximum: int | None = None
+    step: int = 1
+    editor_visible: bool = True
+    visible_when: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        key = str(self.key or "").strip()
+        label = str(self.label or "").strip()
+        kind = BuildOptionKind(self.kind)
+        if not _OPTION_KEY_PATTERN.fullmatch(key):
+            raise ValueError(
+                "Build option keys must use lower-case snake_case tokens: "
+                f"{self.key!r}"
+            )
+        if not label:
+            raise ValueError(f"Build option {key!r} requires a label")
+        choices = tuple(self.choices)
+        if kind is BuildOptionKind.ENUM:
+            if not choices:
+                raise ValueError(f"Enum build option {key!r} requires choices")
+            values = tuple(item.value for item in choices)
+            if len(set(values)) != len(values):
+                raise ValueError(f"Enum build option {key!r} has duplicate choices")
+        elif choices:
+            raise ValueError(f"Only enum build options may declare choices: {key!r}")
+        minimum = self.minimum
+        maximum = self.maximum
+        if minimum is not None and maximum is not None and minimum > maximum:
+            raise ValueError(f"Build option {key!r} has an invalid numeric range")
+        if int(self.step) <= 0:
+            raise ValueError(f"Build option {key!r} requires a positive step")
+        object.__setattr__(self, "key", key)
+        object.__setattr__(self, "label", label)
+        object.__setattr__(self, "kind", kind)
+        object.__setattr__(self, "description", str(self.description or "").strip())
+        object.__setattr__(self, "choices", choices)
+        object.__setattr__(self, "step", int(self.step))
+        object.__setattr__(self, "visible_when", _frozen_mapping(self.visible_when))
+        object.__setattr__(self, "default", self.normalize(self.default))
+
+    def normalize(self, value: object) -> object:
+        if self.kind is BuildOptionKind.BOOLEAN:
+            if not isinstance(value, bool):
+                raise TypeError(f"Build option {self.key} must be a boolean")
+            return value
+        if self.kind is BuildOptionKind.INTEGER:
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise TypeError(f"Build option {self.key} must be an integer")
+            if self.minimum is not None and value < self.minimum:
+                raise ValueError(
+                    f"Build option {self.key} must be at least {self.minimum}"
+                )
+            if self.maximum is not None and value > self.maximum:
+                raise ValueError(
+                    f"Build option {self.key} must be at most {self.maximum}"
+                )
+            return value
+        if not isinstance(value, str):
+            raise TypeError(f"Build option {self.key} must be a string")
+        normalized = value.strip()
+        if self.kind is BuildOptionKind.ENUM:
+            allowed = {item.value for item in self.choices}
+            if normalized not in allowed:
+                raise ValueError(
+                    f"Build option {self.key} must be one of: "
+                    + ", ".join(sorted(allowed))
+                )
+        return normalized
+
+    def is_visible(self, values: Mapping[str, object]) -> bool:
+        return self.editor_visible and all(
+            values.get(key) == expected
+            for key, expected in self.visible_when.items()
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -309,6 +406,12 @@ class PlatformExporter(ABC):
     def targets(self) -> Sequence[BuildTarget]:
         """Return all targets contributed by this exporter."""
 
+    def build_options(self, target: BuildTarget) -> Sequence[BuildOption]:
+        """Declare every build option accepted for ``target``."""
+
+        del target
+        return ()
+
     @abstractmethod
     def doctor(self, request: BuildRequest) -> CapabilityReport:
         """Inspect the host toolchain without mutating the project."""
@@ -342,6 +445,9 @@ __all__ = [
     "BuildConfiguration",
     "BuildDiagnostic",
     "BuildPlan",
+    "BuildOption",
+    "BuildOptionChoice",
+    "BuildOptionKind",
     "BuildProfile",
     "BuildProgress",
     "BuildRequest",

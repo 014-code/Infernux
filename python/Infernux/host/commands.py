@@ -74,6 +74,7 @@ class MainThreadCommandQueue:
         )
         self._main_thread_id: int | None = None
         self._owner_lock = threading.Lock()
+        self._wake_callback: Callable[[], None] | None = None
 
     @classmethod
     def instance(cls) -> "MainThreadCommandQueue":
@@ -87,6 +88,7 @@ class MainThreadCommandQueue:
         future = CommandFuture(name, timeout_ms=timeout_ms)
         with self._owner_lock:
             owner_thread_id = self._main_thread_id
+            wake_callback = self._wake_callback
         if owner_thread_id == threading.get_ident():
             try:
                 future.set_result(fn())
@@ -94,7 +96,19 @@ class MainThreadCommandQueue:
                 future.set_error(exc)
             return future
         self._queue.put((name, fn, future))
+        if wake_callback is not None:
+            try:
+                wake_callback()
+            except BaseException as exc:
+                future.cancel(f"Host command could not wake its owner thread: {exc}")
         return future
+
+    def set_wake_callback(self, callback: Callable[[], None] | None) -> None:
+        """Set the owner-loop wake edge used after background submissions."""
+        if callback is not None and not callable(callback):
+            raise TypeError("main-thread command wake callback must be callable")
+        with self._owner_lock:
+            self._wake_callback = callback
 
     def run_sync(
         self, name: str, fn: Callable[[], Any], *, timeout_ms: int = 30000
@@ -145,6 +159,7 @@ class MainThreadCommandQueue:
         cancelled = self.cancel_pending(reason)
         with self._owner_lock:
             self._main_thread_id = None
+            self._wake_callback = None
         return cancelled
 
 

@@ -86,6 +86,7 @@ def editor_window(
     type_id: Optional[str] = None,
     title_key: Optional[str] = None,
     menu_path: str = "Window",
+    menu_path_keys: tuple[str, ...] | None = None,
     singleton: bool = True,
     interaction: PanelInteractionDescriptor,
 ) -> Callable[[Type[EditorWindow]], Type[EditorWindow]]:
@@ -99,6 +100,7 @@ def editor_window(
         type_id:      Unique string id (defaults to ``cls.__name__.lower()``).
         title_key:    Optional i18n translation key for the title.
         menu_path:    Menu path (e.g. ``"Window/Tools"``).  Default ``"Window"``.
+        menu_path_keys: Translation key for each path segment, or an empty string.
         singleton:    If ``True`` (default), only one instance allowed at a time.
         interaction:  Required Interaction Core capability descriptor.
 
@@ -132,6 +134,7 @@ def editor_window(
             type_id=type_id,
             title_key=title_key,
             menu_path=menu_path,
+            menu_path_keys=menu_path_keys,
             singleton=singleton,
             interaction=interaction,
         )(cls)

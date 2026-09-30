@@ -457,10 +457,11 @@ class BootstrapPanelsMixin:
             EditorShortcutInput as NativeEditorShortcutInput,
             MenuBarPanel as NativeMenuBarPanel,
         )
-        from Infernux.engine.i18n import t as _t
+        from Infernux.engine.i18n import has_translation, t as _t
         self.shortcut_input = NativeEditorShortcutInput()
         self.menu_bar = NativeMenuBarPanel()
         self.menu_bar.translate = _t
+        self.menu_bar.has_translation = has_translation
         self._wire_menu_bar_callbacks(wm)
         self.interaction_core.panels.bind_view(
             "menu_bar",

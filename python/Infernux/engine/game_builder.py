@@ -1246,8 +1246,11 @@ if sys.platform == "win32":
 
 _LOGS_DIR = os.path.join(_PLAYER_STATE_ROOT, "Logs")
 _LOG = os.path.join(_LOGS_DIR, "player.log")
+_CRASH_LOG = os.path.join(_LOGS_DIR, "crash.log")
 os.environ["_INFERNUX_PLAYER_LOG"] = _LOG
 os.makedirs(_LOGS_DIR, exist_ok=True)
+if os.path.isfile(_CRASH_LOG):
+    os.remove(_CRASH_LOG)
 
 if _DEBUG_MODE:
     _DEBUG_LOG = os.path.join(_LOGS_DIR, _SAFE_GAME_NAME + "_debug.log")
@@ -1271,7 +1274,7 @@ def _crash_report(_exc):
         _traceback = type(_exc).__name__ + ": " + repr(_exc)
     _log("CRASH: " + _traceback)
     try:
-        with open(os.path.join(_LOGS_DIR, "crash.log"), "w", encoding="utf-8") as _stream:
+        with open(_CRASH_LOG, "w", encoding="utf-8") as _stream:
             _stream.write(_traceback)
     except OSError:
         pass
@@ -1517,6 +1520,11 @@ finally:
             if not isinstance(record, dict) or record.get("status") != "ready":
                 raise RuntimeError("Player build requires every startup warmup to be ready")
             record["platform"] = target
+            # The source path is useful only to invalidate an Editor cache
+            # after a script save. A source-less Player resolves warmup hooks
+            # through RuntimeTypeRegistry, so retaining the author machine's
+            # absolute path is both meaningless and non-portable.
+            record.pop("source", None)
             record.pop("source_sha256", None)
         document["platform"] = target
         _write_json_atomic(path, document, indent=None)
@@ -1795,6 +1803,10 @@ finally:
             if isinstance(item, dict)
         }
         registry_changed = False
+        guid_map = dict(getattr(self, "_runtime_script_guid_map", {}))
+        component_records = list(
+            getattr(self, "_runtime_component_records", ())
+        )
         cooked_sources_by_guid = {
             str(guid).casefold(): self._library_source_entry_path(entry)
             for guid, entry in getattr(self, "_cooked_asset_entries", {}).items()
@@ -1813,6 +1825,11 @@ finally:
                     )
                 try:
                     source_guid = str(record.get("guid", "")).casefold()
+                    if not source_guid:
+                        raise RuntimeError(
+                            "Player plugin script has no frozen GUID identity: "
+                            f"{relative_source}"
+                        )
                     authored_source = cooked_sources_by_guid.get(source_guid, "")
                     if not authored_source:
                         raise RuntimeError(
@@ -1825,7 +1842,8 @@ finally:
                     from Infernux.plugins.preload import _read_declarations
 
                     declarations = _read_declarations(source, data_root)
-                    record["compiled_path_hint"] = relative_source + "c"
+                    runtime_path = relative_source + "c"
+                    record["compiled_path_hint"] = runtime_path
                     record["preload_declarations"] = [
                         {
                             "name": declaration.name,
@@ -1835,6 +1853,15 @@ finally:
                     ]
                     registry_changed = True
                     source_text = Path(source).read_text(encoding="utf-8")
+                    component_records.extend(
+                        self._runtime_component_type_records(
+                            source_text,
+                            script_guid=source_guid,
+                            runtime_path=runtime_path,
+                            data_root=data_root,
+                        )
+                    )
+                    guid_map[source_guid] = runtime_path
                     cooked_source = self._cook_compute_source(source_text)
                     if cooked_source != source_text:
                         Path(source).write_text(cooked_source, encoding="utf-8", newline="\n")
@@ -1852,6 +1879,9 @@ finally:
                     ) from exc
         if registry_changed:
             _write_json_atomic(registry_path, registry)
+        self._runtime_script_guid_map = guid_map
+        self._runtime_component_records = component_records
+        self._finalize_runtime_script_catalog(data_root)
 
     def _copy_cooked_assets(
         self,
@@ -2788,9 +2818,27 @@ finally:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _runtime_script_module_name(runtime_path: str) -> str:
+    def _runtime_script_module_name(
+        runtime_path: str,
+        *,
+        data_root: str = "",
+    ) -> str:
         normalized = runtime_path.replace("\\", "/")
-        if not normalized.startswith("Assets/") or not normalized.endswith(".pyc"):
+        if not normalized.endswith(".pyc"):
+            raise RuntimeError(f"Invalid Player script runtime path: {runtime_path}")
+        if data_root:
+            from Infernux.engine.project_context import get_script_module_name
+
+            module_name = get_script_module_name(
+                os.path.join(data_root, *normalized.split("/")),
+                data_root,
+            )
+            if not module_name:
+                raise RuntimeError(
+                    f"Player script has no stable module identity: {runtime_path}"
+                )
+            return module_name
+        if not normalized.startswith("Assets/"):
             raise RuntimeError(f"Invalid Player script runtime path: {runtime_path}")
         parts = normalized[len("Assets/"):-4].split("/")
         if parts and parts[-1] == "__init__":
@@ -2808,6 +2856,7 @@ finally:
         *,
         script_guid: str,
         runtime_path: str,
+        data_root: str = "",
     ) -> list[dict[str, object]]:
         """Extract Player component identities without executing author code."""
         tree = ast.parse(source_text, filename=runtime_path)
@@ -2835,7 +2884,10 @@ finally:
             "on_collision_enter", "on_collision_stay", "on_collision_exit",
             "on_trigger_enter", "on_trigger_stay", "on_trigger_exit",
         }
-        module_name = cls._runtime_script_module_name(runtime_path)
+        module_name = cls._runtime_script_module_name(
+            runtime_path,
+            data_root=data_root,
+        )
         from Infernux.components.component_identity import component_type_guid
         from Infernux.components.registry import get_type_by_identity
 
@@ -2955,6 +3007,7 @@ finally:
     def _runtime_serializable_type_records(
         *,
         script_paths: dict[str, str],
+        data_root: str = "",
     ) -> list[dict[str, object]]:
         """Describe project SerializableObject types for the Player catalog.
 
@@ -2974,7 +3027,9 @@ finally:
         from Infernux.core.data_asset import DataAsset
 
         scripts_by_module = {
-            GameBuilder._runtime_script_module_name(path.replace("\\", "/")): (
+            GameBuilder._runtime_script_module_name(
+                path.replace("\\", "/"), data_root=data_root
+            ): (
                 guid, path.replace("\\", "/")
             )
             for guid, path in script_paths.items()
@@ -3034,6 +3089,42 @@ finally:
                 }
             )
         return records
+
+    def _finalize_runtime_script_catalog(self, data_dir: str) -> None:
+        """Write the one authoritative Player script and type catalog.
+
+        Project Assets and enabled package Runtime scripts are one gameplay
+        domain. Both compilation passes feed this method; the later package
+        pass deterministically replaces the intermediate Assets-only catalog.
+        """
+        guid_map = dict(getattr(self, "_runtime_script_guid_map", {}))
+        component_records = list(
+            getattr(self, "_runtime_component_records", ())
+        )
+        manifest_path = os.path.join(data_dir, "_script_guid_map.json")
+        if guid_map:
+            _write_json_atomic(manifest_path, guid_map, indent=None)
+        elif os.path.exists(manifest_path):
+            os.remove(manifest_path)
+
+        self._cook_runtime_component_semantics(component_records)
+        runtime_type_records = component_records + self._runtime_serializable_type_records(
+            script_paths=guid_map,
+            data_root=data_dir,
+        )
+        self._runtime_type_records = sorted(
+            runtime_type_records,
+            key=lambda record: str(record["type_guid"]),
+        )
+        library_dir = os.path.join(data_dir, "Library")
+        os.makedirs(library_dir, exist_ok=True)
+        _write_json_atomic(
+            os.path.join(library_dir, self._RUNTIME_TYPE_REGISTRY_FILENAME),
+            {
+                "$schema": RUNTIME_TYPE_REGISTRY_SCHEMA,
+                "types": self._runtime_type_records,
+            },
+        )
 
     def _compile_user_scripts(self, final_dir: str):
         """Compile .py in Data/Assets/ to .pyc and remove originals.
@@ -3115,6 +3206,7 @@ finally:
                                 source_text,
                                 script_guid=script_guid,
                                 runtime_path=runtime_path,
+                                data_root=data_dir,
                             )
                         )
                         cooked_source = self._cook_compute_source(source_text)
@@ -3134,34 +3226,9 @@ finally:
                     )
                     os.remove(py_path)
 
-        runtime_type_records.extend(
-            self._runtime_serializable_type_records(script_paths=guid_map)
-        )
-
-        # Write manifest
-        if guid_map:
-            manifest_path = os.path.join(data_dir, "_script_guid_map.json")
-            _write_json_atomic(manifest_path, guid_map, indent=None)
-        self._cook_runtime_component_semantics(
-            [
-                record
-                for record in runtime_type_records
-                if record.get("kind", "component") == "component"
-            ]
-        )
-        self._runtime_type_records = sorted(
-            runtime_type_records,
-            key=lambda record: str(record["type_guid"]),
-        )
-        library_dir = os.path.join(data_dir, "Library")
-        os.makedirs(library_dir, exist_ok=True)
-        _write_json_atomic(
-            os.path.join(library_dir, self._RUNTIME_TYPE_REGISTRY_FILENAME),
-            {
-                "$schema": RUNTIME_TYPE_REGISTRY_SCHEMA,
-                "types": self._runtime_type_records,
-            },
-        )
+        self._runtime_script_guid_map = guid_map
+        self._runtime_component_records = runtime_type_records
+        self._finalize_runtime_script_catalog(data_dir)
 
     def _write_runtime_asset_records(
         self,

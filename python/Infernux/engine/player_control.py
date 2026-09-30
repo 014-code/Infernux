@@ -104,7 +104,11 @@ class PlayerControlChannel:
                     str(pending["command_id"]),
                     status == "completed",
                     snapshot,
-                    error=str(snapshot.get("error", "") or "capture failed"),
+                    error=(
+                        ""
+                        if status == "completed"
+                        else str(snapshot.get("error", "") or "capture failed")
+                    ),
                 )
                 self._pending_render_capture = None
             return None

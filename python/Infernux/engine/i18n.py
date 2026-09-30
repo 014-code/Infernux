@@ -40,6 +40,8 @@ _current_locale: str = "zh"
 _LOCALES_DIR = os.path.join(os.path.dirname(__file__), "locales")
 
 _tables: dict[str, dict[str, str]] = {}
+_translation_owners: dict[str, dict[str, dict[str, str]]] = {}
+_contributed_tables: dict[str, dict[str, str]] = {}
 
 _store = PreferencesStore()
 
@@ -74,7 +76,102 @@ def _load_all_locales() -> None:
 
 def t(key: str) -> str:
     """Return the translated string for *key*, or *key* when undeclared."""
-    return _tables[_current_locale].get(key, key)
+    return _tables[_current_locale].get(
+        key, _contributed_tables.get(_current_locale, {}).get(key, key)
+    )
+
+
+def has_translation(key: str) -> bool:
+    """Return whether *key* is explicitly declared by the active locale."""
+    return key in _tables[_current_locale] or key in _contributed_tables.get(
+        _current_locale, {}
+    )
+
+
+def register_translation_catalog(
+    owner: str, document: dict[str, object]
+) -> None:
+    """Atomically publish one Editor plugin's ``editor/translations.json``."""
+    identity, candidate = validate_translation_catalog(owner, document)
+
+    replacement = dict(_translation_owners)
+    replacement[identity] = candidate
+    rebuilt = {locale: {} for locale in _tables}
+    for catalog in replacement.values():
+        for locale, entries in catalog.items():
+            rebuilt[locale].update(entries)
+    _translation_owners.clear()
+    _translation_owners.update(replacement)
+    _contributed_tables.clear()
+    _contributed_tables.update(rebuilt)
+
+
+def validate_translation_catalog(
+    owner: str, document: dict[str, object]
+) -> tuple[str, dict[str, dict[str, str]]]:
+    """Validate a plugin catalog without changing the published locale tables."""
+    identity = str(owner or "").strip()
+    if not identity:
+        raise ValueError("translation catalog owner cannot be empty")
+    if set(document) != {"$schema", "locales"}:
+        raise ValueError("translation catalog must contain exactly '$schema' and 'locales'")
+    if document["$schema"] != "infernux.editor_translations":
+        raise ValueError("translation catalog has an invalid $schema")
+    locales = document["locales"]
+    if not isinstance(locales, dict) or set(locales) != set(_tables):
+        raise ValueError(
+            "translation catalog locales must exactly match the Editor locales: "
+            + ", ".join(sorted(_tables))
+        )
+
+    candidate: dict[str, dict[str, str]] = {}
+    expected_keys: set[str] | None = None
+    for locale in sorted(_tables):
+        entries = locales[locale]
+        if not isinstance(entries, dict) or any(
+            not isinstance(key, str)
+            or not key
+            or "." not in key
+            or not isinstance(value, str)
+            or not value
+            for key, value in entries.items()
+        ):
+            raise ValueError(
+                f"translation catalog locale '{locale}' must map namespaced keys to non-empty strings"
+            )
+        keys = set(entries)
+        if expected_keys is None:
+            expected_keys = keys
+        elif keys != expected_keys:
+            raise ValueError("translation catalog locales must declare identical key sets")
+        candidate[locale] = dict(entries)
+
+    for locale, entries in candidate.items():
+        for key in entries:
+            if key in _tables[locale]:
+                raise ValueError(f"plugin translation conflicts with engine key: {key}")
+            for other_owner, other_catalog in _translation_owners.items():
+                if other_owner != identity and key in other_catalog[locale]:
+                    raise ValueError(
+                        f"plugin translation key '{key}' is already owned by {other_owner}"
+                    )
+
+    return identity, candidate
+
+
+def unregister_translation_catalog(owner: str) -> bool:
+    """Remove every translated key owned by one Editor plugin package."""
+    identity = str(owner or "").strip()
+    if identity not in _translation_owners:
+        return False
+    del _translation_owners[identity]
+    rebuilt = {locale: {} for locale in _tables}
+    for catalog in _translation_owners.values():
+        for locale, entries in catalog.items():
+            rebuilt[locale].update(entries)
+    _contributed_tables.clear()
+    _contributed_tables.update(rebuilt)
+    return True
 
 
 def get_locale() -> str:

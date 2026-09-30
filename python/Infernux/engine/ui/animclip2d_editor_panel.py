@@ -259,6 +259,7 @@ def _sprite_frame_imgui_uv(frame, tex_w: int, tex_h: int) -> Tuple[float, float,
     type_id="animclip2d_editor",
     title_key="panel.animclip2d_editor",
     menu_path="Animation",
+    menu_path_keys=("menu.animation",),
     interaction=_ANIMCLIP2D_PANEL_INTERACTION,
 )
 class AnimClip2DEditorPanel(EditorPanel):

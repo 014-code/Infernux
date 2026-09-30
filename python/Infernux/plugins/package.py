@@ -49,6 +49,7 @@ _CONTROL_DIRECTORIES = frozenset({"plugin_pages"})
 _SOURCE_FIELDS = frozenset(
     {"$schema", "reference", "name", "version", "intro", "intros", "engine", "pages"}
 )
+_PACKAGE_FIELDS = frozenset((*_SOURCE_FIELDS, "control_guid", "files"))
 
 
 def package_control_guid(reference: str) -> str:
@@ -433,6 +434,17 @@ class InxPackage:
                 loaded = json.load(stream)
             if not isinstance(loaded, dict):
                 raise ValueError("inx_package.json must contain an object")
+            if set(loaded) == _PACKAGE_FIELDS:
+                # Installed packages carry the canonical generated manifest so
+                # the AssetDatabase and Player cook share the same GUID/file
+                # ledger. File Manager export treats that exact schema as an
+                # authoring source and regenerates the ledger from disk.
+                InxPackage.validate_metadata(loaded)
+                loaded = {
+                    key: value
+                    for key, value in loaded.items()
+                    if key in _SOURCE_FIELDS
+                }
             document.update(loaded)
         if supplied:
             document.update(dict(supplied))

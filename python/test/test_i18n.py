@@ -32,6 +32,44 @@ def test_translation_preserves_dynamic_undeclared_label_key(monkeypatch):
     assert i18n.t("dynamic.property") == "dynamic.property"
 
 
+def test_plugin_translation_catalog_is_owned_atomic_and_locale_complete(monkeypatch):
+    monkeypatch.setattr(i18n, "_current_locale", "en")
+    monkeypatch.setattr(i18n, "_tables", {"en": {}, "zh": {}})
+    monkeypatch.setattr(i18n, "_translation_owners", {})
+    monkeypatch.setattr(i18n, "_contributed_tables", {})
+    catalog = {
+        "$schema": "infernux.editor_translations",
+        "locales": {
+            "en": {"your_studio.example.menu": "Example"},
+            "zh": {"your_studio.example.menu": "示例"},
+        },
+    }
+
+    i18n.register_translation_catalog("package:your-studio/example", catalog)
+    assert i18n.has_translation("your_studio.example.menu")
+    assert i18n.t("your_studio.example.menu") == "Example"
+    i18n._current_locale = "zh"
+    assert i18n.t("your_studio.example.menu") == "示例"
+    assert i18n.unregister_translation_catalog("package:your-studio/example")
+    assert i18n.t("your_studio.example.menu") == "your_studio.example.menu"
+
+
+def test_plugin_translation_catalog_rejects_partial_locales_without_mutation(monkeypatch):
+    monkeypatch.setattr(i18n, "_tables", {"en": {}, "zh": {}})
+    monkeypatch.setattr(i18n, "_translation_owners", {})
+    monkeypatch.setattr(i18n, "_contributed_tables", {})
+
+    with pytest.raises(ValueError, match="exactly match"):
+        i18n.register_translation_catalog(
+            "package:broken",
+            {
+                "$schema": "infernux.editor_translations",
+                "locales": {"en": {"broken.menu": "Broken"}},
+            },
+        )
+    assert i18n._translation_owners == {}
+
+
 def test_set_locale_rejects_unknown_locale(monkeypatch):
     monkeypatch.setattr(i18n, "_tables", {"en": {}})
 

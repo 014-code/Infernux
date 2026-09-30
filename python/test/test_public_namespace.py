@@ -72,6 +72,18 @@ def test_lowercase_namespace_exposes_gameplay_api() -> None:
     assert inx.GameObject is Infernux.GameObject
 
 
+def test_resource_type_members_do_not_pollute_native_module_namespace() -> None:
+    import Infernux.lib as native
+
+    assert native.ResourceType.Mesh.name == "Mesh"
+    assert native.ResourceType.Material.name == "Material"
+    assert not hasattr(native, "Mesh")
+    assert not hasattr(native, "Material")
+    assert not hasattr(native, "Texture")
+    assert not hasattr(native, "Shader")
+    assert inx.Mesh is Infernux.core.Mesh
+
+
 def test_lowercase_namespace_imports_with_web_runtime_package() -> None:
     repository = Path(__file__).parents[2]
     python_root = repository / "python"

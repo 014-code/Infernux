@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <functional>
 #include <tuple>
 
 namespace infernux
@@ -51,6 +52,27 @@ std::string MenuBarPanel::T(const std::string &key) const
         return translate(key);
     auto dot = key.rfind('.');
     return (dot != std::string::npos) ? key.substr(dot + 1) : key;
+}
+
+std::vector<std::string> SplitMenuPath(const std::string &path)
+{
+    std::vector<std::string> result;
+    size_t start = 0;
+    while (start <= path.size()) {
+        const size_t slash = path.find('/', start);
+        result.push_back(path.substr(start, slash == std::string::npos ? std::string::npos : slash - start));
+        if (slash == std::string::npos)
+            break;
+        start = slash + 1;
+    }
+    return result;
+}
+
+std::string MenuBarPanel::ResolveMenuLabel(const std::string &key, const std::string &literal) const
+{
+    if (hasTranslation && hasTranslation(key))
+        return T(key);
+    return literal;
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -224,19 +246,14 @@ void MenuBarPanel::RenderWindowMenu(InxGUIContext *ctx)
     if (!m_cachedWindowTypes.empty()) {
         bool hasItems = false;
         for (const auto &info : m_cachedWindowTypes) {
-            if (info.menuPath != "Window")
-                continue;
-            hasItems = true;
-
-            const bool canOpen = CanExecuteCommand("window.open", info.typeId);
-            const bool isOpen = IsCommandChecked("window.open", info.typeId);
-            if (SemanticMenuItem(ctx, info.displayName, "", isOpen, canOpen, "window." + info.typeId))
-                ExecuteCommand("window.open", "menu", info.typeId);
+            const auto segments = SplitMenuPath(info.menuPath);
+            hasItems = hasItems || (!segments.empty() && segments.front() == "Window");
         }
 
-        if (!hasItems) {
+        if (hasItems)
+            RenderMenuContents(ctx, "Window", m_cachedWindowTypes);
+        else
             SemanticMenuItem(ctx, T("menu.no_windows"), "", false, false, "menu.window.none");
-        }
     } else {
         SemanticMenuItem(ctx, T("menu.no_wm"), "", false, false, "menu.window.unavailable");
     }
@@ -262,20 +279,16 @@ void MenuBarPanel::RenderDynamicMenus(InxGUIContext *ctx)
 
     // Render each top-level menu.
     for (const auto &top : m_cachedTopMenus) {
-        // Build i18n key: "Animation" -> "menu.animation"
-        std::string key = "menu." + top;
-        for (auto &c : key)
-            if (c == ' ')
-                c = '_';
-            else
-                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-
-        std::string label = T(key);
-        // Fallback: if T() returned the key tail, use original name
-        if (label == key.substr(key.rfind('.') + 1))
-            label = top;
-
-        RenderMenuGroup(ctx, top, label, m_cachedWindowTypes);
+        std::string key;
+        for (const auto &info : m_cachedWindowTypes) {
+            const auto segments = SplitMenuPath(info.menuPath);
+            if (!segments.empty() && segments.front() == top && !info.menuPathKeys.empty()) {
+                key = info.menuPathKeys.front();
+                if (!key.empty())
+                    break;
+            }
+        }
+        RenderMenuGroup(ctx, top, ResolveMenuLabel(key, top), m_cachedWindowTypes);
     }
 }
 
@@ -296,6 +309,8 @@ void MenuBarPanel::RefreshWindowTypeCache()
         const auto slash = top.find('/');
         if (slash != std::string::npos)
             top.resize(slash);
+        if (top == "Window")
+            continue;
         if (std::find(m_cachedTopMenus.begin(), m_cachedTopMenus.end(), top) == m_cachedTopMenus.end())
             m_cachedTopMenus.push_back(std::move(top));
     }
@@ -307,88 +322,74 @@ void MenuBarPanel::RenderMenuGroup(InxGUIContext *ctx, const std::string &topMen
     if (!BeginSemanticMenu(ctx, translatedLabel, "menu." + topMenu))
         return;
 
-    // Collect entries belonging to this top-level menu.
+    RenderMenuContents(ctx, topMenu, types);
+    ImGui::EndMenu();
+}
+
+void MenuBarPanel::RenderMenuContents(InxGUIContext *ctx, const std::string &topMenu,
+                                      const std::vector<WindowTypeInfo> &types)
+{
     struct Entry
     {
-        std::string subMenu; // "" = direct child, else sub-menu label
         std::string typeId;
         std::string displayName;
-        bool singleton;
     };
 
-    std::vector<Entry> entries;
-    std::vector<std::string> subMenuOrder;
+    struct MenuNode
+    {
+        std::string label;
+        std::string translationKey;
+        std::vector<Entry> entries;
+        std::vector<MenuNode> children;
+    };
 
-    const size_t topLen = topMenu.size();
+    MenuNode root;
+    root.label = topMenu;
 
     for (const auto &info : types) {
-        // Must start with topMenu
-        if (info.menuPath.rfind(topMenu, 0) != 0)
-            continue;
-        // Must be exactly topMenu or topMenu/...
-        if (info.menuPath.size() > topLen && info.menuPath[topLen] != '/')
+        const auto segments = SplitMenuPath(info.menuPath);
+        if (segments.empty() || segments.front() != topMenu)
             continue;
 
-        Entry e;
-        e.typeId = info.typeId;
-        e.displayName = info.displayName;
-        e.singleton = info.singleton;
-
-        if (info.menuPath.size() > topLen + 1)
-            e.subMenu = info.menuPath.substr(topLen + 1);
-
-        entries.push_back(e);
-
-        if (!e.subMenu.empty()) {
-            bool found = false;
-            for (const auto &s : subMenuOrder)
-                if (s == e.subMenu) {
-                    found = true;
-                    break;
-                }
-            if (!found)
-                subMenuOrder.push_back(e.subMenu);
+        MenuNode *node = &root;
+        for (size_t index = 1; index < segments.size(); ++index) {
+            const auto found = std::find_if(node->children.begin(), node->children.end(),
+                                            [&](const MenuNode &child) { return child.label == segments[index]; });
+            const std::string key = index < info.menuPathKeys.size() ? info.menuPathKeys[index] : "";
+            if (found == node->children.end()) {
+                node->children.push_back(MenuNode{segments[index], key, {}, {}});
+                node = &node->children.back();
+            } else {
+                node = &*found;
+                if (node->translationKey.empty())
+                    node->translationKey = key;
+            }
         }
+        node->entries.push_back(Entry{info.typeId, info.displayName});
     }
 
-    // Lambda: render a single command-backed menu item.
-    auto renderItem = [&](const Entry &e) {
-        const bool canOpen = CanExecuteCommand("window.open", e.typeId);
-        const bool isOpen = IsCommandChecked("window.open", e.typeId);
-        if (SemanticMenuItem(ctx, e.displayName, "", isOpen, canOpen, "window." + e.typeId))
-            ExecuteCommand("window.open", "menu", e.typeId);
+    const auto renderEntry = [&](const Entry &entry) {
+        const bool canOpen = CanExecuteCommand("window.open", entry.typeId);
+        const bool isOpen = IsCommandChecked("window.open", entry.typeId);
+        if (SemanticMenuItem(ctx, entry.displayName, "", isOpen, canOpen, "window." + entry.typeId))
+            ExecuteCommand("window.open", "menu", entry.typeId);
     };
 
-    // Top-level items (menuPath == topMenu exactly)
-    for (const auto &e : entries) {
-        if (e.subMenu.empty())
-            renderItem(e);
-    }
-
-    // Sub-menus
-    for (const auto &sm : subMenuOrder) {
-        // Build i18n key: e.g. "Animation" + "2D Animation" -> "menu.animation_2d_animation"
-        std::string smKey = "menu." + topMenu + "_" + sm;
-        for (auto &c : smKey)
-            if (c == ' ')
-                c = '_';
-            else
-                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-
-        std::string smLabel = T(smKey);
-        if (smLabel == smKey.substr(smKey.rfind('.') + 1))
-            smLabel = sm;
-
-        if (BeginSemanticMenu(ctx, smLabel, "menu." + topMenu + "." + sm)) {
-            for (const auto &e : entries) {
-                if (e.subMenu == sm)
-                    renderItem(e);
+    std::function<void(const MenuNode &, const std::string &)> renderChildren;
+    renderChildren = [&](const MenuNode &node, const std::string &semanticPath) {
+        for (const auto &entry : node.entries)
+            renderEntry(entry);
+        for (const auto &child : node.children) {
+            const std::string childSemantic = semanticPath + "." + child.label;
+            const std::string label = ResolveMenuLabel(child.translationKey, child.label);
+            if (BeginSemanticMenu(ctx, label, childSemantic)) {
+                renderChildren(child, childSemantic);
+                ImGui::EndMenu();
             }
-            ImGui::EndMenu();
         }
-    }
+    };
 
-    ImGui::EndMenu();
+    renderChildren(root, "menu." + topMenu);
 }
 
 } // namespace infernux

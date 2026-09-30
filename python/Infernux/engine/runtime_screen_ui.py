@@ -494,9 +494,10 @@ def map_runtime_ui_pointers(
 ):
     """Map multiple UI-only pointers with one physical occlusion query batch.
 
-    Touch contacts never synthesize ``on_mouse_*`` callbacks, so they only
-    need the closest non-trigger occluder for Canvas-free world UI. All rays
-    read one Physics query generation and reuse retained SoA storage.
+    Secondary touch contacts only drive UI. The Player promotes the primary
+    contact through ``map_runtime_ui_pointer(..., include_scene_hit=True)``
+    so gameplay callbacks and UI blocking share one authoritative ray. This
+    batch path therefore only needs non-trigger occluders for world UI.
     """
     points = tuple(screen_positions)
     if not points:
@@ -838,7 +839,15 @@ class RuntimeScreenUISubmission:
                              game_width: int, game_height: int) -> None:
         """Resolve every font face and size before recording any UI vertices."""
         for element in world_elements:
-            if callable(getattr(element, "resolve_text_layout", None)):
+            prepare = getattr(element, "prepare_text_layout", None)
+            if callable(prepare):
+                # A cached intrinsic size is not proof that this renderer's
+                # atlas already contains the glyphs. Scene changes reuse UI
+                # component layout caches while Web expands its atlas. Finish
+                # every rebuild before any geometry records glyph or white
+                # pixel UVs into a retained command list.
+                prepare(renderer.measure_text, 1.0)
+            elif callable(getattr(element, "resolve_text_layout", None)):
                 _resolve_text_layout(element, renderer.measure_text, 1.0)
         for canvas in canvases:
             if not getattr(canvas, "enabled", True):
@@ -847,7 +856,10 @@ class RuntimeScreenUISubmission:
                 canvas, game_width, game_height
             )
             for element in canvas_elements(canvas):
-                if callable(getattr(element, "resolve_text_layout", None)):
+                prepare = getattr(element, "prepare_text_layout", None)
+                if callable(prepare):
+                    prepare(renderer.measure_text, text_scale)
+                elif callable(getattr(element, "resolve_text_layout", None)):
                     _resolve_text_layout(element, renderer.measure_text, text_scale)
 
     @staticmethod

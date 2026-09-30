@@ -948,9 +948,11 @@ if(INFERNUX_BUILD_TESTS)
     target_include_directories(infernux_render_graph_compute_indirect_tests PRIVATE
         ${CMAKE_SOURCE_DIR}/cpp/infernux
         ${CMAKE_SOURCE_DIR}/external
-        ${CMAKE_SOURCE_DIR}/external/VulkanMemoryAllocator/include
     )
-    target_link_libraries(infernux_render_graph_compute_indirect_tests PRIVATE infernux_runtime_test_support)
+    target_link_libraries(infernux_render_graph_compute_indirect_tests PRIVATE
+        infernux_runtime_test_support
+        GPUOpen::VulkanMemoryAllocator
+    )
     if(MSVC)
         target_compile_options(infernux_render_graph_compute_indirect_tests PRIVATE /utf-8)
     endif()
@@ -1111,9 +1113,12 @@ if(INFERNUX_BUILD_TESTS)
     target_include_directories(infernux_render_world_tests PRIVATE
         ${CMAKE_SOURCE_DIR}/cpp/infernux
         ${CMAKE_SOURCE_DIR}/external
-        ${CMAKE_SOURCE_DIR}/external/VulkanMemoryAllocator/include
     )
-    target_link_libraries(infernux_render_world_tests PRIVATE Vulkan::Vulkan glm::glm)
+    target_link_libraries(infernux_render_world_tests PRIVATE
+        Vulkan::Vulkan
+        glm::glm
+        GPUOpen::VulkanMemoryAllocator
+    )
     if(MSVC)
         target_compile_options(infernux_render_world_tests PRIVATE /utf-8)
     endif()

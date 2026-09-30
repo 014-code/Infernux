@@ -90,8 +90,48 @@ def build_settings_for_request(request: BuildRequest) -> dict[str, object]:
             raise TypeError(
                 "BuildProfile.options['build_settings'] must be a mapping"
             )
-        return normalize_build_settings(dict(configured))
-    return load_build_settings_for_build(request.project_root)
+        settings = normalize_build_settings(dict(configured))
+    else:
+        settings = load_build_settings_for_build(request.project_root)
+
+    target_options = settings["platform_options"].get(str(request.target), {})
+    resolved_options = dict(target_options)
+    resolved_options.update(
+        {
+            key: value
+            for key, value in request.profile.options.items()
+            if key != "build_settings"
+        }
+    )
+    required_presentation = (
+        "display_mode",
+        "window_width",
+        "window_height",
+        "window_resizable",
+    )
+    missing = [key for key in required_presentation if key not in resolved_options]
+    if missing:
+        raise ValueError(
+            f"Build target {request.target} did not resolve Player presentation "
+            "options: " + ", ".join(missing)
+        )
+    display_mode = resolved_options["display_mode"]
+    if not isinstance(display_mode, str) or display_mode not in {
+        "fullscreen_borderless", "windowed"
+    }:
+        raise ValueError("Player presentation display_mode is invalid")
+    for key in ("window_width", "window_height"):
+        value = resolved_options[key]
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise TypeError(f"Player presentation {key} must be an integer")
+        if value <= 0:
+            raise ValueError(f"Player presentation {key} must be positive")
+    if not isinstance(resolved_options["window_resizable"], bool):
+        raise TypeError("Player presentation window_resizable must be a boolean")
+    settings.update(
+        {key: resolved_options[key] for key in required_presentation}
+    )
+    return settings
 
 
 def cook_platform_content(

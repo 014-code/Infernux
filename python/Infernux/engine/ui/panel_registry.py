@@ -50,6 +50,7 @@ class _PanelRegistration:
         "display_name",
         "title_key",
         "menu_path",
+        "menu_path_keys",
         "factory",
         "singleton",
         "interaction",
@@ -67,12 +68,14 @@ class _PanelRegistration:
         title_key: Optional[str] = None,
         interaction: Optional[PanelInteractionDescriptor] = None,
         owner: str = "",
+        menu_path_keys: tuple[str, ...] | None = None,
     ):
         self.panel_class = panel_class
         self.type_id = type_id
         self.display_name = display_name
         self.title_key = title_key
         self.menu_path = menu_path
+        self.menu_path_keys = menu_path_keys
         self.factory = factory
         self.singleton = singleton
         self.interaction = interaction
@@ -222,6 +225,45 @@ class PanelRegistry:
         return True
 
     @classmethod
+    def capture_open_views_for_owners(
+        cls,
+        owners: tuple[str, ...],
+    ) -> tuple[tuple[str, str], ...]:
+        """Capture open panel identities contributed by lifecycle owners."""
+
+        manager = cls._live_window_manager
+        if manager is None:
+            return ()
+        owner_set = {
+            str(owner or "") for owner in owners if str(owner or "")
+        }
+        type_ids = tuple(
+            registration.type_id
+            for registration in cls._registrations
+            if registration.owner in owner_set
+        )
+        if not type_ids:
+            return ()
+        capture = getattr(manager, "capture_open_views_for_types", None)
+        if not callable(capture):
+            return ()
+        return tuple(capture(type_ids))
+
+    @classmethod
+    def restore_reloaded_views(
+        cls,
+        views: tuple[tuple[str, str], ...],
+    ) -> None:
+        """Restore views captured before a successful plugin code reload."""
+
+        manager = cls._live_window_manager
+        if not views or manager is None:
+            return
+        restore = getattr(manager, "restore_reloaded_views", None)
+        if callable(restore):
+            restore(views)
+
+    @classmethod
     def _apply_registration(
         cls,
         reg: _PanelRegistration,
@@ -249,6 +291,7 @@ class PanelRegistry:
             singleton=reg.singleton,
             title_key=reg.title_key,
             menu_path=reg.menu_path,
+            menu_path_keys=reg.menu_path_keys,
         )
     @classmethod
     def get_registrations(cls) -> List[_PanelRegistration]:
@@ -272,6 +315,7 @@ def editor_panel(
     type_id: Optional[str] = None,
     title_key: Optional[str] = None,
     menu_path: str = "Window",
+    menu_path_keys: tuple[str, ...] | None = None,
     factory: Optional[Callable] = None,
     singleton: bool = True,
     interaction: Optional[PanelInteractionDescriptor] = None,
@@ -289,6 +333,8 @@ def editor_panel(
         menu_path: Menu path for grouping (default ``"Window"``).
             Slash-separated — ``"Animation/2D Animation"`` places the
             panel under *Animation → 2D Animation* in the menu bar.
+        menu_path_keys: Optional translation key for every ``menu_path`` segment.
+            Empty entries keep the authored segment literal.
         factory: Optional callable that returns a new panel instance.
             Defaults to ``panel_class()``.
         singleton: If *True* (default) only one instance is allowed.
@@ -313,6 +359,7 @@ def editor_panel(
         cls.WINDOW_DISPLAY_NAME = display_name
         cls.WINDOW_TITLE_KEY = title_key
         cls._panel_menu_path = menu_path
+        cls._panel_menu_path_keys = menu_path_keys
         cls._panel_singleton = singleton
         cls.PANEL_INTERACTION = interaction
 
@@ -322,6 +369,7 @@ def editor_panel(
                 type_id=tid,
                 display_name=display_name,
                 menu_path=menu_path,
+                menu_path_keys=menu_path_keys,
                 factory=factory,
                 singleton=singleton,
                 title_key=title_key,

@@ -714,6 +714,7 @@ class UndoManager:
         *,
         origin: Any = ...,
         transaction_id: str = "",
+        raise_errors: bool = False,
     ) -> bool:
         """Execute *cmd* and push it onto the undo stack.
 

@@ -127,18 +127,28 @@ def _prepare_engine(*, installed: bool) -> dict[str, str]:
     return origins
 
 
-def _installed_exporter_registry(project: Path):
-    """Prepare the installed project boundary and return its exporter registry.
+def _installed_exporter_registry(project: Path, target: str):
+    """Prepare runtime declarations and load only the selected exporter.
 
-    Installed-only builds must publish project-owned SerializableObject and
-    DataAsset types before GameBuilder cooks ``.inxdata`` documents.  Keep this
-    path identical to source acceptance so a wheel-only Hub install exercises
-    the same authoring/runtime contract as the Editor.
+    A command-line build is not an Editor process.  Project Runtime preloads
+    publish the types required by Cook, while the selected platform package's
+    exporter is imported directly from its Editor directory.  This keeps MCP,
+    tool windows, and unrelated Editor preload lifecycles out of build hosts.
     """
-    return _prepare_project_registry(project)
+    _prepare_project_registry(project, runtime_host=True)
+    plugin, _, _ = EXPORTERS[target]
+    editor_root = (
+        project / "Packages" / "infernux" / f"platform-{plugin}" / "editor"
+    )
+    exporter = _load_exporter(target, editor_root_override=editor_root)
+    from Infernux.engine.build import BuildExporterRegistry
+
+    registry = BuildExporterRegistry()
+    registry.register("scripts/acceptance/build-player", exporter)
+    return registry
 
 
-def _prepare_project_registry(project: Path):
+def _prepare_project_registry(project: Path, *, runtime_host: bool = True):
     """Load project-authored types before cooking project data assets.
 
     The editor and installed-only acceptance path both refresh the project
@@ -166,7 +176,7 @@ def _prepare_project_registry(project: Path):
     # loaded.  Starting an authoring manager here imports editor-role preload
     # modules (and can transitively import MCP/FastMCP) even though no Editor
     # process is running.
-    PluginManager.startup(str(project), runtime=True)
+    PluginManager.startup(str(project), runtime=runtime_host)
 
     # Cook decodes DataAsset documents before the normal build script
     # compilation phase.  Import every project-owned Python source now so
@@ -360,7 +370,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         progress=on_progress,
     )
     if arguments.installed:
-        registry = _installed_exporter_registry(project)
+        registry = _installed_exporter_registry(project, arguments.target)
     else:
         _prepare_project_registry(project)
         exporter = _load_exporter(

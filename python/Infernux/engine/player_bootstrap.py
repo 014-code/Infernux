@@ -153,13 +153,18 @@ class PlayerBootstrap:
         )
 
     def _prewarm_first_frame(self) -> None:
-        """Submit one hidden zero-delta frame to establish GPU state."""
+        """Build the Player target, then submit one complete hidden frame."""
         if self.engine is None:
             raise RuntimeError("Player first-frame GPU prewarm requires an Engine")
         started = time.perf_counter()
+        # PlayerGUI learns the exact native viewport and creates the Game
+        # render target during its first hidden GUI pass. The render graph can
+        # consume that target only on the following frame, so both stages are
+        # an explicit startup contract rather than a timing loop.
+        self.engine.tick(0.0)
         self.engine.tick(0.0)
         _plog(
-            "[Startup] first GPU frame prewarmed: "
+            "[Startup] first complete GPU frame prewarmed: "
             f"{(time.perf_counter() - started) * 1000.0:.1f} ms"
         )
 
@@ -440,10 +445,12 @@ class PlayerBootstrap:
 
         # Publish window chrome before native Init() so the hidden SDL window
         # can be revealed in its final state after bootstrap.
-        if self.display_mode == "fullscreen_borderless":
-            os.environ["_INFERNUX_PLAYER_FULLSCREEN"] = "1"
-        else:
-            os.environ.pop("_INFERNUX_PLAYER_FULLSCREEN", None)
+        os.environ["_INFERNUX_PLAYER_FULLSCREEN"] = (
+            "1" if self.display_mode == "fullscreen_borderless" else "0"
+        )
+        os.environ["_INFERNUX_PLAYER_WINDOW_RESIZABLE"] = (
+            "1" if self.window_resizable else "0"
+        )
         title = self.game_name or os.path.basename(resolved_path(self.project_path))
         if title:
             os.environ["_INFERNUX_PLAYER_WINDOW_TITLE"] = title

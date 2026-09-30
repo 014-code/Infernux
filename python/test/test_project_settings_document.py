@@ -28,13 +28,16 @@ def _tag_document():
     }
 
 
-def test_build_settings_persist_platform_target_and_android_artifact():
+def test_build_settings_persist_target_owned_platform_options():
     settings = normalize_build_settings(
-        {"build_target": "android-arm64", "android_artifact": "aab"}
+        {
+            "build_target": "android-arm64",
+            "platform_options": {"android-arm64": {"android_artifact": "aab"}},
+        }
     )
 
     assert settings["build_target"] == "android-arm64"
-    assert settings["android_artifact"] == "aab"
+    assert settings["platform_options"]["android-arm64"]["android_artifact"] == "aab"
 
 
 def test_build_settings_current_schema_has_no_author_jit_toggle():
@@ -43,13 +46,15 @@ def test_build_settings_current_schema_has_no_author_jit_toggle():
     assert "enable_jit" not in settings
 
 
-def test_build_settings_reject_invalid_platform_target_and_artifact():
+def test_build_settings_reject_invalid_platform_target_and_option_shape():
     import pytest
 
     with pytest.raises(ValueError, match="lowercase"):
         normalize_build_settings({"build_target": "Android arm64"})
-    with pytest.raises(ValueError, match="android_artifact"):
-        normalize_build_settings({"android_artifact": "zip"})
+    with pytest.raises(ValueError, match="lowercase"):
+        normalize_build_settings({"platform_options": {"Android arm64": {}}})
+    with pytest.raises(TypeError, match="must be an object"):
+        normalize_build_settings({"platform_options": {"android-arm64": []}})
 
 
 def test_build_branding_uses_asset_guid_identity():
@@ -360,7 +365,9 @@ def test_project_settings_async_persistence_owns_saved_revision(tmp_path):
     controller.document_id = document.document_id
     try:
         following = controller.capture_document()
-        following["build"]["window_width"] = 1600
+        following["build"]["platform_options"] = {
+            "windows-x64": {"window_width": 1600}
+        }
         assert controller.apply_document(
             following,
             edit_key="project_settings.build.window_width",

@@ -393,6 +393,42 @@ class TestViewportInfo:
 # ── window manager state machine ─────────────────────────────────────────
 
 class TestWindowManager:
+    def test_menu_contract_supports_five_levels_and_parallel_translation_keys(self):
+        manager = _window_manager(object())
+        keys = (
+            "menu.extensions",
+            "vendor.example.root",
+            "vendor.example.tools",
+            "vendor.example.diagnostics",
+            "vendor.example.live",
+        )
+        manager.register_window_type(
+            "vendor.example.panel",
+            object,
+            "Live Panel",
+            menu_path="Extensions/Example/Tools/Diagnostics/Live",
+            menu_path_keys=keys,
+        )
+
+        info = manager.get_registered_types()["vendor.example.panel"]
+        assert info.menu_path == "Extensions/Example/Tools/Diagnostics/Live"
+        assert info.menu_path_keys == keys
+
+    @pytest.mark.parametrize(
+        ("path", "keys", "message"),
+        [
+            ("Extensions//Live", None, "non-empty author labels"),
+            ("Extensions/Live", ("menu.extensions",), "exactly one entry"),
+            ("", ("hidden.key",), "hidden editor panels"),
+        ],
+    )
+    def test_menu_contract_rejects_ambiguous_paths(self, path, keys, message):
+        manager = _window_manager(object())
+        with pytest.raises((TypeError, ValueError), match=message):
+            manager.register_window_type(
+                "invalid", object, "Invalid", menu_path=path, menu_path_keys=keys
+            )
+
     @staticmethod
     def _layout_reset_fixture():
         from Infernux.engine.interaction import (
@@ -968,6 +1004,56 @@ class TestWindowManager:
             assert manager.get_window_instance("particle_graph_editor") is not None
         finally:
             WindowManager._instance = previous
+
+    def test_dynamic_panel_reload_restores_open_view_with_new_class(self):
+        from Infernux.engine.ui.window_manager import WindowState
+
+        class Engine:
+            def __init__(self):
+                self.registered = {}
+
+            def register_gui(self, window_id, instance):
+                self.registered[window_id] = instance
+
+            def unregister_gui(self, window_id):
+                self.registered.pop(window_id)
+
+        class OriginalPanel:
+            def __init__(self):
+                self.is_open = True
+
+            def set_open(self, value):
+                self.is_open = bool(value)
+
+        class ReloadedPanel(OriginalPanel):
+            pass
+
+        manager = _window_manager(Engine())
+        manager.register_window_type(
+            "plugin.tool",
+            OriginalPanel,
+            "Plugin Tool",
+            factory=OriginalPanel,
+        )
+        original = manager.open_window("plugin.tool")
+        manager.process_pending_actions()
+
+        views = manager.capture_open_views_for_types(("plugin.tool",))
+        assert views == (("plugin.tool", "plugin.tool"),)
+        assert manager.unregister_window_type("plugin.tool")
+        manager.register_window_type(
+            "plugin.tool",
+            ReloadedPanel,
+            "Plugin Tool",
+            factory=ReloadedPanel,
+        )
+        manager.restore_reloaded_views(views)
+        manager.process_pending_actions()
+
+        current = manager.get_window_instance("plugin.tool")
+        assert current is not original
+        assert isinstance(current, ReloadedPanel)
+        assert manager.get_window_state("plugin.tool") is WindowState.OPEN
 
     def test_dynamic_panel_menu_close_finalizes_lifecycle_before_unregister(self):
         from Infernux.engine.interaction import FocusService

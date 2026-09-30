@@ -637,8 +637,20 @@ class ProjectAssetCommandService:
         if manager is None or not manager.enabled or manager.is_executing:
             command.dispose()
             raise RuntimeError("Global editor history is unavailable")
-        if not manager.execute(command, origin=ActionOrigin(origin)):
-            raise RuntimeError(f"Editor asset command was rejected: {command.description}")
+        try:
+            accepted = manager.execute(
+                command,
+                origin=ActionOrigin(origin),
+                raise_errors=True,
+            )
+        except Exception as error:
+            raise RuntimeError(
+                f"Editor asset command was rejected: {command.description}: {error}"
+            ) from error
+        if not accepted:
+            raise RuntimeError(
+                f"Editor asset command was rejected: {command.description}"
+            )
 
     def _create_command(
         self,

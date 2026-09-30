@@ -1401,7 +1401,9 @@ def _cpu_atomic_add(target, indices, values, mask=None) -> None:
         active_count = int(np.count_nonzero(mask))
         if indices.ndim:
             indices = indices[mask]
-        if values.ndim:
+            if values.ndim:
+                values = values[mask]
+        elif values.ndim:
             values = values[mask]
     if indices.ndim == 0:
         if values.ndim:
@@ -1414,12 +1416,7 @@ def _cpu_atomic_add(target, indices, values, mask=None) -> None:
         return
     if values.ndim == 0:
         values = np.full(indices.shape, values, dtype=target.dtype)
-    contribution = np.bincount(
-        indices.astype(np.intp, copy=False),
-        weights=values,
-        minlength=len(target),
-    )
-    np.add(target, contribution[: len(target)], out=target, casting="unsafe")
+    np.add.at(target, indices.astype(np.intp, copy=False), values)
 
 
 class Kernel:

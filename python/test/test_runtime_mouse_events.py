@@ -75,3 +75,26 @@ def test_stationary_hover_and_drag_capture_use_one_query_per_frame(monkeypatch):
         dispatcher.process(camera, (1, 2), (100, 100), button_state=button_state)
         assert len(calls) == before + 1
     assert len(calls) == len(frames)
+
+
+def test_canceled_touch_releases_capture_without_button_click():
+    events = []
+    component_type = type("CanceledTouchProbe", (), {
+        "on_mouse_down": lambda self: events.append("down"),
+        "on_mouse_up": lambda self: events.append("up"),
+        "on_mouse_up_as_button": lambda self: events.append("click"),
+    })
+    component = component_type()
+    publication = publish_runtime_dispatch_epoch((component_type,))
+    publication.commit()
+    target = SimpleNamespace(id=91, get_py_components=lambda: (component,))
+    hit = SimpleNamespace(game_object=target)
+    try:
+        dispatcher = MouseEventDispatcher()
+        dispatcher.process(object(), (1, 2), (100, 100), hit=hit,
+                           button_state=(True, True, False))
+        dispatcher.process(object(), (1, 2), (100, 100), hit=hit,
+                           button_state=(False, False, True), canceled=True)
+        assert events == ["down", "up"]
+    finally:
+        publication.rollback()

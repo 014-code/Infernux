@@ -36,6 +36,19 @@ from Infernux.engine.ui import (
 from Infernux.engine.ui import panel_state as _panel_state
 
 
+def _native_shortcut_event(chord: str, text_input: bool, modal: bool):
+    """Translate one native editor key edge with the current game-input owner."""
+    from Infernux.engine.interaction import KeyChord, ShortcutEvent
+    from Infernux.input import Input
+
+    return ShortcutEvent(
+        KeyChord.parse(chord),
+        text_input_active=bool(text_input),
+        modal_active=bool(modal),
+        game_view_captured=bool(Input.is_game_focused()),
+    )
+
+
 class BootstrapWiringMixin:
     """BootstrapWiringMixin method group for EditorBootstrap."""
 
@@ -1701,8 +1714,6 @@ class BootstrapWiringMixin:
         from Infernux.engine.interaction import (
             CommandSource,
             EditorCommand,
-            KeyChord,
-            ShortcutEvent,
         )
 
         def _payload(argument):
@@ -1728,13 +1739,11 @@ class BootstrapWiringMixin:
                 command_registry.context(CommandSource.MENU, _payload(argument)),
             )
         )
-        self.shortcut_input.route_shortcut = lambda chord, text_input, modal: shortcut_router.route(
-            ShortcutEvent(
-                KeyChord.parse(chord),
-                text_input_active=bool(text_input),
-                modal_active=bool(modal),
-            )
-        ).consumed
+        self.shortcut_input.route_shortcut = (
+            lambda chord, text_input, modal: shortcut_router.route(
+                _native_shortcut_event(chord, text_input, modal)
+            ).consumed
+        )
 
         # Scene file operations
         if sfm:
@@ -1751,6 +1760,7 @@ class BootstrapWiringMixin:
                 wti.type_id = type_id
                 wti.display_name = info.display_name
                 wti.menu_path = info.menu_path
+                wti.menu_path_keys = list(info.menu_path_keys)
                 wti.singleton = info.singleton
                 result.append(wti)
                 seen.add(type_id)

@@ -66,6 +66,7 @@ class PreloadContext:
     engine: Any = None
     runtime: bool = False
     _restart_callback: Callable[[str], None] | None = None
+    _cleanup_callback: Callable[[Callable[[], None]], None] | None = None
 
     def package_path(self, relative_path: str | os.PathLike[str]) -> str:
         """Resolve one installed-package resource in Editor or Player.
@@ -91,6 +92,19 @@ class PreloadContext:
 
         if self._restart_callback is not None:
             self._restart_callback(str(reason or "Native state cannot be unloaded safely"))
+
+    def add_cleanup(self, callback: Callable[[], None]) -> None:
+        """Register one reversible resource cleanup for this preload.
+
+        Cleanups run once in reverse registration order after ``unload()`` and
+        also run when ``preload()`` fails partway through. This is the preferred
+        owner for HTTP servers, worker threads, file watches, and callbacks.
+        """
+        if not callable(callback):
+            raise TypeError("Preload cleanup must be callable")
+        if self._cleanup_callback is None:
+            raise RuntimeError("Preload cleanup ownership is unavailable")
+        self._cleanup_callback(callback)
 
     def own_python_library(self, relative_path: str) -> str:
         """Declare bundled library sources managed by this preload's lifetime.

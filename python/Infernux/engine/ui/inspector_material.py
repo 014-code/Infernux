@@ -27,7 +27,6 @@ from .inspector_utils import (
     field_label,
     render_compact_section_header,
     _render_color_bar,
-    LABEL_PAD,
 )
 from .theme import Theme, ImGuiCol, ImGuiStyleVar
 from . import inspector_shader_utils as shader_utils

@@ -1600,6 +1600,8 @@ void InxRenderer::DrawFrame()
     if (HasPendingCapture(CaptureSource::Editor))
         m_vkCore->RequestPresentationReadback();
     m_vkCore->DrawFrame(m_cameraPos, m_cameraLookAt, m_cameraUp);
+    if (m_vkCore->ConsumeFirstVisiblePresentation())
+        m_view->RevealAfterFirstPresentation();
     if (m_vkCore->ConsumePresentationSurfaceLost()) {
         // VK_ERROR_SURFACE_LOST_KHR cannot be repaired by recreating a
         // swapchain against the old VkSurfaceKHR. Route it through the same
@@ -2751,9 +2753,16 @@ size_t InxRenderer::GetPendingSyntheticInputCount() const
 
 void InxRenderer::ShowWindow()
 {
-    m_view->Show();
-    if (m_vkCore)
+    if (m_view && m_view->ShouldRevealAfterFirstPresentation()) {
+        if (!m_vkCore) {
+            INXLOG_ERROR("Cannot defer Player window reveal without an initialized presentation backend");
+            return;
+        }
         m_vkCore->ObserveNextPresentationAsFirstVisible();
+        SDL_Log("INFERNUX_WINDOW_REVEAL_ARMED");
+        return;
+    }
+    m_view->Show();
     SDL_Log("INFERNUX_WINDOW_SHOWN");
 }
 

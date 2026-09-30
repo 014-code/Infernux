@@ -7,7 +7,6 @@ from typing import List, Optional, Sequence, Tuple, TYPE_CHECKING
 
 from Infernux.engine.runtime_dispatch import (
     current_runtime_epoch,
-    resolve_runtime_method,
 )
 
 from .ui_event_data import PointerButton, PointerEventData, PointerType
@@ -70,6 +69,9 @@ class UIEventProcessor:
         self._pointers: dict[tuple[PointerType, int], _PointerState] = {}
         self._time = 0.0
         self._last_pointer_debug: dict = {}
+        self._queued_callback_count = 0
+        self._executed_callback_count = 0
+        self._dispatch_generation = 0
 
     def process(
         self,
@@ -221,6 +223,7 @@ class UIEventProcessor:
 
         if pointer.down or pointer.up or pointer.canceled:
             hit_object = getattr(hit_element, "game_object", None) if hit_element is not None else None
+            click_event = getattr(hit_element, "on_click", None) if hit_element is not None else None
             self._last_pointer_debug = {
                 "pointer_id": pointer_id,
                 "pointer_type": pointer.pointer_type.name,
@@ -232,6 +235,9 @@ class UIEventProcessor:
                 "canceled": bool(pointer.canceled),
                 "hit_type": type(hit_element).__name__ if hit_element is not None else "",
                 "hit_object": str(getattr(hit_object, "name", "") or ""),
+                "hit_component_id": int(getattr(hit_element, "_component_id", 0) or 0),
+                "hit_is_valid": bool(getattr(hit_element, "is_valid", False)),
+                "hit_listener_count": int(getattr(click_event, "listener_count", 0) or 0),
                 "press_type": type(state.press_target).__name__ if state.press_target is not None else "",
                 "press_object": str(
                     getattr(getattr(state.press_target, "game_object", None), "name", "") or ""
@@ -436,6 +442,7 @@ class UIEventProcessor:
         """
 
         self._pointers.clear()
+        self._dispatch_generation += 1
         self._last_pointer_debug = {}
 
     def debug_state(self) -> dict:
@@ -443,8 +450,7 @@ class UIEventProcessor:
 
         return dict(self._last_pointer_debug)
 
-    @staticmethod
-    def _dispatch_pointer_callback(target, method_name, event, epoch) -> None:
+    def _dispatch_pointer_callback(self, target, method_name, event, epoch) -> None:
         """Queue one callback outside the native GUI draw traversal.
 
         Pointer callbacks are allowed to replace scenes and destroy UI objects.
@@ -456,20 +462,59 @@ class UIEventProcessor:
         if getattr(target, "_is_destroyed", False):
             return
 
+        descriptor = epoch.require_descriptor(type(target))
+        method = descriptor.methods.get(method_name)
+        if method is None:
+            return
+        callback = method.bind(target)
+
         from Infernux.engine.runtime_event_queue import enqueue
 
-        def invoke_later(target=target, method_name=method_name, event=event):
+        self._queued_callback_count += 1
+        dispatch_generation = self._dispatch_generation
+        self._last_pointer_debug.update({
+            "last_callback": method_name,
+            "last_callback_status": "queued",
+            "queued_callback_count": self._queued_callback_count,
+            "executed_callback_count": self._executed_callback_count,
+        })
+
+        def invoke_later(target=target, callback=callback, event=event, method_name=method_name):
+            if dispatch_generation != self._dispatch_generation:
+                return
             if getattr(target, "_is_destroyed", False):
+                self._last_pointer_debug.update({
+                    "last_callback": method_name,
+                    "last_callback_status": "target_destroyed",
+                })
+                return
+            if not bool(getattr(target, "is_valid", False)):
+                self._last_pointer_debug.update({
+                    "last_callback": method_name,
+                    "last_callback_status": "target_invalid",
+                })
                 return
             try:
-                if not target:
-                    return
-            except Exception:
-                return
-            callback = resolve_runtime_method(target, method_name, epoch=epoch)
-            epoch.require_descriptor(type(target))
-            if callback is not None:
                 callback(event)
+            except BaseException as exc:
+                self._last_pointer_debug.update({
+                    "last_callback": method_name,
+                    "last_callback_status": "exception",
+                    "last_callback_error": f"{type(exc).__name__}: {exc}",
+                    "queued_callback_count": self._queued_callback_count,
+                    "executed_callback_count": self._executed_callback_count,
+                })
+                raise
+            debug_dispatch = getattr(target, "debug_dispatch_state", None)
+            if callable(debug_dispatch):
+                self._last_pointer_debug["persistent_dispatch"] = debug_dispatch()
+            self._executed_callback_count += 1
+            self._last_pointer_debug.update({
+                "last_callback": method_name,
+                "last_callback_status": "executed",
+                "queued_callback_count": self._queued_callback_count,
+                "executed_callback_count": self._executed_callback_count,
+            })
 
         enqueue(invoke_later)
 

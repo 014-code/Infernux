@@ -193,6 +193,7 @@ _FSM_PARAM_COLORS = {
     type_id="animfsm_editor",
     title_key="panel.animfsm_editor",
     menu_path="Animation",
+    menu_path_keys=("menu.animation",),
     interaction=_ANIMFSM_PANEL_INTERACTION,
 )
 class AnimFSMEditorPanel(NodeGraphEditorPanel):

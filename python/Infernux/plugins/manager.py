@@ -2176,12 +2176,19 @@ class PluginManager:
             self._resource_manager = manager
 
     def _on_script_catalog_changed(self, file_path: str, event_type: str) -> None:
-        if not str(file_path).lower().endswith(".py"):
-            return
         if self._installing:
             self._deferred_catalog_changes.add(resolved_path(file_path))
             return
-        self.preloads.reload_path(file_path)
+        normalized = portable_path(str(file_path)).casefold()
+        if normalized.endswith("/editor/translations.json"):
+            reference = self.preloads.package_reference_for_path(file_path)
+            if not reference:
+                return
+            self.preloads.reload_package_translations(reference)
+        elif normalized.endswith(".py"):
+            self.preloads.reload_path(file_path)
+        else:
+            return
         self._rebuild_states()
 
     def _publish_package_runtime_scripts(self, reference: str) -> None:

@@ -213,6 +213,14 @@ class EditorInteractionCore:
             or self.transient_interactions.can_cancel
         )
 
+    @property
+    def history_ready(self) -> bool:
+        """Whether a new editor mutation can enter global history now."""
+        from Infernux.engine.undo import UndoManager
+
+        manager = UndoManager.instance()
+        return manager is None or bool(manager.enabled and not manager.is_executing)
+
     def cancel_active_interaction(self) -> bool:
         """Cancel the top-most modal or transient through one Escape command."""
         if self.modals.active_modal_id:

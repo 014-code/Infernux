@@ -18,10 +18,27 @@ from Infernux.engine.resources_manager import (
     ResourceChangeHandler,
     ResourcesManager,
     _AssetImportNotReady,
+    _is_plugin_editor_translation_catalog,
 )
 from Infernux.engine.path_utils import path_key
 from Infernux.debug import Debug
 from Infernux.lib import AssetMutationResult, RuntimeMode
+
+
+def test_plugin_editor_translation_catalog_path_is_exact(tmp_path):
+    package = tmp_path / "Packages/vendor/example"
+    editor = package / "editor"
+    editor.mkdir(parents=True)
+    (package / "inx_package.json").write_text("{}", encoding="utf-8")
+    catalog = editor / "translations.json"
+    nested = editor / "nested/translations.json"
+    nested.parent.mkdir()
+
+    assert _is_plugin_editor_translation_catalog(str(catalog), str(tmp_path))
+    assert not _is_plugin_editor_translation_catalog(str(nested), str(tmp_path))
+    assert not _is_plugin_editor_translation_catalog(
+        str(editor / "messages.json"), str(tmp_path)
+    )
 
 
 def _mutation(operation, path, guid=""):
@@ -176,6 +193,25 @@ def test_script_watchdog_event_has_no_debounce_and_wakes_idle_editor(tmp_path):
     script.write_text("value = 1\n", encoding="utf-8")
 
     handler.on_modified(_event(script))
+
+    assert len(handler._coordinator.drain(now=time.monotonic() + 0.001)) == 1
+    assert engine.editor_wakes == 1
+
+
+def test_plugin_translation_watchdog_event_has_no_debounce_and_wakes_idle_editor(
+    tmp_path,
+):
+    database = _AssetDatabaseProbe()
+    engine = _EngineProbe(database)
+    handler = ResourceChangeHandler(engine, project_path=str(tmp_path))
+    package = tmp_path / "Packages/vendor/example"
+    editor = package / "editor"
+    editor.mkdir(parents=True)
+    (package / "inx_package.json").write_text("{}", encoding="utf-8")
+    catalog = editor / "translations.json"
+    catalog.write_text("{}", encoding="utf-8")
+
+    handler.on_modified(_event(catalog))
 
     assert len(handler._coordinator.drain(now=time.monotonic() + 0.001)) == 1
     assert engine.editor_wakes == 1

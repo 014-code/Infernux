@@ -1215,6 +1215,7 @@ void RegisterGUIBindings(py::module_ &m)
         .def_readwrite("type_id", &WindowTypeInfo::typeId)
         .def_readwrite("display_name", &WindowTypeInfo::displayName)
         .def_readwrite("menu_path", &WindowTypeInfo::menuPath)
+        .def_readwrite("menu_path_keys", &WindowTypeInfo::menuPathKeys)
         .def_readwrite("singleton", &WindowTypeInfo::singleton);
 
     // ── StatusBarPanel ─────────────────────────────────────────────────
@@ -1345,13 +1346,15 @@ void RegisterGUIBindings(py::module_ &m)
     py::class_<MenuBarPanel, InxGUIRenderable, std::shared_ptr<MenuBarPanel>>(m, "MenuBarPanel")
         .def(py::init<>())
         .def("invalidate_window_type_cache", &MenuBarPanel::InvalidateWindowTypeCache)
+        .def("resolve_menu_label", &MenuBarPanel::ResolveMenuLabel)
         .def_readwrite("execute_command", &MenuBarPanel::executeCommand)
         .def_readwrite("can_execute_command", &MenuBarPanel::canExecuteCommand)
         .def_readwrite("is_command_checked", &MenuBarPanel::isCommandChecked)
         .def_readwrite("on_request_close", &MenuBarPanel::onRequestClose)
         .def_readwrite("get_registered_types", &MenuBarPanel::getRegisteredTypes)
         .def_readwrite("is_close_requested", &MenuBarPanel::isCloseRequested)
-        .def_readwrite("translate", &MenuBarPanel::translate);
+        .def_readwrite("translate", &MenuBarPanel::translate)
+        .def_readwrite("has_translation", &MenuBarPanel::hasTranslation);
 
     py::class_<EditorShortcutInput, InxGUIRenderable, std::shared_ptr<EditorShortcutInput>>(m, "EditorShortcutInput")
         .def(py::init<>())

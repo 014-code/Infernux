@@ -1116,14 +1116,6 @@ class EditorAutomationHost:
             )
         final_debug = bool(settings.get("debug_mode", False)) if debug_mode is None else bool(debug_mode)
         final_lto = bool(settings.get("lto", True)) if lto is None else bool(lto)
-        final_artifact = str(
-            android_artifact or settings.get("android_artifact", "apk") or "apk"
-        ).strip().casefold()
-        if final_artifact not in {"apk", "aab"}:
-            raise OperationError(
-                "player.build_settings",
-                "android_artifact must be apk or aab.",
-            )
         available_targets = exporter_registry.targets()
         desktop = current_host_player_target(available_targets)
         final_target = str(
@@ -1169,6 +1161,18 @@ class EditorAutomationHost:
         selected_target = next(
             item for item in available_targets if item.id == final_target
         )
+        target_options = dict(
+            settings.get("platform_options", {}).get(final_target, {})
+        )
+        if android_artifact:
+            target_options["android_artifact"] = str(android_artifact).strip().casefold()
+        try:
+            target_options = exporter_registry.resolve_options(
+                final_target, target_options, reserved=()
+            )
+        except (TypeError, ValueError) as exc:
+            raise OperationError("player.build_settings", str(exc)) from exc
+        final_artifact = str(target_options.get("android_artifact", "") or "")
         final_jit = bool(
             selected_target.capabilities.cpu_jit
             or "gpu-jit" in selected_target.capabilities.features
@@ -1181,13 +1185,13 @@ class EditorAutomationHost:
         settings.update(
             {
                 "build_target": final_target,
-                "android_artifact": final_artifact,
                 "output_dir": final_output,
                 "game_name": final_name,
                 "debug_mode": final_debug,
                 "lto": final_lto,
             }
         )
+        settings["platform_options"][final_target] = dict(target_options)
         progress: list[dict[str, object]] = []
         phase_counts: dict[str, int] = {}
         omitted_verbose = 0
@@ -1228,7 +1232,7 @@ class EditorAutomationHost:
                 debug_symbols=final_debug,
                 compress_resources=final_compress,
                 options={
-                    "android_artifact": final_artifact,
+                    **target_options,
                     "build_settings": settings,
                 },
             ),

@@ -117,7 +117,11 @@ class UIText(InxUIScreenComponent):
     def get_wrap_width(self) -> float:
         return 0.0 if self.is_auto_width() else max(1.0, float(self.width))
 
-    def resolve_text_layout(self, measure_text, scale: float = 1.0) -> bool:
+    def prepare_text_layout(self, measure_text, scale: float = 1.0) -> bool:
+        """Publish this text's font data before render commands are recorded."""
+        return self.resolve_text_layout(measure_text, scale, force_measure=True)
+
+    def resolve_text_layout(self, measure_text, scale: float = 1.0, *, force_measure: bool = False) -> bool:
         """Resolve intrinsic text size without rewriting authored geometry.
 
         ``measure_text`` receives the scaled font size and wrap width and must
@@ -136,7 +140,7 @@ class UIText(InxUIScreenComponent):
             float(self.line_height), float(self.letter_spacing),
             float(wrap_width), scale,
         )
-        if getattr(self, "_text_layout_key", None) == key:
+        if not force_measure and getattr(self, "_text_layout_key", None) == key:
             return False
 
         font_path, fallback_paths = ui_font_paths(self)

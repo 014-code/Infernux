@@ -67,7 +67,13 @@ def _request(tmp_path: Path) -> BuildRequest:
         str(tmp_path / "project"),
         "web-wasm32",
         str(tmp_path / "output"),
-        BuildProfile(options={"build_settings": {"scene_guids": []}}),
+        BuildProfile(options={
+            "display_mode": "fullscreen_borderless",
+            "window_width": 1280,
+            "window_height": 720,
+            "window_resizable": False,
+            "build_settings": {"scene_guids": []},
+        }),
     )
 
 
@@ -999,9 +1005,12 @@ def test_web_host_contract_embeds_python_and_uses_only_webgpu(monkeypatch):
     assert "GetAllScenes()" not in scene_renderer
     assert "WebPostProcessRenderer.cpp" in cmake
     assert "dv_smith_joint_ggx" in scene_renderer
-    assert 'MaterialFloat(draw.material, "metallic", 0.0f)' in scene_renderer
-    assert 'MaterialFloat(draw.material, "smoothness", 0.5f)' in scene_renderer
-    assert 'MaterialVector(draw.material, "emissionColor"' in scene_renderer
+    assert 'MaterialFloat(draw.material, draw.parameterBlock, "metallic", 0.0f)' in scene_renderer
+    assert 'MaterialFloat(draw.material, draw.parameterBlock, "smoothness", 0.5f)' in scene_renderer
+    assert 'MaterialVector(draw.material, draw.parameterBlock, "emissionColor"' in scene_renderer
+    assert "ResolvedMaterialProperty" in scene_renderer
+    assert "parameters->properties.find(name)" in scene_renderer
+    assert "material ? material->GetProperty(name) : nullptr" in scene_renderer
     assert "material=pbr" in scene_renderer
     assert "geometric_specular_aa" in scene_renderer
     assert "max(vec3<f32>(1.0 - perceptual_roughness), f0)" in scene_renderer
@@ -1018,7 +1027,7 @@ def test_web_host_contract_embeds_python_and_uses_only_webgpu(monkeypatch):
     assert "material_normal_map" in scene_renderer
     assert "MaterialTextures" in scene_renderer
     assert "ResolveMaterialTextureSet" in scene_renderer
-    assert 'MaterialFloat(draw.material, "normalScale", 1.0f)' in scene_renderer
+    assert 'MaterialFloat(draw.material, draw.parameterBlock, "normalScale", 1.0f)' in scene_renderer
     assert "INFERNUX_WEB_MATERIAL_TEXTURE_READY" in scene_renderer
     assert "DecodeBcTextureToRgba8" in scene_renderer
     assert "TextureFormat::BC1RgbaSrgb" in scene_renderer
@@ -1032,8 +1041,9 @@ def test_web_host_contract_embeds_python_and_uses_only_webgpu(monkeypatch):
     assert "source.texCoord" in scene_renderer
     assert "offsetof(WebVertex, uv1)" in scene_renderer
     assert "source.texCoord1" in scene_renderer
-    assert 'MaterialInt(draw.material, "baseColorUvSet", 0)' in scene_renderer
-    assert 'MaterialInt(draw.material, "normalUvSet", 0)' in scene_renderer
+    assert 'MaterialInt(draw.material, draw.parameterBlock, "baseColorUvSet", 0)' in scene_renderer
+    assert 'MaterialInt(draw.material, draw.parameterBlock, "normalUvSet", 0)' in scene_renderer
+    assert "ResolveMaterialTextureSet(draw.material, draw.parameterBlock)" in scene_renderer
     assert "invalid-material-uv-set" in scene_renderer
     assert "let position_dx = dpdx(input.world_position);" in scene_renderer
     assert "let position_dy = dpdy(input.world_position);" in scene_renderer

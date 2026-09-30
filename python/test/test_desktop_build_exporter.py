@@ -38,13 +38,20 @@ def _request(tmp_path: Path, **options) -> BuildRequest:
         json.dumps({"scene_guids": []}), encoding="utf-8"
     )
     entries = options.pop("asset_catalog_entries", ())
+    presentation = {
+        "display_mode": "fullscreen_borderless",
+        "window_width": 1280,
+        "window_height": 720,
+        "window_resizable": True,
+    }
+    presentation.update(options)
     return BuildRequest(
         str(project),
         target.id,
         str(tmp_path / "Player"),
         BuildProfile(
             configuration=BuildConfiguration.RELEASE,
-            options=options,
+            options=presentation,
         ),
         asset_catalog_entries=entries,
     )
@@ -119,13 +126,13 @@ def test_host_exporter_routes_settings_catalog_progress_and_cancellation(
         build_settings={
             "game_name": "Balance040",
             "scene_guids": ["requested-scene-guid"],
-            "display_mode": "windowed",
-            "window_width": 960,
-            "window_height": 540,
-            "window_resizable": False,
             "lto": False,
             "splash_items": [],
         },
+        display_mode="windowed",
+        window_width=960,
+        window_height=540,
+        window_resizable=False,
         asset_catalog_entries=[{"guid": "a" * 32}],
     )
     object.__setattr__(request, "progress", progress.append)

@@ -162,27 +162,38 @@ def test_source_plugin_editor_override_rejects_an_import_from_another_root(
         module._load_exporter("web-wasm32", editor_root_override=editor_root)
 
 
-def test_installed_preload_has_project_paths_and_mirrored_resources(tmp_path, monkeypatch):
-    from Infernux.application import Application
-    from Infernux.engine import library_sync, project_context
-    from Infernux.engine.build import exporter_registry
-    from Infernux.plugins import PluginManager
-
-    asset = tmp_path / "Packages/probe/runtime/message.txt"
-    asset.parent.mkdir(parents=True)
-    asset.write_text("package preload", encoding="utf-8")
+def test_installed_build_loads_runtime_preloads_and_only_selected_exporter(
+    tmp_path, monkeypatch
+):
+    module = _module()
     calls = []
-    monkeypatch.setattr(project_context, "_project_root", None)
-    monkeypatch.setattr(project_context, "_runtime_asset_resolver", None)
-    monkeypatch.setattr(library_sync, "sync_resources", lambda root: calls.append(root))
+    target = module.DESKTOP_TARGET
+    exporter = module._load_exporter(target)
+    monkeypatch.setattr(
+        module,
+        "_prepare_project_registry",
+        lambda project, *, runtime_host: calls.append(
+            (project, runtime_host)
+        ),
+    )
 
-    def startup(root, *, runtime):
-        assert runtime is True
-        assert calls == [root]
-        assert Path(Application.package_path("probe", "runtime/message.txt")) == asset
+    def load(target, *, editor_root_override):
+        calls.append((target, editor_root_override))
+        return exporter
 
-    monkeypatch.setattr(PluginManager, "startup", startup)
-    assert _module()._installed_exporter_registry(tmp_path) is exporter_registry
+    monkeypatch.setattr(module, "_load_exporter", load)
+    registry = module._installed_exporter_registry(tmp_path, target)
+
+    plugin = module.EXPORTERS[target][0]
+
+    assert calls == [
+        (tmp_path, True),
+        (
+            target,
+            tmp_path / "Packages" / "infernux" / f"platform-{plugin}" / "editor",
+        ),
+    ]
+    assert registry.resolve(target)[0] is exporter
 
 
 def test_prepare_project_registry_imports_runtime_package_scripts_only(

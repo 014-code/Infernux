@@ -316,6 +316,10 @@ def test_ui_pointer_exception_propagates_without_retry():
             processor.process([canvas], [(0.0, 0.0)], False, True, False, (0.0, 0.0), 0.016)
             drain_runtime_events()
         assert target.events.count("click-failed") == 1
+        debug = processor.debug_state()
+        assert debug["last_callback"] == "on_pointer_click"
+        assert debug["last_callback_status"] == "exception"
+        assert debug["last_callback_error"] == "RuntimeError: expected pointer failure"
     finally:
         publication.rollback()
         _PointerProbe.on_pointer_click = old_click

@@ -366,6 +366,17 @@ class TestMenuBarPanel:
         mb.translate = lambda key: f"<<{key}>>"
         assert mb.translate("menu.project") == "<<menu.project>>"
 
+    def test_dynamic_menu_uses_literal_for_undeclared_plugin_path(self):
+        mb = MenuBarPanel()
+        declared = {"menu.extensions": "扩展"}
+        mb.translate = lambda key: declared.get(key, key)
+        mb.has_translation = lambda key: key in declared
+
+        assert mb.resolve_menu_label("menu.extensions", "Extensions") == "扩展"
+        assert mb.resolve_menu_label(
+            "menu.extensions_example_plugin", "Example Plugin"
+        ) == "Example Plugin"
+
 
 class TestEditorShortcutInput:
 

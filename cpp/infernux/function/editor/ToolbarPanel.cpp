@@ -154,10 +154,17 @@ void ToolbarPanel::RenderPlayControls(InxGUIContext *ctx, float winW)
 
     // ── Time label while playing ─────────────────────────────────
     if (isPlaying) {
-        ImGui::SameLine(0.0f, 8.0f * dpi);
         std::string tag = isPaused ? T("toolbar.status_paused") : T("toolbar.status_playing");
         std::string timeStr = getPlayTimeStr ? getPlayTimeStr() : "00:00.000";
-        ImGui::TextUnformatted((tag + "  " + timeStr).c_str());
+        const std::string status = tag + "  " + timeStr;
+        const float rightControlsX = std::max(winW - 200.0f * dpi, 300.0f * dpi);
+        const float statusStartX = ImGui::GetItemRectMax().x + 8.0f * dpi;
+        const float rightControlsScreenX = ImGui::GetWindowPos().x + rightControlsX;
+        const float statusWidth = ImGui::CalcTextSize(status.c_str()).x;
+        if (statusStartX + statusWidth + 8.0f * dpi <= rightControlsScreenX) {
+            ImGui::SameLine(0.0f, 8.0f * dpi);
+            ImGui::TextUnformatted(status.c_str());
+        }
     }
 }
 

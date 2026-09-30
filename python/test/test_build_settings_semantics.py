@@ -35,6 +35,8 @@ class _Context:
         self.child_ids: list[str] = []
         self.same_line_count = 0
         self.cursor_x = 0.0
+        self.item_widths: list[float] = []
+        self.input_int_calls: list[tuple[str, int, int, int, int]] = []
 
     def begin_disabled(self, _disabled: bool) -> None:
         self.disabled_depth += 1
@@ -64,9 +66,15 @@ class _Context:
     def combo(_label: str, selected: int, _items: list[str]) -> int:
         return selected
 
-    @staticmethod
-    def set_next_item_width(_width: float) -> None:
-        pass
+    def set_next_item_width(self, width: float) -> None:
+        self.item_widths.append(float(width))
+
+    def input_int(
+        self, label: str, value: int, step: int = 1,
+        step_fast: int = 100, flags: int = 0,
+    ) -> int:
+        self.input_int_calls.append((label, value, step, step_fast, flags))
+        return value
 
     @staticmethod
     def push_style_color(*_args) -> None:
@@ -872,7 +880,13 @@ def test_build_settings_balances_child_and_style_stacks_when_body_raises():
 
 
 def test_android_target_exposes_artifact_choice_with_stable_semantics(monkeypatch):
-    from Infernux.engine.build import BuildTarget, PlatformCapabilities
+    from Infernux.engine.build import (
+        BuildOption,
+        BuildOptionChoice,
+        BuildOptionKind,
+        BuildTarget,
+        PlatformCapabilities,
+    )
 
     target = BuildTarget(
         "android-arm64",
@@ -883,16 +897,87 @@ def test_android_target_exposes_artifact_choice_with_stable_semantics(monkeypatc
     )
     panel = BuildSettingsPanel.__new__(BuildSettingsPanel)
     panel._build_target = "android-arm64"
-    panel._android_artifact = "apk"
+    panel._platform_options = {"android-arm64": {"android_artifact": "apk"}}
     panel._settings_controller = None
     panel._save = lambda: None
     monkeypatch.setattr(panel, "_available_build_targets", lambda: (target,))
+    descriptor = BuildOption(
+        "android_artifact", "build.android_artifact", BuildOptionKind.ENUM, "apk",
+        choices=(
+            BuildOptionChoice("apk", "APK"),
+            BuildOptionChoice("aab", "AAB"),
+        ),
+    )
+    monkeypatch.setattr(
+        "Infernux.engine.ui.build_settings_panel.exporter_registry.options",
+        lambda _target: (descriptor,),
+    )
+    monkeypatch.setattr(
+        "Infernux.engine.ui.build_settings_panel.exporter_registry.resolve_options",
+        lambda _target, configured, **_kwargs: {
+            "android_artifact": configured.get("android_artifact", "apk")
+        },
+    )
     ctx = _Context()
 
     panel._render_target_section(ctx)
+    panel._render_display_section(ctx)
 
     assert ctx.semantic_values["build_settings.target"] == "android-arm64"
-    assert ctx.semantic_values["build_settings.android_artifact"] == "apk"
+    assert (
+        ctx.semantic_values[
+            "build_settings.platform_options.android-arm64.android_artifact"
+        ]
+        == "apk"
+    )
+
+
+def test_integer_platform_option_uses_the_native_input_int_contract(monkeypatch):
+    from Infernux.engine.build import BuildOption, BuildOptionKind
+
+    panel = BuildSettingsPanel.__new__(BuildSettingsPanel)
+    panel._build_target = "windows-x64"
+    panel._platform_options = {"windows-x64": {"window_width": 1280}}
+    panel._save = lambda: None
+    descriptor = BuildOption(
+        "window_width", "build.window_width", BuildOptionKind.INTEGER, 1280,
+        minimum=320, maximum=16384, step=1,
+    )
+    monkeypatch.setattr(
+        "Infernux.engine.ui.build_settings_panel.exporter_registry.options",
+        lambda _target: (descriptor,),
+    )
+    monkeypatch.setattr(
+        "Infernux.engine.ui.build_settings_panel.exporter_registry.resolve_options",
+        lambda _target, configured, **_kwargs: {
+            "window_width": configured.get("window_width", 1280)
+        },
+    )
+    ctx = _Context()
+
+    panel._render_display_section(ctx)
+
+    assert ctx.item_widths == [180.0]
+    assert ctx.input_int_calls == [("##platform_window_width", 1280, 1, 100, 0)]
+
+
+def test_platform_option_contract_errors_are_not_hidden(monkeypatch):
+    panel = BuildSettingsPanel.__new__(BuildSettingsPanel)
+    panel._build_target = "windows-x64"
+    panel._platform_options = {"windows-x64": {"widht": 1280}}
+    monkeypatch.setattr(
+        "Infernux.engine.ui.build_settings_panel.exporter_registry.options",
+        lambda _target: (),
+    )
+    monkeypatch.setattr(
+        "Infernux.engine.ui.build_settings_panel.exporter_registry.resolve_options",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            ValueError("Unknown build options for windows-x64: widht")
+        ),
+    )
+
+    with pytest.raises(ValueError, match="Unknown build options.*widht"):
+        panel._render_display_section(_Context())
 
 
 def test_platform_progress_mapping_is_phase_aware_and_monotonic(monkeypatch):

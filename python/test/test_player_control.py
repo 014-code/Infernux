@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from types import SimpleNamespace
 
 import pytest
 
@@ -9,7 +10,7 @@ from Infernux.engine import player_control
 from Infernux.engine import player_gui as player_gui_module
 from Infernux.engine.player_control import PlayerControlChannel
 from Infernux.engine.player_gui import PlayerGUI, _player_render_scale
-from Infernux.input import Input
+from Infernux.input import Input, TouchPhase
 
 
 class _Native:
@@ -190,6 +191,41 @@ def test_standalone_player_dispatches_runtime_ui_without_desktop_hover(monkeypat
     assert dispatched == [(1280, 720)]
     assert samples == [0]
     assert len(routed) == 2 and all(frame is mouse_frame for frame in routed)
+
+
+def test_player_primary_touch_drives_gameplay_pointer_in_top_left_pixels():
+    secondary = SimpleNamespace(
+        is_primary=False,
+        phase=TouchPhase.BEGAN,
+        began_this_frame=True,
+        normalized_position=(0.1, 0.2),
+        begin_normalized_position=(0.1, 0.2),
+    )
+    primary = SimpleNamespace(
+        is_primary=True,
+        phase=TouchPhase.MOVED,
+        began_this_frame=False,
+        normalized_position=(0.25, 0.75),
+        begin_normalized_position=(0.2, 0.7),
+    )
+
+    assert PlayerGUI._primary_touch_scene_frame(
+        (secondary, primary), 1280, 720
+    ) == pytest.approx((320.0, 180.0, True, False, False, False))
+
+
+def test_player_same_frame_tap_publishes_one_complete_gameplay_click():
+    touch = SimpleNamespace(
+        is_primary=True,
+        phase=TouchPhase.ENDED,
+        began_this_frame=True,
+        normalized_position=(0.9, 0.1),
+        begin_normalized_position=(0.4, 0.6),
+    )
+
+    assert PlayerGUI._primary_touch_scene_frame(
+        (touch,), 1000, 500
+    ) == pytest.approx((400.0, 200.0, False, True, True, False))
 
 
 def test_scene_publication_discards_retired_player_input_state_once():

@@ -120,6 +120,29 @@ class UIButton(UISelectable):
             data.pop("fallback_font_paths", None)
         super()._deserialize_fields_document(data, **kwargs)
 
+    def prepare_text_layout(self, measure_text, scale: float = 1.0) -> bool:
+        """Publish the button label glyphs before runtime UI records geometry."""
+        label = str(self.label or "")
+        if not label:
+            return False
+        from .ui_font_asset import ui_font_paths
+
+        font_path, fallback_paths = ui_font_paths(self)
+        width, _height = self.get_resolved_size()
+        arguments = (
+            label,
+            max(1.0, float(self.font_size) * float(scale)),
+            max(1.0, float(width) * float(scale)),
+            font_path,
+            float(self.line_height),
+            float(self.letter_spacing) * float(scale),
+        )
+        if fallback_paths:
+            measure_text(*arguments, fallback_paths)
+        else:
+            measure_text(*arguments)
+        return True
+
     # ── Events ──
     on_click_entries: list = list_field(
         element_type=FieldType.SERIALIZABLE_OBJECT,

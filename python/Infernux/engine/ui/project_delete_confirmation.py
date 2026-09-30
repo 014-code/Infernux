@@ -39,6 +39,7 @@ class ProjectDeleteConfirmationCoordinator:
         self._delete_handler: Optional[Callable[[list[str]], bool]] = None
         self._requested = False
         self._error = ""
+        self._confirming = False
         self._modals.register(
             self.MODAL_ID,
             is_active=lambda: self.is_active,
@@ -124,7 +125,12 @@ class ProjectDeleteConfirmationCoordinator:
         render_editor_modal_actions(
             ctx,
             [
-                EditorModalAction(t("editor.modal.delete"), "confirm", lambda: self._confirm(ctx)),
+                EditorModalAction(
+                    t("editor.modal.delete"),
+                    "confirm",
+                    lambda: self._confirm(ctx),
+                    enabled=self._history_ready() and not self._confirming,
+                ),
                 EditorModalAction(t("editor.modal.cancel"), "cancel", lambda: self._cancel(ctx)),
             ],
             semantic_prefix="project.delete",
@@ -132,15 +138,23 @@ class ProjectDeleteConfirmationCoordinator:
         end_editor_modal(ctx)
 
     def _confirm(self, ctx) -> None:
+        if self._confirming:
+            return
+        if not self._history_ready():
+            self._error = "project.delete_history_busy"
+            return
         handler = self._delete_handler
         if handler is None:
             self._error = "project.delete_unavailable"
             return
+        self._confirming = True
         try:
             deleted = bool(handler(list(self._paths)))
         except Exception as exc:
             Debug.log_error(f"Project asset deletion failed: {exc}")
             deleted = False
+        finally:
+            self._confirming = False
         if not deleted:
             self._error = "project.delete_failed"
             return
@@ -155,7 +169,15 @@ class ProjectDeleteConfirmationCoordinator:
         self._delete_handler = None
         self._requested = False
         self._error = ""
+        self._confirming = False
         self._modals.deactivate(self.MODAL_ID)
+
+    @staticmethod
+    def _history_ready() -> bool:
+        from Infernux.engine.interaction import EditorInteractionCore
+
+        core = EditorInteractionCore.instance()
+        return core is None or core.history_ready
 
     def _close(self, ctx) -> None:
         ctx.close_current_popup()

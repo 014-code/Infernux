@@ -234,8 +234,7 @@ void RegisterResourceBindings(py::module_ &m)
         .value("RenderEffect", ResourceType::RenderEffect)
         .value("ParticleGraph", ResourceType::ParticleGraph)
         .value("DataAsset", ResourceType::DataAsset)
-        .value("RenderTexture", ResourceType::RenderTexture)
-        .export_values();
+        .value("RenderTexture", ResourceType::RenderTexture);
 
     // InxResourceMeta - resource metadata
     py::class_<InxResourceMeta, std::shared_ptr<InxResourceMeta>>(m, "ResourceMeta")

@@ -195,10 +195,14 @@ class Engine():
             )
         else:
             from Infernux.engine.play_mode import PlayModeManager
+            from Infernux.host import MainThreadCommandQueue
 
             self._play_mode_manager = PlayModeManager()
             self._play_mode_manager.set_asset_database(self.get_asset_database())
             self._play_mode_manager._native_engine = self._engine
+            MainThreadCommandQueue.instance().set_wake_callback(
+                self._engine.request_editor_wake
+            )
         self._install_pre_scene_time_callback()
 
         # Auto-activate Python SRP rendering path
@@ -226,6 +230,9 @@ class Engine():
         self._play_mode_manager = PlayModeManager()
         self._play_mode_manager.set_asset_database(self.get_asset_database())
         self._play_mode_manager._native_engine = self._engine
+        from Infernux.host import MainThreadCommandQueue
+
+        MainThreadCommandQueue.instance().set_wake_callback(None)
         self._initialize_headless_authoring(project_path)
         self._install_pre_scene_time_callback()
 

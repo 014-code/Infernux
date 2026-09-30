@@ -764,6 +764,50 @@ def test_project_delete_modal_confirms_deduplicated_existing_paths(tmp_path):
     assert ctx.closed is True
 
 
+def test_project_delete_confirmation_waits_for_global_history(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    from Infernux.engine.interaction import EditorInteractionCore
+
+    asset = tmp_path / "Busy.prefab"
+    asset.write_text("prefab", encoding="utf-8")
+    received: list[list[str]] = []
+    coordinator = _project_delete_confirmation()
+    assert coordinator.request([str(asset)], lambda paths: received.append(paths) or True)
+
+    monkeypatch.setattr(
+        EditorInteractionCore,
+        "instance",
+        classmethod(lambda _cls: SimpleNamespace(history_ready=False)),
+    )
+    coordinator._confirm(_ProjectDeleteSemanticContext())
+
+    assert received == []
+    assert coordinator.is_active is True
+    assert coordinator._error == "project.delete_history_busy"
+
+
+def test_project_delete_confirmation_rejects_reentrant_double_submit(tmp_path):
+    asset = tmp_path / "DoubleClick.prefab"
+    asset.write_text("prefab", encoding="utf-8")
+    calls = 0
+    coordinator = _project_delete_confirmation()
+    ctx = _ProjectDeleteSemanticContext()
+
+    def delete(paths):
+        nonlocal calls
+        calls += 1
+        assert paths == [str(asset.resolve())]
+        coordinator._confirm(ctx)
+        return True
+
+    assert coordinator.request([str(asset)], delete)
+    coordinator._confirm(ctx)
+
+    assert calls == 1
+    assert coordinator.is_active is False
+    assert ctx.closed is True
+
+
 def test_prefab_delete_preserves_missing_linkage_for_undo():
     source = inspect.getsource(project_file_ops.delete_item)
     assert "prefab_guid" not in source

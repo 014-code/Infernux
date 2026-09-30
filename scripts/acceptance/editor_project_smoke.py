@@ -61,6 +61,14 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--verify-game-input-capture",
+        action="store_true",
+        help=(
+            "While Play Mode owns the Game View, inject a native Left key edge "
+            "and prove that editor shortcut execution is blocked."
+        ),
+    )
+    parser.add_argument(
         "--dialog-timeout",
         type=float,
         default=120.0,
@@ -226,6 +234,7 @@ def _run_smoke(
     native_open_dialog: str,
     native_save_dialog: str,
     capture_sources: tuple[str, ...],
+    verify_game_input_capture: bool,
     outcome: dict[str, object],
 ) -> None:
     queue = MainThreadCommandQueue.instance()
@@ -382,6 +391,152 @@ def _run_smoke(
         )
         _emit("play-entered", runtime=playing)
 
+        game_input_capture: dict[str, object] | None = None
+        if verify_game_input_capture:
+            from Infernux.engine.interaction import (
+                EditorCommand,
+                KeyChord,
+                ShortcutBinding,
+                ShortcutScope,
+            )
+            from Infernux.engine.ui import ClosablePanel, EditorServices
+            from Infernux.input import Input
+
+            command_id = "acceptance.game_input_capture_probe"
+            binding_id = "acceptance.game_input_capture_probe.left"
+            execution_count = [0]
+
+            def register_capture_probe() -> int:
+                services = EditorServices.instance()
+                commands = services.command_registry
+                shortcuts = services.shortcut_router
+                if commands is None or shortcuts is None:
+                    raise RuntimeError("Editor interaction services are unavailable")
+                commands.register(
+                    EditorCommand(
+                        command_id,
+                        lambda _context: execution_count.__setitem__(
+                            0, execution_count[0] + 1
+                        ),
+                        palette_visible=False,
+                        creates_user_action=False,
+                    )
+                )
+                shortcuts.register(
+                    ShortcutBinding(
+                        command_id,
+                        KeyChord.parse("Left"),
+                        scope=ShortcutScope.GLOBAL,
+                        priority=10_000,
+                        binding_id=binding_id,
+                    )
+                )
+                ClosablePanel.focus_panel_by_id("game_view")
+                return shortcuts.route_revision
+
+            route_revision = int(run("register-game-input-probe", register_capture_probe))
+
+            def game_input_focus_state() -> dict[str, object]:
+                from Infernux.engine.interaction import FocusService
+
+                focus = FocusService.instance().snapshot
+                return {
+                    "active_view_id": focus.active_view_id,
+                    "game_focused": bool(Input.is_game_focused()),
+                }
+
+            focused = _wait_until(
+                lambda: (
+                    state
+                    if (
+                        (state := run("game-input-focus", game_input_focus_state))[
+                            "active_view_id"
+                        ]
+                        == "game_view"
+                        and bool(state["game_focused"])
+                    )
+                    else None
+                ),
+                timeout=transition_timeout,
+                label="Game View input focus",
+            )
+            pressed = run(
+                "game-input-left-press",
+                lambda: host.queue_input("key", key="left", pressed=True),
+            )
+            press_sequence = int(pressed["sequence"])
+
+            def capture_probe_state() -> dict[str, object]:
+                services = EditorServices.instance()
+                shortcuts = services.shortcut_router
+                if shortcuts is None:
+                    raise RuntimeError("Editor shortcut router is unavailable")
+                event = shortcuts.last_event
+                result = shortcuts.last_result
+                input_status = host.input_status()
+                return {
+                    "route_revision": shortcuts.route_revision,
+                    "last_processed_sequence": int(
+                        input_status["last_processed_sequence"]
+                    ),
+                    "chord": event.chord.display_name() if event is not None else "",
+                    "game_view_captured": bool(
+                        event.game_view_captured if event is not None else False
+                    ),
+                    "route_status": (
+                        str(result.status.value) if result is not None else ""
+                    ),
+                    "command_id": result.command_id if result is not None else "",
+                    "execution_count": execution_count[0],
+                }
+
+            captured = _wait_until(
+                lambda: (
+                    state
+                    if (
+                        int(
+                            (state := run(
+                                "game-input-capture-state", capture_probe_state
+                            ))["last_processed_sequence"]
+                        )
+                        >= press_sequence
+                        and int(state["route_revision"]) > route_revision
+                    )
+                    else None
+                ),
+                timeout=transition_timeout,
+                label="captured native Left key edge",
+            )
+            run(
+                "game-input-left-release",
+                lambda: host.queue_input("key", key="left", pressed=False),
+            )
+            if captured["chord"] != "LEFT":
+                raise RuntimeError(f"Unexpected native shortcut chord: {captured!r}")
+            if not bool(captured["game_view_captured"]):
+                raise RuntimeError(
+                    f"Native shortcut did not observe Game View capture: {captured!r}"
+                )
+            if captured["route_status"] != "blocked":
+                raise RuntimeError(
+                    f"Captured game input was not blocked from the editor: {captured!r}"
+                )
+            if int(captured["execution_count"]) != 0:
+                raise RuntimeError(
+                    f"Captured game input executed an editor command: {captured!r}"
+                )
+
+            def unregister_capture_probe() -> None:
+                services = EditorServices.instance()
+                if services.shortcut_router is not None:
+                    services.shortcut_router.unregister(binding_id)
+                if services.command_registry is not None:
+                    services.command_registry.unregister(command_id)
+
+            run("unregister-game-input-probe", unregister_capture_probe)
+            game_input_capture = {**focused, **captured}
+            _emit("game-input-captured", **game_input_capture)
+
         time.sleep(max(float(play_seconds), 0.1))
         played = run("runtime-after-play", host.runtime_status)
         if float(played.get("total_play_time", 0.0)) <= 0.0:
@@ -455,6 +610,7 @@ def _run_smoke(
             "play_seconds": float(played.get("total_play_time", 0.0)),
             "enter_timings_ms": playing.get("transition_timings_ms", {}),
             "exit_timings_ms": editing.get("transition_timings_ms", {}),
+            "game_input_capture": game_input_capture,
         }
         run("close", host.request_editor_close)
     except BaseException as exc:
@@ -506,6 +662,7 @@ def main() -> int:
             if args.native_save_dialog
             else "",
             "capture_sources": tuple(dict.fromkeys(args.capture)),
+            "verify_game_input_capture": bool(args.verify_game_input_capture),
             "outcome": outcome,
         },
         name="InfernuxEditorProjectSmoke",

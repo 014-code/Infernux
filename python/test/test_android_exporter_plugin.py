@@ -411,7 +411,14 @@ def test_android_compute_aot_is_requested_from_shared_cook(monkeypatch, tmp_path
         str(project),
         "android-arm64",
         str(tmp_path / "output"),
-        BuildProfile(options={"build_settings": {}}),
+        BuildProfile(options={
+            "display_mode": "fullscreen_borderless",
+            "window_width": 1280,
+            "window_height": 720,
+            "window_resizable": False,
+            "android_orientation": "landscape",
+            "build_settings": {},
+        }),
     )
     cooked = platform_cook.PlatformContentCookResult(
         "TestGame",
@@ -464,7 +471,14 @@ def test_android_rejects_direct_jit_imports_in_selected_sources(
     monkeypatch.setattr(platform_cook, "cook_platform_content", lambda *args, **kwargs: cooked)
     request = BuildRequest(
         str(tmp_path / "project"), "android-arm64", str(tmp_path / "output"),
-        BuildProfile(options={"build_settings": {}}),
+        BuildProfile(options={
+            "display_mode": "fullscreen_borderless",
+            "window_width": 1280,
+            "window_height": 720,
+            "window_resizable": False,
+            "android_orientation": "landscape",
+            "build_settings": {},
+        }),
     )
 
     with pytest.raises(ValueError, match=rf"{missing_package}.*Android runtime has no CPU JIT"):
@@ -752,12 +766,12 @@ def test_android_host_template_excludes_asset_database_sidecars(
     ("option", "width", "height", "expected"),
     (
         (
-            "auto",
+            "landscape",
             1920,
             1080,
             ("LandscapeLeft LandscapeRight", "sensorLandscape"),
         ),
-        ("auto", 720, 1280, ("Portrait PortraitUpsideDown", "sensorPortrait")),
+        ("portrait", 720, 1280, ("Portrait PortraitUpsideDown", "sensorPortrait")),
         (
             "sensor",
             1280,
@@ -799,18 +813,19 @@ def test_android_orientation_contract_rejects_unknown_policy(monkeypatch, tmp_pa
         exporter_module._android_orientation_contract(request, {})
 
 
-def test_android_auto_orientation_requires_normalized_dimensions(monkeypatch, tmp_path):
+def test_android_default_orientation_is_explicit_landscape(monkeypatch, tmp_path):
     _android_module(monkeypatch)
     exporter_module = importlib.import_module("infernux_android.exporter")
     request = BuildRequest(
         str(tmp_path / "Project"),
         "android-arm64",
         str(tmp_path / "Build"),
-        BuildProfile(options={"android_orientation": "auto"}),
+        BuildProfile(options={}),
     )
 
-    with pytest.raises(KeyError, match="window_width"):
-        exporter_module._android_orientation_contract(request, {})
+    assert exporter_module._android_orientation_contract(request, {}) == (
+        "LandscapeLeft LandscapeRight", "sensorLandscape"
+    )
 
 
 @pytest.mark.parametrize(

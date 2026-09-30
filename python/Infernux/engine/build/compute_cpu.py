@@ -295,13 +295,20 @@ class _VectorKernelLowering(ast.NodeTransformer):
                     "CPU vector atomic_add requires a qualified compute decorator"
                 )
             helper.attr = "_cpu_atomic_add"
+            mask = self.active_mask
+            if mask is None:
+                mask = ast.Call(
+                    ast.Attribute(ast.Name("__inx_np", ast.Load()), "ones_like", ast.Load()),
+                    [ast.Name(self.work_index, ast.Load())],
+                    [ast.keyword("dtype", ast.Attribute(ast.Name("__inx_np", ast.Load()), "bool_", ast.Load()))],
+                )
             result = ast.Call(
                 helper,
                 [
                     target,
                     indices,
                     value,
-                    self.active_mask or ast.Constant(None),
+                    mask,
                 ],
                 [],
             )

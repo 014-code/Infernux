@@ -172,6 +172,7 @@ def _semantic_capture_enabled(ctx: InxGUIContext) -> bool:
     type_id="animtimeline_editor",
     title_key="panel.animtimeline_editor",
     menu_path="Animation",
+    menu_path_keys=("menu.animation",),
     interaction=_TIMELINE_PANEL_INTERACTION,
 )
 class AnimTimelineEditorPanel(EditorPanel):

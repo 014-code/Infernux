@@ -9,6 +9,9 @@ from Infernux.engine.build import (
     BuildDiagnostic,
     BuildExporterRegistry,
     BuildPlan,
+    BuildOption,
+    BuildOptionChoice,
+    BuildOptionKind,
     BuildProfile,
     BuildRequest,
     BuildResult,
@@ -104,6 +107,78 @@ def test_target_ids_and_graphics_backends_are_strict():
         BuildTargetId("Android x64")
     with pytest.raises(ValueError, match="Vulkan or WebGPU"):
         PlatformCapabilities(graphics_api="OpenGL")
+
+
+def test_exporter_owned_build_options_are_typed_defaulted_and_strict(tmp_path):
+    class OptionExporter(_FixtureExporter):
+        def build_options(self, target):
+            assert target.id == "fixture-x64"
+            return (
+                BuildOption(
+                    "display_mode",
+                    "Display mode",
+                    BuildOptionKind.ENUM,
+                    "windowed",
+                    choices=(
+                        BuildOptionChoice("windowed", "Windowed"),
+                        BuildOptionChoice("fullscreen", "Fullscreen"),
+                    ),
+                ),
+                BuildOption(
+                    "width",
+                    "Width",
+                    BuildOptionKind.INTEGER,
+                    1280,
+                    minimum=320,
+                    maximum=7680,
+                    visible_when={"display_mode": "windowed"},
+                ),
+            )
+
+    registry = BuildExporterRegistry()
+    registry.register("package:infernux/options", OptionExporter())
+
+    assert registry.resolve_options("fixture-x64", {}) == {
+        "display_mode": "windowed",
+        "width": 1280,
+    }
+    assert registry.resolve_options(
+        "fixture-x64", {"display_mode": "fullscreen", "width": 1920}
+    ) == {"display_mode": "fullscreen", "width": 1920}
+    with pytest.raises(ValueError, match="Unknown build options"):
+        registry.resolve_options("fixture-x64", {"widht": 1920})
+    with pytest.raises(ValueError, match="at most 7680"):
+        registry.resolve_options("fixture-x64", {"width": 8000})
+
+
+def test_build_service_supplies_exporter_option_defaults(tmp_path):
+    observed = {}
+
+    class OptionExporter(_FixtureExporter):
+        def build_options(self, _target):
+            return (
+                BuildOption(
+                    "quality", "Quality", BuildOptionKind.ENUM, "high",
+                    choices=(BuildOptionChoice("high", "High"),),
+                ),
+            )
+
+        def doctor(self, request):
+            observed["doctor"] = dict(request.profile.options)
+            return super().doctor(request)
+
+        def execute(self, request, plan):
+            observed["execute"] = dict(request.profile.options)
+            return super().execute(request, plan)
+
+    registry = BuildExporterRegistry()
+    registry.register("package:infernux/options", OptionExporter())
+    BuildService(registry).execute(_request(tmp_path))
+
+    assert observed == {
+        "doctor": {"quality": "high"},
+        "execute": {"quality": "high"},
+    }
 
 
 def test_registry_registration_is_atomic_and_owner_can_unload(tmp_path):

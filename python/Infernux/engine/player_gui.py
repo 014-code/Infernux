@@ -126,6 +126,9 @@ class PlayerGUI(InxGUIRenderable):
         self._mouse_event_dispatcher = MouseEventDispatcher()
         self._input_scene_token = None
         self._has_shared_scene_query = False
+        self._touch_scene_frame = None
+        self._touch_scene_hit = None
+        self._touch_scene_query_shared = False
         self._last_frame_time = time.time()
         self._control = control_channel
         self._activate_play = activate_play
@@ -337,6 +340,21 @@ class PlayerGUI(InxGUIRenderable):
         if camera is None:
             dispatcher.reset()
             return
+        touch_frame = getattr(self, "_touch_scene_frame", None)
+        if touch_frame is not None:
+            x, y, held, down, up, canceled = touch_frame
+            if getattr(self, "_touch_scene_query_shared", False):
+                dispatcher.process(
+                    camera, (x, y), (float(game_w), float(game_h)),
+                    hit=getattr(self, "_touch_scene_hit", None),
+                    button_state=(held, down, up), canceled=canceled,
+                )
+            else:
+                dispatcher.process(
+                    camera, (x, y), (float(game_w), float(game_h)),
+                    button_state=(held, down, up), canceled=canceled,
+                )
+            return
         x, y, _sx, _sy, held, down, up = Input.get_game_mouse_frame_state(0) if mouse_frame is None else mouse_frame
         if scene_hit is None and not self._has_shared_scene_query:
             dispatcher.process(camera, (x, y), (float(game_w), float(game_h)), button_state=(held, down, up))
@@ -350,6 +368,10 @@ class PlayerGUI(InxGUIRenderable):
 
         scene = SceneManager.instance().get_active_scene()
         self._synchronize_input_scene(scene)
+        touches = tuple(Input.touches)
+        self._touch_scene_frame = self._primary_touch_scene_frame(touches, game_w, game_h)
+        self._touch_scene_hit = None
+        self._touch_scene_query_shared = False
         if scene is None:
             self._has_shared_scene_query = False
             return None
@@ -386,7 +408,6 @@ class PlayerGUI(InxGUIRenderable):
                 scroll_delta=(scroll_x, scroll_y),
             )
         ]
-        touches = tuple(Input.touches)
         touch_points = tuple(
             (
                 float(touch.normalized_position[0]) * float(game_w),
@@ -394,9 +415,28 @@ class PlayerGUI(InxGUIRenderable):
             )
             for touch in touches
         )
-        touch_positions = map_runtime_ui_pointers(
-            surfaces, camera, touch_points, game_w, game_h
+        primary_index = next(
+            (index for index, touch in enumerate(touches) if touch.is_primary),
+            0 if touches else None,
         )
+        if len(touches) == 1:
+            positions, self._touch_scene_hit = map_runtime_ui_pointer(
+                surfaces, camera, touch_points[0][0], touch_points[0][1],
+                game_w, game_h, include_scene_hit=True,
+            )
+            touch_positions = (positions,)
+            self._touch_scene_query_shared = True
+        else:
+            touch_positions = map_runtime_ui_pointers(
+                surfaces, camera, touch_points, game_w, game_h
+            )
+            if primary_index is not None:
+                _positions, self._touch_scene_hit = map_runtime_ui_pointer(
+                    surfaces, camera,
+                    touch_points[primary_index][0], touch_points[primary_index][1],
+                    game_w, game_h, include_scene_hit=True,
+                )
+                self._touch_scene_query_shared = True
         same_frame_terminal = tuple(
             touch.began_this_frame and touch.phase in (TouchPhase.ENDED, TouchPhase.CANCELED)
             for touch in touches
@@ -437,3 +477,31 @@ class PlayerGUI(InxGUIRenderable):
 
         self._ui_event_processor.process_pointers(surfaces, pointers, dt)
         return scene_hit
+
+    @staticmethod
+    def _primary_touch_scene_frame(touches, game_w: int, game_h: int):
+        """Promote the primary mobile contact to the gameplay pointer.
+
+        Screen UI retains every independent touch. The primary contact also
+        drives Collider callbacks, matching the Player's ordinary mouse path
+        without asking gameplay scripts to branch by platform.
+        """
+        if not touches:
+            return None
+        touch = next((value for value in touches if value.is_primary), touches[0])
+        terminal = touch.phase in (TouchPhase.ENDED, TouchPhase.CANCELED)
+        same_frame_terminal = bool(touch.began_this_frame) and terminal
+        normalized = (
+            touch.begin_normalized_position
+            if same_frame_terminal else touch.normalized_position
+        )
+        x = float(normalized[0]) * float(game_w)
+        y = (1.0 - float(normalized[1])) * float(game_h)
+        return (
+            x,
+            y,
+            touch.phase in (TouchPhase.BEGAN, TouchPhase.MOVED, TouchPhase.STATIONARY),
+            touch.phase is TouchPhase.BEGAN or same_frame_terminal,
+            terminal,
+            touch.phase is TouchPhase.CANCELED,
+        )

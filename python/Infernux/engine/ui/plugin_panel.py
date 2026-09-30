@@ -35,6 +35,7 @@ def _metric(ctx, value: float) -> float:
     type_id="plugins",
     title_key="panel.plugins",
     menu_path="Extensions",
+    menu_path_keys=("menu.extensions",),
     interaction=PanelInteractionDescriptor(),
 )
 class PluginPanel(EditorPanel):
@@ -46,6 +47,7 @@ class PluginPanel(EditorPanel):
         self._source = ""
         self._pip = ""
         self._message = ""
+        self._pending_action = False
         self._selected_reference = ""
         self._detail_reference = ""
         self._document_texture_settings = TextureImportSettings(texture_type=TextureType.UI)
@@ -933,6 +935,29 @@ class PluginPanel(EditorPanel):
             self._message = t("plugins.install_progress.busy")
 
     def _run(self, callback, action: str) -> None:
+        """Run a package mutation after the native UI frame has retired.
+
+        Enable, disable, and uninstall can publish or retire Runtime component
+        dispatch epochs.  ImGui button callbacks execute while the component
+        scheduler still owns the current native frame, so performing those
+        mutations inline violates the runtime safe-point contract.  Queue the
+        complete operation for the engine's post-present owner-thread drain.
+        """
+        if self._pending_action:
+            return
+        from Infernux.engine.runtime_event_queue import enqueue
+
+        self._pending_action = True
+
+        def commit() -> None:
+            try:
+                self._run_now(callback, action)
+            finally:
+                self._pending_action = False
+
+        enqueue(commit)
+
+    def _run_now(self, callback, action: str) -> None:
         try:
             result = callback()
             reference = getattr(result, "reference", "")

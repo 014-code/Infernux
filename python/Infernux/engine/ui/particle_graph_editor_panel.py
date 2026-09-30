@@ -318,6 +318,7 @@ def _node_property_is_visible(node, key: str) -> bool:
     type_id="particle_graph_editor",
     title_key="panel.particle_graph_editor",
     menu_path="Rendering",
+    menu_path_keys=("menu.rendering",),
     interaction=NODE_GRAPH_PANEL_INTERACTION,
 )
 class ParticleGraphEditorPanel(NodeGraphEditorPanel):

@@ -31,6 +31,7 @@ from Infernux.engine.build_cancellation import BuildCancelled
 from Infernux.engine.build import (
     BuildCancellationToken,
     BuildConfiguration,
+    BuildOptionKind,
     BuildProfile,
     BuildRequest,
     BuildService,
@@ -69,17 +70,12 @@ _VIDEO_EXTS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".bmp", ".tga"}
 _ICON_EXTS = {".png", ".jpg", ".jpeg", ".ico"}
 
-_DISPLAY_MODES_KEYS = ["build.fullscreen_borderless", "build.windowed"]
-_DISPLAY_MODE_KEYS = ["fullscreen_borderless", "windowed"]
-_ANDROID_ARTIFACTS = ["apk", "aab"]
-
 # ---------------------------------------------------------------------------
 # Drag-drop type & style constants
 # ---------------------------------------------------------------------------
 
 DRAG_DROP_SCENE = "SCENE_FILE"
 DRAG_DROP_REORDER = "BUILD_REORDER"
-_DRAG_TARGET_COLOR = Theme.DRAG_DROP_TARGET
 
 
 def _metric(ctx, value: float) -> float:
@@ -144,15 +140,11 @@ class BuildSettingsPanel(EditorPanel):
     def __init__(self):
         super().__init__(title="Build Settings", window_id="build_settings")
         self._build_target: str = ""
-        self._android_artifact: str = "apk"
+        self._platform_options: Dict[str, Dict[str, object]] = {}
         self._game_name: str = ""
         self._scenes: List[str] = []
         self._output_dir: str = ""
         self._icon_guid: str = ""
-        self._display_mode_idx: int = 0  # 0=fullscreen, 1=windowed
-        self._window_width: int = 1280
-        self._window_height: int = 720
-        self._window_resizable: bool = True
         self._splash_items: List[Dict] = []
         self._settings_controller = None
         self._pending_settings_edits = deque()
@@ -286,15 +278,11 @@ class BuildSettingsPanel(EditorPanel):
 
     def _apply_build_settings(self, data: dict) -> None:
         self._build_target = data["build_target"]
-        self._android_artifact = data["android_artifact"]
+        self._platform_options = copy.deepcopy(data["platform_options"])
         self._game_name = data["game_name"]
         self._scenes = list(data["scene_guids"])
         self._output_dir = data["output_dir"]
         self._icon_guid = data["icon_guid"]
-        self._display_mode_idx = _DISPLAY_MODE_KEYS.index(data["display_mode"])
-        self._window_width = data["window_width"]
-        self._window_height = data["window_height"]
-        self._window_resizable = data["window_resizable"]
         self._debug_mode = data["debug_mode"]
         self._lto = data["lto"]
         self._splash_items = list(data["splash_items"])
@@ -302,15 +290,11 @@ class BuildSettingsPanel(EditorPanel):
     def _capture_build_settings(self) -> dict:
         return normalize_build_settings({
             "build_target": self._build_target,
-            "android_artifact": self._android_artifact,
+            "platform_options": self._platform_options,
             "game_name": self._game_name,
             "scene_guids": self._scenes,
             "output_dir": self._output_dir,
             "icon_guid": self._icon_guid,
-            "display_mode": _DISPLAY_MODE_KEYS[self._display_mode_idx],
-            "window_width": self._window_width,
-            "window_height": self._window_height,
-            "window_resizable": self._window_resizable,
             "debug_mode": self._debug_mode,
             "lto": self._lto,
             "splash_items": self._splash_items,
@@ -565,35 +549,6 @@ class BuildSettingsPanel(EditorPanel):
                 string_value=reference,
             )
 
-        selected_platform = (
-            str(selected.platform)
-            if selected is not None
-            else next_id.split("-", 1)[0]
-        )
-        if selected_platform == "android":
-            ctx.same_line(0, _metric(ctx, 20.0))
-            ctx.label(t("build.android_artifact"))
-            ctx.same_line(0, _metric(ctx, 8.0))
-            artifact_index = _ANDROID_ARTIFACTS.index(self._android_artifact)
-            next_artifact_index = ctx.combo(
-                "##android_artifact",
-                artifact_index,
-                ["APK", "AAB"],
-            )
-            next_artifact = _ANDROID_ARTIFACTS[
-                max(0, min(len(_ANDROID_ARTIFACTS) - 1, int(next_artifact_index)))
-            ]
-            ctx.record_semantic_item(
-                "combo",
-                t("build.android_artifact"),
-                True,
-                "build_settings.android_artifact",
-                string_value=next_artifact,
-            )
-            if next_artifact != self._android_artifact:
-                self._android_artifact = next_artifact
-                self._save()
-
     def _open_platform_plugin(self, reference: str) -> bool:
         manager = getattr(self, "_window_manager", None)
         if manager is None:
@@ -804,71 +759,92 @@ class BuildSettingsPanel(EditorPanel):
         self._save()
 
     # ------------------------------------------------------------------
-    # DISPLAY MODE
+    # PLATFORM OPTIONS
     # ------------------------------------------------------------------
 
     def _render_display_section(self, ctx):
-        ctx.label(t("build.display_mode"))
-        display_modes = [t(k) for k in _DISPLAY_MODES_KEYS]
-        new_idx = ctx.combo("##display_mode", self._display_mode_idx, display_modes)
-        ctx.record_semantic_item(
-            "combo",
-            t("build.display_mode"),
-            True,
-            "build_settings.display_mode",
-            string_value=_DISPLAY_MODE_KEYS[new_idx],
-        )
-        if new_idx != self._display_mode_idx:
-            self._display_mode_idx = new_idx
-            self._save()
-
-        if self._display_mode_idx == 1:  # Windowed
-            ctx.label(t("build.window_size"))
-            new_w = ctx.input_int(
-                t("build.width") + "##win_w",
-                self._window_width,
-                16,
-                _metric(ctx, 160.0),
+        target_id = str(self._build_target or "")
+        if not target_id:
+            return
+        try:
+            descriptors = exporter_registry.options(target_id)
+            values = exporter_registry.resolve_options(
+                target_id,
+                dict(self._platform_options.get(target_id, {})),
+                reserved=(),
             )
-            ctx.record_semantic_item(
-                "int_input",
-                t("build.width"),
-                True,
-                "build_settings.window.width",
-                numeric_value=float(new_w),
-            )
-            if new_w != self._window_width:
-                self._window_width = max(320, min(7680, new_w))
+        except KeyError:
+            return
+        visible = tuple(item for item in descriptors if item.is_visible(values))
+        if not visible:
+            return
+        ctx.label(t("build.platform_options"))
+        for option in visible:
+            label = t(option.label) if option.label.startswith("build.") else option.label
+            semantic_id = f"build_settings.platform_options.{target_id}.{option.key}"
+            current = values[option.key]
+            changed = False
+            following = current
+            if option.kind is BuildOptionKind.ENUM:
+                choice_values = [item.value for item in option.choices]
+                choice_labels = [
+                    t(item.label) if item.label.startswith("build.") else item.label
+                    for item in option.choices
+                ]
+                selected = choice_values.index(str(current))
+                selected = int(ctx.combo(f"##platform_{option.key}", selected, choice_labels))
+                selected = max(0, min(len(choice_values) - 1, selected))
+                following = choice_values[selected]
+                ctx.record_semantic_item(
+                    "combo", label, True, semantic_id, string_value=following
+                )
+                changed = following != current
+            elif option.kind is BuildOptionKind.BOOLEAN:
+                following = bool(ctx.checkbox(
+                    label + f"##platform_{option.key}", bool(current)
+                ))
+                ctx.record_semantic_item(
+                    "checkbox", label, True, semantic_id, bool_value=following
+                )
+                changed = following != current
+            elif option.kind is BuildOptionKind.INTEGER:
+                ctx.label(label)
+                ctx.set_next_item_width(_metric(ctx, 180.0))
+                following = int(ctx.input_int(
+                    f"##platform_{option.key}", int(current), option.step,
+                ))
+                if option.minimum is not None:
+                    following = max(option.minimum, following)
+                if option.maximum is not None:
+                    following = min(option.maximum, following)
+                ctx.record_semantic_item(
+                    "int_input", label, True, semantic_id,
+                    numeric_value=float(following),
+                )
+                changed = following != current
+            else:
+                ctx.label(label)
+                following = ctx.text_input(
+                    f"##platform_{option.key}", str(current), 512
+                )
+                ctx.record_semantic_item(
+                    "text_input", label, True, semantic_id,
+                    string_value=following,
+                )
+                changed = following != current
+            if changed:
+                following = option.normalize(following)
+                target_values = self._platform_options.setdefault(target_id, {})
+                target_values[option.key] = following
+                values[option.key] = following
                 self._save()
-            ctx.same_line()
-            new_h = ctx.input_int(
-                t("build.height") + "##win_h",
-                self._window_height,
-                16,
-                _metric(ctx, 160.0),
-            )
-            ctx.record_semantic_item(
-                "int_input",
-                t("build.height"),
-                True,
-                "build_settings.window.height",
-                numeric_value=float(new_h),
-            )
-            if new_h != self._window_height:
-                self._window_height = max(240, min(4320, new_h))
-                self._save()
-
-            new_resizable = ctx.checkbox(t("build.window_resizable") + "##resizable", self._window_resizable)
-            ctx.record_semantic_item(
-                "checkbox",
-                t("build.window_resizable"),
-                True,
-                "build_settings.window.resizable",
-                bool_value=new_resizable,
-            )
-            if new_resizable != self._window_resizable:
-                self._window_resizable = new_resizable
-                self._save()
+            if option.description:
+                description = (
+                    t(option.description)
+                    if option.description.startswith("build.")
+                    else option.description
+                )
+                ctx.text_wrapped(description)
 
 
 
@@ -1500,7 +1476,11 @@ class BuildSettingsPanel(EditorPanel):
                 debug_symbols=self._debug_mode,
                 compress_resources=not self._debug_mode,
                 options={
-                    "android_artifact": self._android_artifact,
+                    **exporter_registry.resolve_options(
+                        target_id,
+                        dict(self._platform_options.get(target_id, {})),
+                        reserved=(),
+                    ),
                     "build_settings": self._capture_build_settings(),
                 },
             ),

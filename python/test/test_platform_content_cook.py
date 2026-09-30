@@ -15,6 +15,17 @@ from Infernux.engine.platform_content_cook import (
 from Infernux.engine.player_package_native import read_manifest, write_pack
 
 
+def _presentation_options(**overrides):
+    options = {
+        "display_mode": "windowed",
+        "window_width": 1280,
+        "window_height": 720,
+        "window_resizable": True,
+    }
+    options.update(overrides)
+    return options
+
+
 def _seal_build_manifest(data: Path, source_root: Path, document: dict) -> None:
     manifest_source = source_root / "BuildManifest.json"
     manifest_source.write_text(json.dumps(document), encoding="utf-8")
@@ -115,6 +126,7 @@ def test_platform_cook_consumes_editor_catalog_snapshot_without_rescanning(
         str(project),
         "web-wasm32",
         str(tmp_path / "Published"),
+        BuildProfile(options=_presentation_options()),
         asset_catalog_entries=({"guid": "a" * 32},),
     )
 
@@ -175,7 +187,10 @@ def test_platform_cook_releases_headless_catalog_host_before_builder(
     monkeypatch.setattr("Infernux.engine.platform_content_cook.GameBuilder", _Builder)
 
     result = cook_platform_content(
-        BuildRequest(str(project), "web-wasm32", str(tmp_path / "Published")),
+        BuildRequest(
+            str(project), "web-wasm32", str(tmp_path / "Published"),
+            BuildProfile(options=_presentation_options()),
+        ),
         output,
         platform_host={"identity": "fixture"},
     )
@@ -191,9 +206,9 @@ def test_build_request_reads_and_normalizes_project_settings_strictly(tmp_path):
     (settings_dir / "BuildSettings.json").write_text(
         json.dumps(
             {
-                "display_mode": "windowed",
-                "window_width": 1280,
-                "window_height": 720,
+                "platform_options": {
+                    "windows-x64": _presentation_options()
+                },
                 "scene_guids": [],
             }
         ),
@@ -256,8 +271,9 @@ def test_build_request_rejects_non_positive_render_dimensions(tmp_path):
         BuildProfile(
             options={
                 "build_settings": {
-                    "window_width": 0,
-                    "window_height": 720,
+                    "platform_options": {
+                        "windows-x64": _presentation_options(window_width=0)
+                    },
                     "scene_guids": [],
                 }
             }
@@ -279,10 +295,9 @@ def test_host_player_uses_the_shared_authoritative_build_settings(
         json.dumps(
             {
                 "game_name": "WindowedGame",
-                "display_mode": "windowed",
-                "window_width": 1280,
-                "window_height": 720,
-                "window_resizable": False,
+                "platform_options": {
+                    "windows-x64": _presentation_options(window_resizable=False)
+                },
                 "scene_guids": [],
             }
         ),
@@ -331,6 +346,7 @@ def test_host_player_does_not_recreate_missing_normalized_settings(
     from Infernux.engine.interaction.project_settings import normalize_build_settings
 
     settings = normalize_build_settings({})
+    settings.update(_presentation_options())
     settings.pop("display_mode")
     monkeypatch.setattr(
         "Infernux.engine.platform_content_cook.build_settings_for_request",
@@ -353,6 +369,7 @@ def test_platform_cook_does_not_recreate_missing_normalized_settings(
     from Infernux.engine.interaction.project_settings import normalize_build_settings
 
     settings = normalize_build_settings({})
+    settings.update(_presentation_options())
     settings.pop("window_width")
     monkeypatch.setattr(
         "Infernux.engine.platform_content_cook.build_settings_for_request",

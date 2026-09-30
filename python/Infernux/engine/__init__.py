@@ -343,10 +343,12 @@ def run_player(project_path: str, engine_log_level=LogLevel.Info):
         # Publish chrome before native startup. The SDL window remains hidden
         # until bootstrap finishes, then appears with its final title, icon,
         # and display mode without an engine-owned loading window.
-        if display_mode == "fullscreen_borderless":
-            os.environ["_INFERNUX_PLAYER_FULLSCREEN"] = "1"
-        else:
-            os.environ.pop("_INFERNUX_PLAYER_FULLSCREEN", None)
+        os.environ["_INFERNUX_PLAYER_FULLSCREEN"] = (
+            "1" if display_mode == "fullscreen_borderless" else "0"
+        )
+        os.environ["_INFERNUX_PLAYER_WINDOW_RESIZABLE"] = (
+            "1" if window_resizable else "0"
+        )
         os.environ["_INFERNUX_PLAYER_WINDOW_TITLE"] = title
         os.environ["_INFERNUX_PLAYER_WINDOW_ICON"] = window_icon
 
@@ -367,9 +369,6 @@ def run_player(project_path: str, engine_log_level=LogLevel.Info):
         bootstrap.engine.set_window_title(title)
         if display_mode == "fullscreen_borderless":
             bootstrap.engine.set_fullscreen(True)
-        else:
-            bootstrap.engine.set_maximized(False)
-            bootstrap.engine.set_resizable(window_resizable)
         bootstrap.engine.set_window_icon(window_icon)
 
         _signal_engine_loaded()

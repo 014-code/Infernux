@@ -5,6 +5,7 @@ import pytest
 from Infernux.core.asset_types import TextureType
 from Infernux.engine.ui.plugin_panel import PluginPanel
 import Infernux.engine.ui.plugin_panel as panel_module
+from Infernux.engine import runtime_event_queue
 
 
 @pytest.mark.parametrize("pages", [[], [{"id": "usage", "title": "Usage"}, {"id": "notes", "title": "Notes"}]])
@@ -74,3 +75,21 @@ def test_document_images_request_ui_color_and_full_page_resolution(monkeypatch):
     assert settings.srgb is True
     assert settings.max_size >= 720
     assert requests[0]["preserve_aspect"] is True
+
+
+def test_plugin_package_mutation_runs_after_the_render_frame():
+    panel = PluginPanel()
+    calls = []
+    runtime_event_queue.clear()
+
+    panel._run(
+        lambda: calls.append("commit") or SimpleNamespace(reference="vendor/plugin"),
+        "toggle",
+    )
+
+    assert calls == []
+    assert panel._pending_action is True
+    assert runtime_event_queue.drain() == 1
+    assert calls == ["commit"]
+    assert panel._pending_action is False
+    assert panel._selected_reference == "vendor/plugin"

@@ -1042,6 +1042,88 @@ def test_player_exports_local_author_package_without_installing(
         manager.unload_all()
 
 
+def test_player_plugin_component_joins_runtime_type_and_guid_catalogs(tmp_path):
+    from Infernux.components import InxComponent, serialized_field
+    from Infernux.components.component_identity import bind_asset_script_guid
+    from Infernux.engine.project_context import get_script_module_name
+
+    project = _make_project(tmp_path)
+    authored = project / "Packages/vendor/component-kit/runtime/plugin_component.py"
+    authored.parent.mkdir(parents=True)
+    authored_source = (
+        "import infernux as inx\n"
+        "InxComponent = inx.InxComponent\n"
+        "class PluginMover(InxComponent):\n"
+        "    speed: float = inx.serialized_field(default=4.0)\n"
+        "    def start(self):\n"
+        "        pass\n"
+    )
+    authored.write_text(authored_source, encoding="utf-8")
+    (authored.parents[1] / "inx_package.json").write_text(
+        json.dumps({"reference": "vendor/component-kit"}), encoding="utf-8"
+    )
+    script_guid = "4d9c67b9b82d4a3292819c56980bc101"
+    module_name = get_script_module_name(str(authored), str(project))
+    assert module_name == "_infernux_packages.vendor.component_2dkit.runtime.plugin_component"
+
+    class PluginMover(InxComponent):
+        speed: float = serialized_field(default=4.0)
+
+        def start(self):
+            pass
+
+    PluginMover.__module__ = module_name
+    PluginMover.__qualname__ = "PluginMover"
+    type_guid = bind_asset_script_guid(PluginMover, script_guid)
+
+    output = tmp_path / "build"
+    data = output / "Data"
+    staged = data / "Packages/vendor/component-kit/runtime/plugin_component.py"
+    staged.parent.mkdir(parents=True)
+    staged.write_text(authored_source, encoding="utf-8")
+    registry_path = data / "ProjectSettings/InxPlugins.json"
+    registry_path.parent.mkdir(parents=True)
+    registry_path.write_text(
+        json.dumps({
+            "installed": [{
+                "reference": "vendor/component-kit",
+                "enabled": True,
+                "files": [{
+                    "logical_path": "runtime/plugin_component.py",
+                    "path_hint": "Packages/vendor/component-kit/runtime/plugin_component.py",
+                    "guid": script_guid,
+                    "role": "runtime",
+                    "owned": True,
+                }],
+            }],
+        }),
+        encoding="utf-8",
+    )
+    builder = GameBuilder(str(project), str(output), game_name="PluginComponentGame")
+    builder._cooked_asset_entries = {
+        script_guid: _asset_index_entry(
+            project, authored, script_guid, "", "Script"
+        )
+    }
+
+    builder._compile_player_plugin_scripts(str(output))
+
+    guid_map = json.loads((data / "_script_guid_map.json").read_text(encoding="utf-8"))
+    assert guid_map[script_guid] == (
+        "Packages/vendor/component-kit/runtime/plugin_component.pyc"
+    )
+    catalog = json.loads(
+        (data / "Library/RuntimeTypeRegistry.json").read_text(encoding="utf-8")
+    )
+    record = next(item for item in catalog["types"] if item["type_guid"] == type_guid)
+    assert record["module"] == module_name
+    assert record["qualname"] == "PluginMover"
+    assert record["lifecycle"] == ["start"]
+    assert record["semantic"]["fields"][0]["attributes"]["default"] == 4.0
+    assert staged.with_suffix(".pyc").is_file()
+    assert not staged.exists()
+
+
 @pytest.mark.parametrize("original_role,current_role", [
     ("runtime", "editor"), ("editor", "runtime"), ("runtime", None),
 ])
@@ -5692,6 +5774,7 @@ def test_player_build_seals_startup_warmups_for_target_platform(tmp_path):
                     "Scripts.Compute:Compute._infernux_startup_warmup": {
                         "platform": "windows",
                         "status": "ready",
+                        "source": "C:/author/project/Assets/Scripts/Compute.py",
                         "source_sha256": "obsolete",
                     }
                 },
@@ -5706,6 +5789,7 @@ def test_player_build_seals_startup_warmups_for_target_platform(tmp_path):
     entry = next(iter(document["entries"].values()))
     assert document["platform"] == "android"
     assert entry["platform"] == "android"
+    assert "source" not in entry
     assert "source_sha256" not in entry
 
 
@@ -6575,7 +6659,7 @@ def test_payload_manifest_rejects_source_replaced_by_current_library_artifact(tm
         builder._write_payload_manifest(str(final_dir))
 
 
-def test_generated_player_log_is_lazy(tmp_path):
+def test_generated_player_log_is_lazy_and_stale_crash_is_cleared(tmp_path):
     builder = _make_builder(tmp_path, tmp_path / "build_output")
     source_path = Path(builder._generate_boot_script())
     source = source_path.read_text(encoding="utf-8")
@@ -6583,6 +6667,9 @@ def test_generated_player_log_is_lazy(tmp_path):
     assert "os.makedirs(_LOGS_DIR, exist_ok=True)" in source
     assert source.count("os.makedirs(_LOGS_DIR, exist_ok=True)") == 1
     assert "open(_LOG, \"w\", encoding=\"utf-8\").close()" not in source
+    assert '_CRASH_LOG = os.path.join(_LOGS_DIR, "crash.log")' in source
+    assert "if os.path.isfile(_CRASH_LOG):\n    os.remove(_CRASH_LOG)" in source
+    assert 'with open(_CRASH_LOG, "w", encoding="utf-8") as _stream:' in source
 
 
 def test_generated_player_boot_registers_lowercase_public_namespace(tmp_path):
@@ -7343,6 +7430,9 @@ class TestGameBuilderDependencyCollection:
         assert not NuitkaBuilder._is_player_runtime_excluded_source(
             "engine/build_settings.py"
         )
+        assert not NuitkaBuilder._is_player_runtime_excluded_source(
+            "engine/build_target.py"
+        )
         assert NuitkaBuilder._is_player_runtime_excluded_source(
             "engine/candidate_import.py"
         )
@@ -7445,9 +7535,12 @@ class TestGameBuilderAutoParallelExport:
         if location.startswith("Packages/"):
             registry = output / "Data/ProjectSettings/InxPlugins.json"
             registry.parent.mkdir(parents=True)
-            registry.write_text(json.dumps({"installed": [{"files": [{
-                "guid": "gpu-script-guid", "path_hint": location + "/gpu.py"
-            }]}]}), encoding="utf-8")
+            registry.write_text(json.dumps({"installed": [{
+                "reference": "vendor/compute",
+                "files": [{
+                    "guid": "gpu-script-guid", "path_hint": location + "/gpu.py"
+                }],
+            }]}), encoding="utf-8")
             compile_scripts = builder._compile_player_plugin_scripts
 
         compile_scripts(str(output))

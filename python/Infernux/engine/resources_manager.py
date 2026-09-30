@@ -45,6 +45,14 @@ class _AssetLocalWritePending(_AssetImportNotReady):
     pass
 
 
+def _is_plugin_editor_translation_catalog(path: str, project_root: str) -> bool:
+    return (
+        os.path.basename(path).casefold() == "translations.json"
+        and os.path.basename(os.path.dirname(path)).casefold() == "editor"
+        and package_script_role(path, project_root) == "editor"
+    )
+
+
 class _ScriptPublicationTransaction:
     """Owner-thread state for one dependency-aware script publication.
 
@@ -274,11 +282,20 @@ class ResourceChangeHandler(FileSystemEventHandler):
             return True
         return False
 
+    def _is_editor_translation_change(self, file_path: str) -> bool:
+        project_root = str(
+            getattr(self._dependency_graph, "project_root", "") or ""
+        )
+        return bool(project_root) and _is_plugin_editor_translation_catalog(
+            file_path, project_root
+        )
+
     def on_created(self, event):
         if event.is_directory or self._should_ignore(event.src_path):
             return
         lower = str(event.src_path or "").lower()
         script_change = lower.endswith(".py") and not _is_particle_script_path(lower)
+        editor_catalog_change = self._is_editor_translation_change(event.src_path)
         registered_guid = self._asset_database.get_guid_from_path(event.src_path)
         self._coordinator.submit(
             # Atomic external writers can report a replacement at an already
@@ -287,9 +304,9 @@ class ResourceChangeHandler(FileSystemEventHandler):
             AssetFsEventKind.MODIFIED if registered_guid else AssetFsEventKind.CREATED,
             event.src_path,
             guid_hint=registered_guid or read_meta_guid(event.src_path),
-            debounce_seconds=0.0 if script_change else None,
+            debounce_seconds=0.0 if script_change or editor_catalog_change else None,
         )
-        if script_change:
+        if script_change or editor_catalog_change:
             self._wake_editor()
 
     def on_deleted(self, event):
@@ -311,18 +328,21 @@ class ResourceChangeHandler(FileSystemEventHandler):
             event.src_path,
             guid_hint=self._asset_database.get_guid_from_path(event.src_path),
         )
+        if self._is_editor_translation_change(event.src_path):
+            self._wake_editor()
 
     def on_modified(self, event):
         if event.is_directory or self._should_ignore(event.src_path):
             return
         lower = str(event.src_path or "").lower()
         script_change = lower.endswith(".py") and not _is_particle_script_path(lower)
+        editor_catalog_change = self._is_editor_translation_change(event.src_path)
         self._coordinator.submit(
             AssetFsEventKind.MODIFIED,
             event.src_path,
-            debounce_seconds=0.0 if script_change else None,
+            debounce_seconds=0.0 if script_change or editor_catalog_change else None,
         )
-        if script_change:
+        if script_change or editor_catalog_change:
             self._wake_editor()
 
     def on_moved(self, event):
@@ -348,15 +368,19 @@ class ResourceChangeHandler(FileSystemEventHandler):
             source_registered=source_registered,
             debounce_seconds=(
                 0.0
-                if str(event.dest_path or "").lower().endswith(".py")
-                and not _is_particle_script_path(event.dest_path)
+                if (
+                    str(event.dest_path or "").lower().endswith(".py")
+                    and not _is_particle_script_path(event.dest_path)
+                )
+                or self._is_editor_translation_change(event.dest_path)
                 else None
             ),
         )
         destination_lower = str(event.dest_path or "").lower()
-        if destination_lower.endswith(".py") and not _is_particle_script_path(
-            destination_lower
-        ):
+        if (
+            destination_lower.endswith(".py")
+            and not _is_particle_script_path(destination_lower)
+        ) or self._is_editor_translation_change(event.dest_path):
             self._wake_editor()
 
     @property
@@ -1166,6 +1190,10 @@ class ResourceChangeHandler(FileSystemEventHandler):
                 manager = ResourcesManager.instance()
                 if manager is not None:
                     manager.notify_script_catalog_changed(path, "created")
+        elif self._is_editor_translation_change(path):
+            manager = ResourcesManager.instance()
+            if manager is not None:
+                manager.notify_script_catalog_changed(path, "created")
         elif path.lower().endswith((".vert", ".frag")):
             # First import only writes metadata. Shader GPU modules are
             # published by reimport, the same edge effect dependencies use.
@@ -1266,6 +1294,10 @@ class ResourceChangeHandler(FileSystemEventHandler):
                 manager = ResourcesManager.instance()
                 if manager is not None:
                     manager.notify_script_catalog_changed(path, "modified")
+        elif self._is_editor_translation_change(path):
+            manager = ResourcesManager.instance()
+            if manager is not None:
+                manager.notify_script_catalog_changed(path, "modified")
         elif path.lower().endswith((".vert", ".frag")):
             self._notify_shader_reloaded(path)
         elif path.lower().endswith(".prefab"):
@@ -1330,6 +1362,10 @@ class ResourceChangeHandler(FileSystemEventHandler):
             manager = ResourcesManager.instance()
             if manager is not None:
                 manager.notify_script_catalog_changed(path, "deleted")
+        elif self._is_editor_translation_change(path):
+            manager = ResourcesManager.instance()
+            if manager is not None:
+                manager.notify_script_catalog_changed(path, "deleted")
 
     def _commit_moved(self, old_path: str, new_path: str) -> None:
         if not os.path.isfile(new_path):
@@ -1385,6 +1421,13 @@ class ResourceChangeHandler(FileSystemEventHandler):
                 if manager is not None:
                     manager.notify_script_catalog_changed(old_path, "deleted")
                     manager.notify_script_catalog_changed(new_path, "moved")
+        elif self._is_editor_translation_change(
+            old_path
+        ) or self._is_editor_translation_change(new_path):
+            manager = ResourcesManager.instance()
+            if manager is not None:
+                manager.notify_script_catalog_changed(old_path, "deleted")
+                manager.notify_script_catalog_changed(new_path, "moved")
         elif new_path.lower().endswith((".vert", ".frag")):
             if not AssetManager.reimport_asset(
                 new_path,

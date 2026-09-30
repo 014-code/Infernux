@@ -1169,7 +1169,8 @@ def test_player_window_skips_startup_maximize() -> None:
     assert "SDL_WINDOW_HIDDEN" in body
     assert "SDL_MaximizeWindow" in body
     assert "_INFERNUX_PLAYER_MODE" in body
-    assert body.index("_INFERNUX_PLAYER_MODE") < body.index("SDL_MaximizeWindow")
+    assert "if (!playerMode && presentation.createMaximized)" in body
+    assert "if (!playerMode) {" in body
 
 
 def test_touch_events_wake_the_frame_loop_and_request_ui_refresh() -> None:
