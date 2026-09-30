@@ -5,8 +5,42 @@ wheel build number or replacing files under the same release version cannot
 notify installed Hubs, whose update identity is the application version.
 `build_release_catalog.py --check-version` checks this before publication, and
 the release workflow allows its recovery switch only for unpublished drafts.
-The current repository version remains 0.4.0; the next corrected Hub must use a
-new version, such as 0.4.1. No release was published by this audit.
+The repository prepares 0.4.1. Public download pages and catalogs change only
+after its actual artifacts have been published.
+
+## Release sequence
+
+1. Build and test the versioned engine using the desktop and Player workflows.
+2. Publish each platform plugin's matching precompiled payload from its own
+   repository. A workflow-only repair can recover publication of an existing
+   tagged payload without changing that tag.
+3. Run **Publish Official Platform Packages**. It reads the exact versions in
+   `official-registry.json`, downloads their GitHub release assets, and uploads
+   them through the shared R2 publisher. An optional reference publishes one
+   package; leaving it empty publishes all platform packages and then the registry.
+   Every advertised package, including unchanged editor tools, must be available
+   before the public registry is updated.
+4. Run **Publish Desktop Release Artifacts** with the successful desktop run ID.
+   For 0.4.1, leave `sign_windows_release=false`: SignPath approval is pending.
+   The release notes explicitly disclose unsigned Windows artifacts. A prewritten
+   draft requires `replace_existing_release=true`.
+5. The publisher uploads wheels to PyPI, Hub assets to GitHub/R2, publishes the
+   release, and regenerates the website/catalogs from the actual published URLs.
+   `build_release_notes.py` reads both root changelogs; `sync_release_site.py`
+   updates the website's versioned history after publication.
+
+### Upload service
+
+`r2-upload-worker.mjs` is the source of `upload.infernux-engine.com`, currently
+deployed under the existing Cloudflare Worker name `infernux-r2-upload-040`.
+The name is an infrastructure identifier, not the engine release version.
+Its `BUCKET` and `UPLOAD_TOKEN` bindings remain server-side. New plugin releases
+must be added to its exact destination/source lists before publication. Hub
+destinations use a validated version/build/filename contract. Unauthorized
+object paths return HTTP 400 instead of an opaque upload failure.
+
+Deploy source changes through Cloudflare's Worker script-content endpoint,
+preserving existing bindings and routing. Never put credentials in this source.
 
 The authoritative update document is
 [hub-catalog.json](https://infernux-engine.com/hub-catalog.json). Its asset URLs
@@ -48,9 +82,7 @@ replace Hub files while leaving installed clients on the same version.
   --catalog docs/hub-catalog.json` from that catalog checkout. This does not
   publish or overwrite release artifacts and does not require another version.
 
-These are release-operator procedures; the audit did not execute their writes.
-The new workflow's real publication/deployment path still needs acceptance on
-the next release.
+The historical audit below predates the 0.4.1 publication work.
 
 ## Existing client compatibility
 
