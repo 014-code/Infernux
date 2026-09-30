@@ -13,7 +13,6 @@ Infernux is working toward a **Neural Network-Native Engine (3N)**. Here, “Neu
 - **Author several scenes together.** Open scenes additively, choose the active scene, inspect scene ownership in the Hierarchy, and move objects between scenes without treating the editor document as one global world.
 - **Make scene transitions coherent.** Commit scene changes at safe points, update component membership and lifecycle plans, and replace the rendered world together with its UI. Fix transitions that changed interface content while leaving old GameObjects visible.
 - **Preserve the right state.** Keep persistent objects across loads, isolate Edit and Play state, and release scene-owned resources and callbacks on unload.
-- **Exercise larger scenes.** Expand Labv2 with interactive examples of CPU JIT, models and materials, cameras, lighting, world/screen UI, physics and multi-scene operations. Its XPBD soft-body example (`GPUJelly.py`) is a project script demonstrating the compute, physics-query and mesh APIs, not a built-in engine component or a general-purpose soft-body solver.
 
 ### Prefab Authoring
 
