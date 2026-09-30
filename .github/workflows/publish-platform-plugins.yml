@@ -1,0 +1,33 @@
+name: Publish Official Platform Packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      reference:
+        description: One plugin reference, or empty to publish all platform packages and the registry
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: official-plugin-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Publish the registry's exact release payloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+          R2_UPLOAD_TOKEN: ${{ secrets.R2_UPLOAD_TOKEN }}
+          REFERENCE: ${{ inputs.reference }}
+        run: python scripts/release/publish_plugin_objects.py --reference "$REFERENCE"
