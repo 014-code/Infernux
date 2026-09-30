@@ -44,7 +44,7 @@ Vulkan 与 WebGPU 共用面向引擎的渲染接口。不同平台仍有真实�
 
 ### 让编辑器适应你的工作方式
 
-InxPackage 插件可以包含组件、工具、资源和平台导出器。玩法放在 `Runtime/`，创作工具放在 `Editor/`，一般文件与它们并列。插件可以提供本地化面板和菜单、编辑器内教程，并通过 Project/File Manager 的文件夹右键菜单打包成 `.inxpkg`。
+InxPackage 插件可以包含组件、工具、资源和平台导出器。玩法放在 `runtime/`，创作工具放在 `editor/`，一般文件与它们并列。插件可以提供本地化面板和菜单，通过 `plugin_pages/` 提供编辑器内教程，并通过 Project/File Manager 的文件夹右键菜单打包成 `.inxpkg`。本地文件夹可用 `inx_package.json` 指定元数据，未提供时由导出器生成。GitHub 模板将分发内容放在 `package/` 中，独立打包脚本 `package.py` 放在包外。
 
 可选 MCP 插件让 Agent 通过界面使用的同一套命令与撤销路径操作编辑器。自动化场景编辑、检查日志、捕获真实视口画面，同时保持操作可观察。
 
@@ -52,10 +52,12 @@ InxPackage 插件可以包含组件、工具、资源和平台导出器。玩法
 
 | 平台 | 编辑器 | Player | 图形后端 |
 | --- | --- | --- | --- |
-| Windows | 支持 | 桌面可执行程序 | Vulkan |
-| Linux | 支持 | 桌面可执行程序 | Vulkan |
-| Android | — | APK / AAB | Vulkan |
-| Web | — | 浏览器包体 | WebGPU |
+| Windows x64 | 有 | 有 | Vulkan |
+| Linux x86_64 | 有 | 有 | Vulkan |
+| Android arm64/x86_64 | 无 | APK/AAB | Vulkan |
+| Web | 无 | HTML/JS/WASM | WebGPU |
+
+各平台的要求与限制见[平台支持说明](SUPPORT.md#platform-support)及[平台支持矩阵](docs/platform-support.json)。
 
 各平台插件声明自己的构建选项，在编辑器中统一呈现，并提供对应运行时载荷。InfernuxHub 管理引擎安装、Python 环境和共享安卓工具。导出的 Player 包含运行时组件与资产，编辑器工具留在编辑器中。
 

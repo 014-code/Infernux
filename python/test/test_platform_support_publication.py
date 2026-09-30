@@ -48,7 +48,8 @@ def test_both_readme_tables_match_the_support_matrix():
             yes, no = ("Yes", "No") if language == "en" else ("有", "无")
             editor = yes if item["editor"] else no
             player = yes if item["player"] == "Yes" else item["player"]
-            expected = f'| {item["label"]} | {editor} | {player} | {item["graphics"]} | {item[f"status_{language}"]} |'
+            # README presents capabilities; CI evidence belongs in SUPPORT.md.
+            expected = f'| {item["label"]} | {editor} | {player} | {item["graphics"]} |'
             assert expected in text, (filename, item["id"])
 
 

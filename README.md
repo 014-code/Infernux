@@ -44,7 +44,7 @@ Assets keep their **GUID identity** throughout import, editing and cooking. Play
 
 ### Make the editor your own
 
-InxPackage plugins can contain components, tools, assets and platform exporters. Keep gameplay in `Runtime/`, authoring tools in `Editor/`, and general files alongside them. Add localized panels and menus, document the plugin inside the editor, and package a folder as `.inxpkg` from the Project/File Manager context menu.
+InxPackage plugins can contain components, tools, assets and platform exporters. Keep gameplay in `runtime/`, authoring tools in `editor/`, and general files alongside them. Add localized panels and menus, document the plugin inside the editor through `plugin_pages/`, and package a folder as `.inxpkg` from the Project/File Manager context menu. Local folders can provide `inx_package.json` metadata; otherwise the exporter generates it. The GitHub template places distributable content in `package/`, with a standalone `package.py` packager outside it.
 
 The optional MCP plugin exposes editor operations to agents through the same command and undo paths used by the interface. Automate scene work, inspect logs and capture the actual viewport while keeping those actions observable.
 
@@ -52,10 +52,12 @@ The optional MCP plugin exposes editor operations to agents through the same com
 
 | Target | Editor | Player | Graphics |
 | --- | --- | --- | --- |
-| Windows | Yes | Desktop executable | Vulkan |
-| Linux | Yes | Desktop executable | Vulkan |
-| Android | — | APK / AAB | Vulkan |
-| Web | — | Browser package | WebGPU |
+| Windows x64 | Yes | Yes | Vulkan |
+| Linux x86_64 | Yes | Yes | Vulkan |
+| Android arm64/x86_64 | No | APK/AAB | Vulkan |
+| Web | No | HTML/JS/WASM | WebGPU |
+
+See [platform requirements and limitations](SUPPORT.md#platform-support) and the [platform support matrix](docs/platform-support.json) for target details.
 
 Platform plugins declare their build options in the editor and supply their runtime payloads. InfernuxHub manages engine installations, Python environments and shared Android tools. Exported Players include runtime components and assets; editor tools stay with the editor.
 
