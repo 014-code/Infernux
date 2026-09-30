@@ -2,7 +2,7 @@
 
 <h1 align="center">Infernux · 熔炉</h1>
 <p align="center"><a href="https://github.com/ChenlizheMe/Infernux/releases"><img src="https://img.shields.io/badge/version-0.4.0-orange.svg" alt="Published release 0.4.0"></a></p>
-<p align="center"><strong>Build worlds. Give them intelligence.</strong><br>A Python-first engine advancing toward a Neural Network-Native Game Engine.</p>
+<p align="center"><strong>Build worlds. Give them intelligence.</strong><br>A Python-first engine advancing toward a Neural Network-Native Engine.</p>
 
 <p align="center">
   <a href="README-zh.md">简体中文</a> ·
@@ -15,7 +15,7 @@
 
 Infernux is an open-source game engine for building playable worlds and bringing the Python computing ecosystem into them. Author gameplay, editor tools and rendering pipelines in Python. Let C++ handle the runtime, Vulkan power native graphics, and WebGPU bring your project to the browser.
 
-Our destination is a **Neural Network-Native Game Engine**. The three Ns in **3N** stand for **Neural**, **Network** and **Native**. We want an engine where models can observe a world, influence its simulation and become part of the game you ship. The route starts with a capable game engine, then connects world data, neural computation and authoring tools through explicit, inspectable interfaces.
+Our destination is a **Neural Network-Native Engine (3N)**: an engine where models can observe a world, influence its simulation and become part of the game you ship. The route starts with a capable game engine, then connects world data, neural computation and authoring tools through explicit, inspectable interfaces.
 
 **MIT licensed. Windows and Linux Editors. Windows, Linux, Android and Web Players.** Infernux is in active development; 041 is the current development line, the published release is **0.4.0**.
 

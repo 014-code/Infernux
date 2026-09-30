@@ -3,7 +3,7 @@ globalThis.INFERNUX_PAGE_TRANSLATIONS = {
     "en": {
         "pageTitle.roadmap": "熔炉 · Infernux — Roadmap",
         "roadmap.hero.badge": "CURRENT CYCLE · 0.4.0 → 0.5.2",
-        "roadmap.hero.description": "Our destination is a Neural Network-Native Game Engine. 3N names its three Ns: Neural, Network and Native. This roadmap connects world authoring to model workflows, inference, replay and batch simulation; the 041 line strengthens the engine foundation.",
+        "roadmap.hero.description": "Our destination is a Neural Network-Native Engine (3N). This roadmap connects world authoring to model workflows, inference, replay and batch simulation; the 041 line strengthens the engine foundation.",
         "roadmap.hero.kicker": "Roadmap",
         "roadmap.hero.primary": "Track issues",
         "roadmap.hero.secondary": "Get started",
@@ -55,7 +55,7 @@ globalThis.INFERNUX_PAGE_TRANSLATIONS = {
     "zh": {
         "pageTitle.roadmap": "熔炉 · Infernux — 路线图",
         "roadmap.hero.badge": "当前周期 · 0.4.0 → 0.5.2",
-        "roadmap.hero.description": "我们致力于成为 Neural Network-Native Game Engine，即神经网络原生游戏引擎。3N 分别代表 Neural、Network、Native。路线图将世界创作连接到模型工作流、推理、回放与批量模拟；041 继续完善引擎基础。",
+        "roadmap.hero.description": "我们致力于成为 Neural Network-Native Engine（3N），即神经网络原生引擎。路线图将世界创作连接到模型工作流、推理、回放与批量模拟；041 继续完善引擎基础。",
         "roadmap.hero.kicker": "路线图",
         "roadmap.hero.primary": "查看 Issues",
         "roadmap.hero.secondary": "开始使用",

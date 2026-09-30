@@ -2,7 +2,7 @@
 
 <h1 align="center">Infernux · 熔炉</h1>
 <p align="center"><a href="https://github.com/ChenlizheMe/Infernux/releases"><img src="https://img.shields.io/badge/version-0.4.0-orange.svg" alt="Published release 0.4.0"></a></p>
-<p align="center"><strong>创造世界，让智能成为世界的一部分。</strong><br>以 Python 为主要创作语言，致力于成为 Neural Network-Native Game Engine。</p>
+<p align="center"><strong>创造世界，让智能成为世界的一部分。</strong><br>以 Python 为主要创作语言，致力于成为 Neural Network-Native Engine。</p>
 
 <p align="center">
   <a href="README.md">English</a> ·
@@ -15,7 +15,7 @@
 
 Infernux 是一款开源游戏引擎，让你用熟悉的 Python 创造可以游玩的世界，并把 Python 的计算生态带进游戏。用 Python 编写玩法、编辑器工具和渲染管线；由 C++ 承担底层运行时，Vulkan 驱动原生图形，WebGPU 把作品带到浏览器。
 
-我们的目标是 **Neural Network-Native Game Engine：神经网络原生游戏引擎**。**3N** 的三个 N 分别来自 **Neural（神经）、Network（网络）、Native（原生）**，指的是让神经网络从引擎设计开始就参与世界数据、计算和运行。模型能够观察世界、参与模拟，并成为最终游戏的一部分。这条路从完整的游戏开发能力出发，以明确、可检查的接口连接世界数据、神经计算与创作工具。
+我们的目标是 **Neural Network-Native Engine（3N）：神经网络原生引擎**，让神经网络从引擎设计开始就参与世界数据、计算和运行。模型能够观察世界、参与模拟，并成为最终游戏的一部分。这条路从完整的游戏开发能力出发，以明确、可检查的接口连接世界数据、神经计算与创作工具。
 
 **MIT 开源协议。Windows、Linux 编辑器。Windows、Linux、Android、Web 四端 Player。** 引擎仍在积极开发；041 是当前开发主线，当前公开发布版本为 **0.4.0**。
 

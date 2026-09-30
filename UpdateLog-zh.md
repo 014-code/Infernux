@@ -1,6 +1,6 @@
 # Infernux v0.4.1 · 世界、计算与实时工具
 
-041 将多场景工作流、更深入的模型导入、CPU/GPU 计算与更完整的插件基础结合起来，继续建设 Neural Network-Native Game Engine（3N，分别代表 Neural、Network、Native）所需的游戏引擎能力：用 Python 创作、模拟、检查并发布世界。
+041 将多场景工作流、更深入的模型导入、CPU/GPU 计算与更完整的插件基础结合起来，继续建设 Neural Network-Native Engine（3N）所需的游戏引擎能力：用 Python 创作、模拟、检查并发布世界。
 
 **开发说明：**以下内容描述 041 分支的改动。0.4.1 正式发布前，公开下载仍保持现有发布版本号。
 

@@ -1,6 +1,6 @@
 # Infernux v0.4.1 · Worlds, Compute and Live Tools
 
-041 brings multi-scene workflows, deeper model import, CPU/GPU computation and a stronger plugin foundation together. It advances the game-engine foundations of a Neural Network-Native Game Engine (3N: Neural, Network, Native): worlds you can author, simulate, inspect and ship from Python.
+041 brings multi-scene workflows, deeper model import, CPU/GPU computation and a stronger plugin foundation together. It advances the game-engine foundations of a Neural Network-Native Engine (3N): worlds you can author, simulate, inspect and ship from Python.
 
 **Development notes:** these entries describe the 041 branch. Published downloads keep their existing release version until 0.4.1 is released.
 
