@@ -136,6 +136,27 @@ def test_release_catalog_rejects_republishing_an_existing_hub_version(tmp_path):
         module.require_new_hub_version()
 
 
+@pytest.mark.parametrize("missing_platform", ["windows-x64", "linux-x64"])
+def test_release_catalog_does_not_publish_before_both_pypi_wheels_exist(tmp_path, monkeypatch, missing_platform):
+    module = _load("infernux_incomplete_pypi_release", "scripts/release/build_release_catalog.py")
+    names = {"windows-x64": "windows.whl", "linux-x64": "linux.whl"}
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+    monkeypatch.setattr(module, "require_new_hub_version", lambda: "1.2.3")
+    monkeypatch.setattr(module, "wheel_build_number", lambda: "1")
+    monkeypatch.setattr(module, "release_wheel_names", lambda *args: names)
+    monkeypatch.setattr(module, "pypi_wheel_urls", lambda version: {
+        name: f"https://files.pythonhosted.org/{name}"
+        for platform, name in names.items() if platform != missing_platform
+    })
+    (tmp_path / "docs").mkdir()
+    catalog = tmp_path / "docs/hub-catalog.json"
+    catalog.write_text('{"stable":"1.2.2"}', encoding="utf-8")
+    with pytest.raises(ValueError, match="PyPI has not published the exact release wheels"):
+        module.build_catalog(tmp_path, "2026-09-30T00:00:00Z", resolve_pypi=True)
+    assert json.loads(catalog.read_text(encoding="utf-8"))["stable"] == "1.2.2"
+    assert not (tmp_path / "docs/release.json").exists()
+
+
 def test_desktop_ci_exposes_one_click_publication():
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert "publish_release:" in workflow

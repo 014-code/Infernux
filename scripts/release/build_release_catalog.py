@@ -112,6 +112,10 @@ def build_catalog(
     assets = []
     ci = json.loads(linux_inventory.read_text(encoding="utf-8")) if linux_inventory else None
     wheel_names = release_wheel_names(release_dir, version, wheel_build, ci)
+    if resolve_pypi:
+        missing = sorted(set(wheel_names.values()) - wheel_urls.keys())
+        if missing:
+            raise ValueError(f"PyPI has not published the exact release wheels: {missing}")
     for platform, suffix in (
         ("windows-x64", ".exe"),
         ("linux-x64", ""),
@@ -148,7 +152,7 @@ def build_catalog(
             primary = (
                 f"{object_base}/{name}"
                 if kind == "hub-installer"
-                else wheel_urls.get(name, f"https://pypi.org/project/Infernux/{version}/")
+                else (wheel_urls[name] if resolve_pypi else f"https://pypi.org/project/Infernux/{version}/")
             )
             assets.append({
                 "kind": kind,
