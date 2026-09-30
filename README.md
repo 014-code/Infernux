@@ -1,126 +1,93 @@
-<p align="center">
-  <img src="docs/assets/logo.png" alt="Infernux logo" width="128" />
-</p>
+<p align="center"><img src="docs/assets/logo.png" width="112" alt="Infernux logo"></p>
 
 <h1 align="center">Infernux · 熔炉</h1>
-
-<p align="center">
-  <strong>C++ / Vulkan / WebGPU runtime. Python is the real development interface.</strong>
-</p>
-
-<p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License" /></a>
-  <img src="https://img.shields.io/badge/version-0.4.0-orange.svg" alt="Version 0.4.0" />
-  <img src="https://img.shields.io/badge/status-active_development-yellow.svg" alt="Active development" />
-  <img src="https://img.shields.io/badge/platforms-Windows_|_Linux_|_Android_|_Web-lightgrey.svg" alt="Windows, Linux, Android and Web" />
-  <img src="https://img.shields.io/badge/python-3.13-brightgreen.svg" alt="Python 3.13" />
-  <img src="https://img.shields.io/badge/graphics-Vulkan_|_WebGPU-red.svg" alt="Vulkan and WebGPU" />
-</p>
+<p align="center"><a href="https://github.com/ChenlizheMe/Infernux/releases"><img src="https://img.shields.io/badge/version-0.4.0-orange.svg" alt="Published release 0.4.0"></a></p>
+<p align="center"><strong>Build worlds. Give them intelligence.</strong><br>A Python-first engine advancing toward a Neural Network-Native Game Engine.</p>
 
 <p align="center">
   <a href="README-zh.md">简体中文</a> ·
   <a href="https://infernux-engine.com/">Website</a> ·
+  <a href="https://infernux-engine.com/start.html">Get started</a> ·
   <a href="https://infernux-engine.com/wiki.html">Documentation</a> ·
-  <a href="https://infernux-engine.discourse.group/">Forum</a> ·
-  <a href="https://github.com/ChenlizheMe/Infernux/releases">Releases</a> ·
-  <a href="CODE_SIGNING_POLICY.md">Code signing policy</a>
+  <a href="https://infernux-engine.com/roadmap.html">Roadmap</a> ·
+  <a href="https://infernux-engine.discourse.group/">Community</a>
 </p>
 
-<p align="center">
-  <img src="docs/assets/demo.png" alt="Infernux editor rendering a 65,536-object voxel scene with a custom RenderStack" width="100%" />
-</p>
+Infernux is an open-source game engine for building playable worlds and bringing the Python computing ecosystem into them. Author gameplay, editor tools and rendering pipelines in Python. Let C++ handle the runtime, Vulkan power native graphics, and WebGPU bring your project to the browser.
 
-This is a real editor capture from the 0.3.4 showcase: 65,536 ordinary GameObjects, one mesh, one material, and a RenderStack doing lighting, fog, color, tilt-shift, and MSAA.
+Our destination is a **Neural Network-Native Game Engine**. The three Ns in **3N** stand for **Neural**, **Network** and **Native**. We want an engine where models can observe a world, influence its simulation and become part of the game you ship. The route starts with a capable game engine, then connects world data, neural computation and authoring tools through explicit, inspectable interfaces.
 
-## What this is
+**MIT licensed. Windows and Linux Editors. Windows, Linux, Android and Web Players.** Infernux is in active development; 041 is the current development line, the published release is **0.4.0**.
 
-A general-purpose game engine. Not a chat box glued onto someone else's editor.
+![An Infernux editor scene containing 65,536 GameObjects](docs/assets/demo.png)
+*A real capture from the 0.3.4 showcase: 65,536 ordinary GameObjects, with a Python-authored RenderStack.*
 
-The runtime is C++17, with Vulkan on native platforms and WebGPU in browsers. Gameplay, components, editor tools, assets, and render setup are written in Python 3.13.
+## A world you can build today
 
-**0.4.0** brings Windows and Linux Editors, Windows/Linux/Android/Web Player builds, self-contained plugin payloads, packed runtime assets, and Hub-managed build environments. The same project is used to exercise gameplay, UI, input, and packaged file access across the four Player targets.
+### Python from the first component to your own tools
 
-## What you can do now
+Write gameplay components with Inspector fields, lifecycle callbacks and coroutines. Assemble prefabs, edit multiple scenes, and iterate while the editor is running. Extend the editor with your own panels and nested menus. Project scripts and plugin components participate in the same transactional hot-reload workflow.
 
-- Scenes, components, physics, audio, UI, animation, particles, prefabs
-- Vulkan Forward / Forward+ / Deferred, PBR, RenderGraph, RenderStack
-- Windows and Linux Hub, Editor, and standalone Player builds
-- Android APK/AAB and Web Player exports through the same build service
-- InxPackage plugins with runtime/editor separation and live asset and script refresh
-- Path-based asset access backed by GUIDs and packed Player content
-- Hub-managed Python and Android support, with background installation queues
+Python is also the home of render authoring, asset workflows and numerical code. CPU/GPU JIT and Taichi integration connect computation to gameplay, including GPUJelly soft-body simulation. Startup warmup and build preparation move supported compilation work out of the first interaction.
 
-| Target | Editor | Player | Graphics | 0.4.0 status |
-|---|---:|---:|---|---|
-| Windows x64 | Yes | Yes | Vulkan | Build and CI passed |
-| Linux x86_64 | Yes | Yes | Vulkan | Build and CI passed |
-| Android arm64/x86_64 | No | APK/AAB | Vulkan | Build and CI passed |
-| Web | No | HTML/JS/WASM | WebGPU | Build and CI passed |
+### Shape the look, own the pipeline
 
-This table follows the [auditable support matrix](docs/platform-support.json).
-[Evidence and release boundaries](SUPPORT.md#platform-support) distinguish CI
-acceptance from public release availability and device coverage. macOS and native
-iOS are not supported targets.
+Build on PBR materials, lights, shadows, cameras and post-processing. Define a RenderStack in Python and let the native RenderGraph execute it. Work with Forward, Forward+ and Deferred rendering, imported models and skeletal animation, GPU particles, screen UI and world-space text.
 
-Platform exporters are official InxPackages with independent repositories and releases: [Windows](https://github.com/ChenlizheMe/infernux_windows), [Linux](https://github.com/ChenlizheMe/infernux_linux), [Android](https://github.com/ChenlizheMe/infernux_android), and [Web](https://github.com/ChenlizheMe/infernux_web). Each repository includes illustrated setup documentation and an installable `.inxpkg` release asset.
+Vulkan and WebGPU share engine-facing rendering interfaces. Platform capabilities still matter: a browser has different compute and Python-extension constraints from a desktop or Android device. Target preparation belongs to the engine and its platform plugins, so game projects can share their authoring code.
 
-Each platform plugin carries its precompiled Player and target-specific runtime or build tools. Normal game exports use the installed engine and plugins; they do not require an engine source checkout, Git submodules, CMake, or native engine compilation. For Android, first install **Android support** under Hub's **Installs** page, then import the Android plugin. Hub owns the shared SDK, NDK, JDK, Gradle, and target Python dependencies and supplies their paths to the Editor. OpenGL, OpenGL ES, and WebGL are not fallback product paths.
+### Build a game across scenes
 
-MCP is distributed as the official default plugin [`infernux/mcp`](https://github.com/ChenlizheMe/infernux_mcp). New projects include it, and projects that do not need agent access can disable or uninstall it independently of the engine.
+Load, unload and edit scenes together; move objects between them and keep persistent objects alive. Bring in FBX and Blender content, split meshes, assign materials and textures, and synchronize external source changes. Add Jolt rigid bodies, collision callbacks, animation, audio and interactive UI. Inspect the result through Scene/Game views, Gizmos, the Hierarchy and the Console.
 
-Animation-only FBX files can drive a matching skinned model without geometrically guessing joint correspondence; Assimp pivot helpers are handled, while incompatible rigs fail explicitly.
+Assets keep their **GUID identity** throughout import, editing and cooking. Player builds consume a cooked asset index and packed content, carrying the resources the game needs without depending on the editor's project layout.
 
-## Plugins
+### Make the editor your own
 
-An Infernux plugin is an InxPackage. Drop a `.inxpkg`, point at a folder, paste a GitHub URL, or install from the official list.
+InxPackage plugins can contain components, tools, assets and platform exporters. Keep gameplay in `Runtime/`, authoring tools in `Editor/`, and general files alongside them. Add localized panels and menus, document the plugin inside the editor, and package a folder as `.inxpkg` from the Project/File Manager context menu.
 
-Official packages are downloaded from the Infernux distribution service first, with their repository's GitHub Release as the network fallback. The catalog keeps both channels attached to the same package reference and version.
+The optional MCP plugin exposes editor operations to agents through the same command and undo paths used by the interface. Automate scene work, inspect logs and capture the actual viewport while keeping those actions observable.
 
-**Refresh catalog** updates the official list without upgrading installed packages. For a GitHub package, use **Versions** to check compatible releases and explicitly choose an update. Updates preserve asset GUIDs, enabled state, and user-added files; replacing local edits requires your consent. Already installed plugins remain usable offline.
+## One project, several places to play
 
-```text
-MyPluginRepository/
-  README.md          # repository only
-  package.py         # standalone packer
-  package/
-    inx_package.json # optional metadata overrides
-    runtime/         # ships with the game
-    editor/          # Editor only
-    plugin_pages/    # extra tabs in the Plugins window
-```
+| Target | Editor | Player | Graphics |
+| --- | --- | --- | --- |
+| Windows | Yes | Desktop executable | Vulkan |
+| Linux | Yes | Desktop executable | Vulkan |
+| Android | — | APK / AAB | Vulkan |
+| Web | — | Browser package | WebGPU |
 
-For local authoring, the selected folder itself is the package root; no
-`package/` wrapper or manifest is required. The output `.inxpkg` filename
-becomes the default name and reference. Repository builds archive only
-`package/`, so CMake, Gradle, Cargo, README, and temporary output stay outside.
+Platform plugins declare their build options in the editor and supply their runtime payloads. InfernuxHub manages engine installations, Python environments and shared Android tools. Exported Players include runtime components and assets; editor tools stay with the editor.
 
-Runtime code and regular assets go into a Player build. Editor scripts stay in the Editor.
+## What 041 brings
 
-Package assets have explicit `.meta` identities and participate in the same refresh process as project assets. Packages can carry materials, shaders, text, web pages, and native or other runtime files, not just Python scripts.
+The 041 development line deepens the everyday workflow: multi-scene editing, model import and source synchronization, CPU/GPU JIT preparation, GPUJelly, world UI, more reliable Player startup and scene switching, and a reworked plugin lifecycle.
 
-Player content stays in `Content.inxpkg` instead of exposing an unpacked `Assets/` and `Library/` tree. Engine asset APIs resolve authored paths through the cooked GUID index. Files that need a real filesystem path can be materialized with their relative layout preserved. This is binary asset packaging, not a promise of cryptographic protection.
+Plugin work includes Player component registration, live updates to existing component behavior, cleanup of panels and callbacks, plugin localization, and platform-owned build settings. Read the full [English](UpdateLog.md) or [Chinese](UpdateLog-zh.md) changelog for the scope and upgrade notes.
 
-[Plugin guide](https://infernux-engine.com/wiki/site/en/plugin-package-content.html)
+## The road to 3N
 
-Official plugin repositories (source, documentation, and `.inxpkg` releases):
+The engine already provides Python authoring, native rendering and simulation, batch world-data APIs, compute integration and programmable editor tools. The next steps make those foundations serve neural systems directly:
 
-- [Windows](https://github.com/ChenlizheMe/infernux_windows) · [Linux](https://github.com/ChenlizheMe/infernux_linux) · [Android](https://github.com/ChenlizheMe/infernux_android) · [Web](https://github.com/ChenlizheMe/infernux_web)
-- [MCP editor integration](https://github.com/ChenlizheMe/infernux_mcp)
-- [Plugin template](https://github.com/ChenlizheMe/infernux_plugin_template) · [Build your first plugin](https://infernux-engine.com/learn/plugin-authoring.html)
+| Direction | What it unlocks |
+| --- | --- |
+| Model workflows and portable inference | Develop with the Python ML ecosystem; ship the inference runtime each target needs. |
+| Shared world schemas | Give tools and models a precise description of state and valid operations. |
+| Snapshots, deltas and deterministic replay | Reproduce interactions, diagnose simulation and prepare repeatable learning workloads. |
+| Batch worlds and a tensor data plane | Step many environments and exchange world state with models efficiently. |
+| Governed tools and model packages | Distribute extensions with clear capabilities, ownership and lifecycle. |
 
-## Get started
+**These are roadmap commitments; the complete neural training and deployment loop is still ahead.** The [roadmap](https://infernux-engine.com/roadmap.html) tracks the stages through 0.5.2. Correctness, observability and explicit platform behavior guide the implementation.
 
-Download the published Windows x64 installer from [GitHub Releases](https://github.com/ChenlizheMe/Infernux/releases/latest) and let InfernuxHub manage engine versions.
+## Start building
 
-A fresh Hub installation includes its isolated Python 3.13 runtime. Each
-Infernux release is bound to the Python ABI encoded by its wheel. Hub checks
-that matching managed runtime before it allows the engine version to be
-installed; additional runtimes for older releases are installed explicitly
-from the Hub's Installs page.
+Install [InfernuxHub](https://infernux-engine.com/download.html), choose an engine version and create a project. Hub manages the Python environment; you can start from the editor without setting up a native compiler. Continue with the [learning guides](https://infernux-engine.com/learn.html) and [API reference](https://infernux-engine.com/wiki/site/en/api/index.html).
 
-Hub groups engine versions, Python runtimes, and Android support into separate tabs under **Installs**. Installations run in the background, with a compact progress strip and a hover-to-expand queue. Hub can remain in the system tray. Using the managed installation does not require prior Python or Conda experience.
+For plugin authors: [authoring guide](https://infernux-engine.com/wiki/site/en/plugin-package-content.html) · [plugin template](https://github.com/ChenlizheMe/infernux_plugin_template).
 
-From source you need Windows 10/11 x64, Python 3.13, Vulkan SDK 1.3+, CMake 3.25+, Visual Studio 2022, and MSVC v143:
+### Build the engine from source
+
+Windows needs Visual Studio 2022 with MSVC v143, CMake 3.25+, a Vulkan SDK and the Python 3.13 development environment:
 
 ```powershell
 git clone --recurse-submodules https://github.com/ChenlizheMe/Infernux.git
@@ -128,51 +95,18 @@ cd Infernux
 ./scripts/setup/configure_development.ps1
 conda activate infernux
 cmake --preset windows-msvc-release
-cmake --build --preset windows-msvc-wheel
+cmake --build --preset windows-msvc-release
+cmake --build --preset windows-msvc-install-wheel
 python packaging/launcher.py
 ```
 
-The Visual Studio generator is multi-config. If you build a target directly
-instead of using a build preset, always select the same configuration explicitly:
+On Linux, install native prerequisites with `scripts/setup/install_linux_dependencies.sh`, run `bash scripts/setup/configure_development.sh`, activate `infernux`, and use the `linux-clang-release` configure/build presets followed by `linux-clang-install-wheel`. Presets select the matching configuration and install the packaged engine. See [CONTRIBUTING.md](CONTRIBUTING.md) for development details.
 
-```powershell
-cmake --build out/build/windows-msvc-release --config Release --target stage_python_package
-cmake --build out/build/windows-msvc-release --config Release --target package_python
-```
+## Join the forge
 
-Omitting `--config Release` selects the generator default (normally `Debug`)
-and can mix Debug runtime libraries with the Release Vulkan/native artifacts.
+Build a game, share a plugin, or show us a workflow that should feel better. Bring questions and demos to the [community](https://infernux-engine.discourse.group/); report reproducible bugs on [GitHub](https://github.com/ChenlizheMe/Infernux/issues). Contributions to the engine, documentation and examples are welcome.
 
-On Ubuntu or Debian, install the native dependencies once, then configure the
-repository. The setup script initializes submodules and creates the Python 3.13
-Conda environment from `environment.yml`. If an older `infernux` environment
-uses a different Python ABI, the script replaces it instead of reusing it.
-
-```bash
-scripts/setup/install_linux_dependencies.sh
-bash scripts/setup/configure_development.sh
-conda activate infernux
-cmake --preset linux-clang-release
-cmake --build --preset linux-clang-release
-```
-
-Run the Python tests on either host. The native test example below uses Windows presets; on Linux, use `linux-clang-dev` instead.
-
-```powershell
-python -m pytest python/test/ -v
-cmake --preset windows-msvc-dev
-cmake --build --preset windows-msvc-dev
-ctest --preset windows-msvc-dev --output-on-failure
-```
-
-## Docs
-
-- [Documentation](https://infernux-engine.com/wiki.html)
-- [API](https://infernux-engine.com/wiki/site/en/api/index.html)
-- [Plugins](https://infernux-engine.com/wiki/site/en/plugin-package-content.html)
-- [Release notes](UpdateLog.md)
-- [Roadmap](https://infernux-engine.com/roadmap.html)
-- [Paper](https://arxiv.org/pdf/2604.10263)
+Infernux is released under the [MIT license](LICENSE). Free code signing is provided by [SignPath.io](https://signpath.io/), with a certificate from [SignPath Foundation](https://signpath.org/). See the [code signing policy](CODE_SIGNING_POLICY.md).
 
 ## Citation
 
@@ -185,11 +119,3 @@ ctest --preset windows-msvc-dev --output-on-failure
   url     = {https://github.com/ChenlizheMe/Infernux}
 }
 ```
-
-## Code signing policy
-
-Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/). Team roles, signed-artifact boundaries, network behavior, and removal instructions are documented in the [Infernux code signing policy](CODE_SIGNING_POLICY.md).
-
-## License
-
-MIT. See [LICENSE](LICENSE). Bug reports should include the engine version, OS, and how to reproduce. Read [CONTRIBUTING.md](CONTRIBUTING.md) before sending a large change.

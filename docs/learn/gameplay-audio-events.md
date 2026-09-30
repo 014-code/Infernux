@@ -61,6 +61,9 @@ class GameplayAudio(inx.InxComponent):
 
         self._source.track_count = 1
         self._source.volume = 0.8
+        self._source.mute = False
+        self._source.pitch = 1.0
+        self._source.spatial_blend = 0.0
         self._source.loop = True
         self._source.play_on_awake = False
         self._source.one_shot_pool_size = 8
@@ -86,6 +89,8 @@ class GameplayAudio(inx.InxComponent):
 ```
 
 `AudioClip.load()` returns an `AudioClip` or `None`. Keep the wrapper referenced while its track or one-shot may still use the native clip. The cleanup stops all persistent tracks and one-shots before unloading the clips.
+
+This example explicitly uses 2D audio (`spatial_blend = 0`), normal pitch and an unmuted source, so the Probe moving away from the Camera does not silence the lesson. With track volume `0.35` and source volume `0.8`, the music gain is `0.28` before bus gain; one-shot gain is `0.72` before bus gain. Keep the Master and selected output bus unmuted at gain `1` for the first check.
 
 Track 0 carries long-lived music. The hit sound does not replace track 0, and repeated collision entries can overlap through the one-shot pool. `loop` applies to the source's persistent tracks; use one-shots for transient reactions.
 
@@ -246,6 +251,9 @@ class GameplayAudio(inx.InxComponent):
 
         self._source.track_count = 1
         self._source.volume = 0.8
+        self._source.mute = False
+        self._source.pitch = 1.0
+        self._source.spatial_blend = 0.0
         self._source.loop = True
         self._source.play_on_awake = False
         self._source.one_shot_pool_size = 8
@@ -273,6 +281,8 @@ class GameplayAudio(inx.InxComponent):
 `AudioClip.load()` 返回 `AudioClip` 或 `None`。轨道或一次性音效仍可能使用原生音频时，需要保留 Python 封装引用。清理阶段先停止全部持续轨道和一次性音效，再卸载音频。
 
 轨道 0 承载持续音乐。命中音效不会替换轨道 0，多次碰撞进入可通过一次性声部池重叠播放。`loop` 作用于音源的持续轨道；瞬时反应适合使用一次性播放。
+
+本例显式使用 2D 音频（`spatial_blend = 0`）、正常音高且不静音，避免 Probe 远离相机后因距离衰减而听不见。轨道音量 `0.35` 与源音量 `0.8` 相乘后，音乐增益为 `0.28`；一次性音效增益为 `0.72`，之后还会乘以总线增益。首次验证时，Master 与所选输出总线均保持不静音、增益 `1`。
 
 ## 每个信号只发送一次反应 {#zh-one-shot-signals}
 

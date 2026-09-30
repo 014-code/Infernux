@@ -81,6 +81,9 @@
 
         <span class="bp">self</span><span class="o">.</span><span class="n">_source</span><span class="o">.</span><span class="n">track_count</span> <span class="o">=</span> <span class="mi">1</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_source</span><span class="o">.</span><span class="n">volume</span> <span class="o">=</span> <span class="mf">0.8</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_source</span><span class="o">.</span><span class="n">mute</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_source</span><span class="o">.</span><span class="n">pitch</span> <span class="o">=</span> <span class="mf">1.0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_source</span><span class="o">.</span><span class="n">spatial_blend</span> <span class="o">=</span> <span class="mf">0.0</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_source</span><span class="o">.</span><span class="n">loop</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_source</span><span class="o">.</span><span class="n">play_on_awake</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_source</span><span class="o">.</span><span class="n">one_shot_pool_size</span> <span class="o">=</span> <span class="mi">8</span>
@@ -106,6 +109,7 @@
 </code></pre></div>
 
 <p><code>AudioClip.load()</code> returns an <code>AudioClip</code> or <code>None</code>. Keep the wrapper referenced while its track or one-shot may still use the native clip. The cleanup stops all persistent tracks and one-shots before unloading the clips.</p>
+<p>This example explicitly uses 2D audio (<code>spatial_blend = 0</code>), normal pitch and an unmuted source, so the Probe moving away from the Camera does not silence the lesson. With track volume <code>0.35</code> and source volume <code>0.8</code>, the music gain is <code>0.28</code> before bus gain; one-shot gain is <code>0.72</code> before bus gain. Keep the Master and selected output bus unmuted at gain <code>1</code> for the first check.</p>
 <p>Track 0 carries long-lived music. The hit sound does not replace track 0, and repeated collision entries can overlap through the one-shot pool. <code>loop</code> applies to the source's persistent tracks; use one-shots for transient reactions.</p>
 <h2 id="one-shot-signals">Send one reaction per signal</h2>
 <p><code>on_collision_enter()</code> is already a transition callback. It runs when contact begins, so it is the correct place to emit one hit sound. <code>on_collision_stay()</code> runs on every fixed-update while contact continues and would repeatedly consume one-shot voices.</p>
@@ -318,6 +322,9 @@
 
         <span class="bp">self</span><span class="o">.</span><span class="n">_source</span><span class="o">.</span><span class="n">track_count</span> <span class="o">=</span> <span class="mi">1</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_source</span><span class="o">.</span><span class="n">volume</span> <span class="o">=</span> <span class="mf">0.8</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_source</span><span class="o">.</span><span class="n">mute</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_source</span><span class="o">.</span><span class="n">pitch</span> <span class="o">=</span> <span class="mf">1.0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_source</span><span class="o">.</span><span class="n">spatial_blend</span> <span class="o">=</span> <span class="mf">0.0</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_source</span><span class="o">.</span><span class="n">loop</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_source</span><span class="o">.</span><span class="n">play_on_awake</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_source</span><span class="o">.</span><span class="n">one_shot_pool_size</span> <span class="o">=</span> <span class="mi">8</span>
@@ -344,6 +351,7 @@
 
 <p><code>AudioClip.load()</code> 返回 <code>AudioClip</code> 或 <code>None</code>。轨道或一次性音效仍可能使用原生音频时，需要保留 Python 封装引用。清理阶段先停止全部持续轨道和一次性音效，再卸载音频。</p>
 <p>轨道 0 承载持续音乐。命中音效不会替换轨道 0，多次碰撞进入可通过一次性声部池重叠播放。<code>loop</code> 作用于音源的持续轨道；瞬时反应适合使用一次性播放。</p>
+<p>本例显式使用 2D 音频（<code>spatial_blend = 0</code>）、正常音高且不静音，避免 Probe 远离相机后因距离衰减而听不见。轨道音量 <code>0.35</code> 与源音量 <code>0.8</code> 相乘后，音乐增益为 <code>0.28</code>；一次性音效增益为 <code>0.72</code>，之后还会乘以总线增益。首次验证时，Master 与所选输出总线均保持不静音、增益 <code>1</code>。</p>
 <h2 id="zh-one-shot-signals">每个信号只发送一次反应</h2>
 <p><code>on_collision_enter()</code> 本身就是状态变化回调，只在接触开始时运行，适合发出一次命中音效。<code>on_collision_stay()</code> 会在接触持续期间的每次固定更新中运行，容易连续占用一次性声部。</p>
 <p>某些系统只提供连续状态时，可以保存上一帧状态，只在变化边沿执行反应：</p>

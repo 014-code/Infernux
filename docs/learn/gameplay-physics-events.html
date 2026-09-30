@@ -84,6 +84,49 @@
 <li>Save the scene before entering Play mode.</li>
 </ol>
 <p>The floor and sensor do not need a Rigidbody for this setup. The moving <code>Probe</code> supplies the active Rigidbody for both interactions.</p>
+<h3 id="match-the-complete-parameter-set">Match the complete parameter set</h3>
+<p>Use fresh, unparented primitives, not objects reused from another lesson. Keep every Rotation at <code>(0, 0, 0)</code>, each collider Center at <code>(0, 0, 0)</code>, and <code>Probe</code> Scale at <code>(1, 1, 1)</code>. Ground and Sensor BoxCollider <strong>Size</strong> stays <code>(1, 1, 1)</code>; their Transform Scale already supplies the dimensions. Probe SphereCollider <strong>Radius</strong> stays <code>0.5</code>. Scaling both the Transform and collider dimensions would change the experiment.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Baseline</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Gravity</td>
+<td><code>(0, -9.81, 0)</code></td>
+</tr>
+<tr>
+<td>Fixed timestep / Time Scale</td>
+<td><code>0.02</code> seconds / <code>1</code></td>
+</tr>
+<tr>
+<td>Probe Mass / Drag</td>
+<td><code>1</code> / <code>0</code></td>
+</tr>
+<tr>
+<td>Continuous X force</td>
+<td><code>10 N</code> in every fixed update</td>
+</tr>
+<tr>
+<td>Probe constraints</td>
+<td>Freeze Position Z and all Rotation; leave X/Y free</td>
+</tr>
+<tr>
+<td>Ground / Probe material</td>
+<td>No assigned PhysicMaterial: friction <code>0.6</code>, bounce <code>0</code></td>
+</tr>
+<tr>
+<td>Trigger</td>
+<td>Sensor only; all three objects on mutually colliding layers</td>
+</tr>
+</tbody>
+</table>
+<p>With this baseline, allow <strong>five simulated seconds</strong> for the Probe to cross the Sensor and leave the end of the floor. Expect <code>collision exit: Ground</code> after it leaves the floor as well as the three Sensor phases. Enter/Stay/Exit are ordered within a contact pair; do not require one global ordering across different colliders. A reduced Time Scale increases the wall-clock wait.</p>
+<h3 id="try-a-controlled-friction-change">Try a controlled friction change</h3>
+<p>After completing the baseline, create a <strong>Physic Material</strong> asset, set <strong>Friction</strong> to <code>0.1</code>, <strong>Bounciness</strong> to <code>0</code>, and <strong>Friction Combine</strong> to <strong>Average</strong>. Assign that same asset to <strong>both</strong> Ground's BoxCollider and Probe's SphereCollider, then try <code>3 N</code>. With this combine mode, changing only one side leaves effective friction at <code>(0.1 + 0.6) / 2 = 0.35</code>, so a <code>3 N</code> force is still below the approximate <code>3.43 N</code> sliding threshold for this 1 kg setup. Friction is an exposed material parameter; changing the shape scale is not a substitute for configuring it. Restore the baseline before the next chapter.</p>
 <h2 id="physics-probe-script">Write the component</h2>
 <p>Create <code>Assets/Scripts/physics_probe.py</code> with the following complete component:</p>
 <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">infernux</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">inx</span>
@@ -266,6 +309,49 @@
 <li>进入 Play 模式前保存场景。</li>
 </ol>
 <p>这个场景中的地面与 Sensor 无需 Rigidbody。移动的 <code>Probe</code> 为两次交互提供活动刚体。</p>
+<h3 id="_2">对齐完整参数</h3>
+<p>使用新建、没有父物体的基础几何体，不复用其他课程里改过的对象。所有 Rotation 保持 <code>(0, 0, 0)</code>，Collider Center 保持 <code>(0, 0, 0)</code>，Probe Scale 为 <code>(1, 1, 1)</code>。Ground 和 Sensor 的 BoxCollider <strong>Size</strong> 保持 <code>(1, 1, 1)</code>，实际尺寸已经由 Transform Scale 提供；Probe 的 SphereCollider <strong>Radius</strong> 保持 <code>0.5</code>。同时放大 Transform 和碰撞体尺寸，会改变整个实验。</p>
+<table>
+<thead>
+<tr>
+<th>设置</th>
+<th>基线值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Gravity</td>
+<td><code>(0, -9.81, 0)</code></td>
+</tr>
+<tr>
+<td>固定时间步 / Time Scale</td>
+<td><code>0.02</code> 秒 / <code>1</code></td>
+</tr>
+<tr>
+<td>Probe Mass / Drag</td>
+<td><code>1</code> / <code>0</code></td>
+</tr>
+<tr>
+<td>持续 X 方向推力</td>
+<td>每次 fixed_update 施加 <code>10 N</code></td>
+</tr>
+<tr>
+<td>Probe 约束</td>
+<td>冻结位置 Z 和全部旋转，位置 X/Y 保持自由</td>
+</tr>
+<tr>
+<td>Ground / Probe 物理材质</td>
+<td>不指定 PhysicMaterial：摩擦 <code>0.6</code>、弹性 <code>0</code></td>
+</tr>
+<tr>
+<td>Trigger</td>
+<td>只有 Sensor 开启；三者所在层允许相互碰撞</td>
+</tr>
+</tbody>
+</table>
+<p>按照这组参数，观察<strong>五秒模拟时间</strong>，让 Probe 穿过 Sensor 并离开地板边缘。除 Sensor 的三个阶段外，离开地板后也应出现 <code>collision exit: Ground</code>。Enter/Stay/Exit 的顺序针对同一对接触，不要求不同碰撞体之间存在统一日志顺序。降低 Time Scale 会延长现实中的等待时间。</p>
+<h3 id="_3">做一次受控的摩擦实验</h3>
+<p>基线完成后，新建 <strong>Physic Material（物理材质）</strong>，将 <strong>Friction</strong> 设为 <code>0.1</code>、<strong>Bounciness</strong> 设为 <code>0</code>、<strong>Friction Combine</strong> 设为 <strong>Average</strong>，把同一资产<strong>同时</strong>赋给 Ground 的 BoxCollider 与 Probe 的 SphereCollider，再尝试 <code>3 N</code>。采用该合成方式时，只修改一边会得到 <code>(0.1 + 0.6) / 2 = 0.35</code> 的有效摩擦；对这个 1 kg 场景而言，<code>3 N</code> 仍低于约 <code>3.43 N</code> 的滑动阈值。摩擦是公开的物理材质参数，改变形状缩放不能替代对它的设置。进入下一章前恢复基线参数。</p>
 <h2 id="physics-probe-script_1">编写物理组件</h2>
 <p>创建 <code>Assets/Scripts/physics_probe.py</code>，写入以下完整组件：</p>
 <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">infernux</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">inx</span>
@@ -394,7 +480,7 @@
 <p><strong>Console 被 Stay 消息占满。</strong> <code>on_collision_stay</code> 与 <code>on_trigger_stay</code> 会在关系保持期间按固定步运行。可以计数、限频，或用它维护状态。</p>
 <p><strong>运动随渲染帧率变化。</strong> 把连续施力放进 <code>fixed_update</code>。运动学 Rigidbody 可在同一回调中调用 <code>move_position</code> 或 <code>move_rotation</code>。</p>
 <p><strong>访问 <code>collision.impulse</code> 报错。</strong> 当前 <code>CollisionInfo</code> 提供 <code>collider</code>、<code>game_object</code>、<code>contact_point</code>、<code>contact_normal</code> 与 <code>relative_velocity</code>，请使用这些公开字段。</p>
-<h2 id="_2">下一章</h2>
+<h2 id="_4">下一章</h2>
 <p>现在，Probe 已经把底层物理变化整理成清晰的玩法事件。下一章 <a href="gameplay-ui-scenes.html">UI 操作与场景流程</a> 会把组件的公开方法交给 Button，并通过它发起安全的运行时场景切换。</p></div>
 
         <nav class="learn-course-pager" aria-label="Previous and next chapters">

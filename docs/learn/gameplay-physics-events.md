@@ -42,6 +42,26 @@ Start from a scene with a Camera that can see the origin, then create these obje
 
 The floor and sensor do not need a Rigidbody for this setup. The moving `Probe` supplies the active Rigidbody for both interactions.
 
+### Match the complete parameter set
+
+Use fresh, unparented primitives, not objects reused from another lesson. Keep every Rotation at `(0, 0, 0)`, each collider Center at `(0, 0, 0)`, and `Probe` Scale at `(1, 1, 1)`. Ground and Sensor BoxCollider **Size** stays `(1, 1, 1)`; their Transform Scale already supplies the dimensions. Probe SphereCollider **Radius** stays `0.5`. Scaling both the Transform and collider dimensions would change the experiment.
+
+| Setting | Baseline |
+| --- | --- |
+| Gravity | `(0, -9.81, 0)` |
+| Fixed timestep / Time Scale | `0.02` seconds / `1` |
+| Probe Mass / Drag | `1` / `0` |
+| Continuous X force | `10 N` in every fixed update |
+| Probe constraints | Freeze Position Z and all Rotation; leave X/Y free |
+| Ground / Probe material | No assigned PhysicMaterial: friction `0.6`, bounce `0` |
+| Trigger | Sensor only; all three objects on mutually colliding layers |
+
+With this baseline, allow **five simulated seconds** for the Probe to cross the Sensor and leave the end of the floor. Expect `collision exit: Ground` after it leaves the floor as well as the three Sensor phases. Enter/Stay/Exit are ordered within a contact pair; do not require one global ordering across different colliders. A reduced Time Scale increases the wall-clock wait.
+
+### Try a controlled friction change
+
+After completing the baseline, create a **Physic Material** asset, set **Friction** to `0.1`, **Bounciness** to `0`, and **Friction Combine** to **Average**. Assign that same asset to **both** Ground's BoxCollider and Probe's SphereCollider, then try `3 N`. With this combine mode, changing only one side leaves effective friction at `(0.1 + 0.6) / 2 = 0.35`, so a `3 N` force is still below the approximate `3.43 N` sliding threshold for this 1 kg setup. Friction is an exposed material parameter; changing the shape scale is not a substitute for configuring it. Restore the baseline before the next chapter.
+
 ## Write the component {#physics-probe-script}
 
 Create `Assets/Scripts/physics_probe.py` with the following complete component:
@@ -202,6 +222,26 @@ The Probe now turns low-level physics transitions into clean gameplay events. In
 4. 进入 Play 模式前保存场景。
 
 这个场景中的地面与 Sensor 无需 Rigidbody。移动的 `Probe` 为两次交互提供活动刚体。
+
+### 对齐完整参数
+
+使用新建、没有父物体的基础几何体，不复用其他课程里改过的对象。所有 Rotation 保持 `(0, 0, 0)`，Collider Center 保持 `(0, 0, 0)`，Probe Scale 为 `(1, 1, 1)`。Ground 和 Sensor 的 BoxCollider **Size** 保持 `(1, 1, 1)`，实际尺寸已经由 Transform Scale 提供；Probe 的 SphereCollider **Radius** 保持 `0.5`。同时放大 Transform 和碰撞体尺寸，会改变整个实验。
+
+| 设置 | 基线值 |
+| --- | --- |
+| Gravity | `(0, -9.81, 0)` |
+| 固定时间步 / Time Scale | `0.02` 秒 / `1` |
+| Probe Mass / Drag | `1` / `0` |
+| 持续 X 方向推力 | 每次 fixed_update 施加 `10 N` |
+| Probe 约束 | 冻结位置 Z 和全部旋转，位置 X/Y 保持自由 |
+| Ground / Probe 物理材质 | 不指定 PhysicMaterial：摩擦 `0.6`、弹性 `0` |
+| Trigger | 只有 Sensor 开启；三者所在层允许相互碰撞 |
+
+按照这组参数，观察**五秒模拟时间**，让 Probe 穿过 Sensor 并离开地板边缘。除 Sensor 的三个阶段外，离开地板后也应出现 `collision exit: Ground`。Enter/Stay/Exit 的顺序针对同一对接触，不要求不同碰撞体之间存在统一日志顺序。降低 Time Scale 会延长现实中的等待时间。
+
+### 做一次受控的摩擦实验
+
+基线完成后，新建 **Physic Material（物理材质）**，将 **Friction** 设为 `0.1`、**Bounciness** 设为 `0`、**Friction Combine** 设为 **Average**，把同一资产**同时**赋给 Ground 的 BoxCollider 与 Probe 的 SphereCollider，再尝试 `3 N`。采用该合成方式时，只修改一边会得到 `(0.1 + 0.6) / 2 = 0.35` 的有效摩擦；对这个 1 kg 场景而言，`3 N` 仍低于约 `3.43 N` 的滑动阈值。摩擦是公开的物理材质参数，改变形状缩放不能替代对它的设置。进入下一章前恢复基线参数。
 
 ## 编写物理组件 {#physics-probe-script_1}
 

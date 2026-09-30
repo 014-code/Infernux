@@ -19,7 +19,7 @@ For most custom pipelines, start with the Python `RenderPipeline.define()` DSL. 
 
 Create `Assets/Rendering/simple_forward_pipeline.py` in the project. No registry call or package `__init__.py` is required: discovery scans the `Assets` tree for `.py` files, reads class inheritance without importing unrelated scripts, then imports files that lead to a `RenderPipeline` subclass. Indirect subclasses and subclasses of the built-in pipelines are included. Files whose names start with `_`, hidden directories, and common build or virtual-environment directories are skipped.
 
-The class needs a non-empty `name` that does not start with `_`:
+The class needs a non-empty `name` that does not start with `_`. The following is a declaration sketch only: before saving or selecting it, replace the entire sketch with the complete **A minimal pipeline** example below. An ellipsis body creates no render routes:
 
 ```python
 import infernux as inx
@@ -250,6 +250,8 @@ RenderStack saves parameter values under the pipeline `name`. A parameter edit i
 在项目中创建 `Assets/Rendering/simple_forward_pipeline.py`。无需注册调用，也无需添加包级 `__init__.py`：发现器会扫描 `Assets` 目录树，先读取 `.py` 文件中的类继承关系，不导入无关脚本；确认某个文件通向 `RenderPipeline` 子类后，才会导入它。间接继承的子类、继承内置管线的子类也能被发现。以下划线开头的文件、隐藏目录，以及常见的构建目录和虚拟环境目录会被跳过。
 
 类必须提供非空且不以下划线开头的 `name`：
+
+下面这段只是声明结构，不能作为可运行管线。保存或选择之前，请用后文“最小管线”的完整代码替换整段；只有 `...` 的函数体不会创建渲染路径。
 
 ```python
 import infernux as inx

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self'; script-src-attr 'none'; style-src 'self'; style-src-attr 'none'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-src 'none'; worker-src 'self'; manifest-src 'self'; form-action 'self'; upgrade-insecure-requests">
     <meta name="referrer" content="strict-origin-when-cross-origin">
-    <meta name="description" content="How Infernux gets from 0.4.0 to 0.5.2: Android and Web Players, Torch workflows, Linux and windowless execution, authoritative schemas, replayable worlds, the tensor data plane, and tools an agent can safely build.">
+    <meta name="description" content="The road to Neural Network-Native (3N): 041 engine foundations, model workflows, world schemas, replay, batch simulation and a tensor data plane through 0.5.2.">
     <meta name="theme-color" content="#0a0c11">
     <meta name="color-scheme" content="dark light">
     <link rel="canonical" href="https://infernux-engine.com/roadmap.html">
@@ -85,7 +85,7 @@
                     <span data-i18n="roadmap.hero.kicker">Roadmap</span>
                 </div>
                 <h1 data-i18n="roadmap.hero.title">Infernux roadmap</h1>
-                <p data-i18n="roadmap.hero.description">From a working engine on Windows to cross-platform shipping, models running through the data plane, and agents that can build tools safely. No dates here, only what each step has to do before it counts as done.</p>
+                <p data-i18n="roadmap.hero.description">Our destination is a Neural Network-Native Game Engine. 3N names its three Ns: Neural, Network and Native. This roadmap connects world authoring to model workflows, inference, replay and batch simulation; the 041 line strengthens the engine foundation.</p>
                 <div class="hub-actions">
                     <a href="https://github.com/ChenlizheMe/Infernux/issues" class="btn btn-primary" target="_blank" rel="noopener" data-i18n="roadmap.hero.primary">Track issues</a>
                     <a href="start.html" class="btn btn-secondary" data-i18n="roadmap.hero.secondary">Get started</a>
@@ -94,12 +94,12 @@
 
             <section class="release-grid">
                 <article class="release-card">
-                    <div class="mini-tag" data-i18n="roadmap.release.current.tag">0.4.0 · PLUGINS AND ASSETS</div>
-                    <strong>v0.4.0</strong>
-                    <h3 data-i18n="roadmap.release.current.title">Packaged assets and live plugin authoring</h3>
+                    <div class="mini-tag" data-i18n="roadmap.release.current.tag">041 · WORLD AUTHORING</div>
+                    <strong>041</strong>
+                    <h3 data-i18n="roadmap.release.current.title">Multi-scene worlds and live tools</h3>
                     <ul>
-                        <li data-i18n="roadmap.release.current.item1">Repository packages use a package/ payload root and a standalone packer. Local authors work directly in their selected folder; scripts and assets under Packages refresh alongside project content.</li>
-                        <li data-i18n="roadmap.release.current.item2">Player content stays packed in Content.inxpkg. Authored asset paths resolve through cooked GUID identities, with real file access for payloads that require it.</li>
+                        <li data-i18n="roadmap.release.current.item1">The 041 development line deepens multi-scene editing, model import and source synchronization, world UI, CPU/GPU JIT preparation and GPUJelly simulation.</li>
+                        <li data-i18n="roadmap.release.current.item2">Plugin components share live reload with project scripts. Player type registration, preload cleanup, localization and platform build options make extensions part of the everyday workflow.</li>
                     </ul>
                 </article>
                 <article class="release-card">
@@ -116,8 +116,8 @@
                     <strong>v0.4.1–0.4.4</strong>
                     <h3 data-i18n="roadmap.release.mid.title">Headless, semantics, replay, batch data</h3>
                     <ul>
-                        <li data-i18n="roadmap.release.mid.item1">0.4.1 brings Linux and windowless execution. 0.4.2 sets up the authoritative schemas. 0.4.3 does snapshot, delta and deterministic replay. 0.4.4 opens batch worlds and the tensor data plane.</li>
-                        <li data-i18n="roadmap.release.mid.item2">Every one of these produces a versioned contract and acceptance evidence somebody else can measure. A private path that only survives inside a demo does not count.</li>
+                        <li data-i18n="roadmap.release.mid.item1">041 establishes the cross-platform runtime and authoring foundation. The planned 0.4.2–0.4.4 stages focus on shared schemas, snapshots and replay, then batch worlds and the tensor data plane.</li>
+                        <li data-i18n="roadmap.release.mid.item2">Each stage needs usable public APIs and measurable behavior so games, tools and model workflows can build on the same contracts.</li>
                     </ul>
                 </article>
                 <article class="release-card">
@@ -181,26 +181,26 @@
             <section class="section">
                 <div class="section-head">
                     <div>
-                        <div class="section-kicker" data-i18n="roadmap.priorities.kicker">On the bench right now</div>
-                        <h2 class="section-title" data-i18n="roadmap.priorities.title">The next three.</h2>
+                        <div class="section-kicker" data-i18n="roadmap.priorities.kicker">NEXT FOUNDATIONS FOR 3N</div>
+                        <h2 class="section-title" data-i18n="roadmap.priorities.title">Connect models, worlds and deployment.</h2>
                     </div>
-                    <p class="section-intro" data-i18n="roadmap.priorities.intro">These have to close real shipping loops. Writing the architecture document does not count, and neither does getting one isolated demo to run.</p>
+                    <p class="section-intro" data-i18n="roadmap.priorities.intro">Four-platform exports are in place. Further work focuses on compute boundaries, repeatable world operations and model deployment across those targets.</p>
                 </div>
                 <div class="priority-grid">
                     <article class="priority-card">
                         <div class="card-mark"><i class="fas fa-link"></i></div>
-                        <h3 data-i18n="roadmap.priorities.card1.title">Android Player vertical slice</h3>
-                        <p data-i18n="roadmap.priorities.card1.body">Get a first APK onto real hardware with lifecycle, input, assets, audio, rendering, logs and a minimal portable scripting subset all working in one pass.</p>
+                        <h3 data-i18n="roadmap.priorities.card1.title">A shared language for world state</h3>
+                        <p data-i18n="roadmap.priorities.card1.body">Define shared schemas for state, commands and queries, building on the existing editor command path and batch APIs. Tools and models should be able to discover exactly what they can read and change.</p>
                     </article>
                     <article class="priority-card">
                         <div class="card-mark"><i class="fas fa-cubes"></i></div>
-                        <h3 data-i18n="roadmap.priorities.card2.title">Web portability gate</h3>
-                        <p data-i18n="roadmap.priorities.card2.body">Map out the native module, Python, rendering, storage and packaging boundaries in the browser first, then talk about compatibility and performance. This step will probably kill a few assumptions.</p>
+                        <h3 data-i18n="roadmap.priorities.card2.title">Repeatable simulation and data exchange</h3>
+                        <p data-i18n="roadmap.priorities.card2.body">Develop snapshot, delta and replay contracts, then batch stepping and tensor exchange. Make copying, synchronization and ownership explicit so workloads can be measured and improved.</p>
                     </article>
                     <article class="priority-card">
                         <div class="card-mark"><i class="fas fa-vector-square"></i></div>
-                        <h3 data-i18n="roadmap.priorities.card3.title">Torch entry and the inference backend</h3>
-                        <p data-i18n="roadmap.priorities.card3.body">Native PyTorch stays in the editor. Which inference backend goes on Android and Web gets decided by measuring model coverage, latency, memory, package size and fallback behaviour, not by picking a favourite.</p>
+                        <h3 data-i18n="roadmap.priorities.card3.title">Model workflows and portable inference</h3>
+                        <p data-i18n="roadmap.priorities.card3.body">Keep the Python ML ecosystem close to authoring. Choose deployment backends using model coverage, latency, memory and package size on each target, and ship only the runtime the game needs.</p>
                     </article>
                 </div>
             </section>
@@ -215,7 +215,7 @@
                         <span class="logo-icon"><img src="assets/logo.png" width="256" height="256" alt="Infernux logo"></span>
                         <span class="logo-text" data-i18n="brand.footerTitle">熔炉 · INFERNUX</span>
                     </div>
-                    <p data-i18n="footer.tagline">Source fully open, architecture written down, and when something breaks you can chase it all the way to the bottom.</p>
+                    <p data-i18n="footer.tagline">A Python-first game engine on the road to Neural Network-Native. Open source under MIT.</p>
                 </div>
                 <div class="footer-links">
                     <div class="footer-column">
