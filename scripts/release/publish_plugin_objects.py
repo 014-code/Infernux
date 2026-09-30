@@ -73,7 +73,10 @@ def main() -> None:
     # Never advertise missing packages. This also checks unchanged editor tools.
     if not args.reference:
         for item in registry["packages"]:
-            request = urllib.request.Request(item["source"]["location"], method="HEAD")
+            request = urllib.request.Request(
+                item["source"]["location"], method="HEAD",
+                headers={"User-Agent": "Infernux-Release-Publisher"},
+            )
             with urllib.request.urlopen(request, timeout=60) as response:
                 if int(response.headers["Content-Length"]) <= 0:
                     raise ValueError(f"Empty public plugin: {item['reference']}")
