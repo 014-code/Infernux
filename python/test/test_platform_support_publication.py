@@ -5,6 +5,7 @@ import json
 import ast
 from pathlib import Path
 import tomllib
+from packaging.version import Version
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -28,12 +29,15 @@ def test_engine_and_current_release_metadata_use_one_version():
             assert (ROOT / filename).read_text(encoding="utf-8").startswith(f"# Infernux v{version} ")
     for filename, key in (
         ("release.json", "version"),
-        ("hub-catalog.json", "stable"),
         ("docs-manifest.json", "documented_release"),
         ("release-notes.json", "version"),
         ("platform-support.json", "released_version"),
     ):
         assert json.loads((ROOT / "docs" / filename).read_text(encoding="utf-8"))[key] == published
+    # A rebuilt Hub has a post-release identity while its engine stays on the
+    # same base version (for example Hub 0.4.1-2 serves engine 0.4.1 build 2).
+    catalog = json.loads((ROOT / "docs/hub-catalog.json").read_text(encoding="utf-8"))
+    assert Version(catalog["stable"]).base_version == published
 
 
 def test_wheel_classifiers_match_supported_host_targets():
@@ -63,7 +67,7 @@ def test_both_readme_tables_match_the_support_matrix():
 def test_released_platform_claims_match_the_public_hub_catalog():
     matrix = _matrix()
     catalog = json.loads((ROOT / "docs/hub-catalog.json").read_text(encoding="utf-8"))
-    assert matrix["released_version"] == catalog["stable"]
+    assert matrix["released_version"] == Version(catalog["stable"]).base_version
     release = next(item for item in catalog["releases"] if item["version"] == catalog["stable"])
     assert {item["id"] for item in matrix["platforms"] if item["released"]} == set(release["platforms"])
     assert set(matrix["unsupported"]) == {"macos", "ios-native", "headless-player"}

@@ -823,7 +823,7 @@ def open_file_with_system(
             return False
         try:
             subprocess.Popen(
-                [executable, "--disable-autoexec", os.path.abspath(file_path)],
+                [executable, "--disable-autoexec", resolved_path(file_path)],
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
             )
             return True
