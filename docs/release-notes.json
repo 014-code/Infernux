@@ -14,9 +14,56 @@
     "to": "0.4.1",
     "url": "https://github.com/ChenlizheMe/Infernux/compare/v0.4.0...v0.4.1"
   },
-  "section_count": 14,
-  "item_count": 67,
+  "section_count": 15,
+  "item_count": 75,
   "sections": [
+    {
+      "id": "0-4-1-v3-new-project-startup-hotfix",
+      "title": "0.4.1 v3 · New Project Startup Hotfix",
+      "kind": "changes",
+      "items": [
+        {
+          "title": "Correct the Hub's generated scene metadata to use the native DefaultText resource type. The invalid Scene value prevented freshly created projects from starting the Editor.",
+          "detail": "",
+          "text": "Correct the Hub's generated scene metadata to use the native DefaultText resource type. The invalid Scene value prevented freshly created projects from starting the Editor."
+        },
+        {
+          "title": "Give newly created scenes independent GUIDs, so separate projects with the same name no longer share a scene identity.",
+          "detail": "",
+          "text": "Give newly created scenes independent GUIDs, so separate projects with the same name no longer share a scene identity."
+        },
+        {
+          "title": "Store the default scene GUID in Editor settings so new projects open their generated Start scene, including its render stack, instead of an unrelated untitled scene.",
+          "detail": "",
+          "text": "Store the default scene GUID in Editor settings so new projects open their generated Start scene, including its render stack, instead of an unrelated untitled scene."
+        },
+        {
+          "title": "Include the required color-temperature settings in the default light document so the Start scene passes current component validation.",
+          "detail": "",
+          "text": "Include the required color-temperature settings in the default light document so the Start scene passes current component validation."
+        },
+        {
+          "title": "Fix first Play in projects without user scripts: Editor warmup no longer mistakes an empty script directory for a packaged Player or tries to load its runtime type registry.",
+          "detail": "",
+          "text": "Fix first Play in projects without user scripts: Editor warmup no longer mistakes an empty script directory for a packaged Player or tries to load its runtime type registry."
+        },
+        {
+          "title": "Add regression coverage for native metadata parsing, AssetDatabase scanning, complete scene/component restoration, effect references, Editor and build settings, repeated-scan GUID preservation, and empty-project warmup.",
+          "detail": "",
+          "text": "Add regression coverage for native metadata parsing, AssetDatabase scanning, complete scene/component restoration, effect references, Editor and build settings, repeated-scan GUID preservation, and empty-project warmup."
+        },
+        {
+          "title": "Updating Hub corrects newly created projects; it does not rewrite existing assets. To repair a generated Start scene while retaining its GUID: change metadata.resource_type.value from Scene to DefaultText in Assets/Scenes/Start.scene.meta; add missing useColorTemperature: false and colorTemperature: 6500.0 fields to the Light component's data in Start.scene; set lastOpenedSceneGuid in ProjectSettings/EditorSettings.json to the scene metadata's GUID. Use wheel build 3 for the Play Mode fix.",
+          "detail": "",
+          "text": "Updating Hub corrects newly created projects; it does not rewrite existing assets. To repair a generated Start scene while retaining its GUID: change metadata.resource_type.value from Scene to DefaultText in Assets/Scenes/Start.scene.meta; add missing useColorTemperature: false and colorTemperature: 6500.0 fields to the Light component's data in Start.scene; set lastOpenedSceneGuid in ProjectSettings/EditorSettings.json to the scene metadata's GUID. Use wheel build 3 for the Play Mode fix."
+        },
+        {
+          "title": "Engine version remains 0.4.1, with wheel build 3 and Hub update identity 0.4.1-3.",
+          "detail": "",
+          "text": "Engine version remains 0.4.1, with wheel build 3 and Hub update identity 0.4.1-3."
+        }
+      ]
+    },
     {
       "id": "0-4-1-v2-hub-and-blender-hotfix",
       "title": "0.4.1 v2 · Hub and Blender Hotfix",

@@ -71,6 +71,17 @@
 </header><div class="release-prose"><p>0.4.1 brings larger worlds, live Python authoring and target-aware computation into the same engine workflow. This release expands multi-scene editing, prefab authoring, model import, rendering and audio, then carries their resource and component lifecycles into exported Players. It also rebuilds key parts of the plugin experience in response to community reports.</p>
 <p>Infernux is working toward a <strong>Neural Network-Native Engine (3N)</strong>. Here, “Neural Network” is one concept: neural networks should eventually participate directly in gameplay and simulation. 041 builds the world, compute and tooling foundations for that direction; it does not claim that the full neural inference and tensor runtime is already delivered.</p>
 <p><strong>Baseline for comparison:</strong> <a href="https://github.com/ChenlizheMe/Infernux/compare/v0.4.0...v0.4.1"><code>v0.4.0...v0.4.1</code></a></p>
+<h2 id="en-041-v3-new-project-startup-hotfix">0.4.1 v3 · New Project Startup Hotfix</h2>
+<ul>
+<li>Correct the Hub's generated scene metadata to use the native <code>DefaultText</code> resource type. The invalid <code>Scene</code> value prevented freshly created projects from starting the Editor.</li>
+<li>Give newly created scenes independent GUIDs, so separate projects with the same name no longer share a scene identity.</li>
+<li>Store the default scene GUID in Editor settings so new projects open their generated Start scene, including its render stack, instead of an unrelated untitled scene.</li>
+<li>Include the required color-temperature settings in the default light document so the Start scene passes current component validation.</li>
+<li>Fix first Play in projects without user scripts: Editor warmup no longer mistakes an empty script directory for a packaged Player or tries to load its runtime type registry.</li>
+<li>Add regression coverage for native metadata parsing, AssetDatabase scanning, complete scene/component restoration, effect references, Editor and build settings, repeated-scan GUID preservation, and empty-project warmup.</li>
+<li>Updating Hub corrects newly created projects; it does not rewrite existing assets. To repair a generated Start scene while retaining its GUID: change <code>metadata.resource_type.value</code> from <code>Scene</code> to <code>DefaultText</code> in <code>Assets/Scenes/Start.scene.meta</code>; add missing <code>useColorTemperature: false</code> and <code>colorTemperature: 6500.0</code> fields to the Light component's <code>data</code> in <code>Start.scene</code>; set <code>lastOpenedSceneGuid</code> in <code>ProjectSettings/EditorSettings.json</code> to the scene metadata's GUID. Use wheel build 3 for the Play Mode fix.</li>
+<li>Engine version remains <strong>0.4.1</strong>, with wheel build <strong>3</strong> and Hub update identity <strong>0.4.1-3</strong>.</li>
+</ul>
 <h2 id="en-041-v2-hub-and-blender-hotfix">0.4.1 v2 · Hub and Blender Hotfix</h2>
 <ul>
 <li>Linux Hub now resolves the system certificate store when bundled OpenSSL points at the build machine's conda environment. HTTPS verification remains enabled, and explicit administrator certificate settings are preserved.</li>
@@ -185,6 +196,17 @@
 </header><div class="release-prose"><p>0.4.1 把更大的世界、实时 Python 创作与面向目标平台的计算带进同一套引擎工作流。本期扩展了多场景、Prefab、模型导入、渲染和音频能力，并把资源与组件的生命周期贯通到导出的 Player；同时根据社区反馈，完善了插件开发和热重载的关键环节。</p>
 <p>Infernux 致力于成为 <strong>Neural Network-Native Engine（3N，神经网络原生引擎）</strong>。其中 Neural Network 是完整的“神经网络”概念：我们希望神经网络最终能够直接参与游戏逻辑与模拟。041 建设的是通往这个方向的世界、计算和工具基础，并不意味着完整的神经网络推理与张量运行时已经交付。</p>
 <p><strong>对比基线：</strong> <a href="https://github.com/ChenlizheMe/Infernux/compare/v0.4.0...v0.4.1"><code>v0.4.0...v0.4.1</code></a></p>
+<h2 id="zh-041-v3">0.4.1 v3 · 新建项目启动修复</h2>
+<ul>
+<li>修正 Hub 生成的场景元数据，使用原生资源系统规定的 <code>DefaultText</code> 类型。此前错误的 <code>Scene</code> 值会导致新建项目无法启动编辑器。</li>
+<li>为新建场景分配独立 GUID，避免不同目录下的同名项目获得相同的场景身份。</li>
+<li>按当前编辑器协议保存默认场景 GUID，确保新项目自动打开带有渲染栈的 Start 场景，而不是另行创建无关的未命名场景。</li>
+<li>为默认灯光补齐当前组件协议要求的色温字段，修复 Start 场景被组件校验拒绝的问题。</li>
+<li>修复没有用户脚本的新项目首次进入 Play 时的预热错误：编辑器不再把空脚本目录误判为已构建的 Player，也不再读取 Player 专用类型注册表。</li>
+<li>增加贯通 Hub 与引擎的回归测试，覆盖原生元数据解析、资源扫描、完整场景与组件恢复、后处理引用、编辑器和构建设置、重复扫描保持 GUID，以及空项目预热。</li>
+<li>更新 Hub 会修正新建项目，不会重写现有资源。保留原 GUID 修复已生成的 Start 场景时：将 <code>Assets/Scenes/Start.scene.meta</code> 的 <code>metadata.resource_type.value</code> 从 <code>Scene</code> 改为 <code>DefaultText</code>；在 <code>Start.scene</code> 的 Light 组件 <code>data</code> 中补上缺失的 <code>useColorTemperature: false</code> 和 <code>colorTemperature: 6500.0</code>；将 <code>ProjectSettings/EditorSettings.json</code> 的 <code>lastOpenedSceneGuid</code> 设为场景元数据里的 GUID。Play 模式修复需要使用 wheel 构建 3。</li>
+<li>引擎版本保持 <strong>0.4.1</strong>，wheel 构建编号为 <strong>3</strong>，Hub 更新标识为 <strong>0.4.1-3</strong>。</li>
+</ul>
 <h2 id="zh-041-v2-hub-blender">0.4.1 v2 · Hub 与 Blender 修复</h2>
 <ul>
 <li>修复 Linux Hub 内置 OpenSSL 指向构建机 conda 证书目录的问题，改为读取系统证书库；保持 HTTPS 校验，并尊重用户显式配置的证书路径。</li>
