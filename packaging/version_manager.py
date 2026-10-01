@@ -68,6 +68,7 @@ class EngineVersion:
     published_at: str = ""
     prerelease: bool = False
     installed: bool = False
+    update_available: bool = False
     python_version: str = ""
     wheel_options: tuple[EngineWheel, ...] = ()
     sources: tuple[str, ...] = ()
@@ -134,6 +135,10 @@ class VersionManager:
                 compatibility_error=compatibility_error,
             )
             versions[ver] = ev
+            local = self.get_wheel_path(ver, ev.python_version or None)
+            ev.update_available = bool(
+                local and wheel and wheel_build(wheel.filename) > wheel_build(local)
+            )
 
         # Add locally-installed versions not on remote (e.g. manually copied)
         for local_ver in self._local_versions():
@@ -198,7 +203,7 @@ class VersionManager:
         if not valid_wheels:
             return None
         preferred = self._preferred_local_wheel(valid_wheels)
-        return preferred or sorted(valid_wheels)[0]
+        return preferred or max(valid_wheels, key=wheel_build)
 
     def installed_python_versions(self, version: str) -> list[str]:
         ver_dir = _VERSIONS_DIR / version
@@ -561,13 +566,15 @@ class VersionManager:
                 wheel for wheel in wheels if wheel.python_version == python_version
             )
             if matches:
-                return matches
-        return (wheels[0],)
+                newest = max(matches, key=lambda item: wheel_build(item.filename))
+                return tuple(item for item in matches if item.filename == newest.filename)
+        newest = max(wheels, key=lambda item: wheel_build(item.filename))
+        return tuple(item for item in wheels if item.filename == newest.filename)
 
     def _preferred_local_wheel(self, wheels: list[str]) -> str:
         wheel_by_python = {
             wheel_python_version(wheel): wheel
-            for wheel in wheels
+            for wheel in sorted(wheels, key=wheel_build)
             if wheel_python_version(wheel)
         }
         preferred_versions: list[str] = []
@@ -588,7 +595,7 @@ _TAG_RE = re.compile(r"^v?(\d+\.\d+\.\d+.*)$")
 def _tag_to_version(tag: str) -> str:
     """Convert 'v0.3.0' → '0.3.0', return '' on failure."""
     m = _TAG_RE.match(tag)
-    return m.group(1) if m else ""
+    return re.sub(r"-v[1-9]\d*$", "", m.group(1)) if m else ""
 
 
 def _version_tuple(version: str):
@@ -696,7 +703,10 @@ def _merge_release_catalogs(github: list[dict], pypi: dict) -> list[dict]:
             for asset in release.get("assets", [])
             if isinstance(asset, dict)
         ]
-        merged[version] = normalized
+        if version in merged:
+            merged[version]["assets"].extend(normalized["assets"])
+        else:
+            merged[version] = normalized
 
     releases = pypi.get("releases", {}) if isinstance(pypi, dict) else {}
     if isinstance(releases, dict):

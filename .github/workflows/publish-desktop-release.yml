@@ -13,7 +13,7 @@ on:
         required: true
         type: string
       release_tag:
-        description: Release tag; empty derives v<project.version>
+        description: Release tag; empty derives the project version and wheel build
         required: false
         type: string
         default: ''
@@ -41,7 +41,7 @@ on:
         required: true
         type: string
       release_tag:
-        description: Release tag; empty derives v<project.version>
+        description: Release tag; empty derives the project version and wheel build
         required: false
         default: ''
         type: string
@@ -91,24 +91,21 @@ jobs:
           REQUESTED_TAG: ${{ inputs.release_tag }}
         run: |
           python - <<'PY'
-          import configparser
           import os
+          import sys
           from pathlib import Path
-          import tomllib
-
-          version = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
-          configuration = configparser.ConfigParser()
-          configuration.read("setup.cfg", encoding="utf-8")
-          build = configuration.get("bdist_wheel", "build_number", fallback="").strip()
-          if not build.isdigit() or int(build) < 1:
-              raise SystemExit("setup.cfg must declare a positive bdist_wheel build_number")
+          sys.path.insert(0, "packaging")
+          from hub_release import project_version, project_build_number, hub_version_for, release_tag_for
+          version = project_version()
+          build = project_build_number()
           requested = os.environ.get("REQUESTED_TAG", "").strip()
-          tag = requested or f"v{version}"
-          if tag != f"v{version}":
-              raise SystemExit(f"Release tag {tag!r} does not match project version {version!r}")
+          tag = requested or release_tag_for(version, build)
+          if tag != release_tag_for(version, build):
+              raise SystemExit(f"Release tag {tag!r} does not match version/build {version}/{build}")
           with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
               output.write(f"version={version}\n")
               output.write(f"build={build}\n")
+              output.write(f"hub_version={hub_version_for(version, build)}\n")
               output.write(f"tag={tag}\n")
           PY
 
@@ -129,6 +126,7 @@ jobs:
       - name: Validate the release payload
         env:
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          HUB_VERSION: ${{ steps.release.outputs.hub_version }}
           WHEEL_BUILD: ${{ steps.release.outputs.build }}
         run: |
           python - <<'PY'
@@ -138,6 +136,7 @@ jobs:
           from pathlib import Path
 
           version = os.environ["RELEASE_VERSION"]
+          hub_version = os.environ["HUB_VERSION"]
           build = os.environ["WHEEL_BUILD"]
           root = Path("dist") / version
           wheel_prefix = f"infernux-{version}-{build}-cp313-cp313-"
@@ -155,10 +154,10 @@ jobs:
           expected = {
               windows_wheel: "zip",
               linux_wheels[0]: "zip",
-              f"InfernuxHubInstaller-{version}-windows-x64.exe": "file",
-              f"InfernuxHubInstaller-{version}-linux-x64": "file",
-              f"InfernuxHub-{version}-windows-x64-full.zip": "zip",
-              f"InfernuxHub-{version}-linux-x64-full.zip": "zip",
+              f"InfernuxHubInstaller-{hub_version}-windows-x64.exe": "file",
+              f"InfernuxHubInstaller-{hub_version}-linux-x64": "file",
+              f"InfernuxHub-{hub_version}-windows-x64-full.zip": "zip",
+              f"InfernuxHub-{hub_version}-linux-x64-full.zip": "zip",
               "InfernuxHub-windows-x64-manifest.json": "json",
               "InfernuxHub-linux-x64-manifest.json": "json",
           }
@@ -176,7 +175,7 @@ jobs:
                   raise SystemExit(f"Invalid ZIP/wheel asset: {name}")
               if kind == "json":
                   document = json.loads(path.read_text(encoding="utf-8"))
-                  if document.get("version") != version:
+                  if document.get("version") != hub_version:
                       raise SystemExit(f"Manifest version mismatch: {name}")
           print("Validated", len(expected), "desktop release assets")
           PY
@@ -188,8 +187,8 @@ jobs:
         with:
           name: infernux-${{ steps.release.outputs.version }}-signpath-input
           path: |
-            dist/${{ steps.release.outputs.version }}/InfernuxHubInstaller-${{ steps.release.outputs.version }}-windows-x64.exe
-            dist/${{ steps.release.outputs.version }}/InfernuxHub-${{ steps.release.outputs.version }}-windows-x64-full.zip
+            dist/${{ steps.release.outputs.version }}/InfernuxHubInstaller-${{ steps.release.outputs.hub_version }}-windows-x64.exe
+            dist/${{ steps.release.outputs.version }}/InfernuxHub-${{ steps.release.outputs.hub_version }}-windows-x64-full.zip
           if-no-files-found: error
           retention-days: 1
 
@@ -209,12 +208,13 @@ jobs:
         if: inputs.sign_windows_release
         env:
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          HUB_VERSION: ${{ steps.release.outputs.hub_version }}
         run: |
           release_dir="dist/$RELEASE_VERSION"
           signed_dir="$release_dir/signpath-signed"
           for name in \
-            "InfernuxHubInstaller-$RELEASE_VERSION-windows-x64.exe" \
-            "InfernuxHub-$RELEASE_VERSION-windows-x64-full.zip"
+            "InfernuxHubInstaller-$HUB_VERSION-windows-x64.exe" \
+            "InfernuxHub-$HUB_VERSION-windows-x64-full.zip"
           do
             mapfile -t matches < <(find "$signed_dir" -type f -name "$name")
             if [ "${#matches[@]}" -ne 1 ]; then
@@ -238,7 +238,7 @@ jobs:
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             draft="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"
             if [ "$draft" != "true" ]; then
-              echo "Release $RELEASE_TAG is already public; increment project.version for Hub changes." >&2
+              echo "Release $RELEASE_TAG is already public; increment the build number or project.version." >&2
               exit 1
             fi
             if [ "$REPLACE_EXISTING" != "true" ]; then
@@ -314,6 +314,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          WHEEL_BUILD: ${{ steps.release.outputs.build }}
           SOURCE_BRANCH: ${{ steps.source.outputs.branch }}
         run: |
           published_at="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json publishedAt --jq .publishedAt)"
@@ -324,7 +325,8 @@ jobs:
           git fetch origin "$SOURCE_BRANCH"
           git checkout -B release-catalog "origin/$SOURCE_BRANCH"
           catalog_version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
-          if [ "$catalog_version" != "$RELEASE_VERSION" ]; then
+          catalog_build="$(PYTHONPATH=packaging python -c 'from hub_release import project_build_number; print(project_build_number())')"
+          if [ "$catalog_version" != "$RELEASE_VERSION" ] || [ "$catalog_build" != "$WHEEL_BUILD" ]; then
             echo "The release branch moved to version $catalog_version while publishing $RELEASE_VERSION" >&2
             exit 1
           fi

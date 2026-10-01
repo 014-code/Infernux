@@ -25,6 +25,7 @@ from hub_release import (
     load_manifest,
     manifest_asset_name,
     validate_manifest,
+    project_hub_version,
 )
 from style import StyleManager
 
@@ -72,8 +73,7 @@ class HubUpdateCheck:
 def _version_key(value: str) -> Version:
     if not _VERSION_PATTERN.fullmatch(value):
         raise ValueError(f"Invalid Infernux Hub version: {value!r}")
-    # Build metadata identifies packaging, not a newer application release.
-    # Published Hub changes must increment project.version.
+    # Numeric post-releases identify rebuilt Hubs without changing engine metadata.
     return Version(value.split("+", 1)[0])
 
 
@@ -85,15 +85,7 @@ def current_hub_version() -> str:
             raise ValueError("hub-version.json does not match the current schema")
         version = str(payload["version"])
     else:
-        candidate = Path(__file__).resolve().parents[1] / "pyproject.toml"
-        version_lines = [
-            line.split("=", 1)[1].strip().strip('"')
-            for line in candidate.read_text(encoding="utf-8").splitlines()
-            if line.strip().startswith("version =")
-        ]
-        if len(version_lines) != 1:
-            raise ValueError("pyproject.toml must declare exactly one Hub version")
-        version = version_lines[0]
+        version = project_hub_version()
     _version_key(version)
     return version
 

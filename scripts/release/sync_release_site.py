@@ -73,6 +73,10 @@ def main():
     download = download_path.read_text(encoding="utf-8")
     download = "\n".join(line if "<option " in line else line.replace(previous, version) for line in download.split("\n"))
     options = []
+    download = re.sub(
+        rf'<option\b[^>]*>{re.escape(version)} · (?:Windows|Linux) x64 · CPython 3\.13</option>',
+        "", download,
+    )
     for asset in release["assets"]:
         if asset["kind"] != "python-wheel":
             continue

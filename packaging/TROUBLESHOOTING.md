@@ -29,6 +29,16 @@ failures, HTTP failures, and filesystem permissions. Switching KDE/other desktop
 environments is not a diagnosis of these failures. Do not disable TLS verification.
 The install page also accepts a locally downloaded compatible engine wheel.
 
+The original Linux 0.4.1 Hub bundled OpenSSL with a build-machine conda certificate
+path. On a clean machine this can cause `CERTIFICATE_VERIFY_FAILED` for both the
+engine catalog and Blender downloads. The rebuilt Hub uses the distribution's
+system CA bundle instead. Explicit `SSL_CERT_FILE` / `SSL_CERT_DIR` settings remain
+authoritative. Install the distribution's `ca-certificates` package if absent.
+
+For the original Linux Hub, launching it with
+`SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt "/path/to/Infernux Hub"` uses
+Ubuntu/Kubuntu's system trust store without disabling certificate verification.
+
 ## Blender authoring support
 
 This is an optional Blender installation used by the Editor to convert `.blend`
@@ -60,3 +70,10 @@ archive into a writable, short directory and set its `blender.exe` (Windows) or
 native `blender` executable (Linux) in Editor preferences. If extraction still
 fails, collect the exact filename/error and check destination permissions and free
 space; do not infer the cause solely from the desktop environment.
+
+Linux and Windows installation reports must be investigated separately. A Linux
+TLS or HTTP error happens before extraction; Windows reporting a completed download
+and failed extraction needs the filesystem exception. Blender's download server
+may also return HTTP 403 with a browser challenge on some networks. Hub cannot
+complete an interactive browser challenge: use the official browser download and
+select the extracted native executable. This is distinct from a certificate error.

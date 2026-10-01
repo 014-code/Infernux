@@ -3,44 +3,41 @@
 from __future__ import annotations
 
 import argparse
-import configparser
 import json
 from pathlib import Path
 import tomllib
 import urllib.request
+import sys
 
 from packaging.version import Version
 
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "packaging"))
+from hub_release import hub_version_for, project_build_number, release_tag_for
 MINIMUM_UPDATABLE_VERSION = "0.4.0"
 
 
 def require_new_hub_version() -> str:
-    """A wheel build-number change cannot update an already published Hub."""
+    """Require an unpublished application/build identity without replacing old assets."""
     version = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+    hub_version = hub_version_for(version, project_build_number(ROOT))
     catalog = json.loads((ROOT / "docs/hub-catalog.json").read_text(encoding="utf-8"))
     published = [
         item["version"] for item in catalog["releases"] if item["published_at"] is not None
     ]
     if published:
-        latest = max(published, key=Version)
-        if Version(version.split("+", 1)[0]) <= Version(latest.split("+", 1)[0]):
+        latest = max(published, key=lambda value: Version(value.split("+", 1)[0]))
+        if Version(hub_version.split("+", 1)[0]) <= Version(latest.split("+", 1)[0]):
             raise ValueError(
-                f"Hub {latest} is already published; increment project.version "
-                "before publishing changed Hub artifacts. A wheel build number "
-                "does not make an installed Hub discover an update."
+                f"Hub {latest} is already published; increment the build number or project.version "
+                "before publishing changed Hub artifacts."
             )
     return version
 
 
 def wheel_build_number() -> str:
-    configuration = configparser.ConfigParser()
-    configuration.read(ROOT / "setup.cfg", encoding="utf-8")
-    value = configuration.get("bdist_wheel", "build_number", fallback="").strip()
-    if not value.isdigit() or int(value) < 1:
-        raise ValueError("setup.cfg must declare a positive bdist_wheel build_number")
-    return value
+    return str(project_build_number(ROOT))
 
 
 def pypi_wheel_urls(version: str) -> dict[str, str]:
@@ -104,9 +101,11 @@ def build_catalog(
 ) -> None:
     version = require_new_hub_version()
     wheel_build = wheel_build_number()
-    github_base = f"https://github.com/ChenlizheMe/Infernux/releases/download/v{version}"
+    hub_version = hub_version_for(version, int(wheel_build))
+    release_tag = release_tag_for(version, int(wheel_build))
+    github_base = f"https://github.com/ChenlizheMe/Infernux/releases/download/{release_tag}"
     object_base = f"https://downloads.infernux-engine.com/hub/{version}/build-{wheel_build}"
-    release_url = f"https://github.com/ChenlizheMe/Infernux/releases/tag/v{version}"
+    release_url = f"https://github.com/ChenlizheMe/Infernux/releases/tag/{release_tag}"
     wheel_urls = pypi_wheel_urls(version) if resolve_pypi else {}
     platforms = {}
     assets = []
@@ -123,12 +122,12 @@ def build_catalog(
         manifest_name = f"InfernuxHub-{platform}-manifest.json"
         from_ci = platform == "linux-x64" and ci is not None
         manifest = ci["manifest"] if from_ci else json.loads((release_dir / manifest_name).read_text(encoding="utf-8"))
-        if manifest["version"] != version or manifest["platform"] != platform:
-            raise ValueError(f"{manifest_name} does not describe {version}/{platform}")
+        if manifest["version"] != hub_version or manifest["platform"] != platform:
+            raise ValueError(f"{manifest_name} does not describe {hub_version}/{platform}")
         def asset_size(name):
             return ci["files"][f"{version}/{name}"] if from_ci else (release_dir / name).stat().st_size
-        installer_name = f"InfernuxHubInstaller-{version}-{platform}{suffix}"
-        update_name = f"InfernuxHub-{version}-{platform}-full.zip"
+        installer_name = f"InfernuxHubInstaller-{hub_version}-{platform}{suffix}"
+        update_name = f"InfernuxHub-{hub_version}-{platform}-full.zip"
         wheel_name = wheel_names[platform]
         platforms[platform] = {
             "installer": {
@@ -162,20 +161,20 @@ def build_catalog(
                 "fallback_url": f"{github_base}/{name}",
             })
     release = {
-        "schema_version": 2, "version": version, "tag": f"v{version}",
-        "name": f"Infernux v{version}", "channel": "stable", "published_at": published_at,
+        "schema_version": 2, "version": version, "tag": release_tag,
+        "name": f"Infernux {version} v{wheel_build}", "channel": "stable", "published_at": published_at,
         "platforms": ["Windows 10/11 x64", "Linux x86_64"], "python_abi": "CPython 3.13 x64",
         "release_url": release_url, "assets": assets,
     }
     catalog_path = ROOT / "docs/hub-catalog.json"
     catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
-    catalog["stable"] = version
+    catalog["stable"] = hub_version
     catalog["releases"] = [{
-        "version": version, "channel": "stable", "published_at": published_at,
+        "version": hub_version, "channel": "stable", "published_at": published_at,
         "release_url": release_url,
         "minimum_updatable_version": MINIMUM_UPDATABLE_VERSION,
         "platforms": platforms,
-    }] + [item for item in catalog["releases"] if item["version"] != version]
+    }] + [item for item in catalog["releases"] if Version(item["version"]).release != Version(version).release]
     for path, document in ((ROOT / "docs/release.json", release), (catalog_path, catalog)):
         path.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"Generated {version} release catalogs from {release_dir}; published_at={published_at!r}")

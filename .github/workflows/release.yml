@@ -9,7 +9,7 @@ on:
         type: boolean
         default: false
       replace_existing_release:
-        description: Recover an unpublished draft; published Hub changes require a new project.version
+        description: Recover an unpublished draft; published changes require a new build or version
         required: true
         type: boolean
         default: false

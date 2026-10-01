@@ -67,6 +67,7 @@ def test_installer_publishes_only_its_versioned_file(tmp_path, monkeypatch):
     source = tmp_path / "source"
     source.mkdir()
     (source / "pyproject.toml").write_text('[project]\nversion = "0.4.0"\n')
+    (source / "setup.cfg").write_text('[bdist_wheel]\nbuild_number = 1\n')
     stage = tmp_path / "stage"
     (stage / "hub").mkdir(parents=True)
     hub_executable = "Infernux Hub.exe" if sys.platform == "win32" else "Infernux Hub"

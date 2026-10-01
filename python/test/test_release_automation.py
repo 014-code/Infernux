@@ -24,7 +24,7 @@ def test_hub_object_publication_uses_versioned_immutable_keys(tmp_path, monkeypa
         "scripts/release/publish_hub_objects.py",
     )
     version = "1.2.3"
-    for name in module.release_assets(version):
+    for name in module.release_assets("1.2.3-4"):
         (tmp_path / name).write_bytes(b"release")
     published = []
 
@@ -38,7 +38,7 @@ def test_hub_object_publication_uses_versioned_immutable_keys(tmp_path, monkeypa
     monkeypatch.setattr(module, "Publisher", FakePublisher)
     module.publish(tmp_path, version, 4, "secret")
 
-    assert [name for name, _key in published] == list(module.release_assets(version))
+    assert [name for name, _key in published] == list(module.release_assets("1.2.3-4"))
     assert all(key.startswith("hub/1.2.3/build-4/") for _name, key in published)
 
 
@@ -70,12 +70,12 @@ def test_release_catalog_reads_the_wheel_build_number(tmp_path):
         ("linux-x64", ""),
     ):
         (tmp_path / f"InfernuxHub-{platform}-manifest.json").write_text(
-            json.dumps({"version": "1.2.3", "platform": platform}),
+            json.dumps({"version": "1.2.3-4", "platform": platform}),
             encoding="utf-8",
         )
         for name in (
-            f"InfernuxHubInstaller-1.2.3-{platform}{suffix}",
-            f"InfernuxHub-1.2.3-{platform}-full.zip",
+            f"InfernuxHubInstaller-1.2.3-4-{platform}{suffix}",
+            f"InfernuxHub-1.2.3-4-{platform}-full.zip",
             wheel_names[platform],
         ):
             (tmp_path / name).write_bytes(b"release")
@@ -84,7 +84,8 @@ def test_release_catalog_reads_the_wheel_build_number(tmp_path):
 
     hub = json.loads((tmp_path / "docs/hub-catalog.json").read_text(encoding="utf-8"))
     release = json.loads((tmp_path / "docs/release.json").read_text(encoding="utf-8"))
-    assert hub["stable"] == "1.2.3"
+    assert hub["stable"] == "1.2.3-4"
+    assert release["tag"] == "v1.2.3-v4"
     assert hub["releases"][0]["minimum_updatable_version"] == "0.4.0"
     assert all(
         "/hub/1.2.3/build-4/" in asset["url"]
@@ -111,6 +112,7 @@ def test_release_catalog_rejects_republishing_an_existing_hub_version(tmp_path):
         '[project]\nversion = "1.2.4"\n',
         encoding="utf-8",
     )
+    (tmp_path / "setup.cfg").write_text("[bdist_wheel]\nbuild_number = 1\n")
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs/hub-catalog.json").write_text(
         json.dumps(
@@ -132,8 +134,10 @@ def test_release_catalog_rejects_republishing_an_existing_hub_version(tmp_path):
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="already published.*increment project.version"):
+    with pytest.raises(ValueError, match="already published.*increment the build number"):
         module.require_new_hub_version()
+    (tmp_path / "setup.cfg").write_text("[bdist_wheel]\nbuild_number = 2\n")
+    assert module.require_new_hub_version() == "1.2.4"
 
 
 @pytest.mark.parametrize("missing_platform", ["windows-x64", "linux-x64"])
@@ -164,7 +168,7 @@ def test_desktop_ci_exposes_one_click_publication():
     assert "needs: [portable-hub, windows-desktop, linux-desktop]" in workflow
 
 
-def test_release_body_contains_both_changelogs_and_actual_signing_state(tmp_path):
+def test_release_body_is_english_and_reports_actual_signing_state(tmp_path):
     module = _load("infernux_release_notes", "scripts/release/build_release_notes.py")
     (tmp_path / "pyproject.toml").write_text('[project]\nversion = "1.2.3"\n', encoding="utf-8")
     for name, text in (("UpdateLog.md", "New worlds"), ("UpdateLog-zh.md", "新的世界")):
@@ -173,13 +177,13 @@ def test_release_body_contains_both_changelogs_and_actual_signing_state(tmp_path
             encoding="utf-8",
         )
     unsigned = module.build_notes(tmp_path, signed=False)
-    assert "New worlds" in unsigned and "新的世界" in unsigned
+    assert "New worlds" in unsigned and "新的世界" not in unsigned
     assert "v1.2.2" not in unsigned
     assert "this release is unsigned" in unsigned
     assert module.SIGNING_CREDIT not in unsigned
     signed = module.build_notes(tmp_path, signed=True)
     assert module.SIGNING_CREDIT in signed
     assert "this release is unsigned" not in signed
-    (tmp_path / "UpdateLog-zh.md").write_text("# Infernux v1.2.2 · Old\n", encoding="utf-8")
+    (tmp_path / "UpdateLog.md").write_text("# Infernux v1.2.2 · Old\n", encoding="utf-8")
     with pytest.raises(ValueError, match="must begin with the release"):
         module.build_notes(tmp_path, signed=False)

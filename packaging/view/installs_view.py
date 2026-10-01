@@ -284,7 +284,7 @@ class _VersionRow(AnimatedSurfaceFrame):
         layout.addStretch()
 
         if ev.installed:
-            installed_label = QLabel(tr("Installed"))
+            installed_label = QLabel(tr("Update available") if ev.update_available else tr("Installed"))
             installed_label.setObjectName("installedBadge")
             layout.addWidget(installed_label)
 
@@ -437,7 +437,7 @@ class InstallEditorDialog(QDialog):
                 row.set_selected(candidate is ev)
             return
         self._btn_install.setEnabled(
-            not ev.installed and bool(ev.wheel_url)
+            (not ev.installed or ev.update_available) and bool(ev.wheel_url)
             and not self._queue.is_pending(f"engine:{ev.version}")
         )
         self._status.hide()

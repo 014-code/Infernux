@@ -383,6 +383,10 @@ class InstallerWindow(QWidget):
 
 
 def main() -> int:
+    from hub_logging import configure_logging
+    from hub_network import configure_system_certificates
+    configure_logging()
+    configure_system_certificates()
     app = QApplication.instance() or QApplication(sys.argv)
     window = InstallerWindow()
     window.show()

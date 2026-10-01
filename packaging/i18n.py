@@ -7,6 +7,7 @@ import sys
 
 
 _ZH = {
+    "Update available": "有可用更新",
     "Open Hub Logs": "打开 Hub 日志目录",
     "Could not fetch engine versions.": "无法获取引擎版本列表。",
     "Hub log: {path}": "Hub 日志：{path}",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import configparser
 import json
 import platform
 import tomllib
@@ -25,6 +26,32 @@ def project_version(source_root: str | Path | None = None) -> str:
     if not isinstance(version, str) or not version:
         raise ValueError("pyproject.toml does not declare project.version")
     return version
+
+
+def project_build_number(source_root: str | Path | None = None) -> int:
+    root = Path(source_root).resolve() if source_root else Path(__file__).resolve().parents[1]
+    configuration = configparser.ConfigParser()
+    configuration.read(root / "setup.cfg", encoding="utf-8")
+    value = configuration.get("bdist_wheel", "build_number", fallback="")
+    if not value.isdigit() or int(value) < 1:
+        raise ValueError("setup.cfg must declare a positive bdist_wheel build_number")
+    return int(value)
+
+
+def hub_version_for(version: str, build: int) -> str:
+    if build < 1:
+        raise ValueError("Build number must be positive")
+    # The numeric post-release spelling is understood by already-installed Hubs.
+    # Python package metadata remains the base version; wheels use their build tag.
+    return version if build == 1 else f"{version}-{build}"
+
+
+def project_hub_version(source_root: str | Path | None = None) -> str:
+    return hub_version_for(project_version(source_root), project_build_number(source_root))
+
+
+def release_tag_for(version: str, build: int) -> str:
+    return f"v{version}" if build == 1 else f"v{version}-v{build}"
 
 
 def host_platform_id(
@@ -182,7 +209,7 @@ def build_release_artifacts(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--hub-dir", required=True)
-    parser.add_argument("--version", default=project_version())
+    parser.add_argument("--version", default=project_hub_version())
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--platform", choices=sorted(SUPPORTED_PLATFORMS))
     arguments = parser.parse_args()

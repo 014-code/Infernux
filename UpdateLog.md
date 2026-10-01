@@ -8,6 +8,14 @@ Infernux is working toward a **Neural Network-Native Engine (3N)**. Here, “Neu
 
 **Baseline for comparison:** [`v0.4.0...v0.4.1`](https://github.com/ChenlizheMe/Infernux/compare/v0.4.0...v0.4.1)
 
+### 0.4.1 v2 · Hub and Blender Hotfix
+
+- Linux Hub now resolves the system certificate store when bundled OpenSSL points at the build machine's conda environment. HTTPS verification remains enabled, and explicit administrator certificate settings are preserved.
+- Hub records full catalog and installation errors in persistent logs, displays errors as selectable plain text, and lets users retry catalog requests. Blender HTTP failures identify the download stage and source.
+- Windows Blender extraction supports deep paths without requiring a global Windows policy change. Failed installations retain the verified archive and preserve the original error.
+- The Editor can discover a native Blender installation through the system's `.blend` association on Windows and Linux. Opening a `.blend` file uses the same selected executable as import. External image identities remain consistent during Blender export.
+- Rebuilt wheels keep the engine version **0.4.1** and use wheel build **2**. Hub presents one entry per engine version, selects the latest compatible build, and offers an update for a cached older build. Hub's own update identity is **0.4.1-2**.
+
 ### Multi-scene Worlds and Gameplay
 
 - **Author several scenes together.** Open scenes additively, choose the active scene, inspect scene ownership in the Hierarchy, and move objects between scenes without treating the editor document as one global world.

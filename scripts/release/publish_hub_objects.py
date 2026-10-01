@@ -9,6 +9,10 @@ import re
 import urllib.parse
 import urllib.request
 from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "packaging"))
+from hub_release import hub_version_for
 
 
 UPLOAD_ENDPOINT = "https://upload.infernux-engine.com"
@@ -104,7 +108,7 @@ def publish(release_dir: Path, version: str, build_number: int, token: str) -> N
     if build_number < 1:
         raise ValueError("Wheel build number must be positive")
     publisher = Publisher(token)
-    for name in release_assets(version):
+    for name in release_assets(hub_version_for(version, build_number)):
         source = release_dir / name
         if not source.is_file() or source.stat().st_size == 0:
             raise FileNotFoundError(f"Hub release asset is missing: {source}")

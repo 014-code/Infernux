@@ -795,6 +795,8 @@ def open_file_with_system(
     """
     Open *file_path* with the OS default application.
 
+    ``.blend`` uses the same configured Blender executable as model import.
+
     For ``.py``, ``.vert``, ``.frag``, ``.glsl``, ``.hlsl``, ``.json``,
     ``.txt``, and ``.md`` files, open in VS Code with the *project_root*
     as the workspace folder — so that the project's Python runtime
@@ -812,6 +814,22 @@ def open_file_with_system(
 
     _, ext = os.path.splitext(file_path)
     ext = ext.lower()
+
+    if ext == '.blend':
+        from Infernux.engine.model_import.toolchain import get_blender_executable
+        executable = get_blender_executable()
+        if not executable:
+            Debug.log_warning("Blender is not configured. Install Blender authoring support in Hub or select it in Editor preferences.")
+            return False
+        try:
+            subprocess.Popen(
+                [executable, "--disable-autoexec", os.path.abspath(file_path)],
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            )
+            return True
+        except OSError as exc:
+            Debug.log_warning(f"Could not open '{file_path}' with Blender '{executable}': {exc}")
+            return False
 
     # For code files, try IDEs first.
     # If the preferred IDE is available, try it first and then the other IDE.

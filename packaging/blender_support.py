@@ -10,6 +10,7 @@ import platform
 import shutil
 import tarfile
 import urllib.request
+import urllib.error
 import uuid
 import zipfile
 from dataclasses import dataclass
@@ -184,7 +185,16 @@ class BlenderSupportManager:
             f"{_RELEASE_ROOT}/{name}",
             headers={"User-Agent": "Infernux-Hub/1.0"},
         )
-        with urllib.request.urlopen(request, timeout=120) as response, download.open("wb") as writer:
+        try:
+            response = urllib.request.urlopen(request, timeout=120)
+        except urllib.error.HTTPError as exc:
+            raise BlenderSupportError(
+                f"Blender download failed: HTTP {exc.code} from {request.full_url}. "
+                "If the server requires browser verification, download Blender 5.2 "
+                "from blender.org in your browser, extract it, and select the native "
+                "Blender executable in Editor preferences."
+            ) from exc
+        with response, download.open("wb") as writer:
             while block := response.read(1024 * 1024):
                 writer.write(block)
                 digest.update(block)

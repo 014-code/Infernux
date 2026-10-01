@@ -45,6 +45,49 @@ def _make_wheel_bytes() -> bytes:
     return buf.getvalue()
 
 
+def test_rebuilds_share_one_version_and_choose_latest_cached_build(tmp_path, monkeypatch):
+    monkeypatch.setattr(vm_mod, "_VERSIONS_DIR", tmp_path)
+    names = [f"infernux-0.4.1-{build}-cp313-cp313-win_amd64.whl" for build in (1, 2, 10)]
+    releases = _merge_release_catalogs([
+        {"tag_name": f"v0.4.1-v{build}", "assets": [{"name": name, "browser_download_url": "https://example.invalid/" + name}]}
+        for build, name in zip((1, 2, 10), names)
+    ], {})
+    manager = VersionManager(_RuntimeInventory("3.13"))
+    monkeypatch.setattr(manager, "_fetch_releases", lambda: releases)
+    cache = tmp_path / "0.4.1"
+    cache.mkdir()
+    (cache / names[0]).write_bytes(_make_wheel_bytes())
+    versions = manager.list_versions()
+    assert len(versions) == 1 and versions[0].version == "0.4.1"
+    assert versions[0].update_available
+    assert versions[0].wheel_url.endswith(names[2])
+    # Directory enumeration / lexicographic order must not choose build 2 over 10.
+    (cache / names[2]).write_bytes(_make_wheel_bytes())
+    (cache / names[1]).write_bytes(_make_wheel_bytes())
+    assert Path(manager.get_wheel_path("0.4.1")).name == names[2]
+    assert not manager.list_versions()[0].update_available
+
+
+def test_channel_retry_never_installs_older_build_under_new_name(tmp_path, monkeypatch):
+    monkeypatch.setattr(vm_mod, "_VERSIONS_DIR", tmp_path)
+    manager = VersionManager(_RuntimeInventory("3.13"))
+    old = "infernux-0.4.1-1-cp313-cp313-win_amd64.whl"
+    new = "infernux-0.4.1-2-cp313-cp313-win_amd64.whl"
+    monkeypatch.setattr(manager, "_fetch_releases", lambda: [{"tag_name": "v0.4.1", "assets": [
+        {"name": old, "browser_download_url": "https://example.invalid/old"},
+        {"name": new, "browser_download_url": "https://example.invalid/new"},
+    ]}])
+    requests = []
+    def fail(request):
+        requests.append(request.full_url)
+        raise urllib.error.URLError("unavailable")
+    monkeypatch.setattr(vm_mod.urllib.request, "urlopen", fail)
+    with pytest.raises(urllib.error.URLError):
+        manager.download_version("0.4.1")
+    assert requests == ["https://example.invalid/new"]
+    assert not list(tmp_path.rglob("*.whl"))
+
+
 class _FakeResponse:
     def __init__(self, payload: bytes, chunk: int = 7):
         self._data = io.BytesIO(payload)

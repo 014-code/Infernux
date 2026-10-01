@@ -31,7 +31,6 @@ add_custom_target(infernux_hub_release_assets
     COMMAND ${Python3_EXECUTABLE}
         "${CMAKE_SOURCE_DIR}/packaging/hub_release.py"
         --hub-dir "${INFERNUX_STAGE_DIR}/hub"
-        --version "${INFERNUX_PACKAGE_VERSION}"
         --output-dir "${INFERNUX_RELEASE_DIR}"
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     DEPENDS infernux_hub

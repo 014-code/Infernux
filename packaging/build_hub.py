@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Mapping
 
 from installer.payload import HUB_PAYLOAD_ARCHIVE, create_payload_archive
-from hub_release import host_platform_id, project_version as _project_version
+from hub_release import host_platform_id, project_hub_version as _project_version
 from private_python_runtime import PYTHON_VERSION, runtime_archive_for_machine
 from python_runtime_catalog import DEFAULT_PYTHON_RUNTIME
 
@@ -234,6 +234,9 @@ def _windows_file_version(version: str) -> str:
         raise RuntimeError(
             f"Cannot convert project version to a Windows file version: {version}"
         )
+    revision = version.split("-", 1)[1] if "-" in version else "0"
+    if len(parts) == 3 and revision.isdigit():
+        return ".".join(parts + [revision])
     return ".".join(parts + ["0"] * (4 - len(parts)))
 
 

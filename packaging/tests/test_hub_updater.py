@@ -125,6 +125,13 @@ def test_check_selects_the_linux_release(monkeypatch):
     assert update.platform == "linux-x64"
 
 
+def test_installed_first_build_detects_same_version_rebuild(monkeypatch):
+    release = _catalog("0.4.1-2", "windows-x64", "linux-x64")
+    monkeypatch.setattr(hub_updater, "_request_bytes", lambda *a, **kw: json.dumps(release).encode())
+    assert check_for_update("0.4.1", platform_id="linux-x64").status is HubUpdateStatus.UPDATE_AVAILABLE
+    assert check_for_update("0.4.1-2", platform_id="linux-x64").status is HubUpdateStatus.UP_TO_DATE
+
+
 def test_asset_mirror_metadata_is_optional(monkeypatch):
     release = _catalog("1.1.0", "windows-x64")
     for asset in release["releases"][0]["platforms"]["windows-x64"].values():

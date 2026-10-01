@@ -11,6 +11,8 @@ from hub_release import (
     load_manifest,
     manifest_asset_name,
     project_version,
+    project_hub_version,
+    release_tag_for,
     write_manifest,
 )
 
@@ -21,6 +23,14 @@ def test_project_version_uses_current_project_metadata(tmp_path: Path):
     )
 
     assert project_version(tmp_path) == "0.4.0"
+
+
+def test_rebuild_keeps_package_version_and_has_distinct_hub_identity(tmp_path):
+    (tmp_path / "pyproject.toml").write_text('[project]\nversion = "0.4.1"\n')
+    (tmp_path / "setup.cfg").write_text('[bdist_wheel]\nbuild_number = 2\n')
+    assert project_version(tmp_path) == "0.4.1"
+    assert project_hub_version(tmp_path) == "0.4.1-2"
+    assert release_tag_for("0.4.1", 2) == "v0.4.1-v2"
 
 
 def test_release_contains_one_archive_and_current_manifest(tmp_path: Path):

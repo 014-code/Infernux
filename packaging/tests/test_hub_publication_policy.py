@@ -20,7 +20,7 @@ SPEC.loader.exec_module(catalog_builder)
 def test_published_hub_versions_cannot_be_reused_or_downgraded(tmp_path, monkeypatch, version):
     _project(tmp_path, monkeypatch, version)
 
-    with pytest.raises(ValueError, match="increment project.version"):
+    with pytest.raises(ValueError, match="increment the build number or project.version"):
         catalog_builder.require_new_hub_version()
 
 
@@ -41,6 +41,7 @@ def test_preparing_a_release_does_not_make_it_published(tmp_path, monkeypatch):
 
 
 def _project(tmp_path, monkeypatch, version):
+    (tmp_path / "setup.cfg").write_text("[bdist_wheel]\nbuild_number = 1\n")
     monkeypatch.setattr(catalog_builder, "ROOT", tmp_path)
     (tmp_path / "pyproject.toml").write_text(
         f'[project]\nversion = "{version}"\n', encoding="utf-8"
