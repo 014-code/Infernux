@@ -71,6 +71,14 @@
 </header><div class="release-prose"><p>0.4.1 brings larger worlds, live Python authoring and target-aware computation into the same engine workflow. This release expands multi-scene editing, prefab authoring, model import, rendering and audio, then carries their resource and component lifecycles into exported Players. It also rebuilds key parts of the plugin experience in response to community reports.</p>
 <p>Infernux is working toward a <strong>Neural Network-Native Engine (3N)</strong>. Here, “Neural Network” is one concept: neural networks should eventually participate directly in gameplay and simulation. 041 builds the world, compute and tooling foundations for that direction; it does not claim that the full neural inference and tensor runtime is already delivered.</p>
 <p><strong>Baseline for comparison:</strong> <a href="https://github.com/ChenlizheMe/Infernux/compare/v0.4.0...v0.4.1"><code>v0.4.0...v0.4.1</code></a></p>
+<h2 id="en-041-v2-hub-and-blender-hotfix">0.4.1 v2 · Hub and Blender Hotfix</h2>
+<ul>
+<li>Linux Hub now resolves the system certificate store when bundled OpenSSL points at the build machine's conda environment. HTTPS verification remains enabled, and explicit administrator certificate settings are preserved.</li>
+<li>Hub records full catalog and installation errors in persistent logs, displays errors as selectable plain text, and lets users retry catalog requests. Blender HTTP failures identify the download stage and source.</li>
+<li>Windows Blender extraction supports deep paths without requiring a global Windows policy change. Failed installations retain the verified archive and preserve the original error.</li>
+<li>The Editor can discover a native Blender installation through the system's <code>.blend</code> association on Windows and Linux. Opening a <code>.blend</code> file uses the same selected executable as import. External image identities remain consistent during Blender export.</li>
+<li>Rebuilt wheels keep the engine version <strong>0.4.1</strong> and use wheel build <strong>2</strong>. Hub presents one entry per engine version, selects the latest compatible build, and offers an update for a cached older build. Hub's own update identity is <strong>0.4.1-2</strong>.</li>
+</ul>
 <h2 id="en-multi-scene-worlds-and-gameplay">Multi-scene Worlds and Gameplay</h2>
 <ul>
 <li><strong>Author several scenes together.</strong> Open scenes additively, choose the active scene, inspect scene ownership in the Hierarchy, and move objects between scenes without treating the editor document as one global world.</li>
@@ -177,6 +185,14 @@
 </header><div class="release-prose"><p>0.4.1 把更大的世界、实时 Python 创作与面向目标平台的计算带进同一套引擎工作流。本期扩展了多场景、Prefab、模型导入、渲染和音频能力，并把资源与组件的生命周期贯通到导出的 Player；同时根据社区反馈，完善了插件开发和热重载的关键环节。</p>
 <p>Infernux 致力于成为 <strong>Neural Network-Native Engine（3N，神经网络原生引擎）</strong>。其中 Neural Network 是完整的“神经网络”概念：我们希望神经网络最终能够直接参与游戏逻辑与模拟。041 建设的是通往这个方向的世界、计算和工具基础，并不意味着完整的神经网络推理与张量运行时已经交付。</p>
 <p><strong>对比基线：</strong> <a href="https://github.com/ChenlizheMe/Infernux/compare/v0.4.0...v0.4.1"><code>v0.4.0...v0.4.1</code></a></p>
+<h2 id="zh-041-v2-hub-blender">0.4.1 v2 · Hub 与 Blender 修复</h2>
+<ul>
+<li>修复 Linux Hub 内置 OpenSSL 指向构建机 conda 证书目录的问题，改为读取系统证书库；保持 HTTPS 校验，并尊重用户显式配置的证书路径。</li>
+<li>Hub 持久记录版本列表请求和安装异常，错误使用可选中的纯文本显示，版本列表支持失败后重试。Blender HTTP 下载错误会明确指出失败阶段和来源。</li>
+<li>Windows Blender 解压支持深层路径，无需修改系统长路径策略；安装失败时保留已校验的压缩包，清理错误不会掩盖原始错误。</li>
+<li>Windows 和 Linux 编辑器可通过 <code>.blend</code> 默认打开方式发现原生 Blender；双击打开与模型导入使用同一个选定程序。修复 Blender 导出时外部贴图身份不一致的问题。</li>
+<li>引擎版本继续使用 <strong>0.4.1</strong>，wheel 构建编号为 <strong>2</strong>。Hub 对同一引擎版本只显示一项，选择最新兼容构建，并允许更新本地旧构建。Hub 自身的更新标识为 <strong>0.4.1-2</strong>。</li>
+</ul>
 <h2 id="zh-_1">多场景世界与游戏逻辑</h2>
 <ul>
 <li><strong>一起编辑多个场景。</strong> 支持叠加打开场景、指定活动场景、在 Hierarchy 中检查场景归属，以及跨场景移动对象，不再把编辑器文档视为一个全局世界。</li>

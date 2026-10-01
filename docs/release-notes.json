@@ -14,9 +14,41 @@
     "to": "0.4.1",
     "url": "https://github.com/ChenlizheMe/Infernux/compare/v0.4.0...v0.4.1"
   },
-  "section_count": 13,
-  "item_count": 62,
+  "section_count": 14,
+  "item_count": 67,
   "sections": [
+    {
+      "id": "0-4-1-v2-hub-and-blender-hotfix",
+      "title": "0.4.1 v2 · Hub and Blender Hotfix",
+      "kind": "changes",
+      "items": [
+        {
+          "title": "Linux Hub now resolves the system certificate store when bundled OpenSSL points at the build machine's conda environment. HTTPS verification remains enabled, and explicit administrator certificate settings are preserved.",
+          "detail": "",
+          "text": "Linux Hub now resolves the system certificate store when bundled OpenSSL points at the build machine's conda environment. HTTPS verification remains enabled, and explicit administrator certificate settings are preserved."
+        },
+        {
+          "title": "Hub records full catalog and installation errors in persistent logs, displays errors as selectable plain text, and lets users retry catalog requests. Blender HTTP failures identify the download stage and source.",
+          "detail": "",
+          "text": "Hub records full catalog and installation errors in persistent logs, displays errors as selectable plain text, and lets users retry catalog requests. Blender HTTP failures identify the download stage and source."
+        },
+        {
+          "title": "Windows Blender extraction supports deep paths without requiring a global Windows policy change. Failed installations retain the verified archive and preserve the original error.",
+          "detail": "",
+          "text": "Windows Blender extraction supports deep paths without requiring a global Windows policy change. Failed installations retain the verified archive and preserve the original error."
+        },
+        {
+          "title": "The Editor can discover a native Blender installation through the system's .blend association on Windows and Linux. Opening a .blend file uses the same selected executable as import. External image identities remain consistent during Blender export.",
+          "detail": "",
+          "text": "The Editor can discover a native Blender installation through the system's .blend association on Windows and Linux. Opening a .blend file uses the same selected executable as import. External image identities remain consistent during Blender export."
+        },
+        {
+          "title": "Rebuilt wheels keep the engine version 0.4.1 and use wheel build 2. Hub presents one entry per engine version, selects the latest compatible build, and offers an update for a cached older build. Hub's own update identity is 0.4.1-2.",
+          "detail": "",
+          "text": "Rebuilt wheels keep the engine version 0.4.1 and use wheel build 2. Hub presents one entry per engine version, selects the latest compatible build, and offers an update for a cached older build. Hub's own update identity is 0.4.1-2."
+        }
+      ]
+    },
     {
       "id": "multi-scene-worlds-and-gameplay",
       "title": "Multi-scene Worlds and Gameplay",
