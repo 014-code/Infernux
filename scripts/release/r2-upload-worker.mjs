@@ -107,12 +107,14 @@ function isHubReleaseKey(key) {
   if (!match) {
     return false;
   }
-  const [, version, , filename] = match;
+  const [, version, build, filename] = match;
+  if (!/^[1-9]\d*$/.test(build)) return false;
+  const hubVersion = build === "1" ? version : `${version}-${build}`;
   return (new Set([
-    `InfernuxHubInstaller-${version}-windows-x64.exe`,
-    `InfernuxHubInstaller-${version}-linux-x64`,
-    `InfernuxHub-${version}-windows-x64-full.zip`,
-    `InfernuxHub-${version}-linux-x64-full.zip`,
+    `InfernuxHubInstaller-${hubVersion}-windows-x64.exe`,
+    `InfernuxHubInstaller-${hubVersion}-linux-x64`,
+    `InfernuxHub-${hubVersion}-windows-x64-full.zip`,
+    `InfernuxHub-${hubVersion}-linux-x64-full.zip`,
     "InfernuxHub-windows-x64-manifest.json",
     "InfernuxHub-linux-x64-manifest.json"
   ])).has(filename);

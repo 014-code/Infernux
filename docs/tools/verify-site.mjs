@@ -18,7 +18,9 @@ const packageVersion = pyproject.match(/^version\s*=\s*"([^"]+)"/m)?.[1] || "";
 const currentVersion = String(release.version || "").trim();
 
 if (!currentVersion) fail("release.json: missing the current release version");
-if (release.tag !== `v${currentVersion}`) fail(`release.json: tag '${release.tag}' does not match version ${currentVersion}`);
+const releaseTag = String(release.tag || "");
+const releaseBaseTag = releaseTag.replace(/-v[1-9]\d*$/, "");
+if (releaseBaseTag !== `v${currentVersion}`) fail(`release.json: tag '${release.tag}' does not match version ${currentVersion}`);
 for (const asset of release.assets || []) {
     const urls = [asset.url, asset.fallback_url].map((value) => String(value || ""));
     if (!String(asset.name || "").includes(currentVersion) || !urls.some((url) => url.includes(currentVersion))) {
@@ -35,7 +37,7 @@ if (packageVersion !== currentVersion) {
         fail(`release.json: ${currentVersion} must be the public release; upcoming engine ${packageVersion} must have release notes`);
     }
 }
-if (releaseNotes.version !== currentVersion || releaseNotes.tag !== `v${currentVersion}`) {
+if (releaseNotes.version !== currentVersion || releaseNotes.tag !== releaseTag) {
     fail(`release-notes.json: version/tag does not match current release ${currentVersion}`);
 }
 if (apiIndex.generated_for_release !== currentVersion) {

@@ -1,8 +1,10 @@
 # Hub publication and update discovery
 
-Every public change to the Hub must increment `project.version`. Changing the
-wheel build number or replacing files under the same release version cannot
-notify installed Hubs, whose update identity is the application version.
+Every public change must have a new version/build identity. A same-version
+rebuild increments `setup.cfg`'s wheel build number: engine metadata stays
+`0.4.1`, the wheel uses build tag `2`, Hub uses `0.4.1-2`, and the GitHub tag
+is `v0.4.1-v2`. Numeric post-release Hub identities are understood by existing
+0.4.1 installations. Published artifact URLs are immutable.
 `build_release_catalog.py --check-version` checks this before publication, and
 the release workflow allows its recovery switch only for unpublished drafts.
 The repository prepares 0.4.1. Public download pages and catalogs change only
@@ -26,7 +28,7 @@ after its actual artifacts have been published.
    draft requires `replace_existing_release=true`.
 5. The publisher uploads wheels to PyPI, Hub assets to GitHub/R2, publishes the
    release, and regenerates the website/catalogs from the actual published URLs.
-   `build_release_notes.py` reads both root changelogs; `sync_release_site.py`
+   `build_release_notes.py` reads the English root changelog; `sync_release_site.py`
    updates the website's versioned history after publication.
 
 ### Upload service

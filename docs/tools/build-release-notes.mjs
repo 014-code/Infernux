@@ -37,7 +37,7 @@ if (version !== release.version || version !== manifest.documented_release) {
   if (
     publishedNotes.schema_version !== 1
     || publishedNotes.version !== release.version
-    || publishedNotes.tag !== `v${release.version}`
+    || publishedNotes.tag !== release.tag
     || publishedNotes.published_at !== release.published_at
     || publishedNotes.release_url !== release.release_url
     || publishedNotes.source !== "UpdateLog.md"
@@ -85,7 +85,7 @@ if (!sections.length) throw new Error("UpdateLog.md contains no release note sec
 const output = `${JSON.stringify({
   schema_version: 1,
   version,
-  tag: `v${version}`,
+  tag: release.tag,
   title: cleanInline(heading[0].replace(/^#\s+/, "")),
   codename: cleanInline(heading[2] || ""),
   language: "en",

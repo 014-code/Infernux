@@ -42,7 +42,7 @@ def release_records() -> list[dict]:
     published = json.loads((DOCS / "release.json").read_text(encoding="utf-8"))
     if published.get("published_at"):
         version = published["version"]
-        records.setdefault(version, {})["published_at"] = published["published_at"]
+        records.setdefault(version, {}).update(published_at=published["published_at"], html_url=published["release_url"])
     for version in english:
         record = records.setdefault(version, {})
         record.update(en=english[version], zh=chinese[version])
@@ -130,7 +130,8 @@ def generate() -> dict[Path, str]:
             back = "← All releases" if lang == "en" else "← 全部版本"
             bodies.append(f'<article class="container release-article" data-page-language="{lang}"' + (" hidden" if lang == "zh" else "") + f'><a href="../changelog.html?lang={lang}">{back}</a><header class="changelog-heading"><span class="mini-tag">v{version} · {status(record, lang)}</span><h1>{html.escape(title)}</h1>')
             if record.get("published_at"):
-                bodies.append(f'<a href="https://github.com/ChenlizheMe/Infernux/releases/tag/v{version}">GitHub Release ↗</a>')
+                release_url = record.get("html_url", f"https://github.com/ChenlizheMe/Infernux/releases/tag/v{version}")
+                bodies.append(f'<a href="{html.escape(release_url, quote=True)}">GitHub Release ↗</a>')
             bodies.append('</header><div class="release-prose">' + content(record, lang) + "</div></article>")
         output[DOCS / f"changelog/{version}.html"] = shell(f"Infernux {version} · Changelog", f"Infernux {version}: features, fixes and upgrade notes.", f"changelog/{version}.html", "\n".join(bodies))
     return output
