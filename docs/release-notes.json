@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
   "version": "0.4.1",
-  "tag": "v0.4.1",
+  "tag": "v0.4.1-v2",
   "title": "Infernux v0.4.1 · Worlds, Compute and Live Tools",
   "codename": "Worlds, Compute and Live Tools",
   "language": "en",
-  "published_at": "2026-09-30T13:01:59Z",
-  "release_url": "https://github.com/ChenlizheMe/Infernux/releases/tag/v0.4.1",
+  "published_at": "2026-10-01T09:40:56Z",
+  "release_url": "https://github.com/ChenlizheMe/Infernux/releases/tag/v0.4.1-v2",
   "source": "UpdateLog.md",
   "summary": "0.4.1 brings larger worlds, live Python authoring and target-aware computation into the same engine workflow. This release expands multi-scene editing, prefab authoring, model import, rendering and audio, then carries their resource and component lifecycles into exported Players. It also rebuilds key parts of the plugin experience in response to community reports.",
   "comparison": {
