@@ -154,6 +154,8 @@ def _default_scene_document(default_effect_guid: str) -> dict:
                             "areaSize": [1.6, 1.0],
                             "areaTwoSided": False,
                             "color": [1.0, 0.95, 0.9],
+                            "useColorTemperature": False,
+                            "colorTemperature": 6500.0,
                             "cullingMask": 4294967295,
                             "influenceDomains": 3,
                             "intensity": 1.0,
@@ -239,7 +241,6 @@ def _default_scene_document(default_effect_guid: str) -> dict:
 
 def _create_default_project_content(
     staging_dir: str,
-    final_dir: str,
     project_name: str,
 ) -> None:
     assets_dir = os.path.join(staging_dir, "Assets")
@@ -318,12 +319,9 @@ def _create_default_project_content(
 
     scene_path = os.path.join(assets_dir, "Scenes", "Start.scene")
     _write_json_document(scene_path, _default_scene_document(effect_group_guid))
-    scene_guid = uuid.uuid5(
-        _COMPONENT_SCRIPT_NAMESPACE,
-        f"infernux-project-scene:{project_name}:Start",
-    ).hex
-    _write_asset_identity_meta(scene_path, scene_guid, "Scene")
-    final_scene_path = os.path.join(final_dir, "Assets", "Scenes", "Start.scene")
+    scene_guid = uuid.uuid4().hex
+    # Scenes are text assets in the native ResourceType contract.
+    _write_asset_identity_meta(scene_path, scene_guid, "DefaultText")
     _write_json_document(
         os.path.join(staging_dir, "ProjectSettings", "BuildSettings.json"),
         {
@@ -340,7 +338,7 @@ def _create_default_project_content(
     )
     _write_json_document(
         os.path.join(staging_dir, "ProjectSettings", "EditorSettings.json"),
-        {"lastOpenedScene": final_scene_path},
+        {"lastOpenedSceneGuid": scene_guid},
     )
 
 
@@ -594,7 +592,6 @@ class ProjectModel:
 
             _create_default_project_content(
                 staging_dir,
-                final_dir,
                 project_name,
             )
 

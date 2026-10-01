@@ -575,25 +575,31 @@ def run_component_warmups(
 
 
 def run_project_script_warmups(*, project_path: str | None, scope: str) -> int:
-    """Discover explicit component warmup hooks before the first scene frame.
+    """Discover warmups from the host's explicit Editor/Player contract.
 
-    Editor discovery reads authored sources and selects only scripts that
-    declare ``_infernux_startup_warmup``.  A source-less Player reads the
-    build-authored runtime type registry, which is the exact cooked script
-    closure.  Both paths prepare CPU JIT modules before the first visible
-    frame; scene-bound GPU components return ``False`` until their authored
-    buffers exist and are warmed by scene activation.
+    An Editor project with no scripts has no script warmups. A synchronous
+    Player host uses its build-authored registry regardless of source files.
+    Native Players use ``create_player_startup_warmup`` for scheduled work.
+    Scene-bound GPU components return ``False`` until their buffers exist
+    and are warmed by scene activation.
     """
     if not project_path:
         return 0
+    from Infernux.application import Application
+
     root = Path(lexical_path(project_path))
-    scripts_root = root / "Assets"
     paths: list[str] = []
-    source_paths = (
-        sorted(scripts_root.rglob("*.py"), key=lambda item: item.as_posix().casefold())
-        if scripts_root.is_dir() else []
-    )
-    if source_paths:
+    if Application.is_player():
+        paths = sorted({
+            str(root / str(record["runtime_path"]))
+            for record in _runtime_warmup_records(root)
+        }, key=lambda value: value.casefold())
+    else:
+        scripts_root = root / "Assets"
+        source_paths = (
+            sorted(scripts_root.rglob("*.py"), key=lambda item: item.as_posix().casefold())
+            if scripts_root.is_dir() else []
+        )
         for path in source_paths:
             try:
                 tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -605,24 +611,6 @@ def run_project_script_warmups(*, project_path: str | None, scope: str) -> int:
                 for node in ast.walk(tree)
             ):
                 paths.append(str(path))
-    else:
-        # Player content is source-less. Its build-authored type registry is
-        # the exact script closure; load those compiled modules and inspect
-        # the registered classes instead of scanning or guessing paths.
-        registry_path = root / "Library" / "RuntimeTypeRegistry.json"
-        with registry_path.open("r", encoding="utf-8") as stream:
-            registry = json.load(stream)
-        records = registry["types"]
-        # A persisted record proves that the build artifact exists.  A fresh
-        # process still has to materialize the native pipeline objects for its
-        # live RHI device.  Load the exact cooked component closure and invoke
-        # its hook; compile_kernel() will consume the persisted artifact while
-        # the Vulkan driver cache avoids recompiling native pipelines.
-        paths = sorted({
-            str(root / str(record["runtime_path"]))
-            for record in records
-            if isinstance(record, dict) and record.get("startup_warmup") is True
-        }, key=lambda value: value.casefold())
     if not paths:
         return 0
     from Infernux.components.registry import get_all_types

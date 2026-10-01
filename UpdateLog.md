@@ -8,6 +8,17 @@ Infernux is working toward a **Neural Network-Native Engine (3N)**. Here, “Neu
 
 **Baseline for comparison:** [`v0.4.0...v0.4.1`](https://github.com/ChenlizheMe/Infernux/compare/v0.4.0...v0.4.1)
 
+### 0.4.1 v3 · New Project Startup Hotfix
+
+- Correct the Hub's generated scene metadata to use the native `DefaultText` resource type. The invalid `Scene` value prevented freshly created projects from starting the Editor.
+- Give newly created scenes independent GUIDs, so separate projects with the same name no longer share a scene identity.
+- Store the default scene GUID in Editor settings so new projects open their generated Start scene, including its render stack, instead of an unrelated untitled scene.
+- Include the required color-temperature settings in the default light document so the Start scene passes current component validation.
+- Fix first Play in projects without user scripts: Editor warmup no longer mistakes an empty script directory for a packaged Player or tries to load its runtime type registry.
+- Add regression coverage for native metadata parsing, AssetDatabase scanning, complete scene/component restoration, effect references, Editor and build settings, repeated-scan GUID preservation, and empty-project warmup.
+- Updating Hub corrects newly created projects; it does not rewrite existing assets. To repair a generated Start scene while retaining its GUID: change `metadata.resource_type.value` from `Scene` to `DefaultText` in `Assets/Scenes/Start.scene.meta`; add missing `useColorTemperature: false` and `colorTemperature: 6500.0` fields to the Light component's `data` in `Start.scene`; set `lastOpenedSceneGuid` in `ProjectSettings/EditorSettings.json` to the scene metadata's GUID. Use wheel build 3 for the Play Mode fix.
+- Engine version remains **0.4.1**, with wheel build **3** and Hub update identity **0.4.1-3**.
+
 ### 0.4.1 v2 · Hub and Blender Hotfix
 
 - Linux Hub now resolves the system certificate store when bundled OpenSSL points at the build machine's conda environment. HTTPS verification remains enabled, and explicit administrator certificate settings are preserved.

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -27,6 +28,58 @@ class _FakeVersionManager:
         self, _engine_version: str, _python_version: str | None = None
     ) -> str:
         return self._wheel_path
+
+
+def test_hub_generated_assets_are_readable_by_native_asset_database(engine, scene, monkeypatch):
+    from Infernux.lib import ResourceMeta, ResourceType
+    from Infernux.engine.build_settings import load_build_settings_for_build
+    from Infernux.engine.scene_manager import LAST_OPENED_SCENE_GUID_KEY
+    from Infernux.engine.component_restore import deserialize_scene_document_transactionally
+    from Infernux.renderstack.render_stack import RenderStack
+    from Infernux.renderstack.render_effect_asset import parse_render_effect_document
+
+    project_model = _load_project_model(monkeypatch)
+    database = engine.get_asset_database()
+    with tempfile.TemporaryDirectory(prefix="hub-template-", dir=database.assets_root) as directory:
+        project = Path(directory)
+        project_model._create_default_project_content(str(project), project.name)
+        identities = {}
+        for path in (project / "Assets").rglob("*.meta"):
+            document = json.loads(path.read_text(encoding="utf-8"))
+            meta = ResourceMeta()
+            meta.deserialize_document(document)
+            asset = Path(str(path)[:-5])
+            identities[asset] = meta.get_guid()
+            assert meta.get_resource_type() == (
+                ResourceType.DefaultText if asset.suffix == ".scene" else ResourceType.RenderEffect
+            )
+            if asset.suffix != ".scene":
+                parse_render_effect_document(asset.read_text(encoding="utf-8"))
+        assert len(identities) == 4
+        database.refresh()
+        for asset, guid in identities.items():
+            assert database.get_guid_from_path(str(asset)) == guid
+            assert database.get_meta_by_guid(guid).get_resource_type() == database.get_resource_type(str(asset))
+        settings = load_build_settings_for_build(str(project))
+        scene_path = project / "Assets" / "Scenes" / "Start.scene"
+        assert settings["scene_guids"] == [identities[scene_path]]
+        editor_settings = json.loads(
+            (project / "ProjectSettings" / "EditorSettings.json").read_text(encoding="utf-8")
+        )
+        assert editor_settings == {LAST_OPENED_SCENE_GUID_KEY: identities[scene_path]}
+        document = json.loads(scene_path.read_text(encoding="utf-8"))
+        assert deserialize_scene_document_transactionally(scene, document, database)
+        assert scene.find("Main Camera").get_component("Camera") is not None
+        assert scene.find("Directional Light").get_component("Light") is not None
+        stack = scene.find("RenderStack").get_py_component(RenderStack)
+        assert stack is not None
+        assert len(stack.effect_slots) == 1
+        effect_group = project / "Assets" / "Rendering" / "Default Post Processing.effectgroup"
+        assert stack.effect_slots[0].effect_ref.guid == identities[effect_group]
+        # A second scan must retain seeded GUIDs and accept native-written metadata.
+        database.refresh()
+        assert all(database.get_guid_from_path(str(asset)) == guid for asset, guid in identities.items())
+    database.refresh()
 
 
 def test_vscode_workspace_uses_current_pyright_interpreter_settings(

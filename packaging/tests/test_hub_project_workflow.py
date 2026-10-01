@@ -366,13 +366,12 @@ def test_new_project_uses_structural_staging_but_creates_runtime_at_final_path(t
         scene_path.with_suffix(".scene.meta").read_text(encoding="utf-8")
     )
     scene_guid = scene_meta["metadata"]["guid"]["value"]
+    assert scene_meta["metadata"]["resource_type"]["value"] == "DefaultText"
     assert build_settings["scene_guids"] == [scene_guid]
     editor_settings = json.loads(
         (Path(result) / "ProjectSettings" / "EditorSettings.json").read_text(encoding="utf-8")
     )
-    assert editor_settings == {
-        "lastOpenedScene": str(Path(result) / "Assets" / "Scenes" / "Start.scene")
-    }
+    assert editor_settings == {"lastOpenedSceneGuid": scene_guid}
     scene = json.loads(
         (Path(result) / "Assets" / "Scenes" / "Start.scene").read_text(encoding="utf-8")
     )
@@ -423,6 +422,8 @@ def test_new_project_uses_structural_staging_but_creates_runtime_at_final_path(t
         "areaTwoSided",
         "baked",
         "color",
+        "useColorTemperature",
+        "colorTemperature",
         "cullingMask",
         "influenceDomains",
         "intensity",
@@ -438,6 +439,19 @@ def test_new_project_uses_structural_staging_but_creates_runtime_at_final_path(t
     assert light_data["shadowSoftness"] == 1.5
     assert (Path(result) / ".vscode").is_dir()
     assert not list(tmp_path.glob(".infernux-create-*"))
+
+
+def test_same_named_projects_have_independent_asset_identities(tmp_path: Path):
+    identities = []
+    for parent in ("first", "second"):
+        project = tmp_path / parent / "New Project"
+        project_model_module._create_default_project_content(str(project), project.name)
+        identities.append({
+            json.loads(path.read_text(encoding="utf-8"))["metadata"]["guid"]["value"]
+            for path in (project / "Assets").rglob("*.meta")
+        })
+    assert len(identities[0]) == len(identities[1]) == 4
+    assert identities[0].isdisjoint(identities[1])
 
 
 def test_new_project_failure_removes_only_staging(tmp_path: Path, monkeypatch):

@@ -8,6 +8,17 @@ Infernux 致力于成为 **Neural Network-Native Engine（3N，神经网络原�
 
 **对比基线：** [`v0.4.0...v0.4.1`](https://github.com/ChenlizheMe/Infernux/compare/v0.4.0...v0.4.1)
 
+### 0.4.1 v3 · 新建项目启动修复
+
+- 修正 Hub 生成的场景元数据，使用原生资源系统规定的 `DefaultText` 类型。此前错误的 `Scene` 值会导致新建项目无法启动编辑器。
+- 为新建场景分配独立 GUID，避免不同目录下的同名项目获得相同的场景身份。
+- 按当前编辑器协议保存默认场景 GUID，确保新项目自动打开带有渲染栈的 Start 场景，而不是另行创建无关的未命名场景。
+- 为默认灯光补齐当前组件协议要求的色温字段，修复 Start 场景被组件校验拒绝的问题。
+- 修复没有用户脚本的新项目首次进入 Play 时的预热错误：编辑器不再把空脚本目录误判为已构建的 Player，也不再读取 Player 专用类型注册表。
+- 增加贯通 Hub 与引擎的回归测试，覆盖原生元数据解析、资源扫描、完整场景与组件恢复、后处理引用、编辑器和构建设置、重复扫描保持 GUID，以及空项目预热。
+- 更新 Hub 会修正新建项目，不会重写现有资源。保留原 GUID 修复已生成的 Start 场景时：将 `Assets/Scenes/Start.scene.meta` 的 `metadata.resource_type.value` 从 `Scene` 改为 `DefaultText`；在 `Start.scene` 的 Light 组件 `data` 中补上缺失的 `useColorTemperature: false` 和 `colorTemperature: 6500.0`；将 `ProjectSettings/EditorSettings.json` 的 `lastOpenedSceneGuid` 设为场景元数据里的 GUID。Play 模式修复需要使用 wheel 构建 3。
+- 引擎版本保持 **0.4.1**，wheel 构建编号为 **3**，Hub 更新标识为 **0.4.1-3**。
+
 ### 0.4.1 v2 · Hub 与 Blender 修复
 
 - 修复 Linux Hub 内置 OpenSSL 指向构建机 conda 证书目录的问题，改为读取系统证书库；保持 HTTPS 校验，并尊重用户显式配置的证书路径。

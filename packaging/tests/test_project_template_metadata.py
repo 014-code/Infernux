@@ -24,10 +24,9 @@ def _fnv1a64(payload: bytes) -> str:
 
 def test_default_render_assets_seed_current_content_hashes(tmp_path: Path) -> None:
     staging = tmp_path / "staging"
-    final = tmp_path / "Project"
     (staging / "ProjectSettings").mkdir(parents=True)
 
-    _create_default_project_content(str(staging), str(final), "Project")
+    _create_default_project_content(str(staging), "Project")
 
     rendering = staging / "Assets" / "Rendering"
     for asset in (

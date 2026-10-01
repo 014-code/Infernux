@@ -6,7 +6,41 @@ import pytest
 
 from Infernux.engine.bootstrap import EditorBootstrap
 from Infernux.engine.player_runtime import PlayerRuntimeSession
-from Infernux.engine.startup_warmup import PlayerStartupWarmup
+from Infernux.engine.startup_warmup import (
+    PlayerStartupWarmup,
+    create_player_startup_warmup,
+    run_project_script_warmups,
+)
+
+
+@pytest.mark.parametrize("stale_player_registry", [False, True])
+def test_empty_editor_project_does_not_use_player_warmup_registry(tmp_path, stale_player_registry, monkeypatch):
+    monkeypatch.setattr("Infernux.application.Application.is_player", lambda: False)
+    (tmp_path / "Assets" / "Scripts").mkdir(parents=True)
+    if stale_player_registry:
+        library = tmp_path / "Library"
+        library.mkdir()
+        (library / "RuntimeTypeRegistry.json").write_text("invalid unused player data", encoding="utf-8")
+    assert run_project_script_warmups(project_path=str(tmp_path), scope="editor-startup") == 0
+
+
+def test_player_warmup_still_requires_its_build_registry(tmp_path, monkeypatch):
+    monkeypatch.setattr("Infernux.application.Application.is_player", lambda: True)
+    with pytest.raises(FileNotFoundError, match="RuntimeTypeRegistry"):
+        create_player_startup_warmup(project_path=str(tmp_path))
+    with pytest.raises(FileNotFoundError, match="RuntimeTypeRegistry"):
+        run_project_script_warmups(project_path=str(tmp_path), scope="player-startup")
+
+
+def test_player_warmup_uses_cooked_registry_even_with_authored_sources(tmp_path, monkeypatch):
+    monkeypatch.setattr("Infernux.application.Application.is_player", lambda: True)
+    scripts = tmp_path / "Assets" / "Scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "unused.py").write_text("this is not valid Python!", encoding="utf-8")
+    library = tmp_path / "Library"
+    library.mkdir()
+    (library / "RuntimeTypeRegistry.json").write_text('{"types": []}', encoding="utf-8")
+    assert run_project_script_warmups(project_path=str(tmp_path), scope="player-startup") == 0
 
 
 class _Registry:
