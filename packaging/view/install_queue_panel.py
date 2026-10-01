@@ -127,6 +127,8 @@ class InstallQueuePanel(QFrame):
                 row_layout.addLayout(line)
                 status = QLabel()
                 status.setWordWrap(True)
+                status.setTextFormat(Qt.TextFormat.PlainText)
+                status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
                 status.setObjectName("cardPath")
                 row_layout.addWidget(status)
                 progress = QProgressBar()

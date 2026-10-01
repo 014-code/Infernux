@@ -9,6 +9,7 @@ def test_blender_preference_updates_live_database_and_does_not_touch_project(mon
     from Infernux.core.assets import AssetManager
     state, calls = {}, []
     monkeypatch.delenv("INFERNUX_BLENDER_EXECUTABLE", raising=False)
+    monkeypatch.setattr(toolchain, "find_associated_blender", lambda: "")
     store = SimpleNamespace(get=lambda key, default="": state.get(key, default),
                             set=lambda key, value: state.__setitem__(key, value))
     monkeypatch.setattr(toolchain, "PreferencesStore", lambda: store)

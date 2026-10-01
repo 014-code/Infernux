@@ -1,6 +1,7 @@
 """Early Hub settings page."""
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -20,6 +21,7 @@ from hub_updater import current_hub_version
 from i18n import current_language, detect_system_locale, tr
 from plugin_library import inspect_plugin_library, prune_unreferenced_packages
 from hub_utils import get_hub_shared_data_dir
+from hub_logging import hub_log_path
 from shared_storage_migration import inspect_legacy_storage
 from view.storage_migration_dialog import StorageMigrationDialog
 from view.sidebar_view import ToggleSwitch, apply_theme
@@ -157,6 +159,12 @@ class SettingsView(QWidget):
         migration_layout.addWidget(self.migrate_storage_button, 0, Qt.AlignmentFlag.AlignRight)
         layout.addWidget(migration_card)
 
+        logs = QPushButton(tr("Open Hub Logs"))
+        logs.setObjectName("normalBtn")
+        logs.setMinimumHeight(34)
+        logs.clicked.connect(self._open_logs)
+        layout.addWidget(logs, 0, Qt.AlignmentFlag.AlignLeft)
+
         update_card = AnimatedSurfaceFrame("settingsCard")
         update_card.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         update_layout = QHBoxLayout(update_card)
@@ -219,6 +227,11 @@ class SettingsView(QWidget):
         about_layout.addWidget(version)
         layout.addWidget(about_card)
         layout.addStretch()
+
+    def _open_logs(self):
+        directory = hub_log_path().parent
+        directory.mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(directory)))
 
     def _save_language(self):
         if not self._db:

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections import deque
+import logging
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -36,8 +37,11 @@ class _InstallThread(QThread):
 
     def run(self):
         try:
+            logging.getLogger(__name__).info("Installation started: %s", self.job.key)
             self.result = self.job.operation(self.progress.emit)
+            logging.getLogger(__name__).info("Installation completed: %s", self.job.key)
         except Exception as exc:
+            logging.getLogger(__name__).exception("Installation failed: %s", self.job.key)
             self.error = f"{type(exc).__name__}: {exc}"
 
 

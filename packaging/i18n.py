@@ -7,6 +7,10 @@ import sys
 
 
 _ZH = {
+    "Open Hub Logs": "打开 Hub 日志目录",
+    "Could not fetch engine versions.": "无法获取引擎版本列表。",
+    "Hub log: {path}": "Hub 日志：{path}",
+    "Extracting Blender": "正在解压 Blender",
     "{count} queued": "{count} 项排队",
     "{count} failed": "{count} 项安装失败",
     "Installations complete": "安装已完成",

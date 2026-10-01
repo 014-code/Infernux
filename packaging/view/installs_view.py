@@ -225,14 +225,20 @@ class _BlenderSupportCard(AnimatedSurfaceFrame):
 class _FetchWorker(QThread):
     """Fetch available versions on a background thread."""
     loaded = Signal(list)  # list[EngineVersion]
+    failed = Signal(str)
 
     def __init__(self, vm: VersionManager, parent):
         super().__init__(parent)
         self._vm = vm
 
     def run(self):
-        versions = self._vm.list_versions(include_prerelease=True)
-        self.loaded.emit(versions)
+        try:
+            versions = self._vm.list_versions(include_prerelease=True)
+            self.loaded.emit(versions)
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).exception("Could not list engine versions")
+            self.failed.emit(f"{type(exc).__name__}: {exc}")
 
 
 class _VersionRow(AnimatedSurfaceFrame):
@@ -309,7 +315,16 @@ class InstallEditorDialog(QDialog):
         self._status = QLabel(tr("Fetching available versions..."))
         self._status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._status.setWordWrap(True)
+        self._status.setTextFormat(Qt.TextFormat.PlainText)
+        self._status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self._status)
+
+        self._btn_retry = QPushButton(tr("Retry"))
+        self._btn_retry.setObjectName("normalBtn")
+        self._btn_retry.setMinimumHeight(34)
+        self._btn_retry.clicked.connect(self._retry_fetch)
+        self._btn_retry.hide()
+        layout.addWidget(self._btn_retry)
 
         self._btn_runtime = QPushButton()
         self._btn_runtime.setObjectName("primaryBtn")
@@ -354,6 +369,7 @@ class InstallEditorDialog(QDialog):
         # Kick off fetch in background
         self._fetch_thread = _FetchWorker(self._vm, self)
         self._fetch_thread.loaded.connect(self._on_versions_loaded)
+        self._fetch_thread.failed.connect(self._on_versions_failed)
         QApplication.instance().aboutToQuit.connect(self._fetch_thread.wait)
         self._fetch_thread.start()
 
@@ -375,6 +391,20 @@ class InstallEditorDialog(QDialog):
             self._rows.append((ev, row))
 
         self._list_layout.addStretch()
+
+    def _on_versions_failed(self, error: str):
+        from hub_logging import hub_log_path
+        self._status.setText(tr("Could not fetch engine versions.") + "\n" + error +
+                             "\n\n" + tr("Hub log: {path}", path=str(hub_log_path())))
+        self._status.show()
+        self._btn_retry.show()
+
+    def _retry_fetch(self):
+        if self._fetch_thread.isRunning():
+            return
+        self._btn_retry.hide()
+        self._status.setText(tr("Fetching available versions..."))
+        self._fetch_thread.start()
 
     def _select(self, ev: EngineVersion):
         self._selected = ev
@@ -672,5 +702,6 @@ class BlenderSupportView(QWidget):
             tr("Blender authoring support"),
             lambda report: manager.install(
                 on_progress=lambda done, total: report(tr("Downloading"), done, total),
+                on_stage=lambda stage: report(tr(stage), 0, 0),
             ),
         )

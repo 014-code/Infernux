@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import platform
 import shutil
@@ -116,6 +117,9 @@ def blender_support_environment(root: Path) -> dict[str, str]:
 
 
 def _extract_archive(archive: Path, destination: Path) -> Path:
+    # Blender ships deeply nested Python packages. Win32 extended paths work
+    # even when the user's system-wide LongPathsEnabled policy is disabled.
+    destination = _filesystem_path(destination)
     unpack = destination / "unpack"
     unpack.mkdir(parents=True)
     if zipfile.is_zipfile(archive):
@@ -142,6 +146,13 @@ def _extract_archive(archive: Path, destination: Path) -> Path:
     return roots[0]
 
 
+def _filesystem_path(path: Path) -> Path:
+    absolute = str(path.resolve())
+    if os.name != "nt" or absolute.startswith("\\\\?\\"):
+        return Path(absolute)
+    return Path("\\\\?\\UNC\\" + absolute[2:] if absolute.startswith("\\\\") else "\\\\?\\" + absolute)
+
+
 class BlenderSupportManager:
     def __init__(self, root: str | os.PathLike[str] | None = None) -> None:
         self.root = Path(root).expanduser().resolve() if root else default_blender_support_root()
@@ -162,7 +173,8 @@ class BlenderSupportManager:
         os.environ["INFERNUX_BLENDER_EXECUTABLE"] = str(status.executable)
         return True
 
-    def install(self, *, on_progress: Callable[[int, int], None] | None = None) -> str:
+    def install(self, *, on_progress: Callable[[int, int], None] | None = None,
+                on_stage: Callable[[str], None] | None = None) -> str:
         name, expected_size, expected_digest = _ASSETS[host_id()]
         download = Path(get_hub_shared_data_dir()) / "Cache" / "Downloads" / "Blender" / name
         download.parent.mkdir(parents=True, exist_ok=True)
@@ -184,18 +196,21 @@ class BlenderSupportManager:
             raise BlenderSupportError(
                 f"Downloaded Blender {BLENDER_VERSION} archive failed its release integrity check"
             )
-        try:
-            return self.install_archive(download)
-        finally:
-            download.unlink(missing_ok=True)
+        if on_stage:
+            on_stage("Extracting Blender")
+        # Keep the verified archive on failure so diagnosis/retry does not require
+        # another 400 MB download. Never disguise extraction as network progress.
+        result = self.install_archive(download)
+        download.unlink(missing_ok=True)
+        return result
 
     def install_archive(self, archive: str | os.PathLike[str]) -> str:
         source = Path(archive).expanduser().resolve()
         if not source.is_file():
             raise BlenderSupportError(f"Blender archive does not exist: {source}")
         self.root.parent.mkdir(parents=True, exist_ok=True)
-        staging = self.root.parent / f".{self.root.name}.staging-{uuid.uuid4().hex}"
-        backup = self.root.parent / f".{self.root.name}.backup-{uuid.uuid4().hex}"
+        staging = _filesystem_path(self.root.parent / f".{self.root.name}.staging-{uuid.uuid4().hex}")
+        backup = _filesystem_path(self.root.parent / f".{self.root.name}.backup-{uuid.uuid4().hex}")
         try:
             staging.mkdir()
             payload = _extract_archive(source, staging)
@@ -224,13 +239,20 @@ class BlenderSupportManager:
                 if backup.exists() and not self.root.exists():
                     os.replace(backup, self.root)
                 raise
-            if backup.exists():
-                shutil.rmtree(backup)
+        except Exception:
+            logging.getLogger(__name__).exception("Blender installation failed: archive=%s destination=%s", source, self.root)
+            raise
         finally:
             if staging.exists():
-                shutil.rmtree(staging)
+                try:
+                    shutil.rmtree(staging)
+                except OSError:
+                    logging.getLogger(__name__).warning("Could not remove Blender staging directory: %s", staging, exc_info=True)
             if backup.exists() and self.root.exists():
-                shutil.rmtree(backup)
+                try:
+                    shutil.rmtree(backup)
+                except OSError:
+                    logging.getLogger(__name__).warning("Could not remove Blender backup directory: %s", backup, exc_info=True)
         self.activate_environment()
         return str(self.root)
 

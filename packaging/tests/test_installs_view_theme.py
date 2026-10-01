@@ -7,6 +7,36 @@ from style import StyleManager
 from view.installs_view import _AndroidSupportCard, _configure_install_scroll_area
 
 
+def test_catalog_failure_is_plain_selectable_text():
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from install_queue import InstallQueue
+    from view.installs_view import InstallEditorDialog
+    import time
+    app = _app()
+    class OfflineCatalog:
+        def list_versions(self, **kwargs):
+            raise RuntimeError("<urlopen error certificate verify failed>")
+    dialog = InstallEditorDialog(OfflineCatalog(), InstallQueue(app))
+    deadline = time.monotonic() + 5
+    while "certificate verify failed" not in dialog._status.text() and time.monotonic() < deadline:
+        QTest.qWait(10)
+    dialog._fetch_thread.wait()
+    assert "<urlopen error certificate verify failed>" in dialog._status.text()
+    assert dialog._status.textFormat() == Qt.TextFormat.PlainText
+    assert dialog._status.textInteractionFlags() & Qt.TextInteractionFlag.TextSelectableByMouse
+    assert "hub.log" in dialog._status.text()
+    dialog._fetch_thread._vm.list_versions = lambda **kwargs: []
+    dialog._retry_fetch()
+    deadline = time.monotonic() + 5
+    while dialog._fetch_thread.isRunning() and time.monotonic() < deadline:
+        QTest.qWait(10)
+    dialog._fetch_thread.wait()
+    QTest.qWait(10)
+    assert "certificate" not in dialog._status.text()
+    dialog.close()
+
+
 def _app():
     return QApplication.instance() or QApplication([])
 

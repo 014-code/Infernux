@@ -26,6 +26,17 @@ import version_manager as vm_mod
 from version_manager import DownloadCancelled, VersionManager, _merge_release_catalogs
 
 
+def test_catalog_network_failures_are_not_an_empty_version_list(tmp_path, monkeypatch):
+    monkeypatch.setattr(vm_mod, "_VERSIONS_DIR", tmp_path)
+    def fail(*args, **kwargs):
+        raise urllib.error.URLError("TLS certificate verification failed")
+    monkeypatch.setattr(vm_mod.urllib.request, "urlopen", fail)
+    with pytest.raises(RuntimeError, match="Unable to fetch engine versions") as error:
+        VersionManager().list_versions()
+    assert "pypi:" in str(error.value) and "github:" in str(error.value)
+    assert "certificate" in str(error.value)
+
+
 def _make_wheel_bytes() -> bytes:
     """Minimal valid wheel = a zip with one entry."""
     buf = io.BytesIO()

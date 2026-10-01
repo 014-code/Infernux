@@ -85,3 +85,28 @@ def test_manifest_rejects_wrong_host_or_missing_executable(tmp_path):
     executable.unlink()
     status = manager.status()
     assert not status.installed and "missing" in status.error
+
+
+def test_archive_extracts_long_paths_and_rejects_escape(tmp_path):
+    archive = tmp_path / "long.zip"
+    relative = "root/" + "/".join(["nested-package" * 3] * 6) + "/data.txt"
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr(relative, b"long path")
+    root = blender_support._extract_archive(archive, tmp_path / "stage")
+    assert (root.parent / relative).read_bytes() == b"long path"
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr("../escape.txt", b"escape")
+    with pytest.raises(blender_support.BlenderSupportError, match="unsafe"):
+        blender_support._extract_archive(archive, tmp_path / "unsafe-stage")
+    assert not (tmp_path / "escape.txt").exists()
+
+
+def test_failed_extraction_preserves_original_error_when_cleanup_fails(tmp_path, monkeypatch):
+    manager = blender_support.BlenderSupportManager(tmp_path / "installed")
+    archive = tmp_path / "broken.zip"
+    archive.write_bytes(b"not an archive")
+    def cleanup(_path):
+        raise PermissionError("cleanup denied")
+    monkeypatch.setattr(blender_support.shutil, "rmtree", cleanup)
+    with pytest.raises(blender_support.BlenderSupportError, match="archive is invalid"):
+        manager.install_archive(archive)

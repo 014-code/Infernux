@@ -147,9 +147,9 @@ def main():
         if image.source != "FILE" or image.packed_file is not None or not image.filepath:
             continue
         path = bpy.path.abspath(image.filepath, library=image.library)
-        # Blender's GLB exporter names an external image from its file stem,
-        # not from the editable Blender image datablock name.  The native
-        # importer joins this report to the exported GLB by image name.
+        # Blender may use either the source file stem or the datablock name
+        # depending on whether image channels are re-encoded. Give both paths
+        # the same identity in this disposable process; never modify the .blend.
         export_name = Path(path).stem
         previous_path = external_image_paths.get(export_name)
         if previous_path is not None and previous_path != path:
@@ -158,6 +158,9 @@ def main():
                 f"'{previous_path}' and '{path}'"
             )
         external_image_paths[export_name] = path
+        image.name = export_name
+        if image.name != export_name:
+            raise RuntimeError(f"Blender image name conflicts with external texture identity '{export_name}'")
     external_images = [
         {"name": name, "path": path}
         for name, path in sorted(external_image_paths.items())

@@ -4,14 +4,21 @@ from pathlib import Path
 
 from Infernux.engine.preferences_store import PreferencesStore
 from Infernux.engine.path_utils import resolved_path
+from ._association import find_associated_blender
 
 
 def get_blender_executable() -> str:
     configured = PreferencesStore().get("blender_executable", "")
     if configured:
         return configured
+    return _default_blender_executable()
+
+
+def _default_blender_executable() -> str:
     managed = os.environ.get("INFERNUX_BLENDER_EXECUTABLE", "").strip()
-    return resolved_path(managed) if managed else ""
+    if managed and Path(managed).is_file():
+        return resolved_path(managed)
+    return find_associated_blender()
 
 
 def export_script() -> str:
@@ -31,5 +38,6 @@ def set_blender_executable(value: str) -> None:
     if executable and not Path(executable).is_file():
         raise ValueError("Select an existing Blender 5.2 executable")
     database = AssetManager.require_asset_database()
-    database.configure_blender_import(executable, export_script() if executable else "")
+    effective = executable or _default_blender_executable()
+    database.configure_blender_import(effective, export_script() if effective else "")
     PreferencesStore().set("blender_executable", executable)

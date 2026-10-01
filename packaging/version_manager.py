@@ -454,6 +454,7 @@ class VersionManager:
         github: list[dict] = []
         pypi: dict = {}
         reached = False
+        failures = []
         for source, url, accept in (
             ("pypi", _PYPI_API, "application/json"),
             ("github", f"{_API_BASE}/releases?per_page=50", "application/vnd.github+json"),
@@ -474,7 +475,11 @@ class VersionManager:
                 elif source == "github" and isinstance(document, list):
                     github = document
                     reached = True
-            except (urllib.error.URLError, OSError, ValueError):
+                else:
+                    raise ValueError(f"Unexpected {source} catalog response")
+            except (urllib.error.URLError, OSError, ValueError) as exc:
+                failures.append(f"{source}: {type(exc).__name__}: {exc}")
+                logging.getLogger(__name__).warning("Engine catalog request failed: %s", source, exc_info=True)
                 continue
 
         if not reached:
@@ -488,13 +493,16 @@ class VersionManager:
                 except (json.JSONDecodeError, KeyError) as _exc:
                     logging.getLogger(__name__).debug("[Suppressed] %s: %s", type(_exc).__name__, _exc)
                     pass
-            return []
+            raise RuntimeError("Unable to fetch engine versions.\n" + "\n".join(failures))
 
         releases = _merge_release_catalogs(github, pypi)
 
         # Save to disk cache
         cache_data = {"_ts": now, "releases": releases}
-        self._cache_file.write_text(json.dumps(cache_data, ensure_ascii=False), encoding="utf-8")
+        try:
+            self._cache_file.write_text(json.dumps(cache_data, ensure_ascii=False), encoding="utf-8")
+        except OSError:
+            logging.getLogger(__name__).warning("Could not save engine catalog cache: %s", self._cache_file, exc_info=True)
 
         self._cached_releases = releases
         self._cached_at = now

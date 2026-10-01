@@ -529,6 +529,8 @@ def _handle_uninstall_linux() -> int:
 
 
 if __name__ == "__main__":
+    from hub_logging import configure_logging
+    configure_logging()
     if "--uninstall" in sys.argv:
         raise SystemExit(_handle_uninstall())
     launcher = GameEngineLauncher(HubLaunchContext.current())
