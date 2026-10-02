@@ -8,6 +8,7 @@ import sys
 import tempfile
 
 import pytest
+import yaml
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -69,9 +70,11 @@ def test_ci_software_driver_is_included_in_the_staged_wheel(tmp_path):
 
 
 def test_desktop_distribution_disables_the_test_driver_install_hook():
-    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-    delivery = workflow.split("- name: Build Windows editor wheel and Hub distribution", 1)[1]
-    assert delivery.index("-U CMAKE_PROJECT_Infernux_INCLUDE") < delivery.index(
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+    commands = "\n".join(
+        step.get("run", "") for step in workflow["jobs"]["windows-desktop"]["steps"]
+    )
+    assert commands.index("-U CMAKE_PROJECT_Infernux_INCLUDE") < commands.index(
         "cmake --build --preset windows-msvc-wheel"
     )
 

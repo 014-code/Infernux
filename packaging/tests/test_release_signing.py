@@ -4,8 +4,11 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
+import shutil
 import struct
+import subprocess
 import urllib.error
 import xml.etree.ElementTree as ET
 import zipfile
@@ -131,8 +134,66 @@ def test_test_certificate_trust_is_noninteractive_and_disposable_only():
     assert "::new('Root', 'CurrentUser')" not in source
     assert source.index("$env:RUNNER_ENVIRONMENT -ne 'github-hosted'") < source.index(store)
     assert source.index('WindowsBuiltInRole]::Administrator') < source.index(store)
-    assert '$store.Add($testCertificate)' in source
-    assert 'if ($added) { $store.Remove($testCertificate) }' in source
+    assert '$store.Add($signerCertificate)' in source
+    assert 'if ($added) { $store.Remove($signerCertificate) }' in source
+
+
+@pytest.mark.parametrize('test_certificate', [False, True])
+def test_signature_verifier_keeps_the_certificate_separate_from_its_switch(tmp_path, test_certificate):
+    shell = shutil.which('pwsh')
+    if shell is None:
+        pytest.skip('PowerShell 7 is required to execute the signature verifier')
+    probe = tmp_path / 'signature-probe.ps1'
+    probe.write_text(r'''
+$ErrorActionPreference = 'Stop'
+$rsa = [System.Security.Cryptography.RSA]::Create(2048)
+$request = [System.Security.Cryptography.X509Certificates.CertificateRequest]::new(
+    'CN=Infernux regression only', $rsa,
+    [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+    [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
+$certificate = $request.CreateSelfSigned([DateTimeOffset]::UtcNow.AddDays(-1), [DateTimeOffset]::UtcNow.AddDays(1))
+try {
+    # Exercise the actual script and PowerShell's typed parameter semantics.
+    # No file is signed and no machine/user certificate store is modified.
+    function Get-Item {
+        param([string]$LiteralPath)
+        [pscustomobject]@{
+            Name = 'probe.exe'; FullName = $LiteralPath
+            VersionInfo = [pscustomobject]@{ProductName = 'Infernux'; ProductVersion = '0.4.1.3'}
+        }
+    }
+    function Get-AuthenticodeSignature {
+        param([string]$LiteralPath)
+        [pscustomobject]@{
+            SignerCertificate = $certificate; Status = 'Valid'
+            TimeStamperCertificate = $certificate
+        }
+    }
+    $useTestCertificate = $env:INFERNUX_TEST_CERTIFICATE -eq 'true'
+    & $env:INFERNUX_SIGNATURE_SCRIPT -Path 'probe.exe' -Thumbprint $certificate.Thumbprint `
+        -ProductVersion '0.4.1.3' -TestCertificate:$useTestCertificate
+} finally {
+    $certificate.Dispose()
+    $rsa.Dispose()
+}
+''', encoding='utf-8')
+    result = subprocess.run(
+        [shell, '-NoProfile', '-NonInteractive', '-File', str(probe)],
+        env={
+            **os.environ,
+            'GITHUB_ACTIONS': 'false',
+            'RUNNER_ENVIRONMENT': 'self-hosted',
+            'INFERNUX_SIGNATURE_SCRIPT': str(ROOT / 'scripts/release/verify_windows_signature.ps1'),
+            'INFERNUX_TEST_CERTIFICATE': str(test_certificate).lower(),
+        },
+        capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30,
+    )
+    if test_certificate:
+        assert result.returncode != 0
+        assert 'Test certificate trust is restricted to disposable' in result.stderr
+    else:
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert 'Verified probe.exe' in result.stdout
 
 
 def test_github_digest_must_match_exact_final_files(tmp_path):

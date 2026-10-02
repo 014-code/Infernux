@@ -21,7 +21,7 @@ if ($file.VersionInfo.ProductName -ne 'Infernux' -or $file.VersionInfo.ProductVe
 # temporarily, on the disposable Windows CI runner. Never trust it for releases.
 $store = $null
 $added = $false
-$testCertificate = $signature.SignerCertificate
+$signerCertificate = $signature.SignerCertificate
 try {
     if ($TestCertificate) {
         if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') {
@@ -39,7 +39,7 @@ try {
         $store = [System.Security.Cryptography.X509Certificates.X509Store]::new('Root', 'LocalMachine')
         $store.Open('ReadWrite')
         if ($store.Certificates.Find('FindByThumbprint', $Thumbprint, $false).Count -eq 0) {
-            $store.Add($testCertificate)
+            $store.Add($signerCertificate)
             $added = $true
         }
         Write-Output 'Checking signature with the pinned test certificate'
@@ -54,7 +54,7 @@ try {
     Write-Output "Verified $($file.Name): $($signature.SignerCertificate.Subject)"
 } finally {
     if ($store) {
-        if ($added) { $store.Remove($testCertificate) }
+        if ($added) { $store.Remove($signerCertificate) }
         $store.Close()
     }
 }

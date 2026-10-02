@@ -82,7 +82,11 @@ def test_host_plugin_owns_its_registered_target():
     assert registry.targets() == ()
 
 
-def test_host_exporter_doctor_rejects_invalid_project(tmp_path):
+def test_host_exporter_doctor_rejects_invalid_project(tmp_path, monkeypatch):
+    # Isolate project validation from locally generated Player payloads.
+    monkeypatch.setattr(
+        "Infernux.engine.precompiled_player.inspect_desktop_runtime", lambda _root: None,
+    )
     target = host_target()
     assert target is not None
     request = BuildRequest(
@@ -96,6 +100,24 @@ def test_host_exporter_doctor_rejects_invalid_project(tmp_path):
     assert not report.available
     assert [item.code for item in report.diagnostics] == [
         "host-player.project.invalid"
+    ]
+
+
+def test_host_exporter_doctor_reports_missing_runtime_and_invalid_project(tmp_path, monkeypatch):
+    def missing_runtime(_root):
+        raise FileNotFoundError("Player payload missing")
+
+    monkeypatch.setattr(
+        "Infernux.engine.precompiled_player.inspect_desktop_runtime", missing_runtime,
+    )
+    target = host_target()
+    request = BuildRequest(str(tmp_path / "MissingProject"), target.id, str(tmp_path / "Player"))
+
+    report = HostPlatformExporter().doctor(request)
+
+    assert not report.available
+    assert [item.code for item in report.diagnostics] == [
+        "host-player.runtime.unavailable", "host-player.project.invalid",
     ]
 
 

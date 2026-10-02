@@ -99,6 +99,41 @@ def _is_transform_list(targets: Sequence) -> bool:
     return isinstance(targets[0], lib.Transform)
 
 
+def _validate_targets(targets: Sequence) -> None:
+    """Reject ambiguous batches before touching any object's storage."""
+    if not targets:
+        raise ValueError("targets must be non-empty; use a TransformBatchHandle for an empty batch")
+    cls = type(targets[0])
+    if any(type(target) is not cls for target in targets):
+        raise TypeError("batch targets must have the same concrete type")
+    from Infernux.components.component import InxComponent
+
+    if not isinstance(targets[0], (_get_lib().Transform, InxComponent)):
+        raise TypeError("batch targets must be Transform or InxComponent instances")
+    if any(getattr(target, '_is_destroyed', False) for target in targets):
+        raise RuntimeError("batch contains a destroyed component")
+
+
+def _component_metadata(targets: Sequence, prop_name: str):
+    from Infernux.components.fields import get_serialized_fields
+
+    cls = type(targets[0])
+    meta = get_serialized_fields(cls).get(prop_name)
+    if meta is None:
+        raise AttributeError(f"{cls.__name__} has no serialized field '{prop_name}'")
+    return meta
+
+
+def _cds_slots(targets: Sequence, class_id: int):
+    slots = []
+    for target in targets:
+        slot = getattr(target, '_cds_slot', None)
+        if getattr(target, '_cds_class_id', None) != class_id or slot is None:
+            raise RuntimeError("batch contains an unavailable or mismatched CDS layout")
+        slots.append(slot)
+    return _get_np().asarray(slots, dtype='uint32')
+
+
 # ── ComponentDataStore fast path ────────────────────────────────────────
 
 def _try_cds_gather(targets: Sequence, prop_name: str):
@@ -116,9 +151,12 @@ def _try_cds_gather(targets: Sequence, prop_name: str):
 
     # Collect generational slot handles as an (N, 2) uint32 array.
     np = _get_np()
-    slots = np.array([t._cds_slot for t in targets], dtype=np.uint32)
+    slots = _cds_slots(targets, class_id)
     lib = _get_lib()
-    return np.asarray(lib._cds_batch_gather(class_id, field_id, type_code, slots))
+    result = np.asarray(lib._cds_batch_gather(class_id, field_id, type_code, slots))
+    # Native bool storage is byte-addressable; the public field type is bool.
+    _, dtype = _field_shape_dtype(_component_metadata(targets, prop_name).field_type)
+    return result.astype(dtype, copy=False)
 
 
 def _try_cds_scatter(targets: Sequence, data: np.ndarray, prop_name: str) -> bool:
@@ -134,10 +172,15 @@ def _try_cds_scatter(targets: Sequence, data: np.ndarray, prop_name: str) -> boo
         return False
     field_id, type_code = entry
 
-    np = _get_np()
-    slots = np.array([t._cds_slot for t in targets], dtype=np.uint32)
+    slots = _cds_slots(targets, class_id)
     lib = _get_lib()
     lib._cds_batch_scatter(class_id, field_id, type_code, slots, data)
+    # Native scatter validates every generation before writing any value.
+    # Reuse the descriptor's publication rule only after the whole write succeeds;
+    # journals coalesce these keys at the existing phase/safe-point boundary.
+    descriptor = getattr(cls, prop_name)
+    for target in targets:
+        descriptor._notify_runtime_value_changed(target)
     return True
 
 
@@ -171,12 +214,7 @@ def _component_gather(targets: Sequence, prop_name: str) -> np.ndarray:
     from Infernux.components.fields import FieldType
 
     # Look up metadata from the class
-    cls = type(targets[0])
-    meta = cls._serialized_fields_.get(prop_name)  # type: ignore[attr-defined]
-    if meta is None:
-        raise AttributeError(
-            f"{cls.__name__} has no serialized field '{prop_name}'"
-        )
+    meta = _component_metadata(targets, prop_name)
 
     elem_shape, dtype = _field_shape_dtype(meta.field_type)
     np = _get_np()
@@ -210,12 +248,7 @@ def _component_scatter(targets: Sequence, data: np.ndarray, prop_name: str) -> N
     """Scatter a numpy array back into named attributes of InxComponent instances."""
     from Infernux.components.fields import FieldType
 
-    cls = type(targets[0])
-    meta = cls._serialized_fields_.get(prop_name)  # type: ignore[attr-defined]
-    if meta is None:
-        raise AttributeError(
-            f"{cls.__name__} has no serialized field '{prop_name}'"
-        )
+    meta = _component_metadata(targets, prop_name)
 
     n = len(targets)
     lib = _get_lib()
@@ -233,13 +266,41 @@ def _component_scatter(targets: Sequence, data: np.ndarray, prop_name: str) -> N
 
 # ── Public API ──────────────────────────────────────────────────────────
 
+def _prepare_component_data(targets: Sequence, data: NDArray, prop_name: str):
+    """Validate and normalize the entire input before either storage path writes."""
+    from Infernux.components.fields import FieldType, normalize_runtime_field_value
+
+    np = _get_np()
+    meta = _component_metadata(targets, prop_name)
+    elem_shape, dtype = _field_shape_dtype(meta.field_type)
+    values = np.asarray(data)
+    if (values.ndim != 1 + len(elem_shape)
+            or values.shape[1:] != elem_shape or values.shape[0] < len(targets)):
+        raise ValueError(
+            f"batch data must have shape (N{''.join(', ' + str(d) for d in elem_shape)}), "
+            f"with N >= {len(targets)}"
+        )
+    values = values[:len(targets)]
+    if meta.range is not None and meta.field_type in (FieldType.INT, FieldType.FLOAT):
+        # Use exactly the scalar range contract, including integer conversion,
+        # without mutating the caller's array or exposing partially clamped data.
+        return np.asarray([
+            normalize_runtime_field_value(value.item(), meta) for value in values
+        ], dtype=dtype)
+    if meta.field_type == FieldType.BOOL:
+        return np.ascontiguousarray(values, dtype=np.bool_)
+    if not np.can_cast(values.dtype, dtype, casting='safe'):
+        raise ValueError(f"batch data cannot be safely converted from {values.dtype} to {dtype}")
+    return np.ascontiguousarray(values, dtype=dtype)
+
+
 def batch_read(targets: Sequence, prop: Any) -> NDArray:
     """Read a property from all *targets* into a numpy array.
 
     Parameters
     ----------
     targets : list[Transform] | list[InxComponent] | TransformBatchHandle
-        Homogeneous list of engine objects, or a pre-built
+        Non-empty list of engine objects of the same concrete type, or a pre-built
         ``TransformBatchHandle`` for zero-overhead repeated reads.
     prop : str | descriptor
         Property name (``'position'``, ``'velocity'``) or a class-level
@@ -266,6 +327,7 @@ def batch_read(targets: Sequence, prop: Any) -> NDArray:
             f"Supported: {sorted(_TRANSFORM_ALL_PROPS)}"
         )
 
+    _validate_targets(targets)
     if _is_transform_list(targets):
         if prop_name in _TRANSFORM_ALL_PROPS:
             return lib._transform_batch_read(targets, prop_name)
@@ -292,7 +354,9 @@ def batch_write(targets: Sequence, data: NDArray, prop: Any):
         Same list used for the preceding ``batch_read``, or a
         ``TransformBatchHandle``.
     data : numpy.ndarray
-        Array with ``data.shape[0] >= len(targets)``.
+        Array with ``data.shape[0] >= len(targets)`` and the field's element
+        shape. Component numeric conversions must be safe; declared scalar
+        ranges and boolean values follow normal field assignment semantics.
     prop : str | descriptor
         Same property specifier used for ``batch_read``.
     """
@@ -308,6 +372,7 @@ def batch_write(targets: Sequence, data: NDArray, prop: Any):
             f"Supported: {sorted(_TRANSFORM_ALL_PROPS)}"
         )
 
+    _validate_targets(targets)
     if _is_transform_list(targets):
         if prop_name in _TRANSFORM_ALL_PROPS:
             lib._transform_batch_write(targets, data, prop_name)
@@ -318,6 +383,7 @@ def batch_write(targets: Sequence, data: NDArray, prop: Any):
         )
 
     # Try CDS C++ fast path for InxComponent numeric fields.
+    data = _prepare_component_data(targets, data, prop_name)
     if _try_cds_scatter(targets, data, prop_name):
         return
 

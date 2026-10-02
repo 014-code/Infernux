@@ -97,7 +97,7 @@ def _run_editor_without_mcp(project: Path, port: int) -> None:
         from Infernux.engine.player_build_preflight import publish_player_asset_catalog
 
         # MCP is optional, but desktop export is supplied by its platform plugin.
-        # The release CMake preset builds this complete artifact before this test.
+        # The host Player build preset produces this complete archive before pytest.
         platform = "windows" if sys.platform == "win32" else "linux"
         package = (
             Path(__file__).resolve().parents[2] / "external/plugins"
@@ -179,6 +179,13 @@ def _run_editor_without_mcp(project: Path, port: int) -> None:
 @pytest.mark.skipif(not _native_available(), reason="native graphical engine unavailable")
 def test_full_editor_bootstrap_remains_functional_without_mcp():
     repository = Path(__file__).parents[2]
+    platform = "windows" if sys.platform == "win32" else "linux"
+    package = repository / "external/plugins" / f"infernux_{platform}/dist/infernux.platform-{platform}.inxpkg"
+    preset = "windows-msvc-player" if sys.platform == "win32" else "linux-clang-player"
+    assert package.is_file(), (
+        f"Missing built platform archive: {package}. Run cmake --build --preset {preset} "
+        "before native integration tests; see TESTING.md."
+    )
     short_root = Path(tempfile.mkdtemp(prefix="inx-no-mcp-"))
     project = short_root / "Project"
     try:

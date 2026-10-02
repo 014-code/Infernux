@@ -7,8 +7,176 @@ import pytest
 
 from Infernux import lib
 from Infernux.batch import batch_read, batch_write, create_batch_handle, create_scene_batch_handle
-from Infernux.components import InxComponent
+from Infernux.components import InxComponent, serialized_field
 from Infernux.components._cds_bridge import get_class_id
+
+
+@pytest.mark.parametrize("native_storage", [False, True])
+def test_batch_write_preserves_field_ranges_and_publishes_changes(native_storage):
+    from Infernux.components._component_lifecycle import RuntimeExecutionScheduler
+    from Infernux.engine.runtime_change_journal import (
+        RuntimeChangeDomain, RuntimeChangeJournal, RuntimeFieldKey,
+    )
+
+    class Base(InxComponent):
+        _uses_component_data_store = native_storage
+        speed: float = serialized_field(default=1.0, range=(0.0, 5.0))
+
+    class Derived(Base):
+        pass
+
+    journal = RuntimeChangeJournal()
+    scheduler = RuntimeExecutionScheduler(name="batch-values", change_journal=journal)
+    components = [Derived(), Derived()]
+    try:
+        cursor = journal.create_cursor("batch-values")
+        batch_write(components, np.array([2.0, 3.0]), "speed")
+        assert not journal.consume(cursor).changed  # Unregistered candidates stay private.
+        for index, component in enumerate(components):
+            component._registered_go_id = index + 1
+        source = np.array([-2.0, 8.0, 100.0])  # Extra rows are allowed by the API.
+        batch_write(components, source, "speed")
+        np.testing.assert_array_equal(source, [-2.0, 8.0, 100.0])
+        np.testing.assert_array_equal(batch_read(components, "speed"), [0.0, 5.0])
+        batch_changes = journal.consume(cursor)
+        assert batch_changes.for_domain(RuntimeChangeDomain.COMPONENT_FIELD).fields == frozenset(
+            RuntimeFieldKey(Derived._type_guid_, component.component_id, "speed")
+            for component in components
+        )
+        for component, value in zip(components, source):
+            component.speed = float(value)
+        scalar_changes = journal.consume(cursor)
+        assert batch_changes.changes == scalar_changes.changes
+    finally:
+        for component in components:
+            component._registered_go_id = None
+            component._call_on_destroy()
+        scheduler.clear()
+
+
+def test_batch_rejects_mixed_classes_before_accessing_colliding_slots():
+    class First(InxComponent):
+        value: float = 1.0
+
+    class Second(InxComponent):
+        value: float = 2.0
+
+    first, second = First(), Second()
+    try:
+        assert first._cds_class_id != second._cds_class_id
+        assert first._cds_slot == second._cds_slot
+        with pytest.raises(TypeError, match="same concrete type"):
+            batch_read([first, second], "value")
+        with pytest.raises(TypeError, match="same concrete type"):
+            batch_write([first, second], np.array([31.0, 42.0]), "value")
+        assert (first.value, second.value) == (1.0, 2.0)
+    finally:
+        first._call_on_destroy()
+        second._call_on_destroy()
+
+
+@pytest.mark.parametrize("failure", ["stale", "layout", "shape", "dtype"])
+def test_rejected_cds_batch_writes_neither_values_nor_notifications(failure):
+    from Infernux.components._component_lifecycle import RuntimeExecutionScheduler
+    from Infernux.engine.runtime_change_journal import RuntimeChangeJournal
+
+    class Value(InxComponent):
+        number: float = 1.0
+
+    journal = RuntimeChangeJournal()
+    scheduler = RuntimeExecutionScheduler(name="rejected-batch", change_journal=journal)
+    components = [Value(), Value()]
+    second = components[1]
+    class_id = second._cds_class_id
+    try:
+        for index, component in enumerate(components):
+            component._registered_go_id = index + 1
+        cursor = journal.create_cursor("rejected")
+        data = np.array([3.0, 4.0])
+        if failure == "stale":
+            lib._cds_free(class_id, second._cds_slot)
+        elif failure == "layout":
+            second._cds_class_id = class_id + 1
+        elif failure == "shape":
+            data = data[:1]
+        else:
+            data = np.array([3.0, "invalid"])
+        with pytest.raises((RuntimeError, ValueError)):
+            batch_write(components, data, "number")
+        assert components[0].number == 1.0
+        assert not journal.consume(cursor).changed
+        if failure == "stale":
+            with pytest.raises(RuntimeError, match="stale or invalid"):
+                batch_read(components, "number")
+    finally:
+        second._cds_class_id = class_id
+        for component in components:
+            component._registered_go_id = None
+            component._call_on_destroy()
+        scheduler.clear()
+
+
+@pytest.mark.parametrize("native_storage", [False, True])
+def test_batch_bool_storage_matches_scalar_truth_values(native_storage):
+    class Flags(InxComponent):
+        _uses_component_data_store = native_storage
+        value: bool = False
+
+    components = [Flags(), Flags(), Flags()]
+    try:
+        batch_write(components, np.array([0, 256, -1]), "value")
+        result = batch_read(components, "value")
+        assert result.dtype == np.dtype(bool)
+        np.testing.assert_array_equal(result, [False, True, True])
+        assert [component.value for component in components] == [False, True, True]
+    finally:
+        for component in components:
+            component._call_on_destroy()
+
+
+@pytest.mark.parametrize("native_storage", [False, True])
+def test_batch_integer_range_and_invalid_input_match_scalar_assignment(native_storage):
+    class Counter(InxComponent):
+        _uses_component_data_store = native_storage
+        value: int = serialized_field(default=1, range=(0, 5))
+
+    components = [Counter(), Counter()]
+    try:
+        batch_write(components, np.array([-1.8, 7.5]), "value")
+        assert [component.value for component in components] == [0, 5]
+        with pytest.raises(ValueError):
+            batch_write(components, np.array([3.0, float('nan')]), "value")
+        assert [component.value for component in components] == [0, 5]
+    finally:
+        for component in components:
+            component._call_on_destroy()
+
+
+@pytest.mark.parametrize("native_storage", [False, True])
+def test_batch_vector_shape_validation_and_strided_input(native_storage):
+    class Mover(InxComponent):
+        _uses_component_data_store = native_storage
+        position: lib.Vector3 = lib.Vector3(1, 2, 3)
+
+    components = [Mover(), Mover()]
+    try:
+        with pytest.raises(ValueError, match="shape"):
+            batch_write(components, np.zeros((2, 2), dtype=np.float32), "position")
+        np.testing.assert_array_equal(batch_read(components, "position"), [[1, 2, 3], [1, 2, 3]])
+        source = np.arange(12, dtype=np.float32).reshape(2, 6)[:, ::2]
+        batch_write(components, source, "position")
+        np.testing.assert_array_equal(batch_read(components, "position"), source)
+    finally:
+        for component in components:
+            component._call_on_destroy()
+
+
+def test_empty_untyped_batch_has_an_explicit_error():
+    with pytest.raises(ValueError, match="non-empty"):
+        batch_read([], "value")
+    with pytest.raises(ValueError, match="non-empty"):
+        batch_write([], np.empty(0), "value")
+    assert batch_read(create_batch_handle([]), "position").shape == (0, 3)
 
 
 def test_inherited_numeric_fields_share_the_declared_native_layout():

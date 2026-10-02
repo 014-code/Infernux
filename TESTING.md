@@ -23,6 +23,7 @@ All paths below are pytest modules. Run one with `python -m pytest PATH -q -ra`.
 | Inside-out Windows signing and immutable publication | `packaging/tests/test_release_signing.py` | Portable Hub; real SignPath test workflow before signed releases |
 | Scene activation, defaults and Play/Stop transitions | `python/test/test_scene_manager_runtime_loading.py`, `python/test/test_scene_manager_defaults.py`, `python/test/test_engine_play_mode.py` | Native Python; visible editor acceptance |
 | Script refresh and transactional publication | `python/test/test_play_mode_component_body_reload.py`, `python/test/test_plugin_updates.py` | Native Python |
+| Component batch storage, validation and field-change publication | `python/test/test_component_data_store.py`, `python/test/test_runtime_change_journal.py` | Native Python |
 | Asset loading, persistence and material state | `python/test/test_integration_asset_database.py`, `python/test/test_asset_persistence_races.py`, `python/test/test_material_render_state_authorship.py` | Native Python; visual acceptance |
 | Particle compilation and capacity behavior | `python/test/test_particle_graph_hir.py`, `python/test/test_particle_kernel_ir.py`, `python/test/test_particle_gpu_glsl_backend.py`, `python/test/test_particle_spawn_schedule.py` | Native Python; GPU rendering acceptance |
 | Game export, dependency closure and sealed content | `python/test/test_game_builder_asset_closure.py`, `python/test/test_player_build_preflight.py`, `python/test/test_desktop_build_exporter.py`, `python/test/test_web_exporter_plugin.py`, `python/test/test_multiplatform_player_fixture.py` | Native Python; four-target Player CI |
@@ -34,6 +35,41 @@ All paths below are pytest modules. Run one with `python -m pytest PATH -q -ra`.
 custom function keys and modifier combinations, palette/find/navigation chords,
 Enter normalization, no held-key replay, and one publication per frame. This
 replaces source-text assertions for hard-coded shortcut dispatch statements.
+
+## Full native Python lane: build the matching artifacts first
+
+Run the full suite against native binaries built from the same checkout. In a
+configured development environment, the Windows sequence is:
+
+```powershell
+cmake --preset windows-msvc-release
+cmake --build --preset windows-msvc-release
+cmake --build --preset windows-msvc-player
+$env:SDL_AUDIODRIVER = 'dummy'
+$env:QT_QPA_PLATFORM = 'offscreen'
+python -m pytest python/test tests/contracts -q -ra
+python -m pytest packaging/tests -q -ra
+```
+
+On Linux use `linux-clang-release` and `linux-clang-player`; follow the CI
+display/Vulkan setup when running without a desktop. Configuration alone does
+not build anything. The default build generates the bundled MCP archive at
+`python/Infernux/resources/infernux.mcp.inxpkg`. The Player target assembles the
+runtime payload and invokes the host platform submodule's `release.py`, producing
+`external/plugins/infernux_<platform>/dist/infernux.platform-<platform>.inxpkg`.
+Building only the editor wheel does not build this platform package.
+
+The MCP install/restart and MCP-free editor/export integration tests require
+those actual archives. Missing artifacts are preparation failures, not reasons
+to skip the tests. Both desktop CI jobs build the Player before pytest. The
+`windows-release` / `linux-release` workflow presets build the release artifacts
+and run CTest, but the full Python suite above is a separate step.
+
+If `INFERNUX_NATIVE_MODULE_DIR` is set, it must point at this checkout's matching
+build, not an older installed wheel. Component batch tests cover shared scalar
+and batch range/publication semantics, reject mixed concrete types and stale
+layouts before mutation, and preserve the caller's input array. Empty untyped
+lists are rejected explicitly; empty Transform batches use a typed handle.
 
 ## Portable Hub lane: no compiled engine or Vulkan required
 

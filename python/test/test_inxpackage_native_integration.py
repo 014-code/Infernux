@@ -194,6 +194,13 @@ def test_official_mcp_default_install_uninstall_reinstalls_on_restart(
     tmp_path, monkeypatch
 ):
     repository = Path(__file__).parents[2]
+    resources = repository / "python" / "Infernux" / "resources"
+    artifact = resources / "infernux.mcp.inxpkg"
+    preset = "windows-msvc-release" if sys.platform == "win32" else "linux-clang-release"
+    assert artifact.is_file(), (
+        f"Missing built MCP archive: {artifact}. Run cmake --build --preset {preset} "
+        "before native integration tests; see TESTING.md."
+    )
     # This scenario intentionally proves that unload removes every plugin
     # module from sys.modules.  Run that destructive interpreter-state check
     # in a child process so pytest modules imported during collection cannot
@@ -224,8 +231,6 @@ def test_official_mcp_default_install_uninstall_reinstalls_on_restart(
         assert result.returncode == 0, result.stdout + "\n" + result.stderr
         return
 
-    resources = repository / "python" / "Infernux" / "resources"
-    artifact = resources / "infernux.mcp.inxpkg"
     preview = InxPackage.inspect(str(artifact))
     assert preview.metadata["reference"] == "infernux/mcp"
     requirements = next(
