@@ -42,6 +42,8 @@ SignPath project `Infernux`, organization
 this document. The GitHub artifact is a ZIP even when it contains one EXE.
 Both configurations restrict the executable name, product name `Infernux`,
 and Windows product version. They do not sign third-party DLLs or engine wheels.
+`hub` is the default configuration; the obsolete unrestricted `initial`
+configuration is inactive. CI always selects its configuration explicitly.
 
 Repository configuration:
 
@@ -52,8 +54,11 @@ Repository configuration:
   not a signature algorithm selection.
 - Variable `SIGNPATH_RELEASE_CERTIFICATE_THUMBPRINT`: the issued release
   certificate's SHA-1 thumbprint. Do not use the test certificate here.
-- The SignPath GitHub integration must be installed for this repository.
-  Preserve trusted build origin verification and manual release approval.
+- Link SignPath's `GitHub.com` trusted build system to this project and grant
+  `GITHUB_TOKEN` `actions: read` through the workflow permissions. Preserve
+  trusted build origin verification and manual release approval. Installing
+  the SignPath GitHub App is needed only if audit-log evaluation is required;
+  it is not a prerequisite for submitting builds with the GitHub action.
 
 First run **Test Windows Code Signing**. It builds only the Hub/installer,
 uses `test-signing`, and retains explicitly labelled test artifacts for seven
