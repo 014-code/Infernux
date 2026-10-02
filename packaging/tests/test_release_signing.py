@@ -124,6 +124,17 @@ def test_test_signatures_cannot_enter_release_publication():
     assert "*-desktop-distribution-${{ inputs.run_id }}-${{ needs.verify.outputs.attempt }}" in str(publish)
 
 
+def test_test_certificate_trust_is_noninteractive_and_disposable_only():
+    source = (ROOT / 'scripts/release/verify_windows_signature.ps1').read_text()
+    store = "::new('Root', 'LocalMachine')"
+    assert store in source
+    assert "::new('Root', 'CurrentUser')" not in source
+    assert source.index("$env:RUNNER_ENVIRONMENT -ne 'github-hosted'") < source.index(store)
+    assert source.index('WindowsBuiltInRole]::Administrator') < source.index(store)
+    assert '$store.Add($testCertificate)' in source
+    assert 'if ($added) { $store.Remove($testCertificate) }' in source
+
+
 def test_github_digest_must_match_exact_final_files(tmp_path):
     module = load('verify_publication')
     (tmp_path / 'Hub.exe').write_bytes(b'signed')
