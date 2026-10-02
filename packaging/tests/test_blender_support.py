@@ -2,16 +2,11 @@ from __future__ import annotations
 
 import io
 import os
-import sys
 import zipfile
 from pathlib import Path
 
 import pytest
 
-
-PACKAGING_DIR = Path(__file__).resolve().parents[1]
-if str(PACKAGING_DIR) not in sys.path:
-    sys.path.insert(0, str(PACKAGING_DIR))
 
 import blender_support
 

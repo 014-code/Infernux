@@ -1,15 +1,10 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import pytest
 
-
-PACKAGING_DIR = Path(__file__).resolve().parents[1]
-if str(PACKAGING_DIR) not in sys.path:
-    sys.path.insert(0, str(PACKAGING_DIR))
 
 from project_python_runtime import (
     project_runtime_directory,

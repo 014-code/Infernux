@@ -49,16 +49,10 @@ def _default_install_dir() -> str:
 
 
 def _resource_dir() -> str:
-    if getattr(sys, "frozen", False):
-        return os.path.join(sys._MEIPASS, "resources")
-    if "__compiled__" in globals():
-        return os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources")
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources")
 
 
 def _payload_dir() -> str:
-    if getattr(sys, "frozen", False):
-        return os.path.join(sys._MEIPASS, "payload")
     if "__compiled__" in globals():
         return os.path.join(os.path.dirname(os.path.abspath(__file__)), "payload")
     return os.path.join(

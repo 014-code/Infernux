@@ -20,8 +20,16 @@ from their own location, so they also work when invoked by an absolute path.
 Generated files follow the repository output policy:
 
 - `out/` is disposable build, packaging, test, and diagnostic output.
-- `dist/releases/<version>/` contains final local release artifacts.
-- `dev/` contains private planning and publication drafts and is never cleaned.
+- `dist/releases/<version>/` contains generated local release artifacts.
+- `dev/` contains disposable local scratch work.
+
+`maintenance/clean_workspace.ps1` deletes these outputs, including current
+release packages, and removes generated native libraries, plugin payloads,
+dependency build trees, downloaded Hub caches, and Python/Node/Gradle caches.
+Use `-WhatIf` to preview the deletions. It checks the main repository and each
+initialized submodule's index and refuses to delete tracked files or follow
+filesystem junctions. Local editor settings and release operator scripts are
+not build output.
 
 Website tool names under `docs/tools/` are intentionally verb-based:
 `build-*` creates deterministic artifacts, `check-*` enforces a contract,

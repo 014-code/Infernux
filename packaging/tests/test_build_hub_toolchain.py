@@ -10,8 +10,6 @@ import yaml
 
 
 PACKAGING_ROOT = Path(__file__).resolve().parents[1]
-if str(PACKAGING_ROOT) not in sys.path:
-    sys.path.insert(0, str(PACKAGING_ROOT))
 
 import build_hub
 from private_python_runtime import PYTHON_VERSION, runtime_archive_for_machine

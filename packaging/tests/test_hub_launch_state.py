@@ -10,10 +10,6 @@ from types import SimpleNamespace
 import pytest
 
 
-PACKAGING_DIR = Path(__file__).resolve().parents[1]
-if str(PACKAGING_DIR) not in sys.path:
-    sys.path.insert(0, str(PACKAGING_DIR))
-
 from PySide6.QtWidgets import QApplication
 from PySide6.QtWidgets import QMessageBox
 

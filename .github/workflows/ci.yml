@@ -89,6 +89,10 @@ jobs:
           packaging/tests/test_project_runtime_strictness.py
           packaging/tests/test_regression_guide.py
           packaging/tests/test_cpu_jit_dependency_packaging.py
+          packaging/tests/test_hub_utils.py
+          packaging/tests/test_bundle_resources.py
+          packaging/tests/test_workspace_cleanup.py
+          tests/contracts
           -q -ra --junitxml out/test-results/portable-hub.xml
       - uses: actions/upload-artifact@v4
         if: always()

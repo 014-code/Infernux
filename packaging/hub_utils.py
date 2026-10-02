@@ -22,10 +22,7 @@ class HubLaunchContext(Enum):
 
 
 def is_frozen() -> bool:
-    """Return *True* inside a PyInstaller or Nuitka standalone build."""
-    if getattr(sys, "frozen", False):
-        return True
-
+    """Return *True* inside a Nuitka compiled application."""
     # Nuitka defines ``__compiled__`` on the executable's main module.  It is
     # not guaranteed to copy that marker into imported modules such as this
     # one, so checking only ``globals()`` makes a standalone Hub look like a
@@ -40,7 +37,7 @@ def is_frozen() -> bool:
 def get_bundle_dir() -> str:
     """Return the directory containing bundled data files."""
     if is_frozen():
-        return getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(sys.executable)))
+        return os.path.dirname(os.path.abspath(sys.executable))
     return os.path.dirname(os.path.abspath(__file__))
 
 

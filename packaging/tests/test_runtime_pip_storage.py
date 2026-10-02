@@ -3,7 +3,6 @@ from __future__ import annotations
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io
 import os
-from pathlib import Path
 import subprocess
 import sys
 import threading
@@ -11,9 +10,6 @@ import zipfile
 
 import pytest
 
-PACKAGING_DIR = Path(__file__).resolve().parents[1]
-if str(PACKAGING_DIR) not in sys.path:
-    sys.path.insert(0, str(PACKAGING_DIR))
 
 import embed_runtime_manager as runtime
 import stage_bundled_python_runtime as stage

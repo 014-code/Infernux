@@ -1,142 +1,113 @@
 [CmdletBinding(SupportsShouldProcess)]
-param(
-    [switch]$LegacyStagingOnly
-)
+param()
 
 $ErrorActionPreference = 'Stop'
-$Root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
-$RootPrefix = $Root.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+$Root = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
+$RootPrefix = $Root.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+$RemovedCount = 0
+$RemovedBytes = 0L
 
-function Remove-GeneratedPath([string]$Path) {
-    $Resolved = [IO.Path]::GetFullPath($Path)
-    if (-not $Resolved.StartsWith($RootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
-        throw "Refusing to remove a path outside the workspace: $Resolved"
+function Get-GitPaths([string]$Repository, [string[]]$Arguments) {
+    $Result = @(& git -C $Repository -c core.quotePath=false @Arguments)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Cannot inspect tracked/generated files in $Repository"
     }
-    if (-not (Test-Path -LiteralPath $Resolved)) { return }
-    if ($PSCmdlet.ShouldProcess($Resolved, 'Remove generated workspace output')) {
-        Remove-Item -LiteralPath $Resolved -Recurse -Force
-    }
+    return $Result
 }
 
-# A Windows staging root passed verbatim into WSL can be materialized as a
-# malformed, repository-local directory (for example a Unicode-escaped form
-# of ``C:\_InxBuild``). It is always generated output. Resolve candidates from
-# the workspace itself and pass every removal through the same containment
-# check as the canonical output roots.
-$LegacyStagingRoots = @(
-    Get-ChildItem -LiteralPath $Root -Directory -Force -ErrorAction SilentlyContinue |
-        Where-Object {
-            $_.Name.EndsWith('_InxBuild', [StringComparison]::OrdinalIgnoreCase) -or
-            $_.Name.EndsWith('_InfBuild', [StringComparison]::OrdinalIgnoreCase)
+function Remove-GeneratedPath([string]$Repository, [string]$RelativePath) {
+    $Target = [IO.Path]::GetFullPath((Join-Path $Repository $RelativePath))
+    if (-not $Target.StartsWith($RootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing to remove a path outside the workspace: $Target"
+    }
+    if (-not (Test-Path -LiteralPath $Target)) { return }
+
+    # A junction at any level could redirect an otherwise local-looking path.
+    $Ancestor = $Target
+    while ($Ancestor -ne $Root) {
+        if ((Get-Item -LiteralPath $Ancestor -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            throw "Refusing to follow a reparse point: $Ancestor"
         }
-)
-foreach ($LegacyStagingRoot in $LegacyStagingRoots) {
-    Remove-GeneratedPath $LegacyStagingRoot.FullName
-}
-if ($LegacyStagingOnly) {
-    Write-Host 'Legacy repository-local staging outputs cleaned.' -ForegroundColor Green
-    return
+        $Ancestor = Split-Path -Parent $Ancestor
+    }
+    $Tracked = @(Get-GitPaths $Repository @('ls-files', '--', $RelativePath))
+    if ($Tracked.Count -gt 0) {
+        throw "Refusing to remove tracked source files: $Target"
+    }
+    $Item = Get-Item -LiteralPath $Target -Force
+    $Children = if ($Item.PSIsContainer) {
+        @(Get-ChildItem -LiteralPath $Target -Recurse -Force)
+    } else { @() }
+    foreach ($Child in $Children) {
+        if ($Child.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            throw "Refusing to remove a nested reparse point: $($Child.FullName)"
+        }
+    }
+    if ($PSCmdlet.ShouldProcess($Target, 'Delete generated workspace files')) {
+        $Size = if ($Item.PSIsContainer) {
+            ($Children | Where-Object { -not $_.PSIsContainer } | Measure-Object Length -Sum).Sum
+        } else { $Item.Length }
+        Remove-Item -LiteralPath $Target -Recurse
+        $script:RemovedCount += 1
+        $script:RemovedBytes += $Size
+    }
 }
 
-# Canonical policy:
-#   out/                    disposable build, package, test, and diagnostic output
-#   dist/releases/<version> final local release archives (preserved here)
-#   dev/                    private plans and drafts (preserved here)
-$BlockedPaths = [Collections.Generic.List[string]]::new()
+# Discover initialized submodules recursively. Each index protects its source
+# files; a parent's index contains just the gitlink for each child repository.
+$Repositories = [Collections.Generic.List[string]]::new()
+$Repositories.Add($Root)
+for ($Index = 0; $Index -lt $Repositories.Count; $Index++) {
+    $ParentRepository = $Repositories[$Index]
+    if (-not (Test-Path -LiteralPath (Join-Path $ParentRepository '.gitmodules'))) { continue }
+    $SubmodulePaths = @(& git -C $ParentRepository config --file .gitmodules --get-regexp '^submodule\..*\.path$')
+    if ($LASTEXITCODE -notin @(0, 1)) { throw "Cannot read submodules in $ParentRepository" }
+    foreach ($Entry in $SubmodulePaths) {
+        $Relative = ($Entry -split '\s+', 2)[1]
+        $Repository = [IO.Path]::GetFullPath((Join-Path $ParentRepository $Relative))
+        if (-not $Repository.StartsWith($RootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Submodule outside workspace: $Repository"
+        }
+        if ((Test-Path -LiteralPath (Join-Path $Repository '.git')) -and -not $Repositories.Contains($Repository)) {
+            $Repositories.Add($Repository)
+        }
+    }
+}
 
+# Current and old local releases are disposable, just like assembly trees.
+# dev/ is local scratch work, not a source or archive directory.
 $GeneratedRoots = @(
-    (Join-Path $Root 'build'),
-    (Join-Path $Root '.wrangler'),
-    (Join-Path $Root 'mcp_captures'),
-    (Join-Path $Root 'packaging\runtime'),
-    (Join-Path $Root 'packaging\Nuitka'),
-    (Join-Path $Root 'packaging\nuitka-crash-report.xml'),
-    (Join-Path $Root 'python\Infernux.egg-info'),
-    (Join-Path $Root 'pytest_run.log'),
-    (Join-Path $Root '.pytest_cache'),
-    (Join-Path $Root '__pycache__')
+    'out', 'build', 'dist', 'dev', 'Library', 'mcp_captures',
+    'packaging/runtime', 'packaging/Nuitka', 'packaging/_vendor',
+    'packaging/InfernuxHubData', 'packaging/nuitka-crash-report.xml',
+    'python/Infernux.egg-info', 'python/Infernux/_runtime_packs',
+    'python/Infernux/_runtime_modules', 'python/Infernux/resources/player_runtime'
 )
-foreach ($GeneratedRoot in $GeneratedRoots) {
-    try {
-        Remove-GeneratedPath $GeneratedRoot
-    } catch [UnauthorizedAccessException] {
-        $BlockedPaths.Add([IO.Path]::GetFullPath($GeneratedRoot))
-    }
+foreach ($Relative in $GeneratedRoots) {
+    Remove-GeneratedPath $Root $Relative
 }
 
-$CacheScanExcludedPrefixes = @(
-    ((Join-Path $Root 'out').TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar),
-    ((Join-Path $Root 'dist').TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar)
-)
-$PythonCaches = @(
-    Get-ChildItem -LiteralPath $Root -Directory -Recurse -Force -Filter '__pycache__' -ErrorAction SilentlyContinue |
-        Where-Object {
-            $Candidate = [IO.Path]::GetFullPath($_.FullName)
-            -not ($CacheScanExcludedPrefixes | Where-Object {
-                $Candidate.StartsWith($_, [StringComparison]::OrdinalIgnoreCase)
-            })
-        }
-)
-foreach ($PythonCache in $PythonCaches) {
-    try {
-        Remove-GeneratedPath $PythonCache.FullName
-    } catch [UnauthorizedAccessException] {
-        $BlockedPaths.Add([IO.Path]::GetFullPath($PythonCache.FullName))
-    }
-}
-
-# Remove out/ one direct child at a time. This still clears all ordinary output
-# if a single stale test directory has a broken Windows ACL.
-$OutRoot = Join-Path $Root 'out'
-Get-ChildItem -LiteralPath $OutRoot -Force -ErrorAction SilentlyContinue |
-    ForEach-Object {
-        $ChildPath = $_.FullName
-        try {
-            Remove-GeneratedPath $ChildPath
-        } catch [UnauthorizedAccessException] {
-            $BlockedPaths.Add([IO.Path]::GetFullPath($ChildPath))
+foreach ($Repository in $Repositories) {
+    # Git enumerates ignored output without descending into .git. Do not use a
+    # blanket git clean: editor settings and local release tools are not outputs.
+    $Ignored = @(Get-GitPaths $Repository @('ls-files', '--others', '--ignored', '--exclude-standard', '--directory'))
+    foreach ($Relative in $Ignored) {
+        $Path = $Relative.Replace('\', '/')
+        $GeneratedDirectory = $Path -match '(^|/)(out|build|dist|__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache|\.gradle|node_modules|\.wrangler|CMakeFiles)(/|$)'
+        $GeneratedDirectory = $GeneratedDirectory -or $Path -match '(^|/)[^/]+\.(egg-info|build|dist|onefile-build)(/|$)'
+        $GeneratedDirectory = $GeneratedDirectory -or $Path -match '(^|/)(cmake-build-[^/]+|[^/]*_InxBuild|[^/]*_InfBuild)(/|$)'
+        $PluginPayload = $Path -match '^package/editor/infernux_[^/]+/(player|tools)(/|$)'
+        $CompilerPayload = $Path -match '^package/runtime/infernux_taichi(/|$)'
+        $FixtureOutput = $Repository -eq $Root -and $Path -match '^tests/fixtures/[^/]+/(Cache|Library|Logs|\.runtime)(/|$)'
+        $GeneratedFile = $Path -match '\.(pyc|pyo|dll|pyd|so(?:\.\d+)*|dylib|lib|pdb|o|obj|whl|inxpkg|log|tmp|bak|orig|meta)$'
+        if ($GeneratedDirectory -or $PluginPayload -or $CompilerPayload -or $FixtureOutput -or $GeneratedFile) {
+            Remove-GeneratedPath $Repository $Relative
         }
     }
-if ((Test-Path -LiteralPath $OutRoot) -and -not (Get-ChildItem -LiteralPath $OutRoot -Force -ErrorAction SilentlyContinue)) {
-    Remove-GeneratedPath $OutRoot
 }
 
-# Project fixtures retain authored Assets/Packages/ProjectSettings only. Runtime
-# caches and logs are recreated by each acceptance run and must not accumulate
-# beside the fixture source.
-$FixtureRoot = Join-Path $Root 'tests\fixtures'
-Get-ChildItem -LiteralPath $FixtureRoot -Directory -Force -ErrorAction SilentlyContinue |
-    ForEach-Object {
-        $Fixture = $_.FullName
-        foreach ($GeneratedName in @('Cache', 'Library', 'Logs', '.runtime')) {
-            Remove-GeneratedPath (Join-Path $Fixture $GeneratedName)
-        }
-    }
-
-$LegacyDistEntries = @(
-    (Join-Path $Root 'dist\release'),
-    (Join-Path $Root 'dist\Infernux Hub'),
-    (Join-Path $Root 'dist\installer')
-)
-foreach ($LegacyEntry in $LegacyDistEntries) {
-    try {
-        Remove-GeneratedPath $LegacyEntry
-    } catch [UnauthorizedAccessException] {
-        $BlockedPaths.Add([IO.Path]::GetFullPath($LegacyEntry))
-    }
+if ($WhatIfPreference) {
+    Write-Host 'Cleanup preview complete. No files were deleted.'
+} else {
+    Write-Host ("Deleted {0} generated paths ({1:N1} MiB). No local release archives were retained." -f $RemovedCount, ($RemovedBytes / 1MB))
 }
-
-Get-ChildItem -LiteralPath (Join-Path $Root 'dist') -Force -ErrorAction SilentlyContinue |
-    Where-Object { -not $_.PSIsContainer -and $_.Extension -in @('.whl', '.tmp') } |
-    ForEach-Object { Remove-GeneratedPath $_.FullName }
-
-Get-ChildItem -LiteralPath (Join-Path $Root 'dist') -Directory -Force -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name.StartsWith('.tmp-', [StringComparison]::OrdinalIgnoreCase) } |
-    ForEach-Object { Remove-GeneratedPath $_.FullName }
-
-if ($BlockedPaths.Count -gt 0) {
-    $BlockedList = $BlockedPaths -join ', '
-    throw "Workspace cleanup completed except for paths with broken access control: $BlockedList"
-}
-
-Write-Host 'Workspace outputs cleaned. dist/releases and dev were preserved.' -ForegroundColor Green

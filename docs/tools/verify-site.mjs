@@ -64,9 +64,6 @@ const readmeVersionContracts = [
     ["README-zh.md", `version = {${currentVersion}}`],
 ];
 const packageVersionContracts = [
-    ["packaging/windows_version_info.txt", `'${packageVersion}.0'`],
-    ["packaging/windows_version_info.txt", `filevers=(${packageVersion.replaceAll(".", ", ")}, 0)`],
-    ["packaging/windows_version_info.txt", `prodvers=(${packageVersion.replaceAll(".", ", ")}, 0)`],
     ["cpp/infernux/tools/launcher/InfernuxPlayerLauncher.rc", `"${packageVersion}.0"`],
     ["cpp/infernux/tools/launcher/InfernuxPlayerLauncher.rc", `FILEVERSION ${packageVersion.replaceAll(".", ",")},0`],
     ["cpp/infernux/tools/launcher/InfernuxPlayerLauncher.rc", `PRODUCTVERSION ${packageVersion.replaceAll(".", ",")},0`],

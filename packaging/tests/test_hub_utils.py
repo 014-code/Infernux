@@ -5,28 +5,32 @@ import hub_utils
 import pytest
 
 
-def test_is_frozen_detects_pyinstaller(monkeypatch):
-    monkeypatch.setattr(sys, "frozen", True, raising=False)
-
-    assert hub_utils.is_frozen() is True
-
-
-def test_is_frozen_detects_nuitka_marker_on_main_module(monkeypatch):
-    monkeypatch.delattr(sys, "frozen", raising=False)
+@pytest.mark.parametrize("marker", ["source", "module", "main"])
+def test_launch_paths_and_child_cache_share_one_context(monkeypatch, tmp_path, marker):
     monkeypatch.delitem(hub_utils.__dict__, "__compiled__", raising=False)
-    main_module = sys.modules["__main__"]
-    monkeypatch.setattr(main_module, "__compiled__", object(), raising=False)
+    monkeypatch.delattr(sys.modules["__main__"], "__compiled__", raising=False)
+    if marker == "module":
+        monkeypatch.setitem(hub_utils.__dict__, "__compiled__", object())
+    elif marker == "main":
+        monkeypatch.setattr(sys.modules["__main__"], "__compiled__", object(), raising=False)
+    monkeypatch.setattr(hub_utils, "__file__", str(tmp_path / "source/packaging/hub_utils.py"))
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "installed/Hub.exe"))
+    for variable in ("PIP_CACHE_DIR", "INFERNUX_SHARED_DATA_ROOT", "INFERNUX_PACKAGE_CACHE_ROOT"):
+        monkeypatch.delenv(variable, raising=False)
+    expected = tmp_path / ("source/packaging" if marker == "source" else "installed")
+    shared = expected / "InfernuxHubData/Shared"
 
-    assert hub_utils.is_frozen() is True
-
-
-def test_is_frozen_is_false_for_source_python(monkeypatch):
-    monkeypatch.delattr(sys, "frozen", raising=False)
-    monkeypatch.delitem(hub_utils.__dict__, "__compiled__", raising=False)
-    main_module = sys.modules["__main__"]
-    monkeypatch.delattr(main_module, "__compiled__", raising=False)
-
-    assert hub_utils.is_frozen() is False
+    assert hub_utils.is_frozen() == (marker != "source")
+    assert hub_utils.HubLaunchContext.current().uses_installed_versions == (marker != "source")
+    assert hub_utils.get_bundle_dir() == str(expected)
+    assert hub_utils.get_app_dir() == str(expected)
+    assert hub_utils.get_hub_shared_data_dir() == str(shared)
+    child = hub_utils.merge_child_env_utf8()
+    assert child["INFERNUX_SHARED_DATA_ROOT"] == str(shared)
+    assert child["INFERNUX_PACKAGE_CACHE_ROOT"] == str(shared / "Library/Plugins")
+    assert child["PIP_CACHE_DIR"] == str(shared / "Cache/Python/Pip")
+    assert "PIP_CACHE_DIR" not in os.environ
+    assert "INFERNUX_SHARED_DATA_ROOT" not in os.environ
 
 
 def test_child_environment_owns_the_shared_package_cache(monkeypatch, tmp_path):
@@ -52,21 +56,6 @@ def test_explicit_package_cache_override_survives_hub_launch(monkeypatch, tmp_pa
     merged = hub_utils.merge_child_env_utf8()
 
     assert merged["INFERNUX_PACKAGE_CACHE_ROOT"] == explicit
-
-
-@pytest.mark.parametrize("frozen", [False, True])
-def test_pip_cache_is_shared_by_source_and_installed_hub(monkeypatch, tmp_path, frozen):
-    monkeypatch.setattr(hub_utils, "is_frozen", lambda: frozen)
-    monkeypatch.setattr(hub_utils, "__file__", str(tmp_path / "source/packaging/hub_utils.py"))
-    monkeypatch.setattr(hub_utils.sys, "executable", str(tmp_path / "installed/Hub.exe"))
-    monkeypatch.delenv("PIP_CACHE_DIR", raising=False)
-    monkeypatch.delenv("INFERNUX_SHARED_DATA_ROOT", raising=False)
-    expected = tmp_path / ("installed" if frozen else "source/packaging")
-
-    merged = hub_utils.merge_child_env_utf8()
-
-    assert merged["PIP_CACHE_DIR"] == os.path.join(str(expected), "InfernuxHubData", "Shared", "Cache", "Python", "Pip")
-    assert "PIP_CACHE_DIR" not in os.environ
 
 
 def test_explicit_pip_cache_is_preserved(monkeypatch, tmp_path):
@@ -112,18 +101,6 @@ def test_explicit_hub_data_root_owns_every_child_launch(monkeypatch, tmp_path):
     assert merged["INFERNUX_PACKAGE_CACHE_ROOT"] == os.path.join(
         str(tmp_path / "shared"), "Library", "Plugins"
     )
-
-
-@pytest.mark.parametrize("frozen", [False, True])
-def test_shared_root_uses_source_or_installed_hub_location(tmp_path, monkeypatch, frozen):
-    monkeypatch.delenv("INFERNUX_SHARED_DATA_ROOT", raising=False)
-    monkeypatch.setattr(hub_utils, "is_frozen", lambda: frozen)
-    monkeypatch.setattr(hub_utils, "__file__", str(tmp_path / "source/packaging/hub_utils.py"))
-    monkeypatch.setattr(hub_utils.sys, "executable", str(tmp_path / "installed/Hub.exe"))
-    expected = tmp_path / ("installed" if frozen else "source/packaging") / "InfernuxHubData/Shared"
-    assert hub_utils.get_hub_shared_data_dir() == str(expected)
-    child = hub_utils.merge_child_env_utf8()
-    assert child["INFERNUX_SHARED_DATA_ROOT"] == str(expected)
 
 
 def test_explicit_shared_root_is_propagated_to_children(tmp_path, monkeypatch):

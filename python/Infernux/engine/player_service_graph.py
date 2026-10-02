@@ -409,14 +409,6 @@ _SERVICE_SPECS = (
         authoring=True,
     ),
     RuntimeServiceSpec(
-        "editor_script_compiler",
-        "Infernux/engine/script_compiler.pyc",
-        dependencies=("editor_resources",),
-        flavors=frozenset({RuntimeFlavor.EDITOR_DEVELOPMENT}),
-        retention_reason="authoring script revision compiler",
-        authoring=True,
-    ),
-    RuntimeServiceSpec(
         "editor_selection",
         "Infernux/engine/interaction/selection.pyc",
         dependencies=("engine",),

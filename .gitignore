@@ -9,9 +9,8 @@
 /tests/fixtures/*/Logs/
 /tests/fixtures/*/.runtime/
 /packaging/runtime/
-/packaging/InfernuxHubData/Shared/
-# Local development plans, probes, and validation logs are intentionally kept
-# outside version control. The working copy remains available to the developer.
+/packaging/InfernuxHubData/
+# Local scratch work is outside version control and removed by workspace cleanup.
 /dev/
 /mcp_captures/
 /packaging/_vendor/

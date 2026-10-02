@@ -1,24 +1,6 @@
 from __future__ import annotations
 
-import copy
-
 import pytest
-
-
-def _manifest_document(flavor, features):
-    from Infernux.engine.player_service_graph import (
-        PLAYER_MANIFEST_SCHEMA,
-        player_manifest_service_section,
-        runtime_policy_for,
-    )
-
-    return {
-        "$schema": PLAYER_MANIFEST_SCHEMA,
-        "product": {"flavor": flavor.value},
-        "features": features.to_manifest(),
-        "runtime_policy": runtime_policy_for(flavor).to_manifest(),
-        "services": player_manifest_service_section(flavor, features),
-    }
 
 
 def _asset_documents(scene_path="Assets/Scenes/Main.scene"):
@@ -61,94 +43,6 @@ def test_runtime_catalog_owner_rejects_invalid_asset_relationships(tmp_path, inv
         catalog["artifacts"][0]["runtime_path"] = "../outside.scene"
     with pytest.raises(RuntimeError):
         PlayerRuntimeAssetCatalog.from_documents(str(tmp_path), catalog, records)
-
-
-def test_runtime_service_graph_is_authoritative_for_all_products():
-    from Infernux.engine.player_service_graph import (
-        RuntimeFeatureSet,
-        RuntimeFlavor,
-        runtime_service_graph_for,
-    )
-
-    editor = runtime_service_graph_for(RuntimeFlavor.EDITOR_DEVELOPMENT)
-    assert editor.contains("editor_resources")
-    assert editor.contains("editor_script_compiler")
-    assert editor.contains("editor_selection")
-    assert editor.contains("editor_undo")
-    assert not editor.contains("player_runtime_session")
-
-    release = runtime_service_graph_for(RuntimeFlavor.PLAYER_RELEASE)
-    assert release.contains("player_runtime_session")
-    assert not release.contains("editor_resources")
-    assert not release.contains("player_control_debug")
-    assert not release.contains("jit_runtime_support")
-    assert not release.contains("parallel_module")
-
-    debug = runtime_service_graph_for(RuntimeFlavor.PLAYER_DEBUG)
-    assert debug.contains("player_control_debug")
-
-    accelerated = runtime_service_graph_for(
-        RuntimeFlavor.PLAYER_RELEASE,
-        RuntimeFeatureSet(
-            jit=True,
-            parallel=True,
-            optional_subsystems=("splash",),
-        ),
-    )
-    assert accelerated.contains("jit_runtime_support")
-    assert accelerated.contains("parallel_module")
-    assert accelerated.contains("splash_player")
-
-
-def test_parallel_feature_requires_jit():
-    from Infernux.engine.player_service_graph import RuntimeFeatureSet
-
-    with pytest.raises(ValueError, match="requires the JIT"):
-        RuntimeFeatureSet(parallel=True)
-    with pytest.raises(ValueError, match="unknown runtime subsystems"):
-        RuntimeFeatureSet(optional_subsystems=("editor_preview",))
-
-
-def test_runtime_manifest_rejects_any_service_graph_drift():
-    from Infernux.engine.player_service_graph import (
-        RuntimeFeatureSet,
-        RuntimeFlavor,
-        RuntimeProductManifest,
-    )
-
-    document = _manifest_document(
-        RuntimeFlavor.PLAYER_RELEASE,
-        RuntimeFeatureSet(),
-    )
-    manifest = RuntimeProductManifest.from_document(document)
-    assert manifest.flavor is RuntimeFlavor.PLAYER_RELEASE
-    assert manifest.require_service("player_runtime_session").authoring is False
-
-    drifted = copy.deepcopy(document)
-    drifted["services"]["graph"][0]["module"] = "Infernux/engine/undo/_manager.pyc"
-    with pytest.raises(RuntimeError, match="authoritative runtime product graph"):
-        RuntimeProductManifest.from_document(drifted)
-
-    release_with_control = copy.deepcopy(document)
-    release_with_control["services"]["declared"].append("player_control_debug")
-    with pytest.raises(RuntimeError, match="declared-service"):
-        RuntimeProductManifest.from_document(release_with_control)
-
-
-def test_runtime_manifest_rejects_scattered_policy_override():
-    from Infernux.engine.player_service_graph import (
-        RuntimeFeatureSet,
-        RuntimeFlavor,
-        RuntimeProductManifest,
-    )
-
-    document = _manifest_document(
-        RuntimeFlavor.PLAYER_RELEASE,
-        RuntimeFeatureSet(),
-    )
-    document["runtime_policy"]["profiling"] = "available"
-    with pytest.raises(RuntimeError, match="runtime policy"):
-        RuntimeProductManifest.from_document(document)
 
 
 def test_runtime_asset_catalog_never_falls_back_to_source_discovery(tmp_path):

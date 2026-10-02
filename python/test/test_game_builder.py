@@ -7389,7 +7389,6 @@ class TestGameBuilderDependencyCollection:
         assert "Infernux.engine.scene_document_transaction" in editor_modules
         assert "Infernux.engine.resources_manager" in editor_modules
         assert "Infernux.engine.import_coordinator" in editor_modules
-        assert "Infernux.engine.script_compiler" in editor_modules
         expected_authoring_modules = {
             path[:-4].replace("/", ".")
             for path in forbidden_player_service_modules()
@@ -7408,9 +7407,6 @@ class TestGameBuilderDependencyCollection:
         )
         assert NuitkaBuilder._is_player_runtime_excluded_source(
             "engine/import_coordinator.py"
-        )
-        assert NuitkaBuilder._is_player_runtime_excluded_source(
-            "engine/script_compiler.py"
         )
         assert NuitkaBuilder._is_player_runtime_excluded_source(
             "engine/_bootstrap_panels.py"

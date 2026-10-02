@@ -40,11 +40,13 @@ Generated files have one canonical home:
 - `out/build/<preset>/` contains CMake configure and build trees.
 - `out/stage/<preset>/` contains disposable wheel and Hub assembly trees; verified wheels, Hub update archives, and installers are written to `dist/releases/<version>/`.
 - `dist/releases/<version>/` contains final, upload-ready release assets only.
-- `dev/` contains private plans and drafts; it is not a build-output directory.
+- `dev/` contains disposable local scratch work. Keep lasting documentation in version control.
 
 Do not create new top-level `build-*`, `release-*`, or package-output directories.
 Run `./scripts/maintenance/clean_workspace.ps1` from PowerShell to remove all
-disposable output while preserving `dist/releases` and `dev`. Repository-level
+generated output, including all local releases, scratch work, native staging,
+plugin payloads, dependency build trees, and caches. Use `-WhatIf` to inspect
+the paths first. Tracked source files are protected. Repository-level
 automation is indexed in `scripts/README.md`; website-only tools remain under
 `docs/tools/`.
 

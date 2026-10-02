@@ -15,6 +15,9 @@ All paths below are pytest modules. Run one with `python -m pytest PATH -q -ra`.
 | Critical workflow | Owning regression modules | Execution lane |
 | --- | --- | --- |
 | Hub project creation, validation and Python binding | `packaging/tests/test_hub_project_workflow.py`, `packaging/tests/test_project_python_runtime.py`, `packaging/tests/test_hub_new_project_python_binding.py` | Portable Hub; full desktop CI |
+| Source/installed Hub paths and onefile Installer resources | `packaging/tests/test_hub_utils.py`, `packaging/tests/test_bundle_resources.py` | Portable Hub; full desktop CI |
+| Generated-output cleanup, tracked-file and link protection | `packaging/tests/test_workspace_cleanup.py` | Disposable repositories; PowerShell 7 and Git required |
+| Editor/Player service graph, source-module ownership and manifest policy | `tests/contracts/test_runtime_product_contract.py` | Portable contracts; no native engine required |
 | Hub launch readiness, errors and repeated launch | `packaging/tests/test_hub_launch_state.py`, `packaging/tests/test_project_runtime_strictness.py` | Portable Hub; full desktop CI |
 | Host-specific wheel delivery and refresh | `packaging/tests/test_hub_release.py`, `packaging/tests/test_project_wheel_refresh.py` | Full Hub CI; real download check before release |
 | Scene activation, defaults and Play/Stop transitions | `python/test/test_scene_manager_runtime_loading.py`, `python/test/test_scene_manager_defaults.py`, `python/test/test_engine_play_mode.py` | Native Python; visible editor acceptance |
@@ -39,20 +42,32 @@ equivalent is:
 
 ```sh
 python -m pip install pytest PySide6 packaging
-python -m pytest packaging/tests/test_hub_project_workflow.py packaging/tests/test_project_python_runtime.py packaging/tests/test_hub_new_project_python_binding.py packaging/tests/test_hub_launch_state.py packaging/tests/test_project_runtime_strictness.py packaging/tests/test_regression_guide.py packaging/tests/test_cpu_jit_dependency_packaging.py -q -ra
+python -m pytest packaging/tests/test_hub_project_workflow.py packaging/tests/test_project_python_runtime.py packaging/tests/test_hub_new_project_python_binding.py packaging/tests/test_hub_launch_state.py packaging/tests/test_project_runtime_strictness.py packaging/tests/test_regression_guide.py packaging/tests/test_cpu_jit_dependency_packaging.py packaging/tests/test_hub_utils.py packaging/tests/test_bundle_resources.py packaging/tests/test_workspace_cleanup.py tests/contracts -q -ra
 ```
 
 For a session without a display, set `QT_QPA_PLATFORM=offscreen` first
 (`$env:QT_QPA_PLATFORM = 'offscreen'` in PowerShell,
 `export QT_QPA_PLATFORM=offscreen` in Bash). These tests use temporary projects and
 controlled launch workers; they do not download an engine or launch a real Editor.
-No skips are expected in this selected lane on Windows x64 or Linux x64.
+No skips are expected in this selected lane on the Windows/Linux GitHub runners.
+Cleanup tests require PowerShell 7 (`pwsh`) and Git; locally they report a skip
+if PowerShell is unavailable. They delete only fixtures in temporary repositories,
+never files in the working checkout.
 On minimal Ubuntu/Debian hosts, Qt still needs its shared libraries even in
 offscreen mode: run `sudo apt-get update` and then
 `sudo apt-get install --yes --no-install-recommends libegl1 libopengl0 libgl1`.
 This does not install or build the Infernux native renderer.
 `test_regression_guide.py` checks that mapped modules exist and the documented
 portable command stays synchronized with CI.
+
+Pure runtime contracts can also be run alone with
+`python -m pytest tests/contracts -q -ra`. They execute the actual source under a
+private package namespace, so they neither initialize Vulkan nor replace the
+`Infernux` package in native tests. Scene activation and runtime integration
+remain in `python/test/test_player_service_graph.py` and require the native engine.
+
+Hub imports are configured once in `packaging/tests/conftest.py`; individual
+Hub modules must pass without relying on another test's collection order.
 
 The broader Hub suite is `python -m pytest packaging/tests -q -ra`.
 Platform-specific UI/installer tests may skip on the other OS; `-ra` prints each
