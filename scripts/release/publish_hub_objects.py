@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
 import urllib.parse
+import urllib.error
 import urllib.request
 from pathlib import Path
 import sys
@@ -63,6 +65,11 @@ class Publisher:
         return result
 
     def upload(self, source: Path, key: str) -> None:
+        with source.open('rb') as stream:
+            digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+        if self._verify_public_object(key, digest, allow_missing=True):
+            print(f"Already published identical object: {key}")
+            return
         is_json = source.suffix == ".json"
         started = self._request(
             "POST",
@@ -101,17 +108,37 @@ class Publisher:
         expected = source.stat().st_size
         if actual != expected:
             raise RuntimeError(f"Published object size mismatch for {key}: {actual} != {expected}")
+        self._verify_public_object(key, digest, allow_missing=False)
         print(f"Published {key} ({actual:,} bytes)")
+
+    def _verify_public_object(self, key: str, expected: str, *, allow_missing: bool) -> bool:
+        request = urllib.request.Request(
+            f"{PUBLIC_ENDPOINT}/{urllib.parse.quote(key, safe='/')}",
+            headers={'User-Agent': 'Infernux-Release-Publisher', 'Cache-Control': 'no-cache'},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=600) as response:
+                actual = hashlib.file_digest(response, 'sha256').hexdigest()
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404 and allow_missing:
+                return False
+            raise
+        if actual != expected:
+            raise RuntimeError(f'Immutable published object differs: {key}; use a new build number')
+        return True
 
 
 def publish(release_dir: Path, version: str, build_number: int, token: str) -> None:
     if build_number < 1:
         raise ValueError("Wheel build number must be positive")
-    publisher = Publisher(token)
-    for name in release_assets(hub_version_for(version, build_number)):
+    names = release_assets(hub_version_for(version, build_number))
+    for name in names:
         source = release_dir / name
         if not source.is_file() or source.stat().st_size == 0:
             raise FileNotFoundError(f"Hub release asset is missing: {source}")
+    publisher = Publisher(token)
+    for name in names:
+        source = release_dir / name
         key = f"hub/{version}/build-{build_number}/{name}"
         publisher.upload(source, key)
 

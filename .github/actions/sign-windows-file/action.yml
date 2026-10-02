@@ -1,0 +1,78 @@
+name: Sign and verify one Infernux executable
+description: Submit an origin-verifiable build artifact and replace it only after verification
+inputs:
+  file:
+    required: true
+    description: Exact unsigned executable path
+  kind:
+    required: true
+    description: hub or installer
+  policy:
+    required: true
+    description: test-signing or release-signing
+  api-token:
+    required: true
+    description: SignPath CI submitter token
+  certificate-thumbprint:
+    required: true
+    description: Expected certificate thumbprint from SignPath
+  product-version:
+    required: true
+    description: Four-component Windows product version
+  hub-version:
+    required: true
+    description: Hub release identity
+runs:
+  using: composite
+  steps:
+    - name: Check signing prerequisites
+      shell: pwsh
+      env:
+        TOKEN: ${{ inputs.api-token }}
+        CERTIFICATE: ${{ inputs.certificate-thumbprint }}
+        POLICY: ${{ inputs.policy }}
+        KIND: ${{ inputs.kind }}
+      run: |
+        if (-not $env:TOKEN) { throw 'SIGNPATH_API_TOKEN is not configured.' }
+        if ($env:CERTIFICATE -notmatch '^[0-9A-Fa-f]{40}$') { throw 'Configure the SignPath certificate thumbprint repository variable.' }
+        if ($env:POLICY -notin @('test-signing', 'release-signing')) { throw 'Invalid signing policy.' }
+        if ($env:KIND -notin @('hub', 'installer')) { throw 'Invalid artifact kind.' }
+    - uses: actions/upload-artifact@v4
+      id: input
+      with:
+        name: signpath-${{ inputs.kind }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ inputs.file }}
+        if-no-files-found: error
+        retention-days: 7
+    - uses: signpath/github-action-submit-signing-request@c92b958760219087e01f8d67a1669ed57afe2627 # v2
+      with:
+        api-token: ${{ inputs.api-token }}
+        organization-id: a6c4508c-c43a-4faf-a209-f8198c94a171
+        project-slug: Infernux
+        signing-policy-slug: ${{ inputs.policy }}
+        artifact-configuration-slug: ${{ inputs.kind }}
+        github-artifact-id: ${{ steps.input.outputs.artifact-id }}
+        parameters: |
+          version: "${{ inputs.product-version }}"
+          hubVersion: "${{ inputs.hub-version }}"
+        wait-for-completion: true
+        wait-for-completion-timeout-in-seconds: 3600
+        output-artifact-directory: ${{ runner.temp }}/signpath-${{ inputs.kind }}-${{ github.run_attempt }}
+    - name: Verify before replacing the unsigned executable
+      shell: pwsh
+      env:
+        UNSIGNED_FILE: ${{ inputs.file }}
+        SIGNED_DIRECTORY: ${{ runner.temp }}/signpath-${{ inputs.kind }}-${{ github.run_attempt }}
+        CERTIFICATE: ${{ inputs.certificate-thumbprint }}
+        PRODUCT_VERSION: ${{ inputs.product-version }}
+        POLICY: ${{ inputs.policy }}
+      run: |
+        conda activate infernux
+        $original = Get-Item -LiteralPath $env:UNSIGNED_FILE
+        $files = @(Get-ChildItem -LiteralPath $env:SIGNED_DIRECTORY -Recurse -File)
+        if ($files.Count -ne 1 -or $files[0].Name -ne $original.Name) { throw 'Unexpected signed artifact inventory.' }
+        $signed = $files[0].FullName
+        python scripts/release/verify_signed_payload.py $original.FullName $signed
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        & scripts/release/verify_windows_signature.ps1 -Path $signed -Thumbprint $env:CERTIFICATE -ProductVersion $env:PRODUCT_VERSION -TestCertificate:($env:POLICY -eq 'test-signing')
+        Copy-Item -LiteralPath $signed -Destination $original.FullName -Force

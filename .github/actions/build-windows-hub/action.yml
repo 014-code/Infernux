@@ -1,0 +1,77 @@
+name: Build Windows Hub inside out
+description: Build Hub, optionally sign it, embed it in the installer, then sign the installer
+inputs:
+  signing:
+    default: none
+    description: none, test-signing, or release-signing
+  api-token:
+    default: ''
+    description: SignPath CI token
+  certificate-thumbprint:
+    default: ''
+    description: Exact certificate expected for the selected signing policy
+runs:
+  using: composite
+  steps:
+    - name: Resolve Hub build identity
+      id: identity
+      shell: pwsh
+      env:
+        SIGNING: ${{ inputs.signing }}
+        SIGNPATH_TOKEN: ${{ inputs.api-token }}
+        SIGNPATH_CERTIFICATE: ${{ inputs.certificate-thumbprint }}
+      run: |
+        if ($env:SIGNING -notin @('none', 'test-signing', 'release-signing')) { throw 'Invalid signing mode.' }
+        if ($env:SIGNING -eq 'release-signing' -and ($env:GITHUB_EVENT_NAME -ne 'workflow_dispatch' -or $env:GITHUB_REF -notin @('refs/heads/master', 'refs/heads/main'))) { throw 'Release signing requires a manual build of the release branch.' }
+        if ($env:SIGNING -ne 'none') {
+          if (-not $env:SIGNPATH_TOKEN) { throw 'SIGNPATH_API_TOKEN is not configured.' }
+          if ($env:SIGNPATH_CERTIFICATE -notmatch '^[0-9A-Fa-f]{40}$') { throw 'SignPath certificate thumbprint is not configured.' }
+        }
+        conda activate infernux
+        python -c "import os,sys; sys.path.insert(0,'packaging'); from hub_release import project_version,project_hub_version; from build_hub import _windows_file_version; v=project_hub_version(); print('version='+project_version()); print('hub_version='+v); print('product_version='+_windows_file_version(v))" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    - name: Build unsigned Hub and private Python runtime
+      shell: pwsh
+      run: |
+        conda activate infernux
+        python packaging/stage_bundled_python_runtime.py --dest-root out/stage/windows-msvc-release/runtime/python313
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        python packaging/build_hub.py --target hub --source-root . --build-dir out/build/windows-msvc-release/hub_build --package-dir out/stage/windows-msvc-release --cmake-generator "Visual Studio 17 2022"
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    - name: Sign Hub before embedding it
+      if: inputs.signing != 'none'
+      uses: ./.github/actions/sign-windows-file
+      with:
+        file: out/stage/windows-msvc-release/hub/Infernux Hub.exe
+        kind: hub
+        policy: ${{ inputs.signing }}
+        api-token: ${{ inputs.api-token }}
+        certificate-thumbprint: ${{ inputs.certificate-thumbprint }}
+        product-version: ${{ steps.identity.outputs.product_version }}
+        hub-version: ${{ steps.identity.outputs.hub_version }}
+    - name: Package the same Hub in both distribution formats
+      shell: pwsh
+      env:
+        VERSION: ${{ steps.identity.outputs.version }}
+        HUB_VERSION: ${{ steps.identity.outputs.hub_version }}
+      run: |
+        conda activate infernux
+        python packaging/hub_release.py --hub-dir out/stage/windows-msvc-release/hub --output-dir "dist/releases/$env:VERSION" --platform windows-x64
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        # Do not invoke infernux_hub_installer here: its dependency rebuilds Hub,
+        # replacing the signed executable with an unsigned one.
+        python packaging/build_hub.py --target installer --source-root . --build-dir out/build/windows-msvc-release/installer_build --package-dir out/stage/windows-msvc-release --release-dir "dist/releases/$env:VERSION" --cmake-generator "Visual Studio 17 2022"
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        python scripts/release/verify_hub_payloads.py --hub out/stage/windows-msvc-release/hub --update "dist/releases/$env:VERSION/InfernuxHub-$env:HUB_VERSION-windows-x64-full.zip" --installer-payload out/build/windows-msvc-release/installer_build/infernux-hub-payload.zip
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    - name: Sign the completed installer
+      if: inputs.signing != 'none'
+      uses: ./.github/actions/sign-windows-file
+      with:
+        file: dist/releases/${{ steps.identity.outputs.version }}/InfernuxHubInstaller-${{ steps.identity.outputs.hub_version }}-windows-x64.exe
+        kind: installer
+        policy: ${{ inputs.signing }}
+        api-token: ${{ inputs.api-token }}
+        certificate-thumbprint: ${{ inputs.certificate-thumbprint }}
+        product-version: ${{ steps.identity.outputs.product_version }}
+        hub-version: ${{ steps.identity.outputs.hub_version }}

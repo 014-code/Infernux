@@ -22,14 +22,80 @@ after its actual artifacts have been published.
    package; leaving it empty publishes all platform packages and then the registry.
    Every advertised package, including unchanged editor tools, must be available
    before the public registry is updated.
-4. Run **Publish Desktop Release Artifacts** with the successful desktop run ID.
-   For 0.4.1, leave `sign_windows_release=false`: SignPath approval is pending.
-   The release notes explicitly disclose unsigned Windows artifacts. A prewritten
-   draft requires `replace_existing_release=true`.
+4. Run **Publish Infernux Release** to build, test, and publish. Enable
+   `sign_windows_release` only after the release certificate is issued and the
+   configuration below is complete. For an already successful desktop build,
+   **Publish Desktop Release Artifacts** accepts its run ID and verifies its
+   signing state; it never retroactively signs or rebuilds those artifacts.
+   Unsigned releases are explicitly disclosed. A prewritten draft requires
+   `replace_existing_release=true`.
 5. The publisher uploads wheels to PyPI, Hub assets to GitHub/R2, publishes the
    release, and regenerates the website/catalogs from the actual published URLs.
    `build_release_notes.py` reads the English root changelog; `sync_release_site.py`
    updates the website's versioned history after publication.
+
+### Windows signing setup
+
+SignPath project `Infernux`, organization
+`a6c4508c-c43a-4faf-a209-f8198c94a171`, uses two artifact configurations:
+`hub` and `installer`. Their exact XML definitions are in `signpath/` beside
+this document. The GitHub artifact is a ZIP even when it contains one EXE.
+Both configurations restrict the executable name, product name `Infernux`,
+and Windows product version. They do not sign third-party DLLs or engine wheels.
+
+Repository configuration:
+
+- Secret `SIGNPATH_API_TOKEN`: the existing **CI builds** submitter's token.
+  Keep it out of source, logs, workflow inputs, and chat transcripts.
+- Variable `SIGNPATH_TEST_CERTIFICATE_THUMBPRINT`: the test certificate's SHA-1
+  thumbprint, copied from SignPath. This is a public certificate identifier,
+  not a signature algorithm selection.
+- Variable `SIGNPATH_RELEASE_CERTIFICATE_THUMBPRINT`: the issued release
+  certificate's SHA-1 thumbprint. Do not use the test certificate here.
+- The SignPath GitHub integration must be installed for this repository.
+  Preserve trusted build origin verification and manual release approval.
+
+First run **Test Windows Code Signing**. It builds only the Hub/installer,
+uses `test-signing`, and retains explicitly labelled test artifacts for seven
+days. It has no release, PyPI, R2 or catalog publishing step. On its disposable
+Windows runner only, verification temporarily trusts the exact pinned test
+certificate and removes that trust afterward. It never changes a user's trust
+store. Test signing must pass before enabling a signed public release.
+
+The shared build action uses this ordering:
+
+1. Build the Hub and submit it to SignPath.
+2. Verify the pinned certificate, timestamp, product metadata, and preservation
+   of the original executable bytes (except Authenticode header fields).
+3. Package this signed Hub into both the update ZIP and the installer input;
+   assert that both contain the identical executable. Do not rerun the CMake
+   installer target afterward: its dependencies rebuild the Hub.
+4. Build the installer, then submit and verify the installer signature.
+5. Upload the final distribution without further changes.
+
+The current release policy requires the maintainer to approve each of these
+two requests. Each request waits for up to one hour. A failure, denial or timeout
+stops the build; it does not silently fall back to an unsigned release. No
+automated step approves requests on behalf of the maintainer.
+
+Publication independently checks the actual installer and archived Hub on
+Windows. It rejects test signatures even if someone selects unsigned publishing.
+Only the latest attempt of a successful official desktop build is accepted;
+the one-click release may publish its own run after its prerequisite jobs pass.
+When recovering, rerun all source build jobs together, not just a failed job,
+so Windows and Linux artifacts have the same run-attempt identity.
+
+All channels consume the same final files. GitHub asset SHA-256 digests and
+PyPI wheel digests must match the local files. Existing PyPI filenames cannot
+silently hide different bytes behind `--skip-existing`. R2 uploads skip identical
+existing objects, reject different existing bytes, and verify the actual public
+download after uploading. Publication is serialized; do not run independent
+upload clients concurrently against the same keys. No existing public release
+is re-signed in place: bump the wheel build number for its signed successor.
+
+As of 2026-10-03, the release certificate is **CSR PENDING**. The test certificate
+is available; creating the integration does not itself issue the release
+certificate. Only SignPath can finish that external step.
 
 ### Upload service
 

@@ -77,7 +77,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends libegl1 libopengl0 libgl1
       - name: Install portable test dependencies
-        run: python -m pip install pytest PySide6 packaging
+        run: python -m pip install pytest PySide6 packaging PyYAML
       # Keep this focused list synchronized with TESTING.md.
       - name: Test critical Hub workflows without a native engine
         run: >-
@@ -89,6 +89,7 @@ jobs:
           packaging/tests/test_project_runtime_strictness.py
           packaging/tests/test_regression_guide.py
           packaging/tests/test_cpu_jit_dependency_packaging.py
+          packaging/tests/test_release_signing.py
           packaging/tests/test_hub_utils.py
           packaging/tests/test_bundle_resources.py
           packaging/tests/test_workspace_cleanup.py
@@ -103,7 +104,10 @@ jobs:
 
   windows-desktop:
     runs-on: windows-2022
-    timeout-minutes: 120
+    timeout-minutes: 240
+    permissions:
+      contents: read
+      actions: read
     env:
       VULKAN_SDK_VERSION: "1.3.296.0"
       SDL_AUDIODRIVER: dummy
@@ -146,7 +150,7 @@ jobs:
         shell: pwsh
         run: |
           conda activate infernux
-          python -m pip install --disable-pip-version-check -r requirements.txt
+          python -m pip install --disable-pip-version-check -r requirements.txt PyYAML
 
       - name: Build pinned Windows software Vulkan driver
         if: steps.cache-windows-swiftshader.outputs.cache-hit != 'true'
@@ -214,7 +218,7 @@ jobs:
           $env:PYTHONPATH = 'packaging'
           python -m pytest packaging\tests -q --junitxml out\test-results\pytest-hub-windows.xml
 
-      - name: Build Windows editor wheel and Hub distribution
+      - name: Build Windows editor wheel
         shell: pwsh
         run: |
           conda activate infernux
@@ -223,7 +227,14 @@ jobs:
           cmake --preset windows-msvc-release -U CMAKE_PROJECT_Infernux_INCLUDE
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cmake --build --preset windows-msvc-wheel
-          cmake --build --preset windows-hub-installer
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build and optionally sign the Windows Hub distribution
+        uses: ./.github/actions/build-windows-hub
+        with:
+          signing: ${{ inputs.sign_windows_release && 'release-signing' || 'none' }}
+          api-token: ${{ inputs.sign_windows_release && secrets.SIGNPATH_API_TOKEN || '' }}
+          certificate-thumbprint: ${{ vars.SIGNPATH_RELEASE_CERTIFICATE_THUMBPRINT }}
 
       - name: Upload Windows desktop distribution
         uses: actions/upload-artifact@v4
@@ -272,7 +283,7 @@ jobs:
         run: |
           conda activate infernux
           conda install --yes --channel conda-forge "libpython-static=3.13.15"
-          python -m pip install --disable-pip-version-check -r requirements.txt
+          python -m pip install --disable-pip-version-check -r requirements.txt PyYAML
 
       - name: Run Hub tests
         run: |

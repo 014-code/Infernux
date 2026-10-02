@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       sign_windows_release:
-        description: Request SignPath signing for Windows release artifacts
+        description: Require artifacts already signed with the release certificate during their build
         required: false
         type: boolean
         default: false
@@ -32,7 +32,7 @@ on:
   workflow_dispatch:
     inputs:
       sign_windows_release:
-        description: Request SignPath signing (requires approved service and signing token)
+        description: Require artifacts already signed with the release certificate during their build
         required: true
         type: boolean
         default: false
@@ -56,25 +56,67 @@ permissions:
   contents: write
   pages: write
 
+concurrency:
+  group: desktop-release-publication
+  cancel-in-progress: false
+
 jobs:
-  publish:
-    runs-on: ubuntu-22.04
+  verify:
+    runs-on: windows-2022
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+      branch: ${{ steps.source.outputs.branch }}
+      attempt: ${{ steps.source.outputs.attempt }}
     steps:
       - name: Resolve the source revision
         id: source
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ inputs.run_id }}
+        shell: pwsh
         run: |
-          source_sha="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}" --jq .head_sha)"
-          source_branch="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}" --jq .head_branch)"
-          test -n "$source_sha"
-          echo "sha=$source_sha" >> "$GITHUB_OUTPUT"
-          echo "branch=$source_branch" >> "$GITHUB_OUTPUT"
-
+          if ($env:RUN_ID -notmatch '^\d+$') { throw 'Invalid source run ID.' }
+          $source = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:RUN_ID" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($source.head_repository.full_name -ne $env:GITHUB_REPOSITORY -or $source.head_branch -notin @('master', 'main')) { throw 'Release source must be the official repository release branch.' }
+          if ($source.path -notin @('.github/workflows/ci.yml', '.github/workflows/release.yml') -or $source.event -notin @('push', 'workflow_dispatch')) { throw 'Release source must be a trusted desktop build workflow, not a PR or signing test.' }
+          if ($env:RUN_ID -ne $env:GITHUB_RUN_ID -and $source.conclusion -ne 'success') { throw 'The source build has not completed successfully.' }
+          if ($source.head_sha -notmatch '^[0-9a-f]{40}$') { throw 'Invalid source SHA.' }
+          "sha=$($source.head_sha)" >> $env:GITHUB_OUTPUT
+          "branch=$($source.head_branch)" >> $env:GITHUB_OUTPUT
+          "attempt=$($source.run_attempt)" >> $env:GITHUB_OUTPUT
       - uses: actions/checkout@v4
         with:
           ref: ${{ steps.source.outputs.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+          name: windows-desktop-distribution-${{ inputs.run_id }}-${{ steps.source.outputs.attempt }}
+          path: dist
+      - name: Verify the real Windows signing state before any publication
+        shell: pwsh
+        env:
+          REQUIRE_SIGNED: ${{ inputs.sign_windows_release }}
+          CERTIFICATE: ${{ vars.SIGNPATH_RELEASE_CERTIFICATE_THUMBPRINT }}
+        run: |
+          $identity = python -c "import json,sys; sys.path.insert(0,'packaging'); from hub_release import project_version,project_hub_version; from build_hub import _windows_file_version; v=project_hub_version(); print(json.dumps([project_version(),v,_windows_file_version(v)]))" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & scripts/release/verify_windows_distribution.ps1 -ReleaseDirectory "dist/$($identity[0])" -HubVersion $identity[1] -ProductVersion $identity[2] -Thumbprint $env:CERTIFICATE -Signed:($env:REQUIRE_SIGNED -eq 'true')
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
           fetch-depth: 0
 
       - uses: actions/setup-python@v5
@@ -119,7 +161,7 @@ jobs:
         with:
           run-id: ${{ inputs.run_id }}
           github-token: ${{ github.token }}
-          pattern: '*-desktop-distribution-${{ inputs.run_id }}-*'
+          pattern: '*-desktop-distribution-${{ inputs.run_id }}-${{ needs.verify.outputs.attempt }}'
           merge-multiple: true
           path: dist
 
@@ -180,57 +222,12 @@ jobs:
           print("Validated", len(expected), "desktop release assets")
           PY
 
-      - name: Upload the Windows release payload for SignPath
-        if: inputs.sign_windows_release
-        id: signpath_input
-        uses: actions/upload-artifact@v4
-        with:
-          name: infernux-${{ steps.release.outputs.version }}-signpath-input
-          path: |
-            dist/${{ steps.release.outputs.version }}/InfernuxHubInstaller-${{ steps.release.outputs.hub_version }}-windows-x64.exe
-            dist/${{ steps.release.outputs.version }}/InfernuxHub-${{ steps.release.outputs.hub_version }}-windows-x64-full.zip
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: Sign the Windows release payload through SignPath
-        if: inputs.sign_windows_release
-        uses: signpath/github-action-submit-signing-request@c92b958760219087e01f8d67a1669ed57afe2627 # v2
-        with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: a6c4508c-c43a-4faf-a209-f8198c94a171
-          project-slug: Infernux
-          signing-policy-slug: release-signing
-          github-artifact-id: ${{ steps.signpath_input.outputs.artifact-id }}
-          wait-for-completion: true
-          output-artifact-directory: dist/${{ steps.release.outputs.version }}/signpath-signed
-
-      - name: Promote the signed Windows release payload
-        if: inputs.sign_windows_release
-        env:
-          RELEASE_VERSION: ${{ steps.release.outputs.version }}
-          HUB_VERSION: ${{ steps.release.outputs.hub_version }}
-        run: |
-          release_dir="dist/$RELEASE_VERSION"
-          signed_dir="$release_dir/signpath-signed"
-          for name in \
-            "InfernuxHubInstaller-$HUB_VERSION-windows-x64.exe" \
-            "InfernuxHub-$HUB_VERSION-windows-x64-full.zip"
-          do
-            mapfile -t matches < <(find "$signed_dir" -type f -name "$name")
-            if [ "${#matches[@]}" -ne 1 ]; then
-              echo "Expected exactly one signed $name, found ${#matches[@]}." >&2
-              exit 1
-            fi
-            mv "${matches[0]}" "$release_dir/$name"
-          done
-          rm -rf "$signed_dir"
-
       - name: Create the release when needed
         id: github_release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
-          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          SOURCE_SHA: ${{ needs.verify.outputs.sha }}
           REPLACE_EXISTING: ${{ inputs.replace_existing_release }}
           SIGNED: ${{ inputs.sign_windows_release }}
         run: |
@@ -281,6 +278,15 @@ jobs:
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
         run: gh release upload "$RELEASE_TAG" "dist/$RELEASE_VERSION/"* --clobber --repo "$GITHUB_REPOSITORY"
 
+      - name: Verify GitHub assets and preflight immutable PyPI files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > dist/github-assets.json
+          python scripts/release/verify_publication.py --release-dir "dist/$RELEASE_VERSION" --github-json dist/github-assets.json --pypi-version "$RELEASE_VERSION" --allow-missing
+
       - name: Publish engine wheels to PyPI
         env:
           TWINE_USERNAME: __token__
@@ -290,6 +296,7 @@ jobs:
           python -m pip install --disable-pip-version-check twine
           python -m twine check "dist/$RELEASE_VERSION/"*.whl
           python -m twine upload --non-interactive --skip-existing "dist/$RELEASE_VERSION/"*.whl
+          python scripts/release/verify_publication.py --release-dir "dist/$RELEASE_VERSION" --pypi-version "$RELEASE_VERSION"
 
       - name: Publish Hub artifacts to Cloudflare R2
         env:
@@ -315,7 +322,7 @@ jobs:
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
           WHEEL_BUILD: ${{ steps.release.outputs.build }}
-          SOURCE_BRANCH: ${{ steps.source.outputs.branch }}
+          SOURCE_BRANCH: ${{ needs.verify.outputs.branch }}
         run: |
           published_at="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json publishedAt --jq .publishedAt)"
           if [ "$SOURCE_BRANCH" != "master" ] && [ "$SOURCE_BRANCH" != "main" ]; then

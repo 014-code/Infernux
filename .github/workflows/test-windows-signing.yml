@@ -1,0 +1,37 @@
+name: Test Windows Code Signing
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: test-windows-signing
+  cancel-in-progress: false
+jobs:
+  hub:
+    runs-on: windows-2022
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          activate-environment: infernux
+          python-version: '3.13'
+          auto-activate-base: false
+      - name: Install Hub build dependencies
+        shell: pwsh
+        run: |
+          conda activate infernux
+          python -m pip install 'nuitka[onefile]' PySide6 packaging zstandard ordered-set requests
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: ./.github/actions/build-windows-hub
+        with:
+          signing: test-signing
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          certificate-thumbprint: ${{ vars.SIGNPATH_TEST_CERTIFICATE_THUMBPRINT }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: test-signed-hub-NOT-FOR-RELEASE-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist/releases/
+          if-no-files-found: error
+          retention-days: 7

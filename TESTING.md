@@ -20,6 +20,7 @@ All paths below are pytest modules. Run one with `python -m pytest PATH -q -ra`.
 | Editor/Player service graph, source-module ownership and manifest policy | `tests/contracts/test_runtime_product_contract.py` | Portable contracts; no native engine required |
 | Hub launch readiness, errors and repeated launch | `packaging/tests/test_hub_launch_state.py`, `packaging/tests/test_project_runtime_strictness.py` | Portable Hub; full desktop CI |
 | Host-specific wheel delivery and refresh | `packaging/tests/test_hub_release.py`, `packaging/tests/test_project_wheel_refresh.py` | Full Hub CI; real download check before release |
+| Inside-out Windows signing and immutable publication | `packaging/tests/test_release_signing.py` | Portable Hub; real SignPath test workflow before signed releases |
 | Scene activation, defaults and Play/Stop transitions | `python/test/test_scene_manager_runtime_loading.py`, `python/test/test_scene_manager_defaults.py`, `python/test/test_engine_play_mode.py` | Native Python; visible editor acceptance |
 | Script refresh and transactional publication | `python/test/test_play_mode_component_body_reload.py`, `python/test/test_plugin_updates.py` | Native Python |
 | Asset loading, persistence and material state | `python/test/test_integration_asset_database.py`, `python/test/test_asset_persistence_races.py`, `python/test/test_material_render_state_authorship.py` | Native Python; visual acceptance |
@@ -41,8 +42,8 @@ Windows and Linux, before and independently of any native build. Its exact local
 equivalent is:
 
 ```sh
-python -m pip install pytest PySide6 packaging
-python -m pytest packaging/tests/test_hub_project_workflow.py packaging/tests/test_project_python_runtime.py packaging/tests/test_hub_new_project_python_binding.py packaging/tests/test_hub_launch_state.py packaging/tests/test_project_runtime_strictness.py packaging/tests/test_regression_guide.py packaging/tests/test_cpu_jit_dependency_packaging.py packaging/tests/test_hub_utils.py packaging/tests/test_bundle_resources.py packaging/tests/test_workspace_cleanup.py tests/contracts -q -ra
+python -m pip install pytest PySide6 packaging PyYAML
+python -m pytest packaging/tests/test_hub_project_workflow.py packaging/tests/test_project_python_runtime.py packaging/tests/test_hub_new_project_python_binding.py packaging/tests/test_hub_launch_state.py packaging/tests/test_project_runtime_strictness.py packaging/tests/test_regression_guide.py packaging/tests/test_cpu_jit_dependency_packaging.py packaging/tests/test_release_signing.py packaging/tests/test_hub_utils.py packaging/tests/test_bundle_resources.py packaging/tests/test_workspace_cleanup.py tests/contracts -q -ra
 ```
 
 For a session without a display, set `QT_QPA_PLATFORM=offscreen` first

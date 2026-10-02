@@ -25,9 +25,10 @@ def build_notes(root: Path, *, signed: bool) -> str:
     version = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
     english = release_block(root / "UpdateLog.md", version)
     notice = (
-        "The Windows Hub installer and full Hub archive have been signed through SignPath.\n\n" + SIGNING_CREDIT
+        "The Windows Hub executable (in both the installer and update archive) and the installer executable have been signed through SignPath. "
+        "This does not claim signatures on the ZIP container, engine wheels, or bundled third-party libraries.\n\n" + SIGNING_CREDIT
         if signed else
-        "**Windows signing: this release is unsigned.** SignPath approval is still pending; signing was explicitly disabled for this publication."
+        "**Windows signing: this release is unsigned.** Signing was explicitly disabled for this publication."
     )
     return f"{english}\n\n---\n\n### Windows code signing\n\n{notice}\n\n[Code signing policy]({SIGNING_POLICY})\n"
 
