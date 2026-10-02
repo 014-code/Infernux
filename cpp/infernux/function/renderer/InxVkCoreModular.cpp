@@ -908,6 +908,9 @@ void InxVkCoreModular::RecreateSwapchain()
 
     // Recreate depth resources
     CreateDepthResources();
+    // Only acknowledge the resize after the new presentation generation and
+    // its dependent resources are ready. Failed recreation must be retried.
+    m_framebufferResized = false;
 }
 
 void InxVkCoreModular::ReleaseMaterialPassResolutionCache() noexcept

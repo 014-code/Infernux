@@ -86,6 +86,25 @@ void InxVkCoreModular::DrawFrame(const float *viewPos, const float *viewLookAt, 
     auto _tNow = _t0;
 #endif
 
+    // The published SDL pixel size can reach zero before the old swapchain
+    // extent does. Keep the resize request pending until the window restores.
+    if (m_windowWidth == 0 || m_windowHeight == 0) {
+        SDL_Delay(16);
+        return;
+    }
+
+    // Do not rely on OUT_OF_DATE: a resized surface may remain SUBOPTIMAL,
+    // which presentation deliberately accepts for Android rotation support.
+    // Rebuild before acquire so GUI draw data uses the current pixel extent.
+    if (m_framebufferResized) {
+        SDL_Log("INFERNUX_SWAPCHAIN_RECREATE stage=resize requested=%ux%u", m_windowWidth, m_windowHeight);
+        RecreateSwapchain();
+        if (m_framebufferResized) {
+            SDL_Delay(16);
+            return;
+        }
+    }
+
     // Skip rendering when the window is minimized (zero extent).
     // Without this guard, vkAcquireNextImageKHR blocks indefinitely
     // because the swapchain has no presentable images at 0×0.
@@ -538,7 +557,6 @@ void InxVkCoreModular::DrawFrame(const float *viewPos, const float *viewLookAt, 
     } else if (result == vk::SwapchainResult::NeedRecreate || m_framebufferResized) {
         SDL_Log("INFERNUX_SWAPCHAIN_RECREATE stage=present result=%d framebuffer_resized=%d", static_cast<int>(result),
                 m_framebufferResized ? 1 : 0);
-        m_framebufferResized = false;
         RecreateSwapchain();
     }
 #if INFERNUX_FRAME_PROFILE
