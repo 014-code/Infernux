@@ -908,6 +908,11 @@ void InxVkCoreModular::RecreateSwapchain()
 
     // Recreate depth resources
     CreateDepthResources();
+    // Surface capabilities can still report the previous extent immediately
+    // after an SDL resize. A successful commit only acknowledges the resize
+    // once its actual extent matches the latest published framebuffer size;
+    // otherwise DrawFrame must retry even if SetWindowSize sees no new change.
+    m_framebufferResized = extent.width != m_windowWidth || extent.height != m_windowHeight;
 }
 
 void InxVkCoreModular::ReleaseMaterialPassResolutionCache() noexcept

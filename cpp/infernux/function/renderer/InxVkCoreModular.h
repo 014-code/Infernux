@@ -180,11 +180,15 @@ class InxVkCoreModular
      */
     void PreparePipeline();
 
-    /// @brief Set window size for swapchain extent fallback
+    /// @brief Publish the window pixel size and request swapchain recreation when it changes.
     void SetWindowSize(uint32_t width, uint32_t height)
     {
+        if (m_windowWidth == width && m_windowHeight == height)
+            return;
+
         m_windowWidth = width;
         m_windowHeight = height;
+        m_framebufferResized = true;
     }
 
     /// @brief Change the swapchain present mode and recreate the swapchain.
