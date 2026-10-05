@@ -82,6 +82,26 @@ def test_python_runtime_ca_certificate_is_validated_persisted_and_cleared(
     assert changed[-1] == ""
 
 
+def test_unresolvable_certificate_path_reports_the_load_error(tmp_path, monkeypatch):
+    database = _Database()
+    view = settings_view.SettingsView(database)
+    changed = []
+    view.runtime_ca_bundle_changed.connect(changed.append)
+
+    def _refuse_to_resolve(self, *args, **kwargs):
+        raise RuntimeError("Symlink loop from 'proxy-ca.pem'")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(settings_view.Path, "resolve", _refuse_to_resolve)
+        view.runtime_ca_bundle_edit.setText(str(tmp_path / "proxy-ca.pem"))
+        view._save_runtime_ca_bundle()
+
+    assert "could not be loaded" in view.runtime_ca_bundle_status.text()
+    assert "python_runtime_ca_bundle" not in database.settings
+    assert changed == []
+    assert view.runtime_ca_bundle_edit.text() == ""
+
+
 def test_settings_show_the_shared_plugin_library_and_cleanup_capacity(
     tmp_path, monkeypatch
 ):

@@ -207,7 +207,7 @@ _ZH = {
     "Project Created": "项目已创建",
     "Language": "语言",
     "Python runtime downloads": "Python 运行环境下载",
-    "Optional CA certificate for Python runtime downloads. It is added to the default trusted certificates.": "Python 运行环境下载可选的 CA 证书；该证书会追加到默认信任证书中。",
+    "Optional CA certificate for Python runtime downloads. PEM and DER certificates are supported, and the certificate is added to the default trusted certificates.": "Python 运行环境下载可选的 CA 证书；支持 PEM 与 DER 格式，该证书会追加到默认信任证书中。",
     "No custom certificate": "未设置自定义证书",
     "Python runtime download CA certificate": "Python 运行环境下载 CA 证书",
     "Browse": "浏览",

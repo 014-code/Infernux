@@ -132,7 +132,8 @@ class SettingsView(QWidget):
         network_hint = QLabel(
             tr(
                 "Optional CA certificate for Python runtime downloads. "
-                "It is added to the default trusted certificates."
+                "PEM and DER certificates are supported, and the certificate is "
+                "added to the default trusted certificates."
             )
         )
         network_hint.setObjectName("settingsDescription")
@@ -330,12 +331,16 @@ class SettingsView(QWidget):
     def _save_runtime_ca_bundle(self):
         raw_path = self.runtime_ca_bundle_edit.text().strip()
         if raw_path:
-            path = str(Path(raw_path).expanduser().resolve())
+            # Resolution belongs to the same guard as loading: expanduser() and
+            # resolve() can themselves fail (RuntimeError on a symlink loop, for
+            # example), and that must surface as the normal certificate error
+            # instead of escaping this UI handler.
             try:
+                path = str(Path(raw_path).expanduser().resolve())
                 if not Path(path).is_file():
                     raise FileNotFoundError(path)
                 create_download_ssl_context(path)
-            except (OSError, ValueError) as exc:
+            except (OSError, RuntimeError, ValueError) as exc:
                 self.runtime_ca_bundle_edit.setText(self._runtime_ca_bundle)
                 self.runtime_ca_bundle_status.setText(
                     tr("The certificate could not be loaded: {message}", message=str(exc))
@@ -361,7 +366,7 @@ class SettingsView(QWidget):
             if not Path(self._runtime_ca_bundle).is_file():
                 raise FileNotFoundError(self._runtime_ca_bundle)
             create_download_ssl_context(self._runtime_ca_bundle)
-        except (OSError, ValueError) as exc:
+        except (OSError, RuntimeError, ValueError) as exc:
             self.runtime_ca_bundle_status.setText(
                 tr("The certificate could not be loaded: {message}", message=str(exc))
             )

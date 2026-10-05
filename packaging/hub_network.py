@@ -9,11 +9,31 @@ import ssl
 import sys
 
 
+_PEM_HEADER = b"-----BEGIN "
+
+
+def load_ca_certificate(context: ssl.SSLContext, ca_file: str) -> None:
+    """Add the certificate file at ``ca_file`` to ``context`` as a trust root.
+
+    ``SSLContext.load_verify_locations`` only reads PEM through ``cafile``. A
+    ``.cer``/``.crt`` exported from the Windows certificate manager is usually
+    DER, so DER bytes go through ``cadata`` instead, which accepts a
+    concatenated chain as well. Both formats therefore work; a file that is
+    neither raises the normal certificate error (``SSLError`` or ``ValueError``)
+    rather than leaving the context silently without the extra trust root.
+    """
+    raw = Path(ca_file).read_bytes()
+    if _PEM_HEADER in raw:
+        context.load_verify_locations(cafile=str(ca_file))
+    else:
+        context.load_verify_locations(cadata=raw)
+
+
 def create_download_ssl_context(extra_ca_file: str | None = None) -> ssl.SSLContext:
     """Create a verified context and optionally add a user CA to its trust roots."""
     context = ssl.create_default_context()
     if extra_ca_file:
-        context.load_verify_locations(cafile=str(Path(extra_ca_file).expanduser()))
+        load_ca_certificate(context, str(Path(extra_ca_file).expanduser()))
     return context
 
 
