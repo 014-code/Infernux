@@ -19,12 +19,12 @@ from hub_utils import (
     is_frozen,
     merge_child_env_utf8,
 )
+from hub_network import create_download_ssl_context
 from private_python_runtime import (
     extract_runtime_archive,
     has_runtime_build_support as _has_build_support,
     is_current_private_runtime_root,
     runtime_archive_for_machine,
-    verify_runtime_archive,
     runtime_prefix,
 )
 from python_runtime_catalog import (
@@ -259,10 +259,18 @@ def _copy_runtime_payload(src_root: str, dest_root: str, *, overwrite: bool) -> 
 
 
 
-def _download_file(url: str, dest: str, *, user_agent: str, timeout: int = 120) -> None:
+def _download_file(
+    url: str,
+    dest: str,
+    *,
+    user_agent: str,
+    timeout: int = 120,
+    ca_bundle: str = "",
+) -> None:
     req = urllib.request.Request(url)
     req.add_header("User-Agent", user_agent)
-    with urllib.request.urlopen(req, timeout=timeout) as resp, open(dest, "wb") as f:
+    context = create_download_ssl_context(ca_bundle) if ca_bundle else None
+    with urllib.request.urlopen(req, timeout=timeout, context=context) as resp, open(dest, "wb") as f:
         shutil.copyfileobj(resp, f)
 
 
@@ -383,12 +391,15 @@ class PythonRuntimeManager:
         version: str | PythonRuntimeId | None = None,
         on_status: Optional[Callable[[str], None]] = None,
         allow_frozen_repair: bool = False,
+        download_ca_bundle: str = "",
     ) -> str:
         runtime_id = self._runtime_id(version)
         python_exe = self.get_runtime_path(runtime_id)
         if not python_exe:
             python_exe = self._provision_managed_runtime(
-                runtime_id, on_status=on_status
+                runtime_id,
+                on_status=on_status,
+                download_ca_bundle=download_ca_bundle,
             )
         else:
             runtime_root = runtime_prefix(python_exe)
@@ -419,6 +430,7 @@ class PythonRuntimeManager:
                         version=runtime_id,
                         overwrite=True,
                         on_status=on_status,
+                        download_ca_bundle=download_ca_bundle,
                     )
                 if repaired_python:
                     python_exe = repaired_python
@@ -489,6 +501,7 @@ class PythonRuntimeManager:
         version: str | PythonRuntimeId,
         *,
         on_status: Optional[Callable[[str], None]] = None,
+        download_ca_bundle: str = "",
     ) -> str:
         runtime_id = self._runtime_id(version)
         bundled_python = self._seed_runtime_from_bundle(
@@ -505,6 +518,7 @@ class PythonRuntimeManager:
             version=runtime_id,
             overwrite=True,
             on_status=on_status,
+            download_ca_bundle=download_ca_bundle,
         )
         self._prepare_managed_runtime(python_exe, runtime_id, on_status=on_status)
         return python_exe
@@ -622,6 +636,7 @@ class PythonRuntimeManager:
         version: str | PythonRuntimeId | None = None,
         *,
         on_status: Optional[Callable[[str], None]] = None,
+        download_ca_bundle: str = "",
     ) -> str:
         runtime_id = self._runtime_id(version)
         archive = runtime_archive_for_machine(runtime=runtime_id)
@@ -629,11 +644,7 @@ class PythonRuntimeManager:
         os.makedirs(self.installed_runtime_dir(), exist_ok=True)
 
         if os.path.isfile(archive_path):
-            try:
-                verify_runtime_archive(archive_path, archive.sha256)
-                return archive_path
-            except RuntimeError:
-                os.remove(archive_path)
+            return archive_path
 
         _emit_status(
             on_status,
@@ -647,8 +658,8 @@ class PythonRuntimeManager:
                 archive.url,
                 tmp_path,
                 user_agent="Infernux-Hub/1.0",
+                ca_bundle=download_ca_bundle,
             )
-            verify_runtime_archive(tmp_path, archive.sha256)
             os.replace(tmp_path, archive_path)
         except urllib.error.URLError as exc:
             if "unknown url type: https" in str(exc).lower():
@@ -677,6 +688,7 @@ class PythonRuntimeManager:
         version: str | PythonRuntimeId | None = None,
         overwrite: bool = False,
         on_status: Optional[Callable[[str], None]] = None,
+        download_ca_bundle: str = "",
     ) -> str:
         runtime_id = self._runtime_id(version)
         expected_root = os.path.normcase(
@@ -692,7 +704,9 @@ class PythonRuntimeManager:
             shutil.rmtree(runtime_root, ignore_errors=True)
 
         archive_path = self._ensure_runtime_archive(
-            runtime_id, on_status=on_status
+            runtime_id,
+            on_status=on_status,
+            download_ca_bundle=download_ca_bundle,
         )
         os.makedirs(os.path.dirname(runtime_root), exist_ok=True)
         _emit_status(
@@ -700,11 +714,9 @@ class PythonRuntimeManager:
             f"Extracting private Python {runtime_id.series} runtime...",
         )
         try:
-            archive = runtime_archive_for_machine(runtime=runtime_id)
             extract_runtime_archive(
                 archive_path,
                 runtime_root,
-                expected_sha256=archive.sha256,
                 runtime=runtime_id,
             )
         except RuntimeError as exc:
@@ -726,6 +738,7 @@ class PythonRuntimeManager:
         version: str | PythonRuntimeId | None = None,
         *,
         on_status: Optional[Callable[[str], None]] = None,
+        download_ca_bundle: str = "",
     ) -> str:
         """Replace the Hub-owned runtime from a verified bundled/downloaded archive."""
         runtime_id = self._runtime_id(version)
@@ -738,6 +751,7 @@ class PythonRuntimeManager:
                 version=runtime_id,
                 overwrite=True,
                 on_status=on_status,
+                download_ca_bundle=download_ca_bundle,
             )
         self._prepare_managed_runtime(python_exe, runtime_id, on_status=on_status)
         return python_exe

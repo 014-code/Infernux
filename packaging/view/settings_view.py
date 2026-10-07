@@ -1,13 +1,17 @@
 """Early Hub settings page."""
 
+from pathlib import Path
+
 from PySide6.QtCore import Qt, Signal, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
     QFrame,
+    QFileDialog,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -114,6 +118,52 @@ class SettingsView(QWidget):
         self.theme_toggle.stateChanged.connect(self._toggle_theme)
         appearance_layout.addWidget(self.theme_toggle)
         layout.addWidget(appearance_card)
+
+        network_card = AnimatedSurfaceFrame("settingsCard")
+        network_card.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        network_layout = QVBoxLayout(network_card)
+        network_layout.setContentsMargins(20, 18, 20, 18)
+        network_layout.setSpacing(10)
+        network_title = QLabel(tr("Python runtime downloads"))
+        network_title.setObjectName("settingsLabel")
+        network_layout.addWidget(network_title)
+        network_hint = QLabel(
+            tr("Optional PEM CA certificate for Python runtime downloads.")
+        )
+        network_hint.setObjectName("settingsDescription")
+        network_hint.setWordWrap(True)
+        network_layout.addWidget(network_hint)
+
+        self._runtime_ca_bundle = (
+            self._db.get_setting("python_runtime_ca_bundle", "").strip()
+            if self._db
+            else ""
+        )
+        certificate_row = QHBoxLayout()
+        self.runtime_ca_bundle_edit = QLineEdit(self._runtime_ca_bundle)
+        self.runtime_ca_bundle_edit.setPlaceholderText(tr("No custom certificate"))
+        self.runtime_ca_bundle_edit.setClearButtonEnabled(True)
+        self.runtime_ca_bundle_edit.setAccessibleName(
+            tr("Python runtime download CA certificate")
+        )
+        self.runtime_ca_bundle_edit.editingFinished.connect(
+            self._save_runtime_ca_bundle
+        )
+        certificate_row.addWidget(self.runtime_ca_bundle_edit, 1)
+        self.runtime_ca_browse_button = QPushButton(tr("Browse"))
+        self.runtime_ca_browse_button.setObjectName("normalBtn")
+        self.runtime_ca_browse_button.setFixedHeight(34)
+        self.runtime_ca_browse_button.clicked.connect(
+            self._choose_runtime_ca_bundle
+        )
+        certificate_row.addWidget(self.runtime_ca_browse_button)
+        self.runtime_ca_clear_button = QPushButton(tr("Clear"))
+        self.runtime_ca_clear_button.setObjectName("normalBtn")
+        self.runtime_ca_clear_button.setFixedHeight(34)
+        self.runtime_ca_clear_button.clicked.connect(self._clear_runtime_ca_bundle)
+        certificate_row.addWidget(self.runtime_ca_clear_button)
+        network_layout.addLayout(certificate_row)
+        layout.addWidget(network_card)
 
         storage_card = AnimatedSurfaceFrame("settingsCard")
         storage_card.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
@@ -249,6 +299,44 @@ class SettingsView(QWidget):
             self._db.set_setting(
                 "automatic_update_checks", "enabled" if state else "disabled"
             )
+
+    def _choose_runtime_ca_bundle(self):
+        path, _selected_filter = QFileDialog.getOpenFileName(
+            self,
+            tr("Select a CA certificate"),
+            str(Path(self._runtime_ca_bundle).parent)
+            if self._runtime_ca_bundle
+            else "",
+            tr("Certificate files (*.pem);;All files (*)"),
+        )
+        if path:
+            self.runtime_ca_bundle_edit.setText(path)
+            self._save_runtime_ca_bundle()
+
+    def _clear_runtime_ca_bundle(self):
+        self.runtime_ca_bundle_edit.clear()
+        self._save_runtime_ca_bundle()
+
+    def _save_runtime_ca_bundle(self):
+        raw_path = self.runtime_ca_bundle_edit.text().strip()
+        if raw_path:
+            try:
+                path = str(Path(raw_path).expanduser().resolve())
+            except (OSError, RuntimeError, ValueError) as exc:
+                QMessageBox.critical(
+                    self,
+                    tr("Settings"),
+                    f"{tr('Python runtime download CA certificate')}: {exc}",
+                )
+                return
+        else:
+            path = ""
+
+        if path == self._runtime_ca_bundle:
+            return
+        self._runtime_ca_bundle = path
+        if self._db:
+            self._db.set_setting("python_runtime_ca_bundle", path)
 
     def refresh(self):
         """Refresh state owned outside the Hub process."""
