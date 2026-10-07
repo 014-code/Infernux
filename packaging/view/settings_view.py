@@ -319,7 +319,18 @@ class SettingsView(QWidget):
 
     def _save_runtime_ca_bundle(self):
         raw_path = self.runtime_ca_bundle_edit.text().strip()
-        path = raw_path
+        if raw_path:
+            try:
+                path = str(Path(raw_path).expanduser().resolve())
+            except (OSError, RuntimeError, ValueError) as exc:
+                QMessageBox.critical(
+                    self,
+                    tr("Settings"),
+                    f"{tr('Python runtime download CA certificate')}: {exc}",
+                )
+                return
+        else:
+            path = ""
 
         if path == self._runtime_ca_bundle:
             return
