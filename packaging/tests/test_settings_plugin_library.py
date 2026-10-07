@@ -60,8 +60,6 @@ def test_python_runtime_ca_certificate_is_validated_persisted_and_cleared(
     database = _Database()
     loaded = []
     view = settings_view.SettingsView(database)
-    changed = []
-    view.runtime_ca_bundle_changed.connect(changed.append)
     monkeypatch.setattr(
         settings_view,
         "create_download_ssl_context",
@@ -72,21 +70,17 @@ def test_python_runtime_ca_certificate_is_validated_persisted_and_cleared(
     view._save_runtime_ca_bundle()
 
     assert database.settings["python_runtime_ca_bundle"] == str(certificate.resolve())
-    assert changed == [str(certificate.resolve())]
     assert loaded
     assert "added to the default trust store" in view.runtime_ca_bundle_status.text()
 
     view._clear_runtime_ca_bundle()
 
     assert database.settings["python_runtime_ca_bundle"] == ""
-    assert changed[-1] == ""
 
 
 def test_unresolvable_certificate_path_reports_the_load_error(tmp_path, monkeypatch):
     database = _Database()
     view = settings_view.SettingsView(database)
-    changed = []
-    view.runtime_ca_bundle_changed.connect(changed.append)
 
     def _refuse_to_resolve(self, *args, **kwargs):
         raise RuntimeError("Symlink loop from 'proxy-ca.pem'")
@@ -98,7 +92,6 @@ def test_unresolvable_certificate_path_reports_the_load_error(tmp_path, monkeypa
 
     assert "could not be loaded" in view.runtime_ca_bundle_status.text()
     assert "python_runtime_ca_bundle" not in database.settings
-    assert changed == []
     assert view.runtime_ca_bundle_edit.text() == ""
 
 

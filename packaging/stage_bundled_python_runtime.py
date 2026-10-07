@@ -16,7 +16,6 @@ from private_python_runtime import (
     is_current_private_runtime_root,
     prune_runtime_staging_cache,
     runtime_archive_for_machine,
-    verify_runtime_archive,
 )
 from python_runtime_catalog import DEFAULT_PYTHON_RUNTIME
 from runtime_requirements import runtime_modules, runtime_packages
@@ -203,7 +202,6 @@ def _runtime_profile_payload() -> dict[str, object]:
     return {
         "source": "runtime-cache",
         "python_archive": archive.name,
-        "python_archive_sha256": archive.sha256,
         "packages": list(_RUNTIME_PACKAGES),
     }
 
@@ -343,24 +341,17 @@ def _extract_full_runtime(dest_root: str, *, archive_cache_root: str | None = No
     os.makedirs(cache_root, exist_ok=True)
     archive = runtime_archive_for_machine(runtime=_TARGET_RUNTIME)
     archive_path = _archive_cache_path(cache_root)
-    if os.path.isfile(archive_path):
-        try:
-            verify_runtime_archive(archive_path, archive.sha256)
-        except RuntimeError:
-            os.remove(archive_path)
     if not os.path.isfile(archive_path):
         print(f"Downloading isolated Python runtime archive: {archive.url}")
         temporary = archive_path + ".tmp"
         if os.path.isfile(temporary):
             os.remove(temporary)
         _download_file(archive.url, temporary)
-        verify_runtime_archive(temporary, archive.sha256)
         os.replace(temporary, archive_path)
 
     extract_runtime_archive(
         archive_path,
         dest_root,
-        expected_sha256=archive.sha256,
         runtime=_TARGET_RUNTIME,
     )
 

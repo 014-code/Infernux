@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import platform
 import shutil
-import ssl
 import subprocess
 import sys
 import tempfile
@@ -26,7 +25,6 @@ from private_python_runtime import (
     has_runtime_build_support as _has_build_support,
     is_current_private_runtime_root,
     runtime_archive_for_machine,
-    verify_runtime_archive,
     runtime_prefix,
 )
 from python_runtime_catalog import (
@@ -267,15 +265,12 @@ def _download_file(
     *,
     user_agent: str,
     timeout: int = 120,
-    ssl_context: ssl.SSLContext | None = None,
+    ca_bundle: str = "",
 ) -> None:
     req = urllib.request.Request(url)
     req.add_header("User-Agent", user_agent)
-    if ssl_context is None:
-        response = urllib.request.urlopen(req, timeout=timeout)
-    else:
-        response = urllib.request.urlopen(req, timeout=timeout, context=ssl_context)
-    with response as resp, open(dest, "wb") as f:
+    context = create_download_ssl_context(ca_bundle) if ca_bundle else None
+    with urllib.request.urlopen(req, timeout=timeout, context=context) as resp, open(dest, "wb") as f:
         shutil.copyfileobj(resp, f)
 
 
@@ -286,18 +281,14 @@ class PythonRuntimeManager:
         bundle_runtime_dir: Optional[str] = None,
         *,
         default_version: str | PythonRuntimeId = DEFAULT_PYTHON_RUNTIME,
-        download_ca_bundle: str = "",
+        settings=None,
     ) -> None:
         self._runtime_dir = os.path.abspath(runtime_dir) if runtime_dir else _default_runtime_dir()
         os.makedirs(self._runtime_dir, exist_ok=True)
         self._bundle_runtime_dir = os.path.abspath(bundle_runtime_dir) if bundle_runtime_dir else ""
         self._default_runtime = PythonRuntimeId.parse(default_version)
-        self._download_ca_bundle = download_ca_bundle
+        self._settings = settings
         runtime_release(self._default_runtime)
-
-    def set_download_ca_bundle(self, path: str) -> None:
-        """Update the CA path used by the next runtime archive download."""
-        self._download_ca_bundle = path
 
     @property
     def default_version(self) -> str:
@@ -648,11 +639,7 @@ class PythonRuntimeManager:
         os.makedirs(self.installed_runtime_dir(), exist_ok=True)
 
         if os.path.isfile(archive_path):
-            try:
-                verify_runtime_archive(archive_path, archive.sha256)
-                return archive_path
-            except RuntimeError:
-                os.remove(archive_path)
+            return archive_path
 
         _emit_status(
             on_status,
@@ -666,13 +653,12 @@ class PythonRuntimeManager:
                 archive.url,
                 tmp_path,
                 user_agent="Infernux-Hub/1.0",
-                ssl_context=(
-                    create_download_ssl_context(self._download_ca_bundle)
-                    if self._download_ca_bundle
-                    else None
+                ca_bundle=(
+                    self._settings.get_setting("python_runtime_ca_bundle", "").strip()
+                    if self._settings
+                    else ""
                 ),
             )
-            verify_runtime_archive(tmp_path, archive.sha256)
             os.replace(tmp_path, archive_path)
         except urllib.error.URLError as exc:
             if "unknown url type: https" in str(exc).lower():
@@ -724,11 +710,9 @@ class PythonRuntimeManager:
             f"Extracting private Python {runtime_id.series} runtime...",
         )
         try:
-            archive = runtime_archive_for_machine(runtime=runtime_id)
             extract_runtime_archive(
                 archive_path,
                 runtime_root,
-                expected_sha256=archive.sha256,
                 runtime=runtime_id,
             )
         except RuntimeError as exc:

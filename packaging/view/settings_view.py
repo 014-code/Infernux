@@ -36,7 +36,6 @@ from view.hover_widgets import AnimatedSurfaceFrame
 class SettingsView(QWidget):
     update_check_requested = Signal()
     language_changed = Signal(str)
-    runtime_ca_bundle_changed = Signal(str)
 
     def __init__(self, db, parent=None):
         super().__init__(parent)
@@ -130,11 +129,7 @@ class SettingsView(QWidget):
         network_title.setObjectName("settingsLabel")
         network_layout.addWidget(network_title)
         network_hint = QLabel(
-            tr(
-                "Optional CA certificate for Python runtime downloads. "
-                "PEM and DER certificates are supported, and the certificate is "
-                "added to the default trusted certificates."
-            )
+            tr("Optional PEM CA certificate for Python runtime downloads.")
         )
         network_hint.setObjectName("settingsDescription")
         network_hint.setWordWrap(True)
@@ -318,7 +313,7 @@ class SettingsView(QWidget):
             str(Path(self._runtime_ca_bundle).parent)
             if self._runtime_ca_bundle
             else "",
-            tr("Certificate files (*.pem *.crt *.cer);;All files (*)"),
+            tr("Certificate files (*.pem);;All files (*)"),
         )
         if path:
             self.runtime_ca_bundle_edit.setText(path)
@@ -355,7 +350,6 @@ class SettingsView(QWidget):
         self._runtime_ca_bundle = path
         if self._db:
             self._db.set_setting("python_runtime_ca_bundle", path)
-        self.runtime_ca_bundle_changed.emit(path)
         self._refresh_runtime_ca_bundle_status()
 
     def _refresh_runtime_ca_bundle_status(self):
@@ -372,7 +366,7 @@ class SettingsView(QWidget):
             )
             return
         self.runtime_ca_bundle_status.setText(
-            tr("This certificate is added to the default trust store for Python runtime downloads.")
+            tr("The certificate is added to the default trust store.")
         )
 
     def refresh(self):
