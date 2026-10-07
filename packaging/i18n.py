@@ -214,8 +214,6 @@ _ZH = {
     "Clear": "清除",
     "Select a CA certificate": "选择 CA 证书",
     "Certificate files (*.pem);;All files (*)": "证书文件 (*.pem);;所有文件 (*)",
-    "The certificate could not be loaded: {message}": "无法加载证书：{message}",
-    "The certificate is added to the default trust store.": "该证书已追加到默认信任链。",
     "System": "跟随系统",
     "Chinese": "中文",
     "English": "English",

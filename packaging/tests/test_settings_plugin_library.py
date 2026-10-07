@@ -52,47 +52,19 @@ def test_automatic_update_checks_default_on_and_preserve_the_user_choice(saved, 
     assert database.settings["automatic_update_checks"] == "disabled"
 
 
-def test_python_runtime_ca_certificate_is_validated_persisted_and_cleared(
-    tmp_path, monkeypatch
-):
+def test_python_runtime_ca_certificate_is_persisted_and_cleared(tmp_path):
     certificate = tmp_path / "proxy-ca.pem"
-    certificate.write_text("certificate", encoding="utf-8")
     database = _Database()
-    loaded = []
     view = settings_view.SettingsView(database)
-    monkeypatch.setattr(
-        settings_view,
-        "create_download_ssl_context",
-        lambda path: loaded.append(path),
-    )
 
     view.runtime_ca_bundle_edit.setText(str(certificate))
     view._save_runtime_ca_bundle()
 
     assert database.settings["python_runtime_ca_bundle"] == str(certificate.resolve())
-    assert loaded
-    assert "added to the default trust store" in view.runtime_ca_bundle_status.text()
 
     view._clear_runtime_ca_bundle()
 
     assert database.settings["python_runtime_ca_bundle"] == ""
-
-
-def test_unresolvable_certificate_path_reports_the_load_error(tmp_path, monkeypatch):
-    database = _Database()
-    view = settings_view.SettingsView(database)
-
-    def _refuse_to_resolve(self, *args, **kwargs):
-        raise RuntimeError("Symlink loop from 'proxy-ca.pem'")
-
-    with monkeypatch.context() as patch:
-        patch.setattr(settings_view.Path, "resolve", _refuse_to_resolve)
-        view.runtime_ca_bundle_edit.setText(str(tmp_path / "proxy-ca.pem"))
-        view._save_runtime_ca_bundle()
-
-    assert "could not be loaded" in view.runtime_ca_bundle_status.text()
-    assert "python_runtime_ca_bundle" not in database.settings
-    assert view.runtime_ca_bundle_edit.text() == ""
 
 
 def test_settings_show_the_shared_plugin_library_and_cleanup_capacity(

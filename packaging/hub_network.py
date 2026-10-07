@@ -13,7 +13,7 @@ def create_download_ssl_context(extra_ca_file: str | None = None) -> ssl.SSLCont
     """Create a verified context and optionally add a user CA to its trust roots."""
     context = ssl.create_default_context()
     if extra_ca_file:
-        context.load_verify_locations(cafile=str(Path(extra_ca_file).expanduser()))
+        context.load_verify_locations(cafile=extra_ca_file)
     return context
 
 

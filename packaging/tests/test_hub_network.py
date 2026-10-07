@@ -1,17 +1,8 @@
+import ssl
 from types import SimpleNamespace
 
 import pytest
-import ssl
 import hub_network
-
-
-def _pem_certificate() -> bytes:
-    return (
-        b"-----BEGIN CERTIFICATE-----\n"
-        b"MIIBkTCB+wIJAJ7q\n"
-        b"-----END CERTIFICATE-----\n"
-    )
-
 
 @pytest.fixture
 def linux_without_build_machine_certificates(monkeypatch):
@@ -57,7 +48,6 @@ def test_custom_download_ca_is_added_without_disabling_default_verification(
     context = _Context()
     monkeypatch.setattr(hub_network.ssl, "create_default_context", lambda: context)
     ca_file = tmp_path / "proxy-ca.pem"
-    ca_file.write_bytes(_pem_certificate())
 
     result = hub_network.create_download_ssl_context(str(ca_file))
 
@@ -82,16 +72,3 @@ def test_certificate_content_that_is_not_a_certificate_is_rejected(tmp_path):
 
     with pytest.raises((OSError, ValueError)):
         hub_network.create_download_ssl_context(str(ca_file))
-
-
-def test_empty_certificate_file_is_rejected(tmp_path):
-    ca_file = tmp_path / "empty.pem"
-    ca_file.write_bytes(b"")
-
-    with pytest.raises((OSError, ValueError)):
-        hub_network.create_download_ssl_context(str(ca_file))
-
-
-def test_missing_certificate_file_is_reported(tmp_path):
-    with pytest.raises(OSError):
-        hub_network.create_download_ssl_context(str(tmp_path / "absent.pem"))

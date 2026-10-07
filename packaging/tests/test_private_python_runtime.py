@@ -104,12 +104,8 @@ def test_runtime_archive_download_uses_the_configured_ca_context(
     )
     context = object()
     ca_bundle = str(tmp_path / "proxy-ca.pem")
-    settings = SimpleNamespace(
-        get_setting=lambda key, default="": ca_bundle
-    )
     manager = embed_runtime_manager.PythonRuntimeManager(
         runtime_dir=str(tmp_path / "Runtimes"),
-        settings=settings,
     )
     requests = []
 
@@ -132,7 +128,7 @@ def test_runtime_archive_download_uses_the_configured_ca_context(
         )[1],
     )
 
-    archive_path = manager._ensure_runtime_archive()
+    archive_path = manager._ensure_runtime_archive(download_ca_bundle=ca_bundle)
 
     assert Path(archive_path).read_bytes() == b"runtime archive"
     assert requests == [
@@ -150,7 +146,6 @@ def test_runtime_archive_download_uses_the_default_context_without_a_ca(
     )
     manager = embed_runtime_manager.PythonRuntimeManager(
         runtime_dir=str(tmp_path / "Runtimes"),
-        settings=SimpleNamespace(get_setting=lambda key, default: ""),
     )
     contexts = []
 

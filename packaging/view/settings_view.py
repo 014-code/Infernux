@@ -26,7 +26,6 @@ from i18n import current_language, detect_system_locale, tr
 from plugin_library import inspect_plugin_library, prune_unreferenced_packages
 from hub_utils import get_hub_shared_data_dir
 from hub_logging import hub_log_path
-from hub_network import create_download_ssl_context
 from shared_storage_migration import inspect_legacy_storage
 from view.storage_migration_dialog import StorageMigrationDialog
 from view.sidebar_view import ToggleSwitch, apply_theme
@@ -164,11 +163,6 @@ class SettingsView(QWidget):
         self.runtime_ca_clear_button.clicked.connect(self._clear_runtime_ca_bundle)
         certificate_row.addWidget(self.runtime_ca_clear_button)
         network_layout.addLayout(certificate_row)
-        self.runtime_ca_bundle_status = QLabel()
-        self.runtime_ca_bundle_status.setObjectName("settingsDescription")
-        self.runtime_ca_bundle_status.setWordWrap(True)
-        network_layout.addWidget(self.runtime_ca_bundle_status)
-        self._refresh_runtime_ca_bundle_status()
         layout.addWidget(network_card)
 
         storage_card = AnimatedSurfaceFrame("settingsCard")
@@ -325,49 +319,13 @@ class SettingsView(QWidget):
 
     def _save_runtime_ca_bundle(self):
         raw_path = self.runtime_ca_bundle_edit.text().strip()
-        if raw_path:
-            # Resolution belongs to the same guard as loading: expanduser() and
-            # resolve() can themselves fail (RuntimeError on a symlink loop, for
-            # example), and that must surface as the normal certificate error
-            # instead of escaping this UI handler.
-            try:
-                path = str(Path(raw_path).expanduser().resolve())
-                if not Path(path).is_file():
-                    raise FileNotFoundError(path)
-                create_download_ssl_context(path)
-            except (OSError, RuntimeError, ValueError) as exc:
-                self.runtime_ca_bundle_edit.setText(self._runtime_ca_bundle)
-                self.runtime_ca_bundle_status.setText(
-                    tr("The certificate could not be loaded: {message}", message=str(exc))
-                )
-                return
-        else:
-            path = ""
+        path = raw_path
 
         if path == self._runtime_ca_bundle:
-            self._refresh_runtime_ca_bundle_status()
             return
         self._runtime_ca_bundle = path
         if self._db:
             self._db.set_setting("python_runtime_ca_bundle", path)
-        self._refresh_runtime_ca_bundle_status()
-
-    def _refresh_runtime_ca_bundle_status(self):
-        if not self._runtime_ca_bundle:
-            self.runtime_ca_bundle_status.clear()
-            return
-        try:
-            if not Path(self._runtime_ca_bundle).is_file():
-                raise FileNotFoundError(self._runtime_ca_bundle)
-            create_download_ssl_context(self._runtime_ca_bundle)
-        except (OSError, RuntimeError, ValueError) as exc:
-            self.runtime_ca_bundle_status.setText(
-                tr("The certificate could not be loaded: {message}", message=str(exc))
-            )
-            return
-        self.runtime_ca_bundle_status.setText(
-            tr("The certificate is added to the default trust store.")
-        )
 
     def refresh(self):
         """Refresh state owned outside the Hub process."""

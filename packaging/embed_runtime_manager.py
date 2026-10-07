@@ -281,13 +281,11 @@ class PythonRuntimeManager:
         bundle_runtime_dir: Optional[str] = None,
         *,
         default_version: str | PythonRuntimeId = DEFAULT_PYTHON_RUNTIME,
-        settings=None,
     ) -> None:
         self._runtime_dir = os.path.abspath(runtime_dir) if runtime_dir else _default_runtime_dir()
         os.makedirs(self._runtime_dir, exist_ok=True)
         self._bundle_runtime_dir = os.path.abspath(bundle_runtime_dir) if bundle_runtime_dir else ""
         self._default_runtime = PythonRuntimeId.parse(default_version)
-        self._settings = settings
         runtime_release(self._default_runtime)
 
     @property
@@ -393,12 +391,15 @@ class PythonRuntimeManager:
         version: str | PythonRuntimeId | None = None,
         on_status: Optional[Callable[[str], None]] = None,
         allow_frozen_repair: bool = False,
+        download_ca_bundle: str = "",
     ) -> str:
         runtime_id = self._runtime_id(version)
         python_exe = self.get_runtime_path(runtime_id)
         if not python_exe:
             python_exe = self._provision_managed_runtime(
-                runtime_id, on_status=on_status
+                runtime_id,
+                on_status=on_status,
+                download_ca_bundle=download_ca_bundle,
             )
         else:
             runtime_root = runtime_prefix(python_exe)
@@ -429,6 +430,7 @@ class PythonRuntimeManager:
                         version=runtime_id,
                         overwrite=True,
                         on_status=on_status,
+                        download_ca_bundle=download_ca_bundle,
                     )
                 if repaired_python:
                     python_exe = repaired_python
@@ -499,6 +501,7 @@ class PythonRuntimeManager:
         version: str | PythonRuntimeId,
         *,
         on_status: Optional[Callable[[str], None]] = None,
+        download_ca_bundle: str = "",
     ) -> str:
         runtime_id = self._runtime_id(version)
         bundled_python = self._seed_runtime_from_bundle(
@@ -515,6 +518,7 @@ class PythonRuntimeManager:
             version=runtime_id,
             overwrite=True,
             on_status=on_status,
+            download_ca_bundle=download_ca_bundle,
         )
         self._prepare_managed_runtime(python_exe, runtime_id, on_status=on_status)
         return python_exe
@@ -632,6 +636,7 @@ class PythonRuntimeManager:
         version: str | PythonRuntimeId | None = None,
         *,
         on_status: Optional[Callable[[str], None]] = None,
+        download_ca_bundle: str = "",
     ) -> str:
         runtime_id = self._runtime_id(version)
         archive = runtime_archive_for_machine(runtime=runtime_id)
@@ -653,11 +658,7 @@ class PythonRuntimeManager:
                 archive.url,
                 tmp_path,
                 user_agent="Infernux-Hub/1.0",
-                ca_bundle=(
-                    self._settings.get_setting("python_runtime_ca_bundle", "").strip()
-                    if self._settings
-                    else ""
-                ),
+                ca_bundle=download_ca_bundle,
             )
             os.replace(tmp_path, archive_path)
         except urllib.error.URLError as exc:
@@ -687,6 +688,7 @@ class PythonRuntimeManager:
         version: str | PythonRuntimeId | None = None,
         overwrite: bool = False,
         on_status: Optional[Callable[[str], None]] = None,
+        download_ca_bundle: str = "",
     ) -> str:
         runtime_id = self._runtime_id(version)
         expected_root = os.path.normcase(
@@ -702,7 +704,9 @@ class PythonRuntimeManager:
             shutil.rmtree(runtime_root, ignore_errors=True)
 
         archive_path = self._ensure_runtime_archive(
-            runtime_id, on_status=on_status
+            runtime_id,
+            on_status=on_status,
+            download_ca_bundle=download_ca_bundle,
         )
         os.makedirs(os.path.dirname(runtime_root), exist_ok=True)
         _emit_status(
@@ -734,6 +738,7 @@ class PythonRuntimeManager:
         version: str | PythonRuntimeId | None = None,
         *,
         on_status: Optional[Callable[[str], None]] = None,
+        download_ca_bundle: str = "",
     ) -> str:
         """Replace the Hub-owned runtime from a verified bundled/downloaded archive."""
         runtime_id = self._runtime_id(version)
@@ -746,6 +751,7 @@ class PythonRuntimeManager:
                 version=runtime_id,
                 overwrite=True,
                 on_status=on_status,
+                download_ca_bundle=download_ca_bundle,
             )
         self._prepare_managed_runtime(python_exe, runtime_id, on_status=on_status)
         return python_exe
