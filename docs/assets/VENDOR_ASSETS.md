@@ -23,7 +23,7 @@ The original `demo.png` capture and its `demo-runtime.webp` / `demo-runtime.avif
 
 ### README demo loops
 
-The READMEs embed the same four clips shown by the homepage reel, using compact GIF loops stored in `.github/media/` for GitHub rendering. They are resampled to the README 2×2 grid and quantised to keep the initial download small: `space-battle.gif` (480 px, 24 colours) plus `npr-pipeline.gif`, `rigid-coins.gif` and `animated-cats.gif` (240 px, 24 colours). `check-image-variants.mjs` enforces their presence, GIF signature, per-file and total size limits, and that both READMEs reference them.
+The READMEs embed the same four clips shown by the homepage reel. The GitHub-compatible GIF encodings live in `.github/media/`; they keep the homepage crop geometry instead of using a separate low-resolution thumbnail set: `space-battle.gif` is 852×388 and the other three clips are 640×292. They use the same reviewed source clips and 24-colour quantisation, with GIF as the transport format only because GitHub README rendering does not reliably play repository MP4 files inline. `check-image-variants.mjs` enforces the reviewed geometry, GIF signature, per-file and total size limits, and that both READMEs reference all four clips.
 
 ### Demo reel
 
