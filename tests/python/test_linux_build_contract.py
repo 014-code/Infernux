@@ -241,7 +241,10 @@ def test_official_packages_are_rebuilt_before_wheel_staging_without_source_globs
         encoding="utf-8"
     )
 
-    assert "add_custom_target(infernux_official_plugins ALL" in plugins
+    # Packaging owns this dependency. Ordinary native builds must not rebuild
+    # plugin archives; wheel staging below must still explicitly require them.
+    assert "add_custom_target(infernux_official_plugins\n" in plugins
+    assert "add_custom_target(infernux_official_plugins ALL" not in plugins
     assert "BYPRODUCTS ${INFERNUX_OFFICIAL_PLUGIN_ARTIFACTS}" in plugins
     assert "file(GLOB_RECURSE INFERNUX_OFFICIAL_PLUGIN_SOURCES" not in plugins
     assert '"${CMAKE_BINARY_DIR}/official-plugins"' in plugins
