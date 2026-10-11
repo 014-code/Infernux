@@ -123,7 +123,12 @@ def test_runtime_pack_is_compiled_from_the_assembled_wheel_payload():
         "${_infernux_repair_linux_wheel}"
     )
     assert '"-DPLATFORM_PLAYER_OUTPUT=${INFERNUX_PLATFORM_PLAYER_OUTPUT_DIR}"' in install
-    assert '/external/plugins/infernux_${_infernux_player_platform}/package/editor/infernux_${_infernux_player_platform}/player"' in install
+    assert 'infernux_dependency_path(' in install
+    assert '"infernux_${_infernux_player_platform}"' in install
+    assert (
+        '"${_infernux_player_plugin}/package/editor/'
+        'infernux_${_infernux_player_platform}/player"'
+    ) in install
     assert '"-DINFERNUX_SOURCE_DIR=${INFERNUX_STAGE_DIR}/python-wheel-source"' in install
     assert 'DIRECTORY "${INFERNUX_PREBUILT_RUNTIME_DIR}/"' not in install
 

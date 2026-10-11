@@ -242,7 +242,21 @@ jobs:
           # engine processes active so the real-engine suite does not spend
           # its full runtime behind a single worker, while avoiding GPU
           # context pressure from unbounded parallelism.
-          python -m pytest -n 2 --dist loadfile --max-worker-restart=0 -o pythonpath= tests\python tests\contracts -q --junitxml out\test-results\pytest-windows.xml
+          $parallelXml = "out\test-results\pytest-windows-parallel.xml"
+          python -m pytest -n 2 --dist loadfile --max-worker-restart=0 -o pythonpath= `
+            tests\python tests\contracts `
+            --ignore=tests\python\test_engine_play_mode.py `
+            --ignore=tests\python\test_ui_shader_dependency_runtime.py `
+            -q --junitxml $parallelXml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # These files exercise process-wide editor/render state. Run them
+          # in one process so their lifecycle and software-Vulkan ordering
+          # remains deterministic while the bulk of the suite stays parallel.
+          python -m pytest -o pythonpath= `
+            tests\python\test_engine_play_mode.py `
+            tests\python\test_ui_shader_dependency_runtime.py `
+            -q --junitxml out\test-results\pytest-windows.xml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Run Hub tests
         shell: pwsh
