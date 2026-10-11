@@ -27,17 +27,17 @@
   <a href="README-zh.md">简体中文</a>
 </p>
 
-<table align="center">
+<table align="center" width="100%">
   <tr>
-    <td><img src=".github/media/space-battle.gif" width="300" alt="Infernux runtime: hundreds of ships and particle bursts driven by gameplay logic"></td>
-    <td><img src=".github/media/npr-pipeline.gif" width="300" alt="A programmable render pipeline rebuilt at runtime"></td>
+    <td width="50%"><img src=".github/media/space-battle.gif" width="100%" alt="Infernux runtime: hundreds of ships and particle bursts driven by gameplay logic"></td>
+    <td width="50%"><img src=".github/media/npr-pipeline.gif" width="100%" alt="A programmable render pipeline rebuilt at runtime"></td>
   </tr>
   <tr>
-    <td><img src=".github/media/rigid-coins.gif" width="300" alt="1,000 interacting rigid bodies with a custom bloom"></td>
-    <td><img src=".github/media/animated-cats.gif" width="300" alt="Cats driven by animation state machines and Timeline"></td>
+    <td width="50%"><img src=".github/media/rigid-coins.gif" width="100%" alt="1,000 interacting rigid bodies with a custom bloom"></td>
+    <td width="50%"><img src=".github/media/animated-cats.gif" width="100%" alt="Cats driven by animation state machines and Timeline"></td>
   </tr>
 </table>
-<p align="center"><sub>Real engine footage from the <a href="https://www.bilibili.com/video/BV1538P6jELT/?p=2">0.3.4 demo reel</a>. No concept art.</sub></p>
+<p align="center"><sub>Real engine footage from the <a href="https://www.bilibili.com/video/BV1538P6jELT/?p=2">engine demo reel</a>. No concept art.</sub></p>
 
 ## What is Infernux?
 

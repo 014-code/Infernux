@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-// Evidence media: the 0.3.4 demo reel as looping H.264 clips with WebP posters
+// Evidence media: the engine demo reel as looping H.264 clips with WebP posters
 // on the homepage, and as small GIF loops in .github/media for the READMEs.
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const docsRoot = path.resolve(scriptDir, "..");
@@ -11,11 +11,10 @@ const repoRoot = path.resolve(docsRoot, "..");
 const failures = [];
 const fail = (message) => failures.push(message);
 
-// Reviewed clips cut from the author's Bilibili video BV1538P6jELT (part 2,
-// "熔炉0.3.4演示Demo纯净版"). The feature clip keeps the 852px source width.
+// Reviewed clips cut from the author's Bilibili video BV1538P6jELT (part 2).
+// The feature clip keeps the 852px source width.
 const reel = [
     { name: "space-battle", width: 852, height: 388, mp4: "30dec9c1672fb13316b54240787167bd2078d35f5324a24f983abeae2c2a1af8", poster: "548dd95143120536460b25f93a5d98e9aba6193c68319aa7a10b7c290d7ed3cd" },
-    { name: "fft-ocean", width: 640, height: 292, mp4: "17062becf53d7c699724c04f6d06ce616796c8b17c1cb1ac073036c5fc656f7a", poster: "fc33d5bd25649ab1a9f432b2dbb04173efb791a924a4a2c367e31cb05af18d3c" },
     { name: "npr-pipeline", width: 640, height: 292, mp4: "ba8095dbdc583e0da7c58cd95d3608af3178d5b0b3cd3710d3c2fea0999c3453", poster: "9f9a9c40c2fba0ebaa4a24809df1da8cfc502cfa116eef50f8f7d0342398d190" },
     { name: "rigid-coins", width: 640, height: 292, mp4: "5471e528ceac863eb59f2f2e156b51a6a47e48e6e3f8ebe9807b4d599da51bb8", poster: "baeb3229b80b8ffb27df27c0479489d3377c86c3d68c92993958efc4096ae6a8" },
     { name: "animated-cats", width: 640, height: 292, mp4: "a6e4349dc2167253124ec1d1440c96fa81ad722c6786c9fd1dbaced199803856", poster: "46688eeb7ec5f18d7881551ee41983197ac81e3188b68a0a7c180f49659c863d" },
@@ -111,6 +110,13 @@ if (gifBytes > gifLimits.total) fail(`README loops total ${gifBytes} bytes; limi
 for (const readmeName of ["README.md", "README-zh.md"]) {
     const readme = await readFile(path.join(repoRoot, readmeName), "utf8");
     for (const name of readmeGifs) if (!readme.includes(`src=".github/media/${name}.gif"`)) fail(`${readmeName}: missing demo loop ${name}.gif`);
+    const reelTable = readme.match(/<table\b[\s\S]*?<\/table>/i)?.[0] || "";
+    if (!/<table\b[^>]*\bwidth=["']100%["']/i.test(reelTable)) fail(`${readmeName}: demo reel table must span the page width`);
+    for (const name of readmeGifs) {
+        if (!new RegExp(`src=["']\\.github/media/${name}\\.gif["'][^>]*\\bwidth=["']100%["']`, "i").test(reelTable)) {
+            fail(`${readmeName}: demo loop ${name}.gif must fill its 2×2 cell`);
+        }
+    }
     if (readme.includes("docs/assets/demo")) fail(`${readmeName}: retired showcase captures must not be referenced`);
 }
 

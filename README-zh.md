@@ -27,17 +27,17 @@
   <a href="README.md">English</a>
 </p>
 
-<table align="center">
+<table align="center" width="100%">
   <tr>
-    <td><img src=".github/media/space-battle.gif" width="300" alt="熔炉运行时：由玩法逻辑驱动的数百艘飞船与粒子爆发"></td>
-    <td><img src=".github/media/npr-pipeline.gif" width="300" alt="可在运行时重建的可编程渲染管线"></td>
+    <td width="50%"><img src=".github/media/space-battle.gif" width="100%" alt="熔炉运行时：由玩法逻辑驱动的数百艘飞船与粒子爆发"></td>
+    <td width="50%"><img src=".github/media/npr-pipeline.gif" width="100%" alt="可在运行时重建的可编程渲染管线"></td>
   </tr>
   <tr>
-    <td><img src=".github/media/rigid-coins.gif" width="300" alt="1000 个刚体交互与自定义辉光"></td>
-    <td><img src=".github/media/animated-cats.gif" width="300" alt="由动画状态机与 Timeline 驱动的猫群"></td>
+    <td width="50%"><img src=".github/media/rigid-coins.gif" width="100%" alt="1000 个刚体交互与自定义辉光"></td>
+    <td width="50%"><img src=".github/media/animated-cats.gif" width="100%" alt="由动画状态机与 Timeline 驱动的猫群"></td>
   </tr>
 </table>
-<p align="center"><sub>以上均为引擎实机画面，来自 <a href="https://www.bilibili.com/video/BV1538P6jELT/?p=2">0.3.4 演示视频</a>，没有概念图。</sub></p>
+<p align="center"><sub>以上均为引擎实机画面，来自 <a href="https://www.bilibili.com/video/BV1538P6jELT/?p=2">引擎演示视频</a>，没有概念图。</sub></p>
 
 ## 熔炉是什么？
 
