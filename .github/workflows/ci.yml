@@ -247,6 +247,7 @@ jobs:
             tests\python tests\contracts `
             --ignore=tests\python\test_engine_play_mode.py `
             --ignore=tests\python\test_ui_shader_dependency_runtime.py `
+            --ignore=tests\python\test_model_refresh_subassets.py `
             -q --junitxml $parallelXml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # These files exercise process-wide editor/render state. Run them
@@ -255,6 +256,7 @@ jobs:
           python -m pytest -o pythonpath= `
             tests\python\test_engine_play_mode.py `
             tests\python\test_ui_shader_dependency_runtime.py `
+            tests\python\test_model_refresh_subassets.py `
             -q --junitxml out\test-results\pytest-windows.xml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
