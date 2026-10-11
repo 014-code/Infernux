@@ -23,7 +23,7 @@ The original `demo.png` capture and its `demo-runtime.webp` / `demo-runtime.avif
 
 ### README demo loops
 
-The READMEs embed five GIF loops from the same reel, stored in `.github/media/` so the website never delivers them. Each is cropped to 852×388 like the clips, resampled with Lanczos, and quantised with a per-clip `palettegen` (`stats_mode=diff`) and `paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle`: `space-battle.gif` (600 px, 12 fps, 48 colours), `npr-pipeline.gif`, `rigid-coins.gif`, `animated-cats.gif` (320 px, 10 fps, 48 colours) and `rendergraph-grid.gif` (320 px, 8 fps, 32 colours). `check-image-variants.mjs` enforces their presence, GIF signature, per-file and total size limits, and that both READMEs reference them.
+The READMEs embed four compact GIF loops from the same reel, stored in `.github/media/` so the website never delivers them. They are resampled to the README 2×2 grid and quantised to keep the initial download small: `space-battle.gif` (480 px, 24 colours) plus `npr-pipeline.gif`, `rigid-coins.gif` and `animated-cats.gif` (240 px, 24 colours). `check-image-variants.mjs` enforces their presence, GIF signature, per-file and total size limits, and that both READMEs reference them.
 
 ### Demo reel
 
@@ -36,7 +36,6 @@ The homepage reel is cut from the author's own Bilibili video `BV1538P6jELT`, pa
 | `reel/npr-pipeline.mp4` | 00:19.0, 4 s | 640×292 | 111,851 | `ba8095dbdc583e0da7c58cd95d3608af3178d5b0b3cd3710d3c2fea0999c3453` |
 | `reel/rigid-coins.mp4` | 00:33.5, 4 s | 640×292 | 290,880 | `5471e528ceac863eb59f2f2e156b51a6a47e48e6e3f8ebe9807b4d599da51bb8` |
 | `reel/animated-cats.mp4` | 00:58.0, 4 s | 640×292 | 98,641 | `a6e4349dc2167253124ec1d1440c96fa81ad722c6786c9fd1dbaced199803856` |
-| `reel/rendergraph-grid.mp4` | 01:12.5, 4 s | 640×292 | 73,309 | `5bc45cf8b26432f486c4d86210dd54c204169821b1e25ee82015a06211b372e0` |
 
 `docs/tools/check-image-variants.mjs` locks every clip and poster by content hash, checks the MP4 `ftyp`/`moov`-before-`mdat` layout and poster dimensions, enforces per-clip and total size limits, and verifies the lazy `<video>` markup. The performance budget counts reel posters in the homepage first view while excluding the clips themselves.
 

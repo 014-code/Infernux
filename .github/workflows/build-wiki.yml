@@ -108,6 +108,9 @@ jobs:
       - name: Check API coverage, downloads, and release information
         run: node docs/tools/check-site-information.mjs
 
+      - name: Check README and website evidence media
+        run: node docs/tools/check-image-variants.mjs
+
       - name: Test information checks and download selection
         run: |
           node --test docs/tools/test-site-information.mjs

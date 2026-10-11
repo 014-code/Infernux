@@ -19,7 +19,6 @@ const reel = [
     { name: "npr-pipeline", width: 640, height: 292, mp4: "ba8095dbdc583e0da7c58cd95d3608af3178d5b0b3cd3710d3c2fea0999c3453", poster: "9f9a9c40c2fba0ebaa4a24809df1da8cfc502cfa116eef50f8f7d0342398d190" },
     { name: "rigid-coins", width: 640, height: 292, mp4: "5471e528ceac863eb59f2f2e156b51a6a47e48e6e3f8ebe9807b4d599da51bb8", poster: "baeb3229b80b8ffb27df27c0479489d3377c86c3d68c92993958efc4096ae6a8" },
     { name: "animated-cats", width: 640, height: 292, mp4: "a6e4349dc2167253124ec1d1440c96fa81ad722c6786c9fd1dbaced199803856", poster: "46688eeb7ec5f18d7881551ee41983197ac81e3188b68a0a7c180f49659c863d" },
-    { name: "rendergraph-grid", width: 640, height: 292, mp4: "5bc45cf8b26432f486c4d86210dd54c204169821b1e25ee82015a06211b372e0", poster: "5ae93b2ced81e6afe699440603962f9a38bef938f5c6e2e07a82546e8e15f5e8" },
 ];
 const limits = { clip: 320 * 1024, poster: 24 * 1024, reel: 1100 * 1024 };
 
@@ -97,8 +96,8 @@ const budget = await readFile(path.join(docsRoot, "tools", "check-static-budget.
 if (!budget.includes("poster=")) fail("check-static-budget.mjs: reel posters must count toward the homepage first view");
 
 // README loops live outside docs/ so the website never delivers them.
-const readmeGifs = ["space-battle", "npr-pipeline", "rigid-coins", "animated-cats", "rendergraph-grid"];
-const gifLimits = { hero: 900 * 1024, tile: 450 * 1024, total: 2200 * 1024 };
+const readmeGifs = ["space-battle", "npr-pipeline", "rigid-coins", "animated-cats"];
+const gifLimits = { hero: 500 * 1024, tile: 300 * 1024, total: 1400 * 1024 };
 let gifBytes = 0;
 for (const name of readmeGifs) {
     const gif = await readFile(path.join(repoRoot, ".github", "media", `${name}.gif`)).catch(() => null);
