@@ -248,6 +248,7 @@ jobs:
             --ignore=tests\python\test_engine_play_mode.py `
             --ignore=tests\python\test_ui_shader_dependency_runtime.py `
             --ignore=tests\python\test_model_refresh_subassets.py `
+            --ignore=tests\python\test_physics_drag_push.py `
             -q --junitxml $parallelXml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # These files exercise process-wide editor/render state. Run them
@@ -257,6 +258,7 @@ jobs:
             tests\python\test_engine_play_mode.py `
             tests\python\test_ui_shader_dependency_runtime.py `
             tests\python\test_model_refresh_subassets.py `
+            tests\python\test_physics_drag_push.py `
             -q --junitxml out\test-results\pytest-windows.xml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
