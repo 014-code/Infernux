@@ -36,7 +36,12 @@ const shellPages = [
 async function shellRuntimeRoutes(pages) {
     const routes = new Set();
     for (const pageRoute of pages) {
-        const source = await readFile(path.join(docsRoot, pageRoute.slice(1)), "utf8");
+        // A preload hint starts a low-priority fetch but does not make a
+        // below-the-fold module part of the offline shell. Keep lazy FX
+        // modules out of install-time precache while still allowing the
+        // browser to fetch them in parallel with the document.
+        const source = (await readFile(path.join(docsRoot, pageRoute.slice(1)), "utf8"))
+            .replace(/<link\b[^>]*\brel=["']preload["'][^>]*>/gi, "");
         for (const match of source.matchAll(/\b(?:href|src)=["']([^"']+\.(?:css|js)(?:[?#][^"']*)?)["']/gi)) {
             const resolved = new URL(match[1], `https://infernux-engine.com${pageRoute}`);
             if (resolved.origin !== "https://infernux-engine.com") continue;
