@@ -34,6 +34,9 @@
     <link rel="stylesheet" href="css/docs-search.css?v=3">
     <link rel="stylesheet" href="css/mission.css?v=3">
     <link rel="stylesheet" href="css/fontawesome-subset.css?v=6.4.0">
+    <!-- Fetch the first-view simulation while the shell parses; motion.js still
+         starts it after the first paint so this never blocks the initial UI. -->
+    <link rel="preload" as="script" href="js/fx-world.js?v=2" fetchpriority="low">
 </head>
 <body>
     <a class="skip-link" href="#main-content">Skip to content</a>
@@ -496,11 +499,11 @@
         </div>
     </footer>
 
-    <script src="js/i18n-index.js?v=6"></script>
-    <script src="js/i18n.js?v=21"></script>
-    <script src="js/vendor/gsap.min.js?v=3.13.0"></script><script src="js/vendor/ScrollTrigger.min.js?v=3.13.0"></script><script src="js/main.js?v=16"></script><script src="js/motion.js?v=5"></script>
-    <script src="js/docs-search.js?v=6"></script>
-    <script src="js/home.js?v=2"></script>
+    <script defer src="js/i18n-index.js?v=6"></script>
+    <script defer src="js/i18n.js?v=21"></script>
+    <script defer src="js/vendor/gsap.min.js?v=3.13.0"></script><script defer src="js/vendor/ScrollTrigger.min.js?v=3.13.0"></script><script defer src="js/main.js?v=16"></script><script defer src="js/motion.js?v=5"></script>
+    <script defer src="js/docs-search.js?v=6"></script>
+    <script defer src="js/home.js?v=2"></script>
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",

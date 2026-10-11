@@ -18,9 +18,13 @@
     function scheduleModules() {
         const idle = window.requestIdleCallback || (callback => window.setTimeout(callback, 350));
         idle(() => loadModule('/js/fx-hud.js?v=3'), { timeout: 1500 });
-        // The hero world is first-view content: start it as soon as the main
-        // thread settles, without blocking the headline or first paint.
-        if (document.querySelector('[data-fx-world]')) idle(() => loadModule('/js/fx-world.js?v=2'), { timeout: 600 });
+        // The hero world is first-view content. The HTML preloads its script,
+        // then execution starts immediately after the first paint instead of
+        // waiting for an idle slot that may be delayed on busy devices.
+        if (document.querySelector('[data-fx-world]')) {
+            const afterFirstPaint = callback => window.requestAnimationFrame(() => window.requestAnimationFrame(callback));
+            afterFirstPaint(() => loadModule('/js/fx-world.js?v=2'));
+        }
     }
 
     function init() {
