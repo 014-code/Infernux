@@ -422,7 +422,7 @@ def component_types_for_script_path(
     """Return live Python types currently owned by one script path."""
     normalized = _normalized_path(file_path)
     with _registration_lock:
-        return tuple(
+        types = tuple(
             dict.fromkeys(
                 registration.component_type
                 for registration in _type_registrations.values()
@@ -431,6 +431,27 @@ def component_types_for_script_path(
                 and _normalized_path(registration.script_path) == normalized
             )
         )
+    if len(types) < 2:
+        return types
+
+    # A script's declaration order is part of its observable lifecycle
+    # contract. Registry publication can replace entries independently, so
+    # dictionary insertion order is not a stable source of that order after a
+    # reload. Read the direct declarations once and use the class name as the
+    # identity key; any type not present in the current source is ordered after
+    # live declarations by its qualified name while it is being retired.
+    declarations = _direct_component_declarations(normalized)
+    declaration_order = {name: index for index, name in enumerate(declarations)}
+    return tuple(
+        sorted(
+            types,
+            key=lambda component_type: (
+                declaration_order.get(component_type.__name__, len(declarations)),
+                component_type.__module__,
+                component_type.__qualname__,
+            ),
+        )
+    )
 
 
 def unregister_component_script(

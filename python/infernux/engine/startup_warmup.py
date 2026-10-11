@@ -613,17 +613,13 @@ def run_project_script_warmups(*, project_path: str | None, scope: str) -> int:
                 paths.append(str(path))
     if not paths:
         return 0
-    from infernux.components.registry import get_all_types
+    from infernux.components.registry import component_types_for_script_path
     from infernux.components.script_loader import load_all_components_from_file
 
     components: list[object] = []
     for path in paths:
         source = lexical_path(path)
-        types = tuple(
-            component_type
-            for component_type in get_all_types().values()
-            if _type_source(component_type) == source
-        )
+        types = component_types_for_script_path(source)
         if not types:
             types = tuple(load_all_components_from_file(path, register=True))
         for component_type in types:
@@ -638,14 +634,10 @@ def run_script_warmup(
     """Warm one saved script immediately after its durable commit."""
     source = lexical_path(file_path)
     from infernux.components.component import InxComponent
-    from infernux.components.registry import get_all_types
+    from infernux.components.registry import component_types_for_script_path
     from infernux.components.script_loader import load_all_components_from_file
 
-    types = tuple(
-        component_type
-        for component_type in get_all_types().values()
-        if _type_source(component_type) == source
-    )
+    types = component_types_for_script_path(source)
     if not types and os.path.isfile(source):
         types = tuple(load_all_components_from_file(source, register=True))
     active = tuple(

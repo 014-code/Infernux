@@ -159,6 +159,14 @@ def main():
         db = ProjectDatabase()
         assert [p.name for p in db.all_projects()] == ([] if outcome == 'failure' else ['First'])
         db.close()
+    if action == 'hub-language':
+        # Exercise the same orderly shutdown path as the other Hub actions.
+        # Returning directly leaves Qt's platform and tray objects to Python's
+        # interpreter teardown; on Linux that can exit with SIGSEGV after all
+        # lifecycle assertions have already passed.
+        QTimer.singleShot(0, hub.request_quit)
+        app.exec()
+        assert not errors, errors
     print('CREATION_LIFECYCLE_OK', flush=True)
 
 
