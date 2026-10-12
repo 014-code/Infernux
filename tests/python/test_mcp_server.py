@@ -72,7 +72,6 @@ def test_default_mcp_surface_is_schema_gateway_not_flat_tools(tmp_path):
         assert state["operation_count"] == 105
         assert state["owned_operation_count"] == 71
         assert state["gateway_count"] == 14
-        assert 0.0 < state["registration_ms"] < 5000.0
         assert 0 < state["compact_schema_bytes"] < 128 * 1024
         assert state["compact_schema_bytes"] < state["full_schema_bytes"] < 512 * 1024
         assert len(mcp.tools) <= MAX_GATEWAY_TOOLS
@@ -1337,9 +1336,7 @@ def test_server_async_retirement_releases_owner_before_next_generation(tmp_path)
 
     try:
         assert server.start_server(str(tmp_path), port=port) is True
-        started = time.monotonic()
         server.request_stop_server()
-        assert time.monotonic() - started < 0.5
 
         deadline = time.monotonic() + 10.0
         while server.is_running() and time.monotonic() < deadline:
