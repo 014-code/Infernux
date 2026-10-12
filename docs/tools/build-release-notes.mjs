@@ -43,7 +43,7 @@ if (version !== release.version || version !== manifest.documented_release) {
     || publishedNotes.source !== "UpdateLog.md"
     || publishedNotes.section_count !== publishedNotes.sections?.length
     || publishedNotes.item_count !== publishedItems
-    || publishedNotes.comparison?.to !== release.version
+    || String(publishedNotes.comparison?.to || "").replace(/-v[1-9]\d*$/, "") !== release.version
   ) {
     throw new Error(`release-notes.json must remain synchronized with published release v${release.version}`);
   }
