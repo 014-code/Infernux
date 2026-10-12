@@ -21,9 +21,9 @@ The `source-han-sans-sc-subset.woff2` file is a character subset of Google Noto 
 
 The original `demo.png` capture and its `demo-runtime.webp` / `demo-runtime.avif` homepage derivatives of the 65,536-object voxel continent were retired with the homepage redesign. Both the homepage and the READMEs now show the demo reel below.
 
-### README demo loops
+### README demo images
 
-The READMEs embed the same four clips shown by the homepage reel. The GitHub-compatible GIF encodings live in `.github/media/`; they keep the homepage crop geometry instead of using a separate low-resolution thumbnail set: `space-battle.gif` is 852×388 and the other three clips are 640×292. They use the same reviewed source clips and 24-colour quantisation, with GIF as the transport format only because GitHub README rendering does not reliably play repository MP4 files inline. `check-image-variants.mjs` enforces the reviewed geometry, GIF signature, per-file and total size limits, and that both READMEs reference all four clips.
+The READMEs use the same MP4 clips shown by the homepage reel. Each video keeps the reviewed crop geometry and its WebP poster: `space-battle` is 852×388 and the other three clips are 640×292. A direct MP4 link remains available when a README renderer disables inline playback. `check-image-variants.mjs` enforces faststart MP4 layout, poster dimensions and that both READMEs reference all four clips.
 
 ### Demo reel
 

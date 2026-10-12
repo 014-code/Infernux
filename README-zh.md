@@ -29,12 +29,12 @@
 
 <table align="center" width="100%">
   <tr>
-    <td width="50%"><img src=".github/media/space-battle.gif" width="100%" alt="熔炉运行时：由玩法逻辑驱动的数百艘飞船与粒子爆发"></td>
-    <td width="50%"><img src=".github/media/npr-pipeline.gif" width="100%" alt="可在运行时重建的可编程渲染管线"></td>
+    <td width="50%"><a href="docs/assets/reel/space-battle.mp4"><video width="100%" height="388" autoplay loop muted playsinline preload="metadata" poster="docs/assets/reel/space-battle.webp" aria-label="熔炉运行时：由玩法逻辑驱动的数百艘飞船与粒子爆发"><source src="docs/assets/reel/space-battle.mp4" type="video/mp4"></video></a></td>
+    <td width="50%"><a href="docs/assets/reel/npr-pipeline.mp4"><video width="100%" height="292" autoplay loop muted playsinline preload="metadata" poster="docs/assets/reel/npr-pipeline.webp" aria-label="可在运行时重建的可编程渲染管线"><source src="docs/assets/reel/npr-pipeline.mp4" type="video/mp4"></video></a></td>
   </tr>
   <tr>
-    <td width="50%"><img src=".github/media/rigid-coins.gif" width="100%" alt="1000 个刚体交互与自定义辉光"></td>
-    <td width="50%"><img src=".github/media/animated-cats.gif" width="100%" alt="由动画状态机与 Timeline 驱动的猫群"></td>
+    <td width="50%"><a href="docs/assets/reel/rigid-coins.mp4"><video width="100%" height="292" autoplay loop muted playsinline preload="metadata" poster="docs/assets/reel/rigid-coins.webp" aria-label="1000 个刚体交互与自定义辉光"><source src="docs/assets/reel/rigid-coins.mp4" type="video/mp4"></video></a></td>
+    <td width="50%"><a href="docs/assets/reel/animated-cats.mp4"><video width="100%" height="292" autoplay loop muted playsinline preload="metadata" poster="docs/assets/reel/animated-cats.webp" aria-label="由动画状态机与 Timeline 驱动的猫群"><source src="docs/assets/reel/animated-cats.mp4" type="video/mp4"></video></a></td>
   </tr>
 </table>
 <p align="center"><sub>以上均为引擎实机画面，来自 <a href="https://www.bilibili.com/video/BV1538P6jELT/?p=2">引擎演示视频</a>，没有概念图。</sub></p>
