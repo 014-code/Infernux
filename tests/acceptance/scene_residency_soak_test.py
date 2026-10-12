@@ -8,8 +8,6 @@ import tempfile
 import traceback
 from pathlib import Path
 
-from _process_memory import process_memory_bytes as _process_memory_bytes
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "python"))
 
 from infernux import Engine
@@ -21,6 +19,7 @@ from infernux.lib import (
     SceneManager,
     Vector3,
 )
+from _process_memory import process_memory_bytes as _process_memory_bytes
 
 
 CYCLES = 60
