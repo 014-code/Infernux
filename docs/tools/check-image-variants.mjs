@@ -100,45 +100,35 @@ for (const contract of ["data-reel", "dataset.src", "IntersectionObserver", "pre
 const budget = await readFile(path.join(docsRoot, "tools", "check-static-budget.mjs"), "utf8");
 if (!budget.includes("poster=")) fail("check-static-budget.mjs: reel posters must count toward the homepage first view");
 
-// README loops live outside docs/ so the website never delivers them. They
-// retain the exact crop geometry of the homepage clips instead of a separate
-// low-resolution thumbnail set; GIF is used only because GitHub README
-// rendering does not reliably play repository MP4 files inline.
-const readmeGifs = [
+// README uses the same reviewed MP4 clips as the homepage. Each video keeps
+// its WebP poster and a direct link for renderers that disable inline playback.
+const readmeVideos = [
     { name: "space-battle", width: 852, height: 388 },
     { name: "npr-pipeline", width: 640, height: 292 },
     { name: "rigid-coins", width: 640, height: 292 },
     { name: "animated-cats", width: 640, height: 292 },
 ];
-const gifLimits = { hero: 700 * 1024, tile: 900 * 1024, total: 2400 * 1024 };
-let gifBytes = 0;
-for (const clip of readmeGifs) {
-    const { name } = clip;
-    const gif = await readFile(path.join(repoRoot, ".github", "media", `${name}.gif`)).catch(() => null);
-    if (!gif) { fail(`.github/media/${name}.gif: README loop is missing`); continue; }
-    gifBytes += gif.length;
-    if (!/^GIF8[79]a/.test(gif.subarray(0, 6).toString("ascii"))) fail(`.github/media/${name}.gif: not a GIF`);
-    const limit = name === "space-battle" ? gifLimits.hero : gifLimits.tile;
-    if (gif.length > limit) fail(`.github/media/${name}.gif is ${gif.length} bytes; limit is ${limit}`);
-    const size = gifDimensions(gif);
-    if (!size || size.width !== clip.width || size.height !== clip.height) {
-        fail(`.github/media/${name}.gif: expected ${clip.width}x${clip.height}`);
-    }
+for (const clip of readmeVideos) {
+    const mp4 = await readFile(path.join(repoRoot, "docs", "assets", "reel", `${clip.name}.mp4`)).catch(() => null);
+    const poster = await readFile(path.join(repoRoot, "docs", "assets", "reel", `${clip.name}.webp`)).catch(() => null);
+    if (!mp4) { fail(`docs/assets/reel/${clip.name}.mp4: README video is missing`); continue; }
+    if (!poster) { fail(`docs/assets/reel/${clip.name}.webp: README poster is missing`); continue; }
+    const boxes = mp4Layout(mp4);
+    if (boxes[0] !== "ftyp" || boxes.indexOf("moov") < 0 || boxes.indexOf("moov") > boxes.indexOf("mdat")) fail(`reel/${clip.name}.mp4: README video must be faststart MP4`);
+    const size = webpDimensions(poster);
+    if (!size || size.width !== clip.width || size.height !== clip.height) fail(`reel/${clip.name}.webp: expected ${clip.width}x${clip.height}`);
 }
-if (gifBytes > gifLimits.total) fail(`README loops total ${gifBytes} bytes; limit is ${gifLimits.total}`);
 for (const readmeName of ["README.md", "README-zh.md"]) {
     const readme = await readFile(path.join(repoRoot, readmeName), "utf8");
-    for (const { name } of readmeGifs) if (!readme.includes(`src=".github/media/${name}.gif"`)) fail(`${readmeName}: missing demo loop ${name}.gif`);
     const reelTable = readme.match(/<table\b[\s\S]*?<\/table>/i)?.[0] || "";
     if (!/<table\b[^>]*\bwidth=["']100%["']/i.test(reelTable)) fail(`${readmeName}: demo reel table must span the page width`);
-    for (const { name } of readmeGifs) {
-        if (!new RegExp(`src=["']\\.github/media/${name}\\.gif["'][^>]*\\bwidth=["']100%["']`, "i").test(reelTable)) {
-            fail(`${readmeName}: demo loop ${name}.gif must fill its 2×2 cell`);
-        }
+    for (const { name } of readmeVideos) {
+        if (!new RegExp(`href=["']docs/assets/reel/${name}\\.mp4["']`, "i").test(reelTable)) fail(`${readmeName}: missing MP4 link for ${name}`);
+        if (!new RegExp(`src=["']docs/assets/reel/${name}\\.mp4["'][^>]*\\btype=["']video/mp4["']`, "i").test(reelTable)) fail(`${readmeName}: missing MP4 source for ${name}`);
+        if (!new RegExp(`poster=["']docs/assets/reel/${name}\\.webp["']`, "i").test(reelTable)) fail(`${readmeName}: missing poster for ${name}`);
     }
-    if (readme.includes("docs/assets/demo")) fail(`${readmeName}: retired showcase captures must not be referenced`);
+    if (readme.includes(".github/media/") || readme.includes("docs/assets/demo")) fail(`${readmeName}: retired README media reference remains`);
 }
-
 const provenance = await readFile(path.join(docsRoot, "assets", "VENDOR_ASSETS.md"), "utf8");
 for (const contract of ["BV1538P6jELT", "faststart", ...reel.flatMap((clip) => [`reel/${clip.name}.mp4`, clip.mp4])]) {
     if (!provenance.includes(contract)) fail(`VENDOR_ASSETS.md: missing reviewed reel provenance '${contract}'`);
@@ -155,4 +145,4 @@ if (failures.length) {
     process.exit(1);
 }
 
-console.log(`Evidence media audit passed: ${reel.length} lazy reel clips (${(reelBytes / 1024).toFixed(1)} KiB, faststart H.264, WebP posters); ${readmeGifs.length} README loops (${(gifBytes / 1024).toFixed(1)} KiB) outside website delivery.`);
+console.log(`Evidence media audit passed: ${reel.length} lazy reel clips (${(reelBytes / 1024).toFixed(1)} KiB, faststart H.264, WebP posters); ${readmeVideos.length} README MP4 videos outside website delivery.`);

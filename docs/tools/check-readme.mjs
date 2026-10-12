@@ -35,7 +35,7 @@ function structure(markdown) {
     const withoutCode = markdown.replace(/```[\s\S]*?```/g, "");
     return {
         headings: [...withoutCode.matchAll(/^(#{1,6})\s/gm)].map((match) => match[1].length).join(","),
-        images: [...markdown.matchAll(/<img\b[^>]*\bsrc="([^"]+)"/g)].map((match) => match[1]).join("|"),
+        images: [...markdown.matchAll(/<(?:img\b[^>]*\bsrc|video\b[^>]*\bposter)="([^"]+)"/g)].map((match) => match[1]).join("|"),
         codeBlocks: (markdown.match(/```[a-z]*\n/g) || []).length,
         tables: (withoutCode.match(/^\|\s*-{3,}/gm) || []).length,
     };
