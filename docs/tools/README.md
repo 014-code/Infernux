@@ -100,9 +100,8 @@ excluded from route first-view budgets.
 
 The home demo reel is a monitor wall of four real engine clips from
 `assets/reel/` (MP4 with WebP posters; provenance in `assets/VENDOR_ASSETS.md`).
-Only posters count toward the first view; video loads on demand. The README reuses
-the same four clips as compact GIFs in `.github/media/`, budgeted by
-`check-image-variants.mjs`.
+Only posters count toward the first view; video loads on demand. The website clips
+and posters are checked by `check-image-variants.mjs`.
 
 Roadmap stars live in a fixed viewport SVG, independent of camera zoom. The
 MISSION PLOT console adds a world-space polar graticule (range rings, bearing

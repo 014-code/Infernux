@@ -4,8 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 // Evidence media: the engine demo reel as looping H.264 clips with WebP posters
-// on the homepage, and as native-size GIF loops in .github/media for GitHub
-// README rendering. Both representations use the same four reviewed clips.
+// on the homepage.
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const docsRoot = path.resolve(scriptDir, "..");
 const repoRoot = path.resolve(docsRoot, "..");
@@ -36,11 +35,6 @@ function webpDimensions(buffer) {
         return { width: buffer.readUInt16LE(26) & 0x3fff, height: buffer.readUInt16LE(28) & 0x3fff };
     }
     return null;
-}
-
-function gifDimensions(buffer) {
-    if (buffer.length < 10 || !/^GIF8[79]a$/.test(buffer.subarray(0, 6).toString("ascii"))) return null;
-    return { width: buffer.readUInt16LE(6), height: buffer.readUInt16LE(8) };
 }
 
 // Top-level MP4 boxes: an ftyp brand, and moov ahead of mdat so playback can
@@ -100,35 +94,6 @@ for (const contract of ["data-reel", "dataset.src", "IntersectionObserver", "pre
 const budget = await readFile(path.join(docsRoot, "tools", "check-static-budget.mjs"), "utf8");
 if (!budget.includes("poster=")) fail("check-static-budget.mjs: reel posters must count toward the homepage first view");
 
-// README uses the same reviewed MP4 clips as the homepage. Each video keeps
-// its WebP poster and a direct link for renderers that disable inline playback.
-const readmeVideos = [
-    { name: "space-battle", width: 852, height: 388 },
-    { name: "npr-pipeline", width: 640, height: 292 },
-    { name: "rigid-coins", width: 640, height: 292 },
-    { name: "animated-cats", width: 640, height: 292 },
-];
-for (const clip of readmeVideos) {
-    const mp4 = await readFile(path.join(repoRoot, "docs", "assets", "reel", `${clip.name}.mp4`)).catch(() => null);
-    const poster = await readFile(path.join(repoRoot, "docs", "assets", "reel", `${clip.name}.webp`)).catch(() => null);
-    if (!mp4) { fail(`docs/assets/reel/${clip.name}.mp4: README video is missing`); continue; }
-    if (!poster) { fail(`docs/assets/reel/${clip.name}.webp: README poster is missing`); continue; }
-    const boxes = mp4Layout(mp4);
-    if (boxes[0] !== "ftyp" || boxes.indexOf("moov") < 0 || boxes.indexOf("moov") > boxes.indexOf("mdat")) fail(`reel/${clip.name}.mp4: README video must be faststart MP4`);
-    const size = webpDimensions(poster);
-    if (!size || size.width !== clip.width || size.height !== clip.height) fail(`reel/${clip.name}.webp: expected ${clip.width}x${clip.height}`);
-}
-for (const readmeName of ["README.md", "README-zh.md"]) {
-    const readme = await readFile(path.join(repoRoot, readmeName), "utf8");
-    const reelTable = readme.match(/<table\b[\s\S]*?<\/table>/i)?.[0] || "";
-    if (!/<table\b[^>]*\bwidth=["']100%["']/i.test(reelTable)) fail(`${readmeName}: demo reel table must span the page width`);
-    for (const { name } of readmeVideos) {
-        if (!new RegExp(`href=["']docs/assets/reel/${name}\\.mp4["']`, "i").test(reelTable)) fail(`${readmeName}: missing MP4 link for ${name}`);
-        if (!new RegExp(`src=["']docs/assets/reel/${name}\\.mp4["'][^>]*\\btype=["']video/mp4["']`, "i").test(reelTable)) fail(`${readmeName}: missing MP4 source for ${name}`);
-        if (!new RegExp(`poster=["']docs/assets/reel/${name}\\.webp["']`, "i").test(reelTable)) fail(`${readmeName}: missing poster for ${name}`);
-    }
-    if (readme.includes(".github/media/") || readme.includes("docs/assets/demo")) fail(`${readmeName}: retired README media reference remains`);
-}
 const provenance = await readFile(path.join(docsRoot, "assets", "VENDOR_ASSETS.md"), "utf8");
 for (const contract of ["BV1538P6jELT", "faststart", ...reel.flatMap((clip) => [`reel/${clip.name}.mp4`, clip.mp4])]) {
     if (!provenance.includes(contract)) fail(`VENDOR_ASSETS.md: missing reviewed reel provenance '${contract}'`);
@@ -145,4 +110,4 @@ if (failures.length) {
     process.exit(1);
 }
 
-console.log(`Evidence media audit passed: ${reel.length} lazy reel clips (${(reelBytes / 1024).toFixed(1)} KiB, faststart H.264, WebP posters); ${readmeVideos.length} README MP4 videos outside website delivery.`);
+console.log(`Evidence media audit passed: ${reel.length} lazy reel clips (${(reelBytes / 1024).toFixed(1)} KiB, faststart H.264, WebP posters).`);

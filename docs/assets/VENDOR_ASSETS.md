@@ -19,11 +19,7 @@ The `source-han-sans-sc-subset.woff2` file is a character subset of Google Noto 
 
 `infernux-social-card-0.3.4.jpg` is the reviewed 1200×630 Open Graph/X card for release 0.3.4. It is a center-cropped derivative of the original 1920×1032 editor capture (`demo.png`, since retired from the repository) rather than separate promotional artwork. Its SHA-256 is `c1bb18887d484776433a14f43bf2d77dde6a9fe4f8eabc077e6fbb541c273159`. The site verifier locks its format, dimensions, release-scoped filename, and reviewed content hash.
 
-The original `demo.png` capture and its `demo-runtime.webp` / `demo-runtime.avif` homepage derivatives of the 65,536-object voxel continent were retired with the homepage redesign. Both the homepage and the READMEs now show the demo reel below.
-
-### README demo images
-
-The READMEs use the same MP4 clips shown by the homepage reel. Each video keeps the reviewed crop geometry and its WebP poster: `space-battle` is 852×388 and the other three clips are 640×292. A direct MP4 link remains available when a README renderer disables inline playback. `check-image-variants.mjs` enforces faststart MP4 layout, poster dimensions and that both READMEs reference all four clips.
+The original `demo.png` capture and its `demo-runtime.webp` / `demo-runtime.avif` homepage derivatives of the 65,536-object voxel continent were retired with the homepage redesign. The homepage shows the demo reel below.
 
 ### Demo reel
 

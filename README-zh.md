@@ -27,18 +27,6 @@
   <a href="README.md">English</a>
 </p>
 
-<table align="center" width="100%">
-  <tr>
-    <td width="50%"><a href="docs/assets/reel/space-battle.mp4"><video width="100%" height="388" autoplay loop muted playsinline preload="metadata" poster="docs/assets/reel/space-battle.webp" aria-label="熔炉运行时：由玩法逻辑驱动的数百艘飞船与粒子爆发"><source src="docs/assets/reel/space-battle.mp4" type="video/mp4"></video></a></td>
-    <td width="50%"><a href="docs/assets/reel/npr-pipeline.mp4"><video width="100%" height="292" autoplay loop muted playsinline preload="metadata" poster="docs/assets/reel/npr-pipeline.webp" aria-label="可在运行时重建的可编程渲染管线"><source src="docs/assets/reel/npr-pipeline.mp4" type="video/mp4"></video></a></td>
-  </tr>
-  <tr>
-    <td width="50%"><a href="docs/assets/reel/rigid-coins.mp4"><video width="100%" height="292" autoplay loop muted playsinline preload="metadata" poster="docs/assets/reel/rigid-coins.webp" aria-label="1000 个刚体交互与自定义辉光"><source src="docs/assets/reel/rigid-coins.mp4" type="video/mp4"></video></a></td>
-    <td width="50%"><a href="docs/assets/reel/animated-cats.mp4"><video width="100%" height="292" autoplay loop muted playsinline preload="metadata" poster="docs/assets/reel/animated-cats.webp" aria-label="由动画状态机与 Timeline 驱动的猫群"><source src="docs/assets/reel/animated-cats.mp4" type="video/mp4"></video></a></td>
-  </tr>
-</table>
-<p align="center"><sub>以上均为引擎实机画面，来自 <a href="https://www.bilibili.com/video/BV1538P6jELT/?p=2">引擎演示视频</a>，没有概念图。</sub></p>
-
 ## 熔炉是什么？
 
 熔炉是一款 **用 Python 创作、由 C++ 运行** 的游戏引擎。玩法、编辑器工具、渲染管线与数值计算都用 Python 编写；C++ 运行时、Vulkan 渲染器和 Jolt 物理负责重活。同一个项目可以发布到 Windows、Linux、Android 和浏览器。

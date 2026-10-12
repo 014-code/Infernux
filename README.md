@@ -27,18 +27,6 @@
   <a href="README-zh.md">简体中文</a>
 </p>
 
-<table align="center" width="100%">
-  <tr>
-    <td width="50%"><a href="docs/assets/reel/space-battle.mp4"><video width="100%" height="388" autoplay loop muted playsinline preload="metadata" poster="docs/assets/reel/space-battle.webp" aria-label="Infernux runtime: hundreds of ships and particle bursts driven by gameplay logic"><source src="docs/assets/reel/space-battle.mp4" type="video/mp4"></video></a></td>
-    <td width="50%"><a href="docs/assets/reel/npr-pipeline.mp4"><video width="100%" height="292" autoplay loop muted playsinline preload="metadata" poster="docs/assets/reel/npr-pipeline.webp" aria-label="A programmable render pipeline rebuilt at runtime"><source src="docs/assets/reel/npr-pipeline.mp4" type="video/mp4"></video></a></td>
-  </tr>
-  <tr>
-    <td width="50%"><a href="docs/assets/reel/rigid-coins.mp4"><video width="100%" height="292" autoplay loop muted playsinline preload="metadata" poster="docs/assets/reel/rigid-coins.webp" aria-label="1,000 interacting rigid bodies with a custom bloom"><source src="docs/assets/reel/rigid-coins.mp4" type="video/mp4"></video></a></td>
-    <td width="50%"><a href="docs/assets/reel/animated-cats.mp4"><video width="100%" height="292" autoplay loop muted playsinline preload="metadata" poster="docs/assets/reel/animated-cats.webp" aria-label="Cats driven by animation state machines and Timeline"><source src="docs/assets/reel/animated-cats.mp4" type="video/mp4"></video></a></td>
-  </tr>
-</table>
-<p align="center"><sub>Real engine footage from the <a href="https://www.bilibili.com/video/BV1538P6jELT/?p=2">engine demo reel</a>. No concept art.</sub></p>
-
 ## What is Infernux?
 
 Infernux is a game engine where **Python is where you work** and **C++ is where it runs**. You write gameplay, editor tools, render pipelines and numerical code in Python; a C++ runtime, a Vulkan renderer and Jolt physics do the heavy lifting. The same project ships to Windows, Linux, Android and the browser.
