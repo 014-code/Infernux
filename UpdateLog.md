@@ -45,7 +45,7 @@
 - **Deliver complete target payloads.** Cook enabled package dependencies and current document formats, reject missing scripts before scene replacement, and preserve package data layout in exported Players.
 - **Run the Web Player through the full path.** Repair the static NumPy runtime, startup, keyboard input, camera clears and authored physics timing; validate development and release builds in Chromium with pixel and input checks.
 - **Keep Windows launches portable.** Host editors outside deeply nested project runtimes, preserve long asset paths at loader boundaries, and report unsupported executable locations before graphics startup.
-- **Publish one coherent release.** Require same-revision Desktop and Player acceptance before GitHub/PyPI/R2 publication, verify immutable release identities and update public catalogs only from the actual published files. Ship platform packages targeting 0.4.2.
+- **Publish one coherent release.** Require same-revision Desktop and Player acceptance before GitHub/PyPI/R2 publication, verify immutable release identities and update public catalogs only from the actual published files. Official plugins require Infernux >=0.4.2; this release's native payloads are built with 0.4.2.
 - **Broaden automated evidence.** Add software-Vulkan correctness coverage, scene residency and headless physics gates, installed Player tests and isolated parallel Windows Python workers. Android CI covers builds and emulation; physical-device validation remains separate.
 
 ### Website and Upgrade Notes
