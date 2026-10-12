@@ -7,7 +7,7 @@ is `v0.4.1-v2`. Numeric post-release Hub identities are understood by existing
 0.4.1 installations. Published artifact URLs are immutable.
 `build_release_catalog.py --check-version` checks this before publication, and
 the release workflow allows its recovery switch only for unpublished drafts.
-The repository prepares 0.4.1. Public download pages and catalogs change only
+The repository prepares 0.4.2 (wheel build 1, Hub 0.4.2, GitHub tag v0.4.2). Public download pages and catalogs change only
 after its actual artifacts have been published.
 
 ## Release sequence

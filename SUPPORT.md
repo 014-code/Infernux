@@ -6,7 +6,7 @@ The [support matrix](docs/platform-support.json) is the shared source for the
 English/Chinese README tables and wheel OS classifiers. A classifier identifies
 a host build target, not a claim that every device configuration has been tested.
 
-**0.4.1** includes Windows and Linux Editors and Players, plus Android and Web
+**0.4.2** includes Windows and Linux Editors and Players, plus Android and Web
 Players. macOS, native iOS and a Headless
 Player package are not supported. Headless is a Windows/Linux host mode;
 iPhone/iPad browser testing concerns the Web Player, not a native iOS export.

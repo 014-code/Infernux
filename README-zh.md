@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/ChenlizheMe/Infernux/releases"><img src="https://img.shields.io/badge/version-0.4.1-orange.svg" alt="已发布版本 0.4.1"></a>
+  <a href="https://github.com/ChenlizheMe/Infernux/releases"><img src="https://img.shields.io/badge/version-0.4.2-orange.svg" alt="已发布版本 0.4.2"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT 协议"></a>
   <img src="https://img.shields.io/badge/python-3.13-3776AB.svg" alt="Python 3.13">
   <img src="https://img.shields.io/badge/graphics-Vulkan%20%C2%B7%20WebGPU-c8444b.svg" alt="Vulkan 与 WebGPU">
@@ -59,7 +59,7 @@ class Spin(inx.InxComponent):
 <sub>一个普通的 Python 类。`speed` 会出现在 Inspector 中，游戏运行时也能随时调整。</sub>
 
 > [!WARNING]
-> 熔炉仍是 **Alpha 阶段** 的软件，正在积极开发中，当前发布版本为 **0.4.1**。不同版本之间 API 仍会变化，下文中的神经网络能力属于路线图目标，尚未交付。它适合实验、工具开发和小型游戏，暂不适合有严格排期的商业项目。
+> 熔炉仍是 **Alpha 阶段** 的软件，正在积极开发中，当前发布版本为 **0.4.2**。不同版本之间 API 仍会变化，下文中的神经网络能力属于路线图目标，尚未交付。它适合实验、工具开发和小型游戏，暂不适合有严格排期的商业项目。
 
 ## 亮点
 
@@ -135,7 +135,7 @@ Linux 上先运行 `scripts/setup/install_linux_dependencies.sh` 与 `bash scrip
   author  = {Chen, Lizhe},
   title   = {Infernux},
   year    = {2026},
-  version = {0.4.1},
+  version = {0.4.2},
   url     = {https://github.com/ChenlizheMe/Infernux}
 }
 ```

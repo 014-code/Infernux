@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/ChenlizheMe/Infernux/releases"><img src="https://img.shields.io/badge/version-0.4.1-orange.svg" alt="Published release 0.4.1"></a>
+  <a href="https://github.com/ChenlizheMe/Infernux/releases"><img src="https://img.shields.io/badge/version-0.4.2-orange.svg" alt="Published release 0.4.2"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
   <img src="https://img.shields.io/badge/python-3.13-3776AB.svg" alt="Python 3.13">
   <img src="https://img.shields.io/badge/graphics-Vulkan%20%C2%B7%20WebGPU-c8444b.svg" alt="Vulkan and WebGPU">
@@ -59,7 +59,7 @@ class Spin(inx.InxComponent):
 <sub>An ordinary Python class. `speed` appears in the Inspector and can be tuned while the game runs.</sub>
 
 > [!WARNING]
-> Infernux is **alpha software** under active development; the current release is **0.4.1**. APIs still change between releases, and the neural-network features below are roadmap items rather than shipped features. It is ready for experiments, tools and small games, not yet for a production schedule.
+> Infernux is **alpha software** under active development; the current release is **0.4.2**. APIs still change between releases, and the neural-network features below are roadmap items rather than shipped features. It is ready for experiments, tools and small games, not yet for a production schedule.
 
 ## Highlights
 
@@ -137,7 +137,7 @@ Infernux is released under the [MIT license](LICENSE): free to use, no royalties
   author  = {Chen, Lizhe},
   title   = {Infernux},
   year    = {2026},
-  version = {0.4.1},
+  version = {0.4.2},
   url     = {https://github.com/ChenlizheMe/Infernux}
 }
 ```

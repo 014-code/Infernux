@@ -1,3 +1,63 @@
+# Infernux v0.4.2 · Reliable Worlds and Collaborative Authoring
+
+0.4.2 strengthens the working paths introduced in 0.4.1: portable projects, stable asset identities, transactional editing, script reload, physics, rendering and delivery. This release brings the repair and acceptance work into the published engine, refreshes the website, and ships matching platform packages.
+
+[中文更新日志](UpdateLog-zh.md)
+
+**Baseline for comparison:** [`v0.4.1...v0.4.2`](https://github.com/ChenlizheMe/Infernux/compare/v0.4.1...v0.4.2). This includes the 0.4.1 v2/v3 hotfixes; the changes after the last published revision are also available in [`v0.4.1-v3...v0.4.2`](https://github.com/ChenlizheMe/Infernux/compare/v0.4.1-v3...v0.4.2).
+
+### Projects, Assets and Collaboration
+
+- **Pin the exact engine release.** Shared projects record the engine revision and CPython ABI. Hub disables projects whose matching engine is not installed and rebuilds their local runtime from the installed release during startup.
+- **Keep project identities portable.** Store project asset metadata and references relative to the project root, separate persistent Scene GUIDs from runtime IDs, and resolve authored asset paths into cooked GUIDs for Players.
+- **Make authored files mergeable.** Keep scene, material, prefab and package authoring in stable text documents; preserve independent edits and external revisions, and keep runtime caches, editor view state and MCP sessions outside Git. Git remains responsible for conflict resolution.
+- **Publish complete asset changes.** Reject duplicate GUIDs, unsafe paths, unresolved dependencies and invalid fields before publication. Preserve authored metadata and imported subasset identities through rename, reimport, deletion and concurrent document saves.
+- **Use current project templates.** Create projects with a complete default forward rendering setup, current scene/component formats and portable version-control rules.
+
+### Scripts and Editor Workflows
+
+- **Reload renamed components.** Resolve scripts by their asset identity and published component declarations, preserve references across class renames, and publish complete component sets and serialized field metadata together.
+- **Restore authoring after Play.** Restore saved object data and remap object selections across Play/Stop scene replacement. Failed Play initialization also restores the authoring domain.
+- **Preserve editing ownership.** Tighten Undo/Redo, Prefab propagation, animation/timeline saves, asset previews, project selections and pointer capture so retired scene or asset owners cannot receive later edits.
+- **Keep panels efficient.** Share observed file and registry snapshots inside the editor's panel mechanism, remove repeated expensive preparation, and make custom-panel and Timeline text inherit the editor font size.
+- **Strengthen MCP lifecycle.** Separate general editor operations from the plugin's transport service, retain local endpoint and permission settings, and clean up plugin commands, workers and services with their owners. Update the official MCP client for persistent sessions and virtual-environment launchers.
+- **Keep release diagnostics quiet.** Make internal startup and runtime-origin diagnostics opt-in while retaining actionable errors and user logging.
+
+### Physics, Animation and Audio
+
+- **Keep joints physically coherent.** Preserve hinge frames and anchors across compound center-of-mass changes and collapsed scales, and prevent a swinging pendulum from sleeping prematurely.
+- **Publish body changes consistently.** Retain authored mass and collider geometry across edits and clones, order nested body poses, compose kinematic targets, and retire joint constraints with their owners.
+- **Correct query and contact contracts.** Return target-surface shape-cast contacts and correctly oriented normals, honor query masks and compound ignore rules, and resolve callback targets by their live native lifetime.
+- **Repair animation timing.** Correct terminal frames, ordered loop events, Timeline completion and explicitly armed transition triggers; preserve clip events and graph identities through editing and save operations.
+- **Respect audio ownership.** Retain shared clip dependencies until the last track releases them, register listeners only while enabled, and apply authored clip import settings in exported Players.
+
+### Rendering, UI and Compute
+
+- **Make first-frame rendering valid.** Resolve linked shadow variants and implicit DefaultLit before the first draw, collect shadow casters across resident scenes, and fit shadow cascades to the effective camera matrices.
+- **Strengthen RenderGraph synchronization.** Declare exact texture/buffer consumers, queue sharing and particle dependencies; retire transient targets, descriptors, materials and camera resources after their GPU completion epoch.
+- **Validate backend capabilities.** Expose a backend-neutral device capability contract and reject unsupported formats, commands and pipeline layouts before recording or allocation.
+- **Correct material and effect composition.** Preserve shader texture defaults, alpha coverage, surface discard, GBuffer scalars, deformed lighting and slot-ordered Bloom/effect chains; retain exact pixels in equal-size transfers.
+- **Align UI rendering and input.** Repair World UI depth replay, affine billboard picking, per-frame screen pose uploads, text/font invalidation and camera-local rendering state.
+- **Keep CPU/GPU work ordered.** Correct asynchronous compute readback before later uploads, buffer/resource retirement and particle publication. Add parallel JIT material-kernel fixtures that verify mutation-free warmup and required CPU specialization; these fixtures are not a complete MPM solver.
+
+### Players, Hub and Release Delivery
+
+- **Deliver complete target payloads.** Cook enabled package dependencies and current document formats, reject missing scripts before scene replacement, and preserve package data layout in exported Players.
+- **Run the Web Player through the full path.** Repair the static NumPy runtime, startup, keyboard input, camera clears and authored physics timing; validate development and release builds in Chromium with pixel and input checks.
+- **Keep Windows launches portable.** Host editors outside deeply nested project runtimes, preserve long asset paths at loader boundaries, and report unsupported executable locations before graphics startup.
+- **Publish one coherent release.** Require same-revision Desktop and Player acceptance before GitHub/PyPI/R2 publication, verify immutable release identities and update public catalogs only from the actual published files. Ship platform packages targeting 0.4.2.
+- **Broaden automated evidence.** Add software-Vulkan correctness coverage, scene residency and headless physics gates, installed Player tests and isolated parallel Windows Python workers. Android CI covers builds and emulation; physical-device validation remains separate.
+
+### Website and Upgrade Notes
+
+- **Refresh the public site.** Ship the dark tape-futurist design, local GSAP animation, unified tutorials, categorized roadmap graphs, bilingual learning chapters and current API documentation.
+- **Share showcase media.** README uses four full-width website showcase clips. Delay offscreen simulation/media work and keep large lazy-loaded content out of service-worker precache.
+- **Use the canonical Python namespace.** Author scripts with `import infernux as inx`; update old `Infernux` imports and serialized package names. This release does not promise arbitrary old-file format compatibility.
+- **Keep teams on one exact release.** Install 0.4.2 on every development machine and use its matching platform packages. Existing 0.4.1 projects remain pinned to 0.4.1; Hub does not automatically upgrade them. Back up and deliberately update project pins and formats before adopting 0.4.2.
+- **Keep the scope clear.** Infernux remains alpha software. Neural Network-Native Engine (3N) is the architectural goal; a complete neural-network inference runtime, networking stack and Tiny Glade/MPM game are not delivered by this release.
+
+---
+
 # Infernux v0.4.1 · Worlds, Compute and Live Tools
 
 0.4.1 brings larger worlds, live Python authoring and target-aware computation into the same engine workflow. This release expands multi-scene editing, prefab authoring, model import, rendering and audio, then carries their resource and component lifecycles into exported Players. It also rebuilds key parts of the plugin experience in response to community reports.
