@@ -2,7 +2,8 @@
 import pytest
 
 
-def test_custom_text_edit_matches_native_font_draw_and_hitbox(engine, scene, monkeypatch, capfd):
+@pytest.mark.parametrize("initial_samples", [1, 4])
+def test_custom_text_edit_matches_native_font_draw_and_hitbox(engine, scene, monkeypatch, capfd, initial_samples):
     from infernux.engine import runtime_screen_ui as runtime
     from infernux.engine.runtime_screen_ui_pipeline import RuntimeScreenUIRenderPipeline
     from infernux.renderstack import RenderStackPipeline
@@ -43,7 +44,7 @@ def test_custom_text_edit_matches_native_font_draw_and_hitbox(engine, scene, mon
     dispatch.register_ui_renderer("UIButton", "runtime", lambda *args, **kwargs: setattr(target, "text", "MMMMMM"))
     submission = runtime.RuntimeScreenUISubmission(engine)
     submission.set_target_size(256, 128)
-    renderer = engine.get_screen_ui_renderer()
+    previous_samples = engine.get_msaa_samples()
     frames = 0
 
     def after_draw():
@@ -51,6 +52,9 @@ def test_custom_text_edit_matches_native_font_draw_and_hitbox(engine, scene, mon
         try:
             frames += 1
             assert frames <= 4
+            # Pipeline MSAA changes replace the native UI renderer. Borrow the
+            # current generation only for this callback, never across frames.
+            renderer = engine.get_screen_ui_renderer()
             font, fallbacks = ui_font_paths(target)
             expected = renderer.measure_text("MMMMMM", 18, 0, font, 1.2, 0, fallbacks)[0]
             original_width = renderer.measure_text("A", 18, 0, font, 1.2, 0, fallbacks)[0]
@@ -67,6 +71,7 @@ def test_custom_text_edit_matches_native_font_draw_and_hitbox(engine, scene, mon
             engine.exit()
 
     try:
+        engine.set_msaa_samples(initial_samples)
         engine.resize_game_render_target(256, 128)
         engine.set_game_camera_enabled(True)
         engine.set_render_pipeline(RuntimeScreenUIRenderPipeline(submission, RenderStackPipeline()))
@@ -75,13 +80,14 @@ def test_custom_text_edit_matches_native_font_draw_and_hitbox(engine, scene, mon
         assert not errors, repr(errors)
         assert frames == 3
     finally:
+        dispatch.register_ui_renderer("UIButton", "runtime", original_custom)
         engine.set_post_draw_callback(None)
         engine.set_render_pipeline(None)
         engine.set_game_camera_enabled(False)
         # The session renderer outlives this disposable Scene. Retire its
         # retained UI snapshot before another test installs a bare pipeline.
-        renderer.begin_frame(256, 128)
-        dispatch.register_ui_renderer("UIButton", "runtime", original_custom)
+        engine.get_screen_ui_renderer().begin_frame(256, 128)
+        engine.set_msaa_samples(previous_samples)
     captured = capfd.readouterr()
     assert not any(token in captured.out + captured.err for token in (
         "VUID-", "SYNC-HAZARD", "Validation Error", "Screen UI packet outlived",

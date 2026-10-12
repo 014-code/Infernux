@@ -6,6 +6,7 @@ import argparse
 import shutil
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 
@@ -24,6 +25,11 @@ def repair(wheel_dir: Path) -> Path:
             "-m",
             "auditwheel",
             "repair",
+            # SDL opens the system Vulkan loader by its normal soname. A
+            # renamed, vendored loader would create a second instance registry
+            # and make SDL reject surfaces created by the native engine.
+            "--exclude",
+            "libvulkan.so.1",
             "--wheel-dir",
             str(staging),
             str(wheels[0]),
@@ -35,6 +41,10 @@ def repair(wheel_dir: Path) -> Path:
         raise RuntimeError(
             f"Expected one audited Linux wheel in {staging}, found {len(repaired)}"
         )
+    with zipfile.ZipFile(repaired[0]) as archive:
+        if any(Path(name).name.startswith("libvulkan") and ".so" in Path(name).name
+               for name in archive.namelist()):
+            raise RuntimeError("Linux wheels must use the system Vulkan loader, not bundle another loader")
     destination = wheel_dir / repaired[0].name
     wheels[0].unlink()
     shutil.move(str(repaired[0]), destination)

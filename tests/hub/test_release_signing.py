@@ -226,6 +226,57 @@ def test_pypi_existing_wheel_mismatch_is_not_skip_existing(tmp_path, monkeypatch
         module.verify_pypi(tmp_path, '1.2.3')
 
 
+def test_pypi_visibility_wait_handles_404_and_partial_upload_metadata(tmp_path, monkeypatch):
+    module = load('verify_publication')
+    files = []
+    for name in ('windows.whl', 'linux.whl'):
+        (tmp_path / name).write_bytes(b'wheel')
+        files.append({'filename': name, 'size': 5, 'digests': {'sha256': hashlib.sha256(b'wheel').hexdigest()}})
+    replies = [None, files[:1], files]
+    now = [0.0]
+
+    def fetch(*_args, **_kwargs):
+        reply = replies.pop(0)
+        if reply is None:
+            raise urllib.error.HTTPError('https://pypi.org', 404, 'Not Found', {}, None)
+        return io.BytesIO(json.dumps({'urls': reply}).encode())
+
+    monkeypatch.setattr(module.urllib.request, 'urlopen', fetch)
+    monkeypatch.setattr(module.time, 'monotonic', lambda: now[0])
+    monkeypatch.setattr(module.time, 'sleep', lambda seconds: now.__setitem__(0, now[0] + seconds))
+    module.verify_pypi(tmp_path, '1.2.3', wait_seconds=20)
+    assert not replies
+    assert now[0] == 10
+
+
+@pytest.mark.parametrize('failure', ['missing', 'changed', 'http_error'])
+def test_pypi_visibility_wait_is_bounded_and_does_not_retry_other_failures(tmp_path, monkeypatch, failure):
+    module = load('verify_publication')
+    for name in ('windows.whl', 'linux.whl'):
+        (tmp_path / name).write_bytes(b'wheel')
+    now, calls = [0.0], []
+
+    def fetch(*_args, **_kwargs):
+        calls.append(now[0])
+        if failure == 'http_error':
+            raise urllib.error.HTTPError('https://pypi.org', 503, 'Unavailable', {}, None)
+        files = [] if failure == 'missing' else [
+            {'filename': 'windows.whl', 'size': 5, 'digests': {'sha256': '0' * 64}},
+        ]
+        return io.BytesIO(json.dumps({'urls': files}).encode())
+
+    monkeypatch.setattr(module.urllib.request, 'urlopen', fetch)
+    monkeypatch.setattr(module.time, 'monotonic', lambda: now[0])
+    monkeypatch.setattr(module.time, 'sleep', lambda seconds: now.__setitem__(0, now[0] + seconds))
+    if failure == 'http_error':
+        with pytest.raises(urllib.error.HTTPError):
+            module.verify_pypi(tmp_path, '1.2.3', wait_seconds=6)
+    else:
+        with pytest.raises(ValueError, match='missing' if failure == 'missing' else 'differs'):
+            module.verify_pypi(tmp_path, '1.2.3', wait_seconds=6)
+    assert calls == ([0, 5, 6] if failure == 'missing' else [0])
+
+
 def test_r2_recovery_skips_identical_but_refuses_changed_public_objects(tmp_path, monkeypatch):
     module = load('publish_hub_objects')
     source = tmp_path / 'hub.zip'

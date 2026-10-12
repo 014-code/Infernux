@@ -285,7 +285,7 @@ jobs:
           python -m pip install --disable-pip-version-check twine
           python -m twine check "dist/$RELEASE_VERSION/"*.whl
           python -m twine upload --non-interactive --skip-existing "dist/$RELEASE_VERSION/"*.whl
-          python scripts/release/verify_publication.py --release-dir "dist/$RELEASE_VERSION" --pypi-version "$RELEASE_VERSION"
+          python scripts/release/verify_publication.py --release-dir "dist/$RELEASE_VERSION" --pypi-version "$RELEASE_VERSION" --wait-seconds 180
 
       - name: Publish Hub artifacts to Cloudflare R2
         env:

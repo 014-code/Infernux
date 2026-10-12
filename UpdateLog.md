@@ -4,7 +4,12 @@
 
 [中文更新日志](UpdateLog-zh.md)
 
-**Baseline for comparison:** [`v0.4.1...v0.4.2`](https://github.com/ChenlizheMe/Infernux/compare/v0.4.1...v0.4.2). This includes the 0.4.1 v2/v3 hotfixes; the changes after the last published revision are also available in [`v0.4.1-v3...v0.4.2`](https://github.com/ChenlizheMe/Infernux/compare/v0.4.1-v3...v0.4.2).
+**Baseline for comparison:** [`v0.4.1...v0.4.2-v2`](https://github.com/ChenlizheMe/Infernux/compare/v0.4.1...v0.4.2-v2). This includes the 0.4.1 v2/v3 hotfixes; the changes after the last published revision are also available in [`v0.4.1-v3...v0.4.2-v2`](https://github.com/ChenlizheMe/Infernux/compare/v0.4.1-v3...v0.4.2-v2).
+
+### Publication revision 2
+
+- Use the system Vulkan loader in Linux wheels so SDL and the native engine share one instance registry. Build 1 wheel files already uploaded to PyPI remain immutable; the corrected files use wheel build 2, Hub 0.4.2-2 and engine release 0.4.2-v2.
+- Wait for newly uploaded wheels to become visible in PyPI's cached metadata before publishing the other channels. Missing metadata has a bounded wait; mismatched files and unrelated errors fail immediately.
 
 ### Projects, Assets and Collaboration
 
@@ -51,9 +56,9 @@
 ### Website and Upgrade Notes
 
 - **Refresh the public site.** Ship the dark tape-futurist design, local GSAP animation, unified tutorials, categorized roadmap graphs, bilingual learning chapters and current API documentation.
-- **Share showcase media.** README uses four full-width website showcase clips. Delay offscreen simulation/media work and keep large lazy-loaded content out of service-worker precache.
+- **Stream website showcase media efficiently.** Delay offscreen simulation/media work and keep large lazy-loaded content out of service-worker precache.
 - **Use the canonical Python namespace.** Author scripts with `import infernux as inx`; update old `Infernux` imports and serialized package names. This release does not promise arbitrary old-file format compatibility.
-- **Keep teams on one exact release.** Install 0.4.2 on every development machine and use its matching platform packages. Existing 0.4.1 projects remain pinned to 0.4.1; Hub does not automatically upgrade them. Back up and deliberately update project pins and formats before adopting 0.4.2.
+- **Keep teams on one exact release.** Install 0.4.2-v2 on every development machine and use its matching platform packages. Existing 0.4.1 projects remain pinned to 0.4.1; Hub does not automatically upgrade them. Back up and deliberately update project pins and formats before adopting 0.4.2.
 - **Keep the scope clear.** Infernux remains alpha software. Neural Network-Native Engine (3N) is the architectural goal; a complete neural-network inference runtime, networking stack and Tiny Glade/MPM game are not delivered by this release.
 
 ---
