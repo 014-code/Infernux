@@ -231,7 +231,7 @@ jobs:
             fi
             echo "created=false" >> "$GITHUB_OUTPUT"
             echo "publish=$draft" >> "$GITHUB_OUTPUT"
-            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --notes-file dist/release-notes.md
+            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --notes-file dist/release-notes.md
           else
             gh release create "$RELEASE_TAG" \
               --repo "$GITHUB_REPOSITORY" \
@@ -242,6 +242,8 @@ jobs:
             echo "created=true" >> "$GITHUB_OUTPUT"
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
+          release_api="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json apiUrl --jq .apiUrl)"
+          echo "api_url=$release_api" >> "$GITHUB_OUTPUT"
 
       - name: Verify the English changelog and signing disclosure
         env:
@@ -268,10 +270,10 @@ jobs:
       - name: Verify GitHub assets and preflight immutable PyPI files
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_API_URL: ${{ steps.github_release.outputs.api_url }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
         run: |
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > dist/github-assets.json
+          gh api "$RELEASE_API_URL" > dist/github-assets.json
           python scripts/release/verify_publication.py --release-dir "dist/$RELEASE_VERSION" --github-json dist/github-assets.json --pypi-version "$RELEASE_VERSION" --allow-missing
 
       - name: Publish engine wheels to PyPI
