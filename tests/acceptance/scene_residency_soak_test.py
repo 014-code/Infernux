@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import ctypes
 import gc
-import os
 import sys
 import tempfile
 import traceback
 from pathlib import Path
+
+from _process_memory import process_memory_bytes as _process_memory_bytes
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "python"))
 
@@ -26,57 +26,6 @@ from infernux.lib import (
 CYCLES = 60
 WARMUP_CYCLES = 10
 MIB = 1024 * 1024
-
-
-if sys.platform == "win32":
-    class _ProcessMemoryCountersEx(ctypes.Structure):
-        _fields_ = [
-            ("cb", ctypes.c_ulong),
-            ("page_fault_count", ctypes.c_ulong),
-            ("peak_working_set_size", ctypes.c_size_t),
-            ("working_set_size", ctypes.c_size_t),
-            ("quota_peak_paged_pool_usage", ctypes.c_size_t),
-            ("quota_paged_pool_usage", ctypes.c_size_t),
-            ("quota_peak_non_paged_pool_usage", ctypes.c_size_t),
-            ("quota_non_paged_pool_usage", ctypes.c_size_t),
-            ("pagefile_usage", ctypes.c_size_t),
-            ("peak_pagefile_usage", ctypes.c_size_t),
-            ("private_usage", ctypes.c_size_t),
-        ]
-
-    _GET_CURRENT_PROCESS = ctypes.windll.kernel32.GetCurrentProcess
-    _GET_CURRENT_PROCESS.restype = ctypes.c_void_p
-    _GET_PROCESS_MEMORY_INFO = ctypes.windll.psapi.GetProcessMemoryInfo
-    _GET_PROCESS_MEMORY_INFO.argtypes = [
-        ctypes.c_void_p,
-        ctypes.POINTER(_ProcessMemoryCountersEx),
-        ctypes.c_ulong,
-    ]
-    _GET_PROCESS_MEMORY_INFO.restype = ctypes.c_int
-
-
-def _process_memory_bytes() -> tuple[int, int]:
-    if sys.platform == "win32":
-        counters = _ProcessMemoryCountersEx()
-        counters.cb = ctypes.sizeof(counters)
-        process = _GET_CURRENT_PROCESS()
-        if not _GET_PROCESS_MEMORY_INFO(
-            process, ctypes.byref(counters), counters.cb
-        ):
-            raise OSError("GetProcessMemoryInfo failed")
-        return int(counters.working_set_size), int(counters.private_usage)
-
-    statm = Path("/proc/self/statm")
-    if statm.is_file():
-        fields = statm.read_text(encoding="ascii").split()
-        page_size = os.sysconf("SC_PAGE_SIZE")
-        return int(fields[1]) * page_size, int(fields[5]) * page_size
-
-    import resource
-
-    resident = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    rss = int(resident if sys.platform == "darwin" else resident * 1024)
-    return rss, rss
 
 
 def _assert_stable(name: str, values: list[int], tolerance: int) -> None:
