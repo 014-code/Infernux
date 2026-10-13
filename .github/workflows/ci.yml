@@ -217,7 +217,7 @@ jobs:
           conda activate infernux
           $env:VULKAN_SDK = "C:\VulkanSDK\$env:VULKAN_SDK_VERSION"
           New-Item -ItemType Directory -Path out\test-results -Force | Out-Null
-          ctest --preset windows-msvc-release -LE "performance|requires_vulkan_device" --parallel 8 --timeout 120 --output-on-failure --output-junit out\test-results\ctest-windows.xml
+          ctest --preset windows-msvc-release -LE "performance|requires_vulkan_device" --parallel 8 --timeout 120 --output-on-failure --output-junit "$PWD/out/test-results/ctest-windows.xml"
 
       - name: Run required Windows software GPU correctness gate
         shell: pwsh
@@ -356,7 +356,7 @@ jobs:
         run: |
           conda activate infernux
           mkdir -p out/test-results
-          xvfb-run --auto-servernum env QT_QPA_PLATFORM=xcb QT_DEBUG_PLUGINS=1 PYTHONPATH=packaging python -m pytest tests/hub -q -s --junitxml out/test-results/pytest-hub-linux.xml
+          xvfb-run --auto-servernum env QT_QPA_PLATFORM=xcb PYTHONPATH=packaging python -m pytest tests/hub -q --junitxml out/test-results/pytest-hub-linux.xml
 
       - name: Configure Linux release preset
         run: |
@@ -373,7 +373,7 @@ jobs:
         run: |
           conda activate infernux
           mkdir -p out/test-results
-          ctest --preset linux-clang-release -LE "performance|requires_vulkan_device" --parallel 8 --timeout 120 --output-on-failure --output-junit out/test-results/ctest-linux.xml
+          ctest --preset linux-clang-release -LE "performance|requires_vulkan_device" --parallel 8 --timeout 120 --output-on-failure --output-junit "$PWD/out/test-results/ctest-linux.xml"
 
       - name: Run required Linux software GPU correctness gate
         run: |
