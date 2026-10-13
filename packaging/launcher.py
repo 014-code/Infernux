@@ -472,7 +472,9 @@ class GameEngineLauncher(QMainWindow):
             self.toast_host.relayout()
 
     def _restore_window(self):
-        self.showNormal()
+        # Keep the user's maximized layout when restoring from the tray/minimize.
+        self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)
+        self.show()
         self.raise_()
         self.activateWindow()
 
@@ -829,6 +831,29 @@ def _handle_uninstall_linux() -> int:
     return 0
 
 
+def run_hub() -> int:
+    from hub_instance import HubInstance
+    from hub_utils import get_hub_user_data_dir
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    instance = None
+    try:
+        instance = HubInstance(get_hub_user_data_dir())
+        if not instance.acquire_or_activate():
+            return 0
+        launcher = GameEngineLauncher(HubLaunchContext.current())
+        instance.set_activation_handler(launcher._restore_window)
+        launcher.run()
+        return app.exec()
+    except (OSError, RuntimeError) as exc:
+        logging.getLogger(__name__).exception("Hub startup failed")
+        dialogs.critical(None, "Infernux Hub", str(exc))
+        return 1
+    finally:
+        if instance is not None:
+            instance.close()
+
+
 if __name__ == "__main__":
     from hub_network import configure_system_certificates
     configure_system_certificates()
@@ -837,5 +862,4 @@ if __name__ == "__main__":
         raise SystemExit(run_startup_probe(GameEngineLauncher))
     if "--uninstall" in sys.argv:
         raise SystemExit(_handle_uninstall())
-    launcher = GameEngineLauncher(HubLaunchContext.current())
-    launcher.run()
+    raise SystemExit(run_hub())

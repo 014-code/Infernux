@@ -13,6 +13,8 @@ import pytest
 
 from PySide6.QtWidgets import QApplication
 from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QMainWindow
+from PySide6.QtCore import Qt
 
 from launcher import GameEngineLauncher
 from hub_utils import HubLaunchContext
@@ -38,6 +40,25 @@ class _RunningProcess:
 
 def _app():
     return QApplication.instance() or QApplication([])
+
+
+def test_existing_hub_activation_restores_hidden_and_minimized_window():
+    app = _app()
+    window = QMainWindow()
+    try:
+        window.showMaximized()
+        app.processEvents()
+        window.hide()
+        GameEngineLauncher._restore_window(window)
+        assert window.isVisible()
+        assert window.windowState() & Qt.WindowState.WindowMaximized
+        window.showMinimized()
+        GameEngineLauncher._restore_window(window)
+        assert not window.isMinimized()
+        assert window.isVisible()
+        assert window.windowState() & Qt.WindowState.WindowMaximized
+    finally:
+        window.close()
 
 
 def test_hub_can_import_without_an_installed_engine():
