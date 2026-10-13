@@ -8,6 +8,7 @@ import numpy as np
 import infernux as inx
 from infernux import Engine
 from infernux.lib import PrimitiveType, SceneManager, Vector3
+from infernux.renderstack import DefaultForwardPipeline
 
 
 @inx.compute.kernel
@@ -41,6 +42,10 @@ def main():
         initial_tangents = None
         try:
             frontend.init_renderer(64, 64, str(project))
+            engine.resize_scene_render_target(64, 64)
+            pipeline = DefaultForwardPipeline()
+            pipeline.shadow_resolution = 256
+            frontend.set_render_pipeline(pipeline)
             print(f"Compute mesh GPU: renderer ready at {time.perf_counter() - started:.2f}s", flush=True)
             engine.set_editor_fps_cap(240.0)
             engine.set_editor_idle_fps(0.0)
@@ -138,6 +143,9 @@ def main():
                 nonlocal frames
                 try:
                     frames += 1
+                    if frames == 32:
+                        frame = engine.renderer_frame_snapshot
+                        assert (frame["scene_target_width"], frame["scene_target_height"]) == (64, 64), frame
                     if frames % 32 == 0:
                         print(f"Compute mesh GPU: frame {frames}/136 at "
                               f"{time.perf_counter() - started:.2f}s", flush=True)

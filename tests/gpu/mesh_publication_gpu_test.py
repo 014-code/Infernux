@@ -8,6 +8,7 @@ from infernux import Engine
 from infernux.core.asset_types import read_mesh_import_settings
 from infernux.core.assets import AssetManager
 from infernux.lib import AssetRegistry, PrimitiveType, SceneManager
+from infernux.renderstack import DefaultForwardPipeline
 
 
 def main(continuous=False):
@@ -30,6 +31,10 @@ def main(continuous=False):
         peak_pending = 0
         try:
             frontend.init_renderer(64, 64, str(project))
+            engine.resize_scene_render_target(64, 64)
+            pipeline = DefaultForwardPipeline()
+            pipeline.shadow_resolution = 256
+            frontend.set_render_pipeline(pipeline)
             print(f"Mesh publication GPU: renderer ready at {time.perf_counter() - started:.2f}s", flush=True)
             engine.set_editor_fps_cap(240.0)
             engine.set_editor_idle_fps(0.0)
@@ -53,6 +58,9 @@ def main(continuous=False):
                 nonlocal frames, published, settled, peak_pending
                 try:
                     frames += 1
+                    if frames == 32:
+                        frame = engine.renderer_frame_snapshot
+                        assert (frame["scene_target_width"], frame["scene_target_height"]) == (64, 64), frame
                     if frames % 48 == 0:
                         print(f"Mesh publication GPU: frame {frames}/240; updates "
                               f"{published}/{update_count}; elapsed "
