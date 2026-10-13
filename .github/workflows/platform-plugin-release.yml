@@ -2,6 +2,7 @@ name: Hub Android Platform Kit Release
 
 on:
   push:
+    branches: ['**']
     paths:
       - .github/workflows/platform-plugin-release.yml
       - packaging/android_support.py
@@ -23,6 +24,8 @@ permissions:
 
 jobs:
   resolve-release:
+    # Hub revisions have no new engine/platform payload to publish.
+    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v')
     runs-on: windows-latest
     outputs:
       release-tag: ${{ steps.release.outputs.tag }}

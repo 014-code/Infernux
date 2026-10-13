@@ -75,6 +75,22 @@ test("reject omitted localized APIs even when the index count is adjusted", asyn
     await put("docs/api-index.json", index);
     await assert.rejects(checkSiteInformation(root), /missing published API/);
 });
+
+test("Hub can publish its own revision without changing engine wheel links", async t => {
+    const { root, put, release, catalog } = await fixture(t);
+    catalog.stable = catalog.releases[0].version = "0.4.1-4";
+    catalog.releases[0].release_url = "https://github.com/ChenlizheMe/Infernux/releases/tag/hub-v0.4.1-v4";
+    const installer = release.assets[0];
+    installer.name = installer.name.replace("0.4.1-3", "0.4.1-4");
+    installer.url = installer.url.replace("0.4.1-3", "0.4.1-4");
+    installer.fallback_url = installer.fallback_url.replace("v0.4.1-v3", "hub-v0.4.1-v4").replace("0.4.1-3", "0.4.1-4");
+    await put("docs/release.json", release);
+    await put("docs/hub-catalog.json", catalog);
+    assert.equal((await checkSiteInformation(root)).tag, "v0.4.1-v3");
+    catalog.releases[0].release_url = catalog.releases[0].release_url.replace("-v4", "-v5");
+    await put("docs/hub-catalog.json", catalog);
+    await assert.rejects(checkSiteInformation(root), /Hub release destination differs/);
+});
 test("reject an API link whose rendered page is missing", async t => {
     const { root } = await fixture(t);
     await rm(path.join(root, "docs/wiki/site/en/api/Component.html"));

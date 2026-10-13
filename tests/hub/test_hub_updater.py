@@ -107,6 +107,21 @@ def test_check_selects_the_standalone_update(monkeypatch):
     assert update.platform == "windows-x64"
 
 
+@pytest.mark.parametrize("current", ["0.4.2", "0.4.2-2"])
+@pytest.mark.parametrize("platform", ["windows-x64", "linux-x64"])
+def test_same_base_hub_hotfix_offers_a_real_update(monkeypatch, current, platform):
+    release = _catalog("0.4.2-3", "windows-x64", "linux-x64")
+    monkeypatch.setattr(hub_updater, "_request_bytes", lambda *_args: json.dumps(release).encode())
+
+    result = check_for_update(current, platform_id=platform)
+
+    assert result.status is HubUpdateStatus.UPDATE_AVAILABLE
+    assert result.update.current_version == current
+    assert result.update.target_version == "0.4.2-3"
+    assert result.update.asset_name == f"InfernuxHub-0.4.2-3-{platform}-full.zip"
+    assert check_for_update("0.4.2-3", platform_id=platform).status is HubUpdateStatus.UP_TO_DATE
+
+
 def test_check_selects_the_linux_release(monkeypatch):
     release = _catalog("1.1.0", "windows-x64", "linux-x64")
     monkeypatch.setattr(

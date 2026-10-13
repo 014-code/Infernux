@@ -46,6 +46,15 @@ export async function checkSiteInformation(repoRoot = process.cwd()) {
                 `${label}: URL filename differs from ${name}`);
         } catch { errors.push(`${label}: invalid download URL`); }
     }
+    const stable = catalog.releases?.find(item => item.version === catalog.stable);
+    require(Boolean(stable), "Hub catalog: stable release is missing");
+    const hubIdentity = catalog.stable?.match(/^(\d+\.\d+\.\d+)(?:-([1-9]\d*))?$/);
+    require(hubIdentity?.[1] === version, "Hub stable base version differs from engine release");
+    const hubTag = stable?.release_url?.split("/").pop();
+    const expectedHubTag = `v${hubIdentity?.[1]}${hubIdentity?.[2] ? `-v${hubIdentity[2]}` : ""}`;
+    require([expectedHubTag, `hub-${expectedHubTag}`].some(
+        tag => stable?.release_url?.endsWith(`/releases/tag/${tag}`)
+    ), "Hub release destination differs from its own revision");
     const assets = release.assets || [];
     require(assets.length > 0, "release.json: download assets are empty");
     require(new Set(assets.map(asset => asset.name)).size === assets.length, "release.json: duplicate asset names");
@@ -55,16 +64,12 @@ export async function checkSiteInformation(repoRoot = process.cwd()) {
         downloadUrl(asset.url, asset.name, asset.name);
         if (asset.fallback_url) {
             downloadUrl(asset.fallback_url, asset.name, `${asset.name} alternate`);
-            require(new URL(asset.fallback_url).pathname.includes(`/releases/download/${release.tag}/`),
+            const assetTag = asset.kind === "hub-installer" ? hubTag : release.tag;
+            require(new URL(asset.fallback_url).pathname.includes(`/releases/download/${assetTag}/`),
                 `${asset.name}: alternate download targets another release`);
         }
     }
-    const stable = catalog.releases?.find(item => item.version === catalog.stable);
-    require(Boolean(stable), "Hub catalog: stable release is missing");
-    const build = Number(tag?.[2] || 1);
-    require(catalog.stable === (build === 1 ? version : `${version}-${build}`), "Hub stable version differs from release tag");
-    require(stable?.release_url === release.release_url && notes.release_url === release.release_url,
-        "release notes/Hub release destinations differ");
+    require(notes.release_url === release.release_url, "Engine release notes destination differs");
     require(release.release_url?.endsWith(`/releases/tag/${release.tag}`), "release URL differs from release tag");
     for (const platform of platforms.platforms || []) {
         if (!platform.released || !platform.editor) continue;
