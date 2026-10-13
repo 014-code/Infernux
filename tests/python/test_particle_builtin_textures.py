@@ -118,8 +118,10 @@ def test_six_way_smoke_material_keeps_independent_axis_defaults():
 
 
 @pytest.mark.parametrize("property_name", ["texSampler", "normalNamedSurface"])
-@pytest.mark.parametrize("initial", ["white", "black", "normal", ""])
-@pytest.mark.parametrize("declared_default", ["white", "black", "normal"])
+@pytest.mark.parametrize("declared_default, initial", [
+    ("white", ""), ("black", ""), ("normal", ""),
+    ("white", "black"), ("black", "normal"), ("normal", "white"),
+])
 def test_particle_builtin_texture_values_and_live_changes(
     engine, scene, tmp_path, monkeypatch, property_name, initial, declared_default,
 ):
@@ -147,6 +149,9 @@ def test_particle_builtin_texture_values_and_live_changes(
     manager, console = SceneManager.instance(), ConsolePanel()
     pipeline = RenderStackPipeline()
     install_runtime_service("gpu-particles", engine)
+    # Every case already visits all built-ins, the shader default and reset.
+    # Cover each declaration and explicit initial value without repeating their
+    # full Cartesian product through the real renderer.
     phases = [initial, "black", "normal", "white", "", "reset"]
     expected = {"white": (1, 1, 1), "black": (0, 0, 0), "normal": (.5, .5, 1)}
     expected[""] = expected[declared_default]

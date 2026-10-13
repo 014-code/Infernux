@@ -109,6 +109,7 @@ jobs:
           if-no-files-found: warn
 
   windows-desktop:
+    needs: portable-hub
     runs-on: windows-2022
     timeout-minutes: 240
     permissions:
@@ -234,7 +235,7 @@ jobs:
           cmake --build --preset windows-msvc-install-wheel
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Run Python and platform contract tests
+      - name: Run native Python tests
         shell: pwsh
         run: |
           conda activate infernux
@@ -246,12 +247,12 @@ jobs:
           # context pressure from unbounded parallelism.
           $parallelXml = "out\test-results\pytest-windows-parallel.xml"
           python -m pytest -n 2 --dist loadfile --max-worker-restart=0 -o pythonpath= `
-            tests\python tests\contracts `
+            tests\python `
             --ignore=tests\python\test_engine_play_mode.py `
             --ignore=tests\python\test_ui_shader_dependency_runtime.py `
             --ignore=tests\python\test_model_refresh_subassets.py `
             --ignore=tests\python\test_physics_drag_push.py `
-            -q --junitxml $parallelXml
+            -q --durations=20 --junitxml $parallelXml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # These files exercise process-wide editor/render state. Run them
           # in one process so their lifecycle and software-Vulkan ordering
@@ -261,7 +262,7 @@ jobs:
             tests\python\test_ui_shader_dependency_runtime.py `
             tests\python\test_model_refresh_subassets.py `
             tests\python\test_physics_drag_push.py `
-            -q --junitxml out\test-results\pytest-windows.xml
+            -q --durations=20 --junitxml out\test-results\pytest-windows.xml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Run Hub tests
@@ -321,6 +322,7 @@ jobs:
           if-no-files-found: warn
 
   linux-desktop:
+    needs: portable-hub
     runs-on: ubuntu-22.04
     timeout-minutes: 120
     env:
@@ -383,11 +385,11 @@ jobs:
           conda activate infernux
           cmake --build --preset linux-clang-install-wheel
 
-      - name: Run Python and platform contract tests
+      - name: Run native Python tests
         run: |
           conda activate infernux
           unset PYTHONPATH INFERNUX_NATIVE_MODULE_DIR
-          xvfb-run --auto-servernum python -m pytest -o pythonpath= tests/python tests/contracts -q --junitxml out/test-results/pytest-linux.xml
+          xvfb-run --auto-servernum python -m pytest -o pythonpath= tests/python -q --durations=20 --junitxml out/test-results/pytest-linux.xml
 
       - name: Run Linux headless physics profile gate
         run: |

@@ -79,6 +79,7 @@ def test_publisher_source_guard_executes_before_exposing_artifacts(tmp_path, sce
                   head_sha='a' * 40, run_attempt=1)
     environment = dict(os.environ, RUN_ID='123', GITHUB_RUN_ID='123',
                        GITHUB_SHA='a' * 40, GITHUB_REPOSITORY='ChenlizheMe/Infernux',
+                       RECOVERY='false', EXPECTED_SOURCE='',
                        GITHUB_OUTPUT=str(tmp_path / 'outputs'),
                        MOCK_GH_SOURCE=str(tmp_path / 'source.json'), MOCK_GH_EXIT='0')
     if scenario == 'other_successful_run':
@@ -99,7 +100,8 @@ def test_publisher_source_guard_executes_before_exposing_artifacts(tmp_path, sce
     elif scenario == 'api_failure':
         environment['MOCK_GH_EXIT'] = '17'
     Path(environment['MOCK_GH_SOURCE']).write_text(json.dumps(source), encoding='utf-8')
-    step = _workflow('publish-desktop-release.yml')['jobs']['verify']['steps'][0]
+    step = next(step for step in _workflow('publish-desktop-release.yml')['jobs']['verify']['steps']
+                if step.get('id') == 'source')
     assert step['shell'] == 'pwsh'
     python = "'" + sys.executable.replace("'", "''") + "'"
     # Mock only GitHub transport; execute the workflow's actual PowerShell
@@ -119,7 +121,7 @@ function gh {{
     if scenario == 'gated_caller':
         assert result.returncode == 0, result.stdout + result.stderr
         assert output.read_text(encoding='utf-8').splitlines() == [
-            'sha=' + 'a' * 40, 'branch=master', 'attempt=1',
+            'sha=' + 'a' * 40, 'publisher_sha=' + 'a' * 40, 'branch=master', 'attempt=1',
         ]
     else:
         assert result.returncode != 0, scenario

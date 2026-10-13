@@ -45,6 +45,7 @@ All paths below are pytest modules. Run one with `python -m pytest PATH -q -ra`.
 | Hub launch readiness, errors and repeated launch | `tests/hub/test_hub_launch_state.py`, `tests/hub/test_project_runtime_strictness.py` | Portable Hub; full desktop CI |
 | Host-specific wheel delivery and refresh | `tests/hub/test_hub_release.py`, `tests/hub/test_project_wheel_refresh.py` | Full Hub CI; real download check before release |
 | Inside-out Windows signing and immutable publication | `tests/hub/test_release_signing.py` | Portable Hub; real SignPath test workflow before signed releases |
+| Exact-source release publication and Player acceptance prerequisites | `tests/contracts/test_release_player_gate.py` | Portable contracts; actual PowerShell source guard before native builds |
 | Scene activation, defaults and Play/Stop transitions | `tests/python/test_scene_manager_runtime_loading.py`, `tests/python/test_scene_manager_defaults.py`, `tests/python/test_engine_play_mode.py` | Native Python; visible editor acceptance |
 | Script refresh and transactional publication | `tests/python/test_play_mode_component_body_reload.py`, `tests/python/test_plugin_updates.py` | Native Python |
 | Component batch storage, validation and field-change publication | `tests/python/test_component_data_store.py`, `tests/python/test_runtime_change_journal.py` | Native Python |
@@ -133,6 +134,10 @@ Pure runtime contracts can also be run alone with
 private package namespace, so they neither initialize Vulkan nor replace the
 `Infernux` package in native tests. Scene activation and runtime integration
 remain in `tests/python/test_player_service_graph.py` and require the native engine.
+
+Desktop builds require the portable jobs to pass first. CI runs these contracts
+once per platform in the portable lane; native Python lanes do not repeat them.
+Native test logs include the twenty slowest cases to guide further reductions.
 
 Hub imports are configured once in `tests/hub/conftest.py`; individual
 Hub modules must pass without relying on another test's collection order.
