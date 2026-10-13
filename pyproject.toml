@@ -68,6 +68,7 @@ infernux = [
     "**/_Infernux*.dylib",
     "resources/icons/*.png",
     "resources/icons/*.ico",
+    "resources/icons/*.svg",
     "resources/icons/components/*.png",
     "resources/fonts/*.otf",
     "resources/fonts/*.ttf",
