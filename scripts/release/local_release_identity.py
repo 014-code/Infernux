@@ -9,7 +9,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "packaging"))
-from hub_release import hub_version_for, project_build_number, project_version
+from hub_release import project_hub_version, project_build_number, project_version
 
 
 def main() -> None:
@@ -20,7 +20,7 @@ def main() -> None:
     if args.version != version:
         raise ValueError(f"Requested version {args.version} does not match project.version {version}")
     build = project_build_number(ROOT)
-    print(json.dumps({"version": version, "build_number": build, "hub_version": hub_version_for(version, build)}))
+    print(json.dumps({"version": version, "build_number": build, "hub_version": project_hub_version(ROOT)}))
 
 
 if __name__ == "__main__":

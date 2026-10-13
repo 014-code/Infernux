@@ -50,7 +50,7 @@ def test_release_catalog_reads_the_wheel_build_number(tmp_path):
     module.ROOT = tmp_path
     (tmp_path / "docs").mkdir()
     (tmp_path / "pyproject.toml").write_text(
-        '[project]\nversion = "1.2.3"\n',
+        '[project]\nversion = "1.2.3"\n[tool.infernux.hub]\nbuild-number = 5\n',
         encoding="utf-8",
     )
     (tmp_path / "python/infernux").mkdir(parents=True)
@@ -71,12 +71,12 @@ def test_release_catalog_reads_the_wheel_build_number(tmp_path):
         ("linux-x64", ""),
     ):
         (tmp_path / f"InfernuxHub-{platform}-manifest.json").write_text(
-            json.dumps({"version": "1.2.3-4", "platform": platform}),
+            json.dumps({"version": "1.2.3-5", "platform": platform}),
             encoding="utf-8",
         )
         for name in (
-            f"InfernuxHubInstaller-1.2.3-4-{platform}{suffix}",
-            f"InfernuxHub-1.2.3-4-{platform}-full.zip",
+            f"InfernuxHubInstaller-1.2.3-5-{platform}{suffix}",
+            f"InfernuxHub-1.2.3-5-{platform}-full.zip",
             wheel_names[platform],
         ):
             (tmp_path / name).write_bytes(b"release")
@@ -85,11 +85,11 @@ def test_release_catalog_reads_the_wheel_build_number(tmp_path):
 
     hub = json.loads((tmp_path / "docs/hub-catalog.json").read_text(encoding="utf-8"))
     release = json.loads((tmp_path / "docs/release.json").read_text(encoding="utf-8"))
-    assert hub["stable"] == "1.2.3-4"
+    assert hub["stable"] == "1.2.3-5"
     assert release["tag"] == "v1.2.3-v4"
     assert hub["releases"][0]["minimum_updatable_version"] == "0.4.0"
     assert all(
-        "/hub/1.2.3/build-4/" in asset["url"]
+        "/hub/1.2.3/build-5/" in asset["url"]
         for asset in hub["releases"][0]["platforms"].values()
         for asset in asset.values()
     )
@@ -110,7 +110,7 @@ def test_release_catalog_rejects_republishing_an_existing_hub_version(tmp_path):
     )
     module.ROOT = tmp_path
     (tmp_path / "pyproject.toml").write_text(
-        '[project]\nversion = "1.2.4"\n',
+        '[project]\nversion = "1.2.4"\n[tool.infernux.hub]\nbuild-number = 1\n',
         encoding="utf-8",
     )
     (tmp_path / "python/infernux").mkdir(parents=True)
@@ -138,7 +138,9 @@ def test_release_catalog_rejects_republishing_an_existing_hub_version(tmp_path):
 
     with pytest.raises(ValueError, match="already published.*increment the build number"):
         module.require_new_hub_version()
-    (tmp_path / "python/infernux/version.py").write_text("ENGINE_BUILD_NUMBER = 2\n")
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nversion = "1.2.4"\n[tool.infernux.hub]\nbuild-number = 2\n'
+    )
     assert module.require_new_hub_version() == "1.2.4"
 
 
@@ -149,6 +151,8 @@ def test_release_catalog_does_not_publish_before_both_pypi_wheels_exist(tmp_path
     monkeypatch.setattr(module, "ROOT", tmp_path)
     monkeypatch.setattr(module, "require_new_hub_version", lambda: "1.2.3")
     monkeypatch.setattr(module, "wheel_build_number", lambda: "1")
+    monkeypatch.setattr(module, "project_hub_version", lambda root: "1.2.3")
+    monkeypatch.setattr(module, "project_hub_build_number", lambda root: 1)
     monkeypatch.setattr(module, "release_wheel_names", lambda *args: names)
     monkeypatch.setattr(module, "pypi_wheel_urls", lambda version: {
         name: f"https://files.pythonhosted.org/{name}"

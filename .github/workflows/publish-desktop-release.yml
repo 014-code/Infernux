@@ -145,7 +145,7 @@ jobs:
           import sys
           from pathlib import Path
           sys.path.insert(0, "packaging")
-          from hub_release import project_version, project_build_number, hub_version_for, release_tag_for
+          from hub_release import project_version, project_build_number, project_hub_build_number, project_hub_version, release_tag_for
           version = project_version()
           build = project_build_number()
           requested = os.environ.get("REQUESTED_TAG", "").strip()
@@ -155,7 +155,8 @@ jobs:
           with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
               output.write(f"version={version}\n")
               output.write(f"build={build}\n")
-              output.write(f"hub_version={hub_version_for(version, build)}\n")
+              output.write(f"hub_version={project_hub_version()}\n")
+              output.write(f"hub_build={project_hub_build_number()}\n")
               output.write(f"tag={tag}\n")
           PY
 
@@ -331,12 +332,12 @@ jobs:
         env:
           R2_UPLOAD_TOKEN: ${{ secrets.R2_UPLOAD_TOKEN }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
-          WHEEL_BUILD: ${{ steps.release.outputs.build }}
+          HUB_BUILD: ${{ steps.release.outputs.hub_build }}
         run: >-
           python scripts/release/publish_hub_objects.py
           --release-dir "dist/$RELEASE_VERSION"
           --version "$RELEASE_VERSION"
-          --build-number "$WHEEL_BUILD"
+          --build-number "$HUB_BUILD"
 
       - name: Publish the GitHub Release
         if: steps.github_release.outputs.publish == 'true'
@@ -352,6 +353,7 @@ jobs:
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
           WHEEL_BUILD: ${{ steps.release.outputs.build }}
           SOURCE_BRANCH: ${{ needs.verify.outputs.branch }}
+          HUB_VERSION: ${{ steps.release.outputs.hub_version }}
         run: |
           published_at="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json publishedAt --jq .publishedAt)"
           if [ "$SOURCE_BRANCH" != "master" ] && [ "$SOURCE_BRANCH" != "main" ]; then
@@ -362,7 +364,8 @@ jobs:
           git checkout -B release-catalog "origin/$SOURCE_BRANCH"
           catalog_version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
           catalog_build="$(PYTHONPATH=packaging python -c 'from hub_release import project_build_number; print(project_build_number())')"
-          if [ "$catalog_version" != "$RELEASE_VERSION" ] || [ "$catalog_build" != "$WHEEL_BUILD" ]; then
+          catalog_hub="$(PYTHONPATH=packaging python -c 'from hub_release import project_hub_version; print(project_hub_version())')"
+          if [ "$catalog_version" != "$RELEASE_VERSION" ] || [ "$catalog_build" != "$WHEEL_BUILD" ] || [ "$catalog_hub" != "$HUB_VERSION" ]; then
             echo "The release branch moved to version $catalog_version while publishing $RELEASE_VERSION" >&2
             exit 1
           fi

@@ -20,8 +20,11 @@ from installer.payload import (
     HUB_PAYLOAD_ARCHIVE,
     create_payload_archive,
 )
-from hub_release import host_platform_id, project_hub_version as _project_version
-from private_python_runtime import PYTHON_VERSION, runtime_archive_for_machine
+from hub_release import (
+    host_platform_id, project_hub_version as _project_version,
+    project_version, project_build_number, release_tag_for,
+)
+from private_python_runtime import PYTHON_VERSION, is_current_private_runtime_marker
 from python_runtime_catalog import DEFAULT_PYTHON_RUNTIME
 
 
@@ -114,17 +117,11 @@ def _font_data_option(packaging_dir: Path) -> str:
     )
 
 
-def _engine_release_for_hub_version(hub_version: str) -> str:
-    """Map ``0.4.1-3`` (Hub spelling) to ``0.4.1-v3`` (engine wheel spelling)."""
-    from packaging.version import Version
-
-    match = re.fullmatch(r"(.+)-([1-9]\d*)", hub_version)
-    base, build = (match.group(1), int(match.group(2))) if match else (hub_version, 1)
-    base = str(Version(base))
-    return base if build == 1 else f"{base}-v{build}"
+def _project_engine_release(source_root: Path) -> str:
+    return release_tag_for(project_version(source_root), project_build_number(source_root)).removeprefix("v")
 
 
-def _bundled_engine_wheel(release_dir: Path, hub_version: str) -> Path | None:
+def _bundled_engine_wheel(release_dir: Path, expected: str) -> Path | None:
     """Return the host engine wheel of this exact release, or ``None``.
 
     The installer embeds it so a fresh install can create its first project
@@ -137,7 +134,6 @@ def _bundled_engine_wheel(release_dir: Path, hub_version: str) -> Path | None:
     )
     from wheel_identity import validate_wheel_identity
 
-    expected = _engine_release_for_hub_version(hub_version)
     candidates = sorted(
         path
         for path in (release_dir.glob("infernux-*.whl") if release_dir.is_dir() else ())
@@ -164,7 +160,6 @@ def _bundled_engine_wheel(release_dir: Path, hub_version: str) -> Path | None:
 
 
 def _validate_runtime_bundle(bundle_path: Path) -> None:
-    archive = runtime_archive_for_machine()
     runtime_prefix = f"{DEFAULT_PYTHON_RUNTIME.directory_name}/"
     marker_name = runtime_prefix + ".infernux-private-python-runtime.json"
     try:
@@ -195,13 +190,7 @@ def _validate_runtime_bundle(bundle_path: Path) -> None:
             "Rebuild prepare_bundled_python_runtime before packaging Infernux Hub."
         ) from exc
 
-    if not (
-        marker.get("owner") == "Infernux Hub"
-        and marker.get("kind") == "private-python-runtime"
-        and marker.get("python_version") == PYTHON_VERSION
-        and marker.get("python_series") == DEFAULT_PYTHON_RUNTIME.series
-        and marker.get("source_archive") == archive.name
-    ):
+    if not is_current_private_runtime_marker(marker):
         raise RuntimeError(
             "The private Python runtime bundle is stale or does not match the pinned "
             f"Python {PYTHON_VERSION} archive. Rebuild prepare_bundled_python_runtime."
@@ -745,7 +734,7 @@ def _build_installer(
     shutil.rmtree(output_dir, ignore_errors=True)
     output_dir.mkdir(parents=True, exist_ok=True)
     extra_payload: dict[str, Path] = {}
-    engine_wheel = _bundled_engine_wheel(release_dir, _project_version(source_root))
+    engine_wheel = _bundled_engine_wheel(release_dir, _project_engine_release(source_root))
     if engine_wheel is None:
         print(
             "WARNING: no engine wheel for this release and platform was found in "

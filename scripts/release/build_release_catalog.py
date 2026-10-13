@@ -14,14 +14,14 @@ from packaging.version import Version
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "packaging"))
-from hub_release import hub_version_for, project_build_number, release_tag_for
+from hub_release import project_hub_version, project_hub_build_number, project_build_number, release_tag_for
 MINIMUM_UPDATABLE_VERSION = "0.4.0"
 
 
 def require_new_hub_version() -> str:
     """Require an unpublished application/build identity without replacing old assets."""
     version = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
-    hub_version = hub_version_for(version, project_build_number(ROOT))
+    hub_version = project_hub_version(ROOT)
     catalog = json.loads((ROOT / "docs/hub-catalog.json").read_text(encoding="utf-8"))
     published = [
         item["version"] for item in catalog["releases"] if item["published_at"] is not None
@@ -98,19 +98,25 @@ def build_catalog(
     linux_inventory: Path | None = None,
     *,
     resolve_pypi: bool = False,
+    hub_only: bool = False,
 ) -> None:
     version = require_new_hub_version()
     wheel_build = wheel_build_number()
-    hub_version = hub_version_for(version, int(wheel_build))
-    release_tag = release_tag_for(version, int(wheel_build))
+    hub_version = project_hub_version(ROOT)
+    release_tag = (
+        "hub-" + release_tag_for(version, project_hub_build_number(ROOT))
+        if hub_only else release_tag_for(version, int(wheel_build))
+    )
     github_base = f"https://github.com/ChenlizheMe/Infernux/releases/download/{release_tag}"
-    object_base = f"https://downloads.infernux-engine.com/hub/{version}/build-{wheel_build}"
+    object_base = f"https://downloads.infernux-engine.com/hub/{version}/build-{project_hub_build_number(ROOT)}"
     release_url = f"https://github.com/ChenlizheMe/Infernux/releases/tag/{release_tag}"
+    if hub_only and resolve_pypi:
+        raise ValueError("A Hub-only publication preserves existing engine wheel URLs")
     wheel_urls = pypi_wheel_urls(version) if resolve_pypi else {}
     platforms = {}
     assets = []
     ci = json.loads(linux_inventory.read_text(encoding="utf-8")) if linux_inventory else None
-    wheel_names = release_wheel_names(release_dir, version, wheel_build, ci)
+    wheel_names = {} if hub_only else release_wheel_names(release_dir, version, wheel_build, ci)
     if resolve_pypi:
         missing = sorted(set(wheel_names.values()) - wheel_urls.keys())
         if missing:
@@ -128,7 +134,6 @@ def build_catalog(
             return ci["files"][f"{version}/{name}"] if from_ci else (release_dir / name).stat().st_size
         installer_name = f"InfernuxHubInstaller-{hub_version}-{platform}{suffix}"
         update_name = f"InfernuxHub-{hub_version}-{platform}-full.zip"
-        wheel_name = wheel_names[platform]
         platforms[platform] = {
             "installer": {
                 "name": installer_name,
@@ -147,7 +152,10 @@ def build_catalog(
                 "fallback_url": f"{github_base}/{manifest_name}",
             },
         }
-        for kind, name in (("hub-installer", installer_name), ("python-wheel", wheel_name)):
+        selected_assets = [("hub-installer", installer_name)]
+        if not hub_only:
+            selected_assets.append(("python-wheel", wheel_names[platform]))
+        for kind, name in selected_assets:
             primary = (
                 f"{object_base}/{name}"
                 if kind == "hub-installer"
@@ -166,6 +174,11 @@ def build_catalog(
         "platforms": ["Windows 10/11 x64", "Linux x86_64"], "python_abi": "CPython 3.13 x64",
         "release_url": release_url, "assets": assets,
     }
+    if hub_only:
+        release = json.loads((ROOT / "docs/release.json").read_text(encoding="utf-8"))
+        if release["version"] != version:
+            raise ValueError("A Hub-only publication must retain the current published engine version")
+        release["assets"] = [item for item in release["assets"] if item["kind"] != "hub-installer"] + assets
     catalog_path = ROOT / "docs/hub-catalog.json"
     catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
     catalog["stable"] = hub_version
@@ -174,7 +187,10 @@ def build_catalog(
         "release_url": release_url,
         "minimum_updatable_version": MINIMUM_UPDATABLE_VERSION,
         "platforms": platforms,
-    }] + [item for item in catalog["releases"] if Version(item["version"]).release != Version(version).release]
+    }] + [item for item in catalog["releases"] if (
+        item["version"] != hub_version if hub_only
+        else Version(item["version"]).release != Version(version).release
+    )]
     for path, document in ((ROOT / "docs/release.json", release), (catalog_path, catalog)):
         path.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"Generated {version} release catalogs from {release_dir}; published_at={published_at!r}")
@@ -187,6 +203,7 @@ if __name__ == "__main__":
     parser.add_argument("--published-at", help="Actual GitHub publication timestamp; omit while preparing the release")
     parser.add_argument("--linux-inventory", type=Path, help="Verified Linux CI archive inventory instead of local Linux files")
     parser.add_argument("--resolve-pypi", action="store_true", help="Use the published files.pythonhosted.org wheel URLs")
+    parser.add_argument("--hub-only", action="store_true", help="Publish a separate Hub revision while preserving the engine release and wheels")
     args = parser.parse_args()
     if args.check_version:
         require_new_hub_version()
@@ -198,4 +215,5 @@ if __name__ == "__main__":
             args.published_at,
             args.linux_inventory,
             resolve_pypi=args.resolve_pypi,
+            hub_only=args.hub_only,
         )

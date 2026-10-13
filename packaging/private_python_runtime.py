@@ -147,6 +147,32 @@ def write_private_runtime_marker(
     os.replace(temporary, marker)
 
 
+def is_private_runtime_marker(payload: object) -> bool:
+    """Read required identity fields; additional provenance fields are extensible."""
+    return (
+        isinstance(payload, dict)
+        and _PRIVATE_RUNTIME_MARKER_KEYS <= payload.keys()
+        and payload.get("owner") == "Infernux Hub"
+        and payload.get("kind") == "private-python-runtime"
+    )
+
+
+def is_current_private_runtime_marker(
+    payload: object,
+    *,
+    runtime: str | PythonRuntimeId = DEFAULT_PYTHON_RUNTIME,
+) -> bool:
+    if not is_private_runtime_marker(payload):
+        return False
+    release = runtime_release(runtime)
+    archive = runtime_archive_for_machine(runtime=release.runtime_id)
+    return (
+        payload["python_version"] == release.patch_version
+        and payload["python_series"] == release.runtime_id.series
+        and payload["source_archive"] == archive.name
+    )
+
+
 def is_private_runtime_root(runtime_root: str | os.PathLike[str]) -> bool:
     marker = Path(runtime_root) / PRIVATE_RUNTIME_MARKER
     if not marker.is_file():
@@ -155,12 +181,7 @@ def is_private_runtime_root(runtime_root: str | os.PathLike[str]) -> bool:
         payload = json.loads(marker.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return False
-    return (
-        isinstance(payload, dict)
-        and set(payload) == _PRIVATE_RUNTIME_MARKER_KEYS
-        and payload.get("owner") == "Infernux Hub"
-        and payload.get("kind") == "private-python-runtime"
-    )
+    return is_private_runtime_marker(payload)
 
 
 def is_current_private_runtime_root(
@@ -171,19 +192,9 @@ def is_current_private_runtime_root(
     marker = Path(runtime_root) / PRIVATE_RUNTIME_MARKER
     try:
         payload = json.loads(marker.read_text(encoding="utf-8"))
-        release = runtime_release(runtime)
-        archive = runtime_archive_for_machine(runtime=release.runtime_id)
+        return is_current_private_runtime_marker(payload, runtime=runtime)
     except (OSError, json.JSONDecodeError, RuntimeError, ValueError):
         return False
-    return (
-        isinstance(payload, dict)
-        and set(payload) == _PRIVATE_RUNTIME_MARKER_KEYS
-        and payload.get("owner") == "Infernux Hub"
-        and payload.get("kind") == "private-python-runtime"
-        and payload.get("python_version") == release.patch_version
-        and payload.get("python_series") == release.runtime_id.series
-        and payload.get("source_archive") == archive.name
-    )
 
 
 def _replace_runtime_directory(source: Path, destination: Path) -> None:

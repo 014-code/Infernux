@@ -64,7 +64,7 @@ def test_linux_qt_helpers_are_explicit_libraries_not_data_files(monkeypatch):
 def test_installer_publishes_only_its_versioned_file(tmp_path, monkeypatch):
     source = tmp_path / "source"
     source.mkdir()
-    (source / "pyproject.toml").write_text('[project]\nversion = "0.4.0"\n')
+    (source / "pyproject.toml").write_text('[project]\nversion = "0.4.0"\n[tool.infernux.hub]\nbuild-number = 1\n')
     (source / "python/infernux").mkdir(parents=True, exist_ok=True)
     (source / "python/infernux/version.py").write_text('ENGINE_BUILD_NUMBER = 1\n')
     stage = tmp_path / "stage"
@@ -209,6 +209,7 @@ def test_hub_build_embeds_the_private_runtime_bundle(
         "python_version": PYTHON_VERSION,
         "python_series": DEFAULT_PYTHON_RUNTIME.series,
         "source_archive": archive.name,
+        "written_at": "2026-10-01T16:51:42Z",
     }
     with zipfile.ZipFile(runtime_bundle, "w", compression=zipfile.ZIP_LZMA) as bundle:
         bundle.writestr(
@@ -306,6 +307,7 @@ def test_hub_build_rejects_extra_legacy_runtime_payload(tmp_path: Path):
         "python_version": PYTHON_VERSION,
         "python_series": DEFAULT_PYTHON_RUNTIME.series,
         "source_archive": archive.name,
+        "written_at": "2026-10-01T16:51:42Z",
     }
     with zipfile.ZipFile(runtime_bundle, "w") as bundle:
         bundle.writestr(
@@ -335,6 +337,7 @@ def test_installer_build_resolves_only_its_source_modules(tmp_path, monkeypatch)
     monkeypatch.setattr(build_hub, "_validate_msvc_reports", lambda *args: [])
     monkeypatch.setattr(build_hub, "_validate_windows_pe", lambda *args: None)
     monkeypatch.setattr(build_hub, "_project_version", lambda *args: "0.4.1")
+    monkeypatch.setattr(build_hub, "_project_engine_release", lambda *args: "0.4.1")
 
     def build_installer(command, **kwargs):
         assert kwargs["env"]["PYTHONPATH"] == str(source / "python")

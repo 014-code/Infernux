@@ -46,7 +46,16 @@ def hub_version_for(version: str, build: int) -> str:
 
 
 def project_hub_version(source_root: str | Path | None = None) -> str:
-    return hub_version_for(project_version(source_root), project_build_number(source_root))
+    return hub_version_for(project_version(source_root), project_hub_build_number(source_root))
+
+
+def project_hub_build_number(source_root: str | Path | None = None) -> int:
+    root = Path(source_root).resolve() if source_root else Path(__file__).resolve().parents[1]
+    document = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+    value = document.get("tool", {}).get("infernux", {}).get("hub", {}).get("build-number")
+    if type(value) is not int or value < 1:
+        raise ValueError("pyproject.toml must declare a positive tool.infernux.hub.build-number")
+    return value
 
 
 def release_tag_for(version: str, build: int) -> str:

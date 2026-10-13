@@ -45,13 +45,46 @@ def _project(tmp_path, monkeypatch, version):
     (tmp_path / "python/infernux/version.py").write_text("ENGINE_BUILD_NUMBER = 1\n")
     monkeypatch.setattr(catalog_builder, "ROOT", tmp_path)
     (tmp_path / "pyproject.toml").write_text(
-        f'[project]\nversion = "{version}"\n', encoding="utf-8"
+        f'[project]\nversion = "{version}"\n[tool.infernux.hub]\nbuild-number = 1\n', encoding="utf-8"
     )
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs/hub-catalog.json").write_text(
         json.dumps({"releases": [{"version": "0.4.0", "published_at": "2026-09-06T17:56:54Z"}]}),
         encoding="utf-8",
     )
+
+
+def test_hub_only_catalog_keeps_engine_release_and_wheels(tmp_path, monkeypatch):
+    _project(tmp_path, monkeypatch, "0.4.2")
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nversion="0.4.2"\n[tool.infernux.hub]\nbuild-number=3\n'
+    )
+    (tmp_path / "python/infernux/version.py").write_text("ENGINE_BUILD_NUMBER=2\n")
+    engine = {
+        "version": "0.4.2", "tag": "v0.4.2-v2", "published_at": "2026-10-13T05:28:41Z",
+        "release_url": "https://github.com/ChenlizheMe/Infernux/releases/tag/v0.4.2-v2",
+        "assets": [{"kind": "python-wheel", "url": "https://example.com/engine-v2.whl"}],
+    }
+    (tmp_path / "docs/release.json").write_text(json.dumps(engine))
+    for platform, suffix in (("windows-x64", ".exe"), ("linux-x64", "")):
+        (tmp_path / f"InfernuxHub-{platform}-manifest.json").write_text(
+            json.dumps({"version": "0.4.2-3", "platform": platform})
+        )
+        (tmp_path / f"InfernuxHubInstaller-0.4.2-3-{platform}{suffix}").write_bytes(b"installer")
+        (tmp_path / f"InfernuxHub-0.4.2-3-{platform}-full.zip").write_bytes(b"update")
+    catalog_builder.build_catalog(tmp_path, "2026-10-13T12:00:00Z", hub_only=True)
+    release = json.loads((tmp_path / "docs/release.json").read_text())
+    assert {key: value for key, value in release.items() if key != "assets"} == {
+        key: value for key, value in engine.items() if key != "assets"
+    }
+    assert [item for item in release["assets"] if item["kind"] == "python-wheel"] == engine["assets"]
+    hub = json.loads((tmp_path / "docs/hub-catalog.json").read_text())
+    assert hub["stable"] == "0.4.2-3"
+    assert hub["releases"][0]["release_url"].endswith("/hub-v0.4.2-v3")
+    assert hub["releases"][1]["version"] == "0.4.0"
+    for platform in hub["releases"][0]["platforms"].values():
+        assert platform["update"]["size"] == 6
+        assert all("/build-3/" in asset["url"] for asset in platform.values())
 
 
 @pytest.fixture

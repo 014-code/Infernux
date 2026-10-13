@@ -143,6 +143,7 @@ def _runtime_marker() -> dict[str, str]:
         "python_version": PYTHON_VERSION,
         "python_series": DEFAULT_PYTHON_RUNTIME.series,
         "source_archive": archive.name,
+        "written_at": "2026-10-01T16:51:42Z",
     }
 
 
@@ -352,12 +353,14 @@ def test_untrimmed_qt_files_are_reported(tmp_path, monkeypatch):
 # -- Engine wheel embedding ----------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    ("hub_version", "release"),
-    [("0.4.1-3", "0.4.1-v3"), ("0.4.1", "0.4.1"), ("0.4.10-12", "0.4.10-v12")],
-)
-def test_hub_versions_map_to_engine_wheel_releases(hub_version, release):
-    assert build_hub._engine_release_for_hub_version(hub_version) == release
+def test_installer_engine_identity_is_independent_of_hub_revision(tmp_path):
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nversion="0.4.2"\n[tool.infernux.hub]\nbuild-number=3\n'
+    )
+    (tmp_path / "python/infernux").mkdir(parents=True)
+    (tmp_path / "python/infernux/version.py").write_text('ENGINE_BUILD_NUMBER=2\n')
+    assert build_hub._project_version(tmp_path) == "0.4.2-3"
+    assert build_hub._project_engine_release(tmp_path) == "0.4.2-v2"
 
 
 def test_installer_embeds_only_the_exact_host_engine_wheel(tmp_path, windows_wheels):
@@ -374,9 +377,9 @@ def test_installer_embeds_only_the_exact_host_engine_wheel(tmp_path, windows_whe
     }.items():
         (release_dir / name).write_bytes(content)
 
-    assert build_hub._bundled_engine_wheel(release_dir, "0.4.1-3") == release_dir / WHEEL
+    assert build_hub._bundled_engine_wheel(release_dir, "0.4.1-v3") == release_dir / WHEEL
     assert build_hub._bundled_engine_wheel(release_dir, "0.4.2") is None
-    assert build_hub._bundled_engine_wheel(tmp_path / "missing", "0.4.1-3") is None
+    assert build_hub._bundled_engine_wheel(tmp_path / "missing", "0.4.1-v3") is None
 
 
 def test_first_build_wheels_have_no_build_tag(tmp_path, windows_wheels):
@@ -391,7 +394,7 @@ def test_ambiguous_engine_wheels_fail_the_installer_build(tmp_path, windows_whee
         _wheel_bytes(tag="cp312-cp312-win_amd64")
     )
     with pytest.raises(RuntimeError, match="exactly one"):
-        build_hub._bundled_engine_wheel(tmp_path, "0.4.1-3")
+        build_hub._bundled_engine_wheel(tmp_path, "0.4.1-v3")
 
 
 def test_engine_wheel_for_another_python_or_mislabeled_fails(tmp_path, windows_wheels):
@@ -401,13 +404,13 @@ def test_engine_wheel_for_another_python_or_mislabeled_fails(tmp_path, windows_w
         _wheel_bytes(tag="cp312-cp312-win_amd64")
     )
     with pytest.raises(RuntimeError, match="default Python"):
-        build_hub._bundled_engine_wheel(other_abi, "0.4.1-3")
+        build_hub._bundled_engine_wheel(other_abi, "0.4.1-v3")
 
     mislabeled = tmp_path / "mislabeled"
     mislabeled.mkdir()
     (mislabeled / WHEEL).write_bytes(_wheel_bytes(build="2"))
     with pytest.raises(ValueError, match="identity"):
-        build_hub._bundled_engine_wheel(mislabeled, "0.4.1-3")
+        build_hub._bundled_engine_wheel(mislabeled, "0.4.1-v3")
 
 
 def _installer_fixture(tmp_path, monkeypatch):
@@ -427,6 +430,7 @@ def _installer_fixture(tmp_path, monkeypatch):
     monkeypatch.setattr(build_hub, "_validate_msvc_reports", lambda *a: [])
     monkeypatch.setattr(build_hub, "_validate_windows_pe", lambda *a: None)
     monkeypatch.setattr(build_hub, "_project_version", lambda *a: "0.4.1-3")
+    monkeypatch.setattr(build_hub, "_project_engine_release", lambda *a: "0.4.1-v3")
     return source, build, package, commands
 
 

@@ -208,7 +208,7 @@ def test_local_release_matches_authoritative_build(tmp_path, build, inventory, s
         shutil.copyfile(source, scripts / name)
     (root / "packaging").mkdir()
     shutil.copyfile(ROOT / "packaging/hub_release.py", root / "packaging/hub_release.py")
-    (root / "pyproject.toml").write_text('[project]\nversion = "0.4.1"\n', encoding="utf-8")
+    (root / "pyproject.toml").write_text(f'[project]\nversion = "0.4.1"\n[tool.infernux.hub]\nbuild-number = {build}\n', encoding="utf-8")
     (root / "python/infernux").mkdir(parents=True)
     (root / "python/infernux/version.py").write_text(f"ENGINE_BUILD_NUMBER = {build}\n", encoding="utf-8")
     output = root / "dist/releases/0.4.1"
