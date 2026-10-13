@@ -28,17 +28,17 @@
     },
     {
       "kind": "hub-installer",
-      "name": "InfernuxHubInstaller-0.4.2-3-windows-x64.exe",
-      "size_bytes": 169183232,
-      "url": "https://downloads.infernux-engine.com/hub/0.4.2/build-3/InfernuxHubInstaller-0.4.2-3-windows-x64.exe?repair=single-instance",
-      "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/hub-v0.4.2-v3/InfernuxHubInstaller-0.4.2-3-windows-x64.exe"
+      "name": "InfernuxHubInstaller-0.4.2-4-windows-x64.exe",
+      "size_bytes": 169197056,
+      "url": "https://downloads.infernux-engine.com/hub/0.4.2/build-4/InfernuxHubInstaller-0.4.2-4-windows-x64.exe",
+      "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/hub-v0.4.2-v4/InfernuxHubInstaller-0.4.2-4-windows-x64.exe"
     },
     {
       "kind": "hub-installer",
-      "name": "InfernuxHubInstaller-0.4.2-3-linux-x64",
+      "name": "InfernuxHubInstaller-0.4.2-4-linux-x64",
       "size_bytes": 274659544,
-      "url": "https://downloads.infernux-engine.com/hub/0.4.2/build-3/InfernuxHubInstaller-0.4.2-3-linux-x64?repair=single-instance",
-      "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/hub-v0.4.2-v3/InfernuxHubInstaller-0.4.2-3-linux-x64"
+      "url": "https://downloads.infernux-engine.com/hub/0.4.2/build-4/InfernuxHubInstaller-0.4.2-4-linux-x64",
+      "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/hub-v0.4.2-v4/InfernuxHubInstaller-0.4.2-4-linux-x64"
     }
   ]
 }
