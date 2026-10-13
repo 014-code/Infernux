@@ -2,6 +2,7 @@
 from pathlib import Path
 import argparse
 import tempfile
+import time
 
 from infernux import Engine
 from infernux.core.asset_types import read_mesh_import_settings
@@ -10,8 +11,10 @@ from infernux.lib import AssetRegistry, PrimitiveType, SceneManager
 
 
 def main(continuous=False):
+    started = time.perf_counter()
     update_count = 192 if continuous else 24
     frame_interval = 1 if continuous else 8
+    print(f"Mesh publication GPU: starting 240 frames / {update_count} updates", flush=True)
     with tempfile.TemporaryDirectory(prefix="infernux-mesh-publication-") as root:
         project = Path(root)
         (project / "Assets").mkdir()
@@ -27,6 +30,7 @@ def main(continuous=False):
         peak_pending = 0
         try:
             frontend.init_renderer(64, 64, str(project))
+            print(f"Mesh publication GPU: renderer ready at {time.perf_counter() - started:.2f}s", flush=True)
             engine.set_editor_fps_cap(240.0)
             engine.set_editor_idle_fps(0.0)
             registry = AssetRegistry.instance()
@@ -49,6 +53,10 @@ def main(continuous=False):
                 nonlocal frames, published, settled, peak_pending
                 try:
                     frames += 1
+                    if frames % 48 == 0:
+                        print(f"Mesh publication GPU: frame {frames}/240; updates "
+                              f"{published}/{update_count}; elapsed "
+                              f"{time.perf_counter() - started:.2f}s", flush=True)
                     peak_pending = max(peak_pending, engine.pending_mesh_gpu_upload_count)
                     # Continuous mode deliberately supersedes in-flight versions.
                     if frames % frame_interval == 0 and published < update_count:

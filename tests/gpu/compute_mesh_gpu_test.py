@@ -1,6 +1,7 @@
 """Real Vulkan regression for a compute-resident MeshRenderer vertex stream."""
 from pathlib import Path
 import tempfile
+import time
 
 import numpy as np
 
@@ -18,6 +19,8 @@ def deform(domain, vertices, delta):
 
 
 def main():
+    started = time.perf_counter()
+    print("Compute mesh GPU: starting fixed 136-frame workload", flush=True)
     with tempfile.TemporaryDirectory(prefix="infernux-compute-mesh-") as root:
         project = Path(root)
         (project / "Assets").mkdir()
@@ -38,6 +41,7 @@ def main():
         initial_tangents = None
         try:
             frontend.init_renderer(64, 64, str(project))
+            print(f"Compute mesh GPU: renderer ready at {time.perf_counter() - started:.2f}s", flush=True)
             engine.set_editor_fps_cap(240.0)
             engine.set_editor_idle_fps(0.0)
             scene = SceneManager.instance().get_active_scene()
@@ -134,6 +138,9 @@ def main():
                 nonlocal frames
                 try:
                     frames += 1
+                    if frames % 32 == 0:
+                        print(f"Compute mesh GPU: frame {frames}/136 at "
+                              f"{time.perf_counter() - started:.2f}s", flush=True)
                     if 32 <= frames < 96:
                         inx.compute.launch(deform, params=(domain, vertex_buffer, 0.005))
                         inx.compute._flush_commands()

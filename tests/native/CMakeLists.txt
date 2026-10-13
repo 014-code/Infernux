@@ -2141,6 +2141,12 @@ if(INFERNUX_BUILD_TESTS)
         SKIP_RETURN_CODE 77
     )
 
+    # The Windows CPU Vulkan driver needs about 53 seconds for the unchanged
+    # 136-frame resident-mesh workload in a previous hosted run. Keep its exact
+    # frame, vertex, normal, tangent, and ownership assertions, with a bounded
+    # deadline that also allows normal shared-runner CPU variation.
+    set_tests_properties(infernux.compute_mesh_gpu PROPERTIES TIMEOUT 120)
+
     add_test(
         NAME infernux.mesh_publication_gpu
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/gpu/mesh_publication_gpu_test.py
@@ -2161,23 +2167,24 @@ if(INFERNUX_BUILD_TESTS)
         NAME infernux.runtime_mesh_resource_gpu
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/gpu/runtime_mesh_resource_gpu_test.py
     )
+    # Multi-frame lifetime assertions also run on software Vulkan. Give CPU
+    # rasterizers time to complete their fixed work and shut down normally.
     set_tests_properties(infernux.mesh_publication_gpu infernux.mesh_publication_gpu_continuous
         infernux.runtime_mesh_retirement_gpu infernux.runtime_mesh_retirement_multi_camera_gpu
         infernux.runtime_mesh_resource_gpu PROPERTIES
         FAIL_REGULAR_EXPRESSION "Validation Error:"
         ENVIRONMENT "PYTHONPATH=${CMAKE_SOURCE_DIR}/python;INFERNUX_NATIVE_MODULE_DIR=$<TARGET_FILE_DIR:_Infernux>"
         LABELS "requires_vulkan_device"
-        TIMEOUT 30
+        TIMEOUT 90
         RUN_SERIAL TRUE
     )
 
-    # These unchanged multi-frame lifetime workloads also run on software
-    # Vulkan in correctness CI. Their assertions are frame-based; give CPU
-    # rasterizers time to complete the work and shut down normally.
+    # Both 240-frame publication modes take about 79 seconds on the Windows
+    # software device. A slower run exceeded the old 90-second cutoff even
+    # though its other GPU workloads completed. This is a correctness deadline,
+    # not a frame-rate assertion; keep all 24/192 updates and retirement checks.
     set_tests_properties(infernux.mesh_publication_gpu infernux.mesh_publication_gpu_continuous
-        infernux.runtime_mesh_retirement_gpu infernux.runtime_mesh_retirement_multi_camera_gpu
-        infernux.runtime_mesh_resource_gpu
-        PROPERTIES TIMEOUT 90)
+        PROPERTIES TIMEOUT 180)
 
     # Two game cameras plus the editor view render all 260 lifetime-test
     # frames. The hosted Windows CPU rasterizer reached frame 240 within 180
