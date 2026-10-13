@@ -153,6 +153,10 @@ replace Hub files while leaving installed clients on the same version.
   distribution attempt, repeats Windows signing verification, and runs the
   publication contract tests. Engine or build changes require a new complete run.
   This explicitly enables draft recovery and preserves immutable PyPI files.
+  Before recovery, create the release tag at the exact tested source SHA.
+  Recovery checks existing release metadata instead of rewriting it. If a
+  maintainer already made that verified release public, recovery verifies its
+  immutable assets and completes its catalogs without uploading replacements.
 - If release assets are public but the catalog commit failed, retain or retrieve
   the exact published assets and regenerate only the catalogs using
   `build_release_catalog.py --release-dir <original-assets> --published-at

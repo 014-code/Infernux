@@ -346,3 +346,14 @@ def test_r2_validates_all_files_before_any_upload(tmp_path, monkeypatch):
     monkeypatch.setattr(module, 'Publisher', lambda token: pytest.fail('all files must be present first'))
     with pytest.raises(FileNotFoundError):
         module.publish(tmp_path, '1.2.3', 1, 'secret')
+
+
+def test_release_recovery_keeps_existing_metadata_and_public_assets_immutable():
+    steps = workflow('.github/workflows/publish-desktop-release.yml')['jobs']['publish']['steps']
+    create = next(step['run'] for step in steps if step.get('name') == 'Create the release when needed')
+    assert 'Existing release targets' in create
+    assert 'git rev-parse "$RELEASE_TAG^{commit}"' in create
+    assert 'gh release edit' not in create
+    assert '[ "$draft" != "true" ] && [ "$RECOVERY" != "true" ]' in create
+    upload = next(step for step in steps if step.get('name') == 'Upload to the GitHub Release')
+    assert upload['if'] == "steps.github_release.outputs.upload == 'true'"

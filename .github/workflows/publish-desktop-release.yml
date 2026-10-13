@@ -244,12 +244,13 @@ jobs:
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
           SOURCE_SHA: ${{ needs.verify.outputs.sha }}
           REPLACE_EXISTING: ${{ inputs.replace_existing_release }}
+          RECOVERY: ${{ inputs.recover_partial_publication }}
           SIGNED: ${{ inputs.sign_windows_release }}
         run: |
           python scripts/release/build_release_notes.py --output dist/release-notes.md --signed "$SIGNED"
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             draft="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"
-            if [ "$draft" != "true" ]; then
+            if [ "$draft" != "true" ] && [ "$RECOVERY" != "true" ]; then
               echo "Release $RELEASE_TAG is already public; increment the build number or project.version." >&2
               exit 1
             fi
@@ -257,9 +258,18 @@ jobs:
               echo "Draft $RELEASE_TAG already exists; use the recovery option explicitly." >&2
               exit 1
             fi
+            target="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)"
+            if [ "$target" != "$SOURCE_SHA" ]; then
+              echo "Existing release targets $target instead of the tested source $SOURCE_SHA." >&2
+              exit 1
+            fi
+            if [ "$RECOVERY" = "true" ] && [ "$(git rev-parse "$RELEASE_TAG^{commit}")" != "$SOURCE_SHA" ]; then
+              echo "Recovery requires the release tag to point to the tested source." >&2
+              exit 1
+            fi
             echo "created=false" >> "$GITHUB_OUTPUT"
             echo "publish=$draft" >> "$GITHUB_OUTPUT"
-            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --notes-file dist/release-notes.md
+            echo "upload=$draft" >> "$GITHUB_OUTPUT"
           else
             gh release create "$RELEASE_TAG" \
               --repo "$GITHUB_REPOSITORY" \
@@ -269,6 +279,7 @@ jobs:
               --draft
             echo "created=true" >> "$GITHUB_OUTPUT"
             echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "upload=true" >> "$GITHUB_OUTPUT"
           fi
           release_api="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json apiUrl --jq .apiUrl)"
           echo "api_url=$release_api" >> "$GITHUB_OUTPUT"
@@ -289,6 +300,7 @@ jobs:
           PY
 
       - name: Upload to the GitHub Release
+        if: steps.github_release.outputs.upload == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
