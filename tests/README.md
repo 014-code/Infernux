@@ -46,6 +46,7 @@ All paths below are pytest modules. Run one with `python -m pytest PATH -q -ra`.
 | Host-specific wheel delivery and refresh | `tests/hub/test_hub_release.py`, `tests/hub/test_project_wheel_refresh.py` | Full Hub CI; real download check before release |
 | Inside-out Windows signing and immutable publication | `tests/hub/test_release_signing.py` | Portable Hub; real SignPath test workflow before signed releases |
 | Exact-source release publication and Player acceptance prerequisites | `tests/contracts/test_release_player_gate.py` | Portable contracts; actual PowerShell source guard before native builds |
+| Linux toolchain, dependency installation and installed-wheel test ordering | `tests/contracts/test_linux_build_contract.py` | Portable contracts before native builds; native CTest and Python retain runtime coverage |
 | Scene activation, defaults and Play/Stop transitions | `tests/python/test_scene_manager_runtime_loading.py`, `tests/python/test_scene_manager_defaults.py`, `tests/python/test_engine_play_mode.py` | Native Python; visible editor acceptance |
 | Script refresh and transactional publication | `tests/python/test_play_mode_component_body_reload.py`, `tests/python/test_plugin_updates.py` | Native Python |
 | Component batch storage, validation and field-change publication | `tests/python/test_component_data_store.py`, `tests/python/test_runtime_change_journal.py` | Native Python |
