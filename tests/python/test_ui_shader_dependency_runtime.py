@@ -107,8 +107,9 @@ WORLD_FRAGMENT = (FRAGMENT[:FRAGMENT.index('layout(push_constant)')]
 @pytest.mark.parametrize('draw_list', (ScreenUIList.Overlay, ScreenUIList.Camera, ScreenUIList.World),
                          ids=('overlay', 'camera', 'world'))
 @pytest.mark.parametrize('material_properties', (False, True), ids=('plain', 'material-buffer'))
+@pytest.mark.parametrize('initial_samples', (1, 4), ids=('initial-1x', 'initial-4x'))
 def test_actual_ui_draw_consumes_prepared_dependency_and_rejects_invalid_saves(
-        engine, scene, dependency_sources, capfd, draw_list, material_properties):
+        engine, scene, dependency_sources, capfd, draw_list, material_properties, initial_samples):
     prefix, create, _ = dependency_sources
     library_name = prefix + ' Library'
     red = (f'ShaderInfo {{ Name "{library_name}" }}\n'
@@ -147,15 +148,20 @@ def test_actual_ui_draw_consumes_prepared_dependency_and_rejects_invalid_saves(
     world_object = scene.create_game_object('World UI dependency quad') if world else None
     # Target creation may replace the native UI backend. Borrow the renderer
     # only after the final target signature is established.
+    previous_samples = engine.get_msaa_samples()
+    engine.set_msaa_samples(initial_samples)
+    assert engine.get_msaa_samples() == initial_samples
     engine.resize_game_render_target(64, 64)
     renderer = engine.get_screen_ui_renderer()
-    state = {'frames': 0, 'phase': 0, 'ticket': None, 'submissions': 0}
+    renderer_samples = engine.get_msaa_samples()
+    state = {'frames': 0, 'phase': 0, 'ticket': None, 'submissions': 0, 'msaa_rebuilds': 0}
     samples, errors = [], []
 
     class Submission:
         def submit(self):
-            nonlocal renderer
+            nonlocal renderer, renderer_samples
             renderer = engine.get_screen_ui_renderer()
+            renderer_samples = engine.get_msaa_samples()
             state['submissions'] += 1
             renderer.begin_frame(64, 64)
             renderer.begin_command_packet()
@@ -173,10 +179,24 @@ def test_actual_ui_draw_consumes_prepared_dependency_and_rejects_invalid_saves(
             renderer.append_command_packets([packet])
 
     def after_draw():
-        nonlocal renderer
+        nonlocal renderer, renderer_samples
         try:
             state['frames'] += 1
             assert state['frames'] <= 100, 'The same submitted readback ticket never completed'
+            current_renderer = engine.get_screen_ui_renderer()
+            if current_renderer is not renderer:
+                # MSAA replaces the backend and abandons this frame before GPU
+                # recording. The callback still advances deferred owner work;
+                # never inspect the retired borrow as an executed UI draw.
+                assert state['phase'] == 0 and state['ticket'] is None
+                assert engine.get_msaa_samples() != renderer_samples
+                assert not engine.renderer_frame_snapshot['game_render_graph_pass_names']
+                assert not engine.is_shader_loaded(vertex_name, 'vertex')
+                state['msaa_rebuilds'] += 1
+                assert state['msaa_rebuilds'] <= 2
+                renderer = current_renderer
+                renderer_samples = engine.get_msaa_samples()
+                return
             observation = {
                 'frames': state['frames'], 'phase': state['phase'], 'submissions': state['submissions'],
                 'commands': renderer.has_commands(draw_list), 'enabled': renderer.is_enabled(),
@@ -242,11 +262,14 @@ def test_actual_ui_draw_consumes_prepared_dependency_and_rejects_invalid_saves(
         engine.run()
         assert not errors, repr(errors)
         assert state['phase'] == 4
+        if initial_samples == 1:
+            assert state['msaa_rebuilds'] >= 1, 'The 1x-to-default-4x startup transition was not exercised'
     finally:
         engine.set_post_draw_callback(None)
         engine.set_render_pipeline(None)
         engine.set_game_camera_enabled(False)
-        renderer.begin_frame(64, 64)
+        engine.get_screen_ui_renderer().begin_frame(64, 64)
+        engine.set_msaa_samples(previous_samples)
         library.write_text(red, encoding='utf-8')
     captured = capfd.readouterr()
     assert not any(token in captured.out + captured.err for token in (
@@ -256,4 +279,5 @@ def test_actual_ui_draw_consumes_prepared_dependency_and_rejects_invalid_saves(
     )), captured.out + captured.err
     print(json.dumps({'draw_list': str(draw_list), 'material_properties': material_properties, 'samples': samples,
                       'frames': state['frames'],
+                      'initial_samples': initial_samples, 'msaa_rebuilds': state['msaa_rebuilds'],
                       'prepared_immutable': True, 'rejected_candidate_keeps_valid_program': True}))
