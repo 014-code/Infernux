@@ -6,11 +6,12 @@ import os
 import shutil
 import signal
 import sys
-import tempfile
 import time
 import uuid
 from pathlib import Path
 from typing import Callable
+
+from publication_directory import create_publication_directory
 
 from installer.payload import (
     HUB_EXECUTABLE,
@@ -332,11 +333,9 @@ class HubInstallTransaction:
             )
 
         self.install_dir.parent.mkdir(parents=True, exist_ok=True)
-        stage_path = tempfile.mkdtemp(
-            prefix=f".{self.install_dir.name}.install-",
-            dir=os.fspath(self.install_dir.parent),
+        self._stage_dir = create_publication_directory(
+            self.install_dir.parent, f".{self.install_dir.name}.install-",
         )
-        self._stage_dir = Path(stage_path)
         if source_executable.is_file():
             shutil.copytree(self.payload_dir, self._stage_dir, dirs_exist_ok=True)
         else:

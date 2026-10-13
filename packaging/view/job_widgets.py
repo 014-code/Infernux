@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
 from i18n import tr
 from view.forge import SegmentMeter, StatusLed, fmt_bytes, fmt_eta, fmt_rate, mono_label, set_kind
@@ -82,6 +82,7 @@ class JobStrip(QWidget):
         self._state = mono_label("", "monoValue", spacing=1.0)
         row.addWidget(self._state)
         self._detail = mono_label("", "monoMeta", spacing=0.4)
+        self._detail.setTextFormat(Qt.TextFormat.PlainText)
         self._detail.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self._detail.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         row.addWidget(self._detail, 1)
@@ -95,6 +96,11 @@ class JobStrip(QWidget):
         self._retry.setFixedHeight(26)
         self._retry.clicked.connect(self._on_retry)
         row.addWidget(self._retry)
+        self._copy_error = QPushButton(tr("Copy error"))
+        self._copy_error.setObjectName("ghostBtn")
+        self._copy_error.setFixedHeight(26)
+        self._copy_error.clicked.connect(self._on_copy_error)
+        row.addWidget(self._copy_error)
         layout.addLayout(row)
         self._meter = SegmentMeter(height=6)
         layout.addWidget(self._meter)
@@ -125,6 +131,11 @@ class JobStrip(QWidget):
         self._cancel.setVisible(cancellable)
         self._cancel.setEnabled(job.state != "cancelling")
         self._retry.setVisible(job.state == "failed")
+        self._copy_error.setVisible(job.state == "failed")
+
+    def _on_copy_error(self):
+        if self._job is not None and self._job.state == "failed":
+            QApplication.clipboard().setText(self._job.error)
 
     def _on_cancel(self):
         if self._job is not None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import ctypes
+import json
 import logging
 import os
 import sys
@@ -17,6 +18,7 @@ if _PACKAGING_DIR not in sys.path:
 from embed_runtime_manager import PythonRuntimeManager
 from hub_utils import get_hub_shared_data_dir
 from python_runtime_catalog import DEFAULT_PYTHON_RUNTIME
+from installer_safety import install_marker_path, is_marked_install_dir, write_install_marker
 
 
 def _show_message_box(title: str, message: str, icon: int = 0x40) -> None:
@@ -50,6 +52,31 @@ def prepare_shared_storage(app_dir: str) -> str:
             **options,
         )
     return str(shared)
+
+
+def repair_legacy_windows_permissions(app_dir: str) -> bool:
+    """Repair pre-v4 staging ACLs once after an elevated in-place update.
+
+    The old updater restarts the new Hub elevated. Use that existing privilege
+    to restore inherited application access and the user's Shared write access;
+    subsequent ordinary launches do not rewrite ACLs or request elevation.
+    """
+    if sys.platform != "win32" or not is_marked_install_dir(app_dir):
+        return False
+    marker = Path(install_marker_path(app_dir))
+    if json.loads(marker.read_text(encoding="utf-8")).get("access_layout") == 1:
+        return False
+    if not ctypes.windll.shell32.IsUserAnAdmin():
+        return False
+    subprocess.run(
+        [str(Path(os.environ["SystemRoot"]) / "System32/icacls.exe"),
+         str(Path(app_dir).resolve()), "/inheritance:e"],
+        check=True, capture_output=True, text=True, encoding="utf-8",
+        errors="replace", creationflags=0x08000000,
+    )
+    prepare_shared_storage(app_dir)
+    write_install_marker(app_dir)
+    return True
 
 
 def install_runtime_for_app(app_dir: str, progress_callback=None) -> str:

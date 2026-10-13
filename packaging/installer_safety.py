@@ -47,6 +47,7 @@ def write_install_marker(install_dir: str) -> None:
     payload = {
         "tool": "Infernux Hub",
         "kind": "install-directory",
+        "access_layout": 1,
         "written_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
     marker_path = install_marker_path(install_dir)

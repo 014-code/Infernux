@@ -7,12 +7,13 @@ import platform
 import shutil
 import sys
 import tarfile
-import tempfile
 import time
 from dataclasses import dataclass
 from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
+
+from publication_directory import create_publication_directory
 
 from python_runtime_catalog import (
     DEFAULT_PYTHON_RUNTIME,
@@ -218,9 +219,7 @@ def runtime_publication(destination: str | os.PathLike[str], *, replace_existing
     """Prepare an owned candidate, then replace the live tree on successful exit."""
     target = Path(destination).resolve()
     target.parent.mkdir(parents=True, exist_ok=True)
-    extract_root = Path(
-        tempfile.mkdtemp(prefix=f".{target.name}.extract-", dir=target.parent)
-    )
+    extract_root = create_publication_directory(target.parent, f".{target.name}.extract-")
     backup = extract_root / "previous-runtime"
     committed = False
     try:

@@ -67,6 +67,32 @@ def test_failure_is_visible_and_next_job_runs_after_thread_cleanup():
     assert queue.jobs == []
 
 
+def test_failed_install_can_copy_the_complete_error():
+    from view.job_widgets import JobStrip
+
+    app = QApplication.instance() or QApplication([])
+    previous_clipboard = app.clipboard().text()
+    queue = InstallQueue(app)
+    error = "Invalid argument: \\\\?\\D:\\引擎\\" + "long-path/" * 50 + "Scripts/numba\nsecond line"
+
+    def fail(report):
+        raise RuntimeError(error)
+
+    strip = JobStrip(queue, "python:3.13")
+    strip.resize(420, 100)
+    strip.show()
+    try:
+        queue.submit("python:3.13", "Python", fail)
+        wait_until(lambda: not queue.busy)
+        strip.refresh()
+        assert strip._copy_error.isVisible()
+        strip._copy_error.click()
+        assert app.clipboard().text() == "RuntimeError: " + error
+    finally:
+        app.clipboard().setText(previous_clipboard)
+        strip.close()
+
+
 def test_queued_install_can_be_removed_without_starting_it():
     app = QApplication.instance() or QApplication([])
     queue = InstallQueue(app)

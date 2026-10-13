@@ -841,6 +841,9 @@ def run_hub() -> int:
         instance = HubInstance(get_hub_user_data_dir())
         if not instance.acquire_or_activate():
             return 0
+        if is_frozen() and sys.platform == "win32":
+            from installer.install_python_runtime import repair_legacy_windows_permissions
+            repair_legacy_windows_permissions(get_app_dir())
         launcher = GameEngineLauncher(HubLaunchContext.current())
         instance.set_activation_handler(launcher._restore_window)
         launcher.run()

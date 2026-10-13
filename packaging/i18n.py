@@ -47,6 +47,7 @@ _ZH = {
     "Hub update {version}": "Hub 更新 {version}",
     "Infernux {engine} needs its managed runtime (Python {version}). Install it here; no Python or Conda setup is required.": "Infernux {engine} 需要配套运行环境（Python {version}）。点击下方按钮安装，无需自行配置 Python 或 Conda。",
     "Install required runtime (Python {version})": "安装所需运行环境（Python {version}）",
+    "Copy error": "复制错误",
     "Migrate Legacy Resources": "迁移旧版共享资源",
     "Shared resources: {path}": "共享资源目录：{path}",
     "Moving resources. Keep Hub open until this finishes.": "正在移动资源，请保持 Hub 打开直至完成。",

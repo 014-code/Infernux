@@ -90,6 +90,14 @@ def extended(path):
     return "\\\\?\\UNC\\" + absolute[2:] if absolute.startswith("\\\\") else "\\\\?\\" + absolute
 
 
+def ordinary(path):
+    if path.startswith("\\\\?\\UNC\\"):
+        return "\\\\" + path[8:]
+    if path.startswith("\\\\?\\"):
+        return path[4:]
+    return path
+
+
 class WindowsPathFinder(PathFinder):
     @classmethod
     def find_spec(cls, fullname, path=None, target=None):
@@ -103,6 +111,13 @@ class WindowsPathFinder(PathFinder):
 def install():
     if sys.platform != "win32":
         return
+    # CreateProcess with an extended executable also extends CPython's prefix.
+    # pip joins RECORD paths such as ../../Scripts/numba to that prefix; Win32
+    # verbatim paths cannot resolve those relative segments or forward slashes.
+    # Keep package/search paths ordinary, extending only executable/DLL loads.
+    for name in ("prefix", "exec_prefix", "base_prefix", "base_exec_prefix"):
+        setattr(sys, name, ordinary(getattr(sys, name)))
+    sys.path[:] = [ordinary(path) for path in sys.path]
     for index, finder in enumerate(sys.meta_path):
         if finder is PathFinder:
             sys.meta_path[index] = WindowsPathFinder

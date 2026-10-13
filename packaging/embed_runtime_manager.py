@@ -370,6 +370,7 @@ class PythonRuntimeManager:
         python_exe = self.get_runtime_path(runtime_id)
         if python_exe:
             runtime_root = runtime_prefix(python_exe)
+            prepare_private_runtime_paths(runtime_root)
             has_build_support = _has_build_support(runtime_root, runtime_id)
             has_required_modules = self._has_modules(python_exe, *_REQUIRED_RUNTIME_MODULES)
             if has_build_support and has_required_modules:
@@ -725,11 +726,13 @@ class PythonRuntimeManager:
         args = [
             python_exe,
             "-I",
+            "-X", "utf8",
             "-m",
             "pip",
             "install",
             "--disable-pip-version-check",
             "--no-input",
+            "--no-warn-script-location",
             "--prefer-binary",
             "--no-compile",
             "--upgrade",

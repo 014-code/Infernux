@@ -6,12 +6,12 @@ import errno
 import os
 import re
 import shutil
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable
 
 from hub_utils import get_hub_shared_data_dir, get_hub_user_data_dir, is_project_open
+from publication_directory import create_publication_directory
 
 
 @dataclass(frozen=True)
@@ -78,8 +78,9 @@ def _move_resource(source: Path, destination: Path) -> None:
         if exc.errno != errno.EXDEV:
             raise
     # This is filesystem compatibility, not a retry after a broken resource.
-    with tempfile.TemporaryDirectory(prefix=".hub-migrate-", dir=destination.parent) as staging:
-        staged = Path(staging) / source.name
+    staging = create_publication_directory(destination.parent, ".hub-migrate-")
+    try:
+        staged = staging / source.name
         if source.is_dir():
             # Do not traverse Windows junctions while copying/deleting a unit.
             for directory, children, _files in os.walk(source, followlinks=False):
@@ -93,6 +94,8 @@ def _move_resource(source: Path, destination: Path) -> None:
         if destination.exists() or destination.is_symlink():
             raise FileExistsError(f"Migration target appeared during copy: {destination}")
         staged.rename(destination)
+    finally:
+        shutil.rmtree(staging)
     # At this point the destination is complete even if removal is interrupted.
     if source.is_dir():
         shutil.rmtree(source)

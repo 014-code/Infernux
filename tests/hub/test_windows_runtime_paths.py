@@ -1,15 +1,66 @@
 """Real Python/DLL execution across the Windows MAX_PATH boundary."""
 
 from pathlib import Path
+import csv
+import io
 import json
 import shutil
 import sys
+import zipfile
 
 import pytest
 
 import embed_runtime_manager as manager_module
 import private_python_runtime
 import python_execution
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Win32 verbatim paths and pip RECORD handling")
+@pytest.mark.parametrize("runtime_length", [140, 280])
+def test_runtime_pip_installs_upgrades_and_removes_recorded_scripts(
+    tmp_path, private_python_factory, runtime_length,
+):
+    root = tmp_path / "Python 中文 runtime"
+    while len(str(root)) < runtime_length:
+        root /= "nested-" + "x" * min(35, runtime_length - len(str(root)))
+    python = private_python_factory(root)
+    python_execution.prepare_private_runtime_paths(root)
+
+    def run(*args):
+        result = manager_module._run_command([str(python), "-I", "-X", "utf8", *args], timeout=60)
+        assert result.returncode == 0, result.stdout + result.stderr
+        return result.stdout
+
+    paths = json.loads(run("-c", "import sysconfig,json; print(json.dumps(sysconfig.get_paths()))"))
+    assert not any(path.startswith("\\\\?\\") for path in paths.values())
+    for version in ("1.0", "2.0"):
+        wheel = tmp_path / f"inx_record_probe-{version}-py3-none-any.whl"
+        info = f"inx_record_probe-{version}.dist-info/"
+        # Numba publishes a raw .data script whose shebang pip rewrites and
+        # records as ../../Scripts/numba. Include real RECORD rows so pip
+        # rehashes that rewritten script, unlike an empty-RECORD test wheel.
+        files = {
+            "inx_record_probe.py": f"def main(): print({version!r})\n",
+            f"inx_record_probe-{version}.data/scripts/raw-probe": f"#!python\nprint({version!r})\n",
+            info + "METADATA": f"Metadata-Version: 2.1\nName: inx-record-probe\nVersion: {version}\n",
+            info + "WHEEL": "Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
+            info + "entry_points.txt": "[console_scripts]\ninx-record-probe = inx_record_probe:main\n",
+        }
+        record = io.StringIO(newline="")
+        csv.writer(record).writerows((name, "", "") for name in [*files, info + "RECORD"])
+        with zipfile.ZipFile(wheel, "w") as archive:
+            for name, content in {**files, info + "RECORD": record.getvalue()}.items():
+                archive.writestr(name, content)
+        run("-m", "pip", "install", "--no-index", "--no-deps", "--no-compile", str(wheel))
+        assert run(str(root / "Scripts/raw-probe")).strip() == version
+        assert run("-c", "import inx_record_probe; inx_record_probe.main()").strip() == version
+        assert (root / "Scripts/inx-record-probe.exe").is_file()
+        rows = list(csv.reader((root / "Lib/site-packages" / info / "RECORD").read_text().splitlines()))
+        assert any(row[0] == "../../Scripts/raw-probe" and row[1] for row in rows)
+
+    run("-m", "pip", "uninstall", "-y", "inx-record-probe")
+    assert not (root / "Scripts/raw-probe").exists()
+    assert not (root / "Scripts/inx-record-probe.exe").exists()
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Win32 process and DLL loader contract")
