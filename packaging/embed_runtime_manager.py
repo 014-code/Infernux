@@ -40,6 +40,7 @@ from python_runtime_catalog import (
 from runtime_requirements import runtime_modules, runtime_packages, runtime_probe_code
 from runtime_script_relocation import RELOCATE_RUNTIME_SCRIPTS
 from python_execution import prepare_private_runtime_paths, python_executable_path
+from publication_directory import clear_windows_readonly_tree
 
 
 _NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
@@ -471,6 +472,7 @@ class PythonRuntimeManager:
 
     def _prepare_candidate(self, candidate: Path, runtime_id: PythonRuntimeId,
                            *, on_status=None) -> None:
+        clear_windows_readonly_tree(candidate)
         prepare_private_runtime_paths(candidate)
         python = _find_python_in_root(str(candidate))
         if not python or not _is_python_version(python, runtime_id) or _is_embedded_root(str(candidate)):

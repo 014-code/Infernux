@@ -18,7 +18,10 @@ if _PACKAGING_DIR not in sys.path:
 from embed_runtime_manager import PythonRuntimeManager
 from hub_utils import get_hub_shared_data_dir
 from python_runtime_catalog import DEFAULT_PYTHON_RUNTIME
-from installer_safety import install_marker_path, is_marked_install_dir, write_install_marker
+from installer_safety import (
+    WINDOWS_ACCESS_LAYOUT, install_marker_path, is_marked_install_dir, write_install_marker,
+)
+from publication_directory import clear_windows_readonly_tree
 
 
 def _show_message_box(title: str, message: str, icon: int = 0x40) -> None:
@@ -51,6 +54,7 @@ def prepare_shared_storage(app_dir: str) -> str:
             [str(system / "icacls.exe"), str(shared), "/grant", f"*{sid}:(OI)(CI)M"],
             **options,
         )
+        clear_windows_readonly_tree(shared)
     return str(shared)
 
 
@@ -64,7 +68,7 @@ def repair_legacy_windows_permissions(app_dir: str) -> bool:
     if sys.platform != "win32" or not is_marked_install_dir(app_dir):
         return False
     marker = Path(install_marker_path(app_dir))
-    if json.loads(marker.read_text(encoding="utf-8")).get("access_layout") == 1:
+    if json.loads(marker.read_text(encoding="utf-8")).get("access_layout") == WINDOWS_ACCESS_LAYOUT:
         return False
     if not ctypes.windll.shell32.IsUserAnAdmin():
         return False
@@ -75,6 +79,7 @@ def repair_legacy_windows_permissions(app_dir: str) -> bool:
         errors="replace", creationflags=0x08000000,
     )
     prepare_shared_storage(app_dir)
+    clear_windows_readonly_tree(Path(app_dir))
     write_install_marker(app_dir)
     return True
 

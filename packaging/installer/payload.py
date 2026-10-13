@@ -121,7 +121,7 @@ def extract_payload_archive(
                 ):
                     shutil.copyfileobj(source, destination_file, length=1024 * 1024)
                 archived_mode = mode & 0o777
-                if archived_mode:
+                if sys.platform != "win32" and archived_mode:
                     target.chmod(archived_mode)
     except zipfile.BadZipFile as exc:
         raise RuntimeError(f"Invalid Hub payload archive: {archive_file}") from exc

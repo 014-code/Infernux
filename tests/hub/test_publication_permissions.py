@@ -3,20 +3,70 @@
 import ctypes
 from ctypes import wintypes
 import json
+import stat
+import subprocess
 from pathlib import Path
 import sys
 import tempfile
+import zipfile
 
 import pytest
 
 from installer.install_application import HubInstallTransaction
 from installer.payload import HUB_EXECUTABLE
 from installer import install_python_runtime
-from installer_safety import install_marker_path, write_install_marker
+from installer import install_application
+from installer_safety import WINDOWS_ACCESS_LAYOUT, install_marker_path, write_install_marker
 from private_python_runtime import runtime_publication
+from publication_directory import clear_windows_readonly_tree
 
 
 pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="Windows inherited access control")
+
+
+def test_install_directory_waits_for_transient_windows_handle(tmp_path, monkeypatch):
+    source, target = tmp_path / "stage", tmp_path / "live"
+    source.mkdir()
+    (source / "payload").write_bytes(b"complete")
+    native_replace = install_application.os.replace
+    calls = []
+
+    def replace(before, after):
+        calls.append((before, after))
+        if len(calls) == 1:
+            error = PermissionError("directory briefly occupied")
+            error.winerror = 32
+            raise error
+        return native_replace(before, after)
+
+    monkeypatch.setattr(install_application.os, "replace", replace)
+    monkeypatch.setattr(install_application.time, "sleep", lambda delay: None)
+    install_application._replace_install_directory(source, target)
+    assert calls == [(source, target), (source, target)]
+    assert (target / "payload").read_bytes() == b"complete"
+
+
+def test_install_directory_access_failure_is_bounded(tmp_path, monkeypatch):
+    source, target = tmp_path / "stage", tmp_path / "live"
+    source.mkdir()
+    (source / "payload").write_bytes(b"retained")
+    clock = iter([0.0, 0.1, 10.0])
+    calls = []
+
+    def denied(before, after):
+        calls.append((before, after))
+        error = PermissionError("access permanently denied")
+        error.winerror = 5
+        raise error
+
+    monkeypatch.setattr(install_application.os, "replace", denied)
+    monkeypatch.setattr(install_application.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(install_application.time, "sleep", lambda delay: None)
+    with pytest.raises(PermissionError, match="permanently denied"):
+        install_application._replace_install_directory(source, target)
+    assert len(calls) == 2
+    assert not target.exists()
+    assert (source / "payload").read_bytes() == b"retained"
 
 
 def protected_dacl(path):
@@ -70,25 +120,32 @@ def test_runtime_candidate_inherits_shared_storage_access(tmp_path):
     (target / "write-probe").write_text("ordinary user writable")
 
 
-def test_legacy_update_repairs_native_acl_once(tmp_path, monkeypatch):
+@pytest.mark.parametrize("previous_layout", [None, 1])
+def test_legacy_update_repairs_native_acl_once(tmp_path, monkeypatch, previous_layout):
     old_install = Path(tempfile.mkdtemp(prefix="legacy-hub-", dir=tmp_path))
     assert protected_dacl(old_install)
     write_install_marker(str(old_install))
     marker = Path(install_marker_path(str(old_install)))
     document = json.loads(marker.read_text(encoding="utf-8"))
     del document["access_layout"]
+    if previous_layout is not None:
+        document["access_layout"] = previous_layout
     marker.write_text(json.dumps(document), encoding="utf-8")
     shared = old_install / "InfernuxHubData/Shared"
     retained = shared / "Runtimes/python313/keep.txt"
     retained.parent.mkdir(parents=True)
     retained.write_text("existing runtime", encoding="utf-8")
+    retained.chmod(stat.S_IREAD)
+    old_install.chmod(stat.S_IREAD)
     # The fixture is owned by this test user, allowing real ACL changes without
     # a UAC prompt. The production migration runs only in the elevated updater.
     monkeypatch.setattr(install_python_runtime.ctypes.windll.shell32, "IsUserAnAdmin", lambda: True)
     assert install_python_runtime.repair_legacy_windows_permissions(str(old_install))
     assert not protected_dacl(old_install)
     assert retained.read_text(encoding="utf-8") == "existing runtime"
-    assert json.loads(marker.read_text(encoding="utf-8"))["access_layout"] == 1
+    retained.write_text("ordinary writes work after repair", encoding="utf-8")
+    assert not old_install.stat().st_file_attributes & stat.FILE_ATTRIBUTE_READONLY
+    assert json.loads(marker.read_text(encoding="utf-8"))["access_layout"] == WINDOWS_ACCESS_LAYOUT
     stamp = marker.stat().st_mtime_ns
     assert not install_python_runtime.repair_legacy_windows_permissions(str(old_install))
     assert marker.stat().st_mtime_ns == stamp
@@ -103,3 +160,65 @@ def test_ordinary_launch_does_not_attempt_legacy_elevation(tmp_path, monkeypatch
     monkeypatch.setattr(install_python_runtime.ctypes.windll.shell32, "IsUserAnAdmin", lambda: False)
     assert not install_python_runtime.repair_legacy_windows_permissions(str(tmp_path))
     assert json.loads(marker.read_text(encoding="utf-8")) == document
+
+
+@pytest.mark.parametrize("archive_payload", [False, True])
+def test_installer_publishes_writable_files_from_readonly_payload(tmp_path, archive_payload):
+    from installer.payload import HUB_PAYLOAD_ARCHIVE
+
+    payload = tmp_path / "payload"
+    payload.mkdir()
+    if archive_payload:
+        with zipfile.ZipFile(payload / HUB_PAYLOAD_ARCHIVE, "w") as archive:
+            for name in [HUB_EXECUTABLE, "resources/settings.json"]:
+                entry = zipfile.ZipInfo(name)
+                entry.create_system = 3
+                entry.external_attr = (stat.S_IFREG | 0o444) << 16 | 1
+                archive.writestr(entry, b"payload")
+    else:
+        executable = payload / HUB_EXECUTABLE
+        executable.write_bytes(b"payload")
+        executable.chmod(stat.S_IREAD)
+        payload.chmod(stat.S_IREAD)
+    target = tmp_path / "Installed Hub"
+    target.mkdir()
+    write_install_marker(str(target))
+    previous_executable = target / HUB_EXECUTABLE
+    previous_executable.write_bytes(b"old payload")
+    previous_executable.chmod(stat.S_IREAD)
+    target.chmod(stat.S_IREAD)
+    try:
+        with HubInstallTransaction(payload, target) as transaction:
+            transaction.prepare()
+            transaction.activate()
+            transaction.commit()
+        assert not target.stat().st_file_attributes & stat.FILE_ATTRIBUTE_READONLY
+        executable = target / HUB_EXECUTABLE
+        executable.write_bytes(b"replacement")
+        executable.unlink()
+        assert not list(tmp_path.glob(".Installed Hub.backup-*"))
+    finally:
+        clear_windows_readonly_tree(payload)
+
+
+def test_shared_repair_clears_readonly_and_preserves_external_junction(tmp_path):
+    shared = tmp_path / "Hub/InfernuxHubData/Shared"
+    retained = shared / "Runtimes/python313/keep.txt"
+    retained.parent.mkdir(parents=True)
+    retained.write_text("retained")
+    retained.chmod(stat.S_IREAD)
+    external = tmp_path / "external"
+    external.mkdir()
+    untouched = external / "outside.txt"
+    untouched.write_text("external")
+    untouched.chmod(stat.S_IREAD)
+    link = shared / "external-link"
+    subprocess.run(["cmd.exe", "/c", "mklink", "/J", str(link), str(external)],
+                   check=True, capture_output=True, creationflags=0x08000000)
+    try:
+        install_python_runtime.prepare_shared_storage(str(tmp_path / "Hub"))
+        retained.write_text("ordinary user replacement")
+        assert untouched.stat().st_file_attributes & stat.FILE_ATTRIBUTE_READONLY
+    finally:
+        link.rmdir()
+        untouched.chmod(stat.S_IREAD | stat.S_IWRITE)

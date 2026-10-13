@@ -1,6 +1,7 @@
 import io
 import json
 import shutil
+import sys
 import zipfile
 from pathlib import Path
 
@@ -423,8 +424,9 @@ def test_packaged_linux_updater_uses_the_managed_runtime(tmp_path: Path, monkeyp
     assert observed["kwargs"] == {"cwd": staged, "start_new_session": True}
 
 
+@pytest.mark.parametrize("archive_readonly", [False, True])
 def test_stage_update_uses_the_archive_and_current_manifests(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, archive_readonly
 ):
     payload = tmp_path / "payload"
     payload.mkdir()
@@ -436,7 +438,10 @@ def test_stage_update_uses_the_archive_and_current_manifests(
     archive_path = tmp_path / "full.zip"
     with zipfile.ZipFile(archive_path, "w") as archive:
         for file in payload.iterdir():
-            archive.write(file, file.name)
+            entry = zipfile.ZipInfo.from_file(file, file.name)
+            if archive_readonly:
+                entry.external_attr = 0o100444 << 16 | 1
+            archive.writestr(entry, file.read_bytes())
 
     installed = tmp_path / "installed"
     installed.mkdir()
@@ -489,6 +494,8 @@ def test_stage_update_uses_the_archive_and_current_manifests(
         "lib.dll",
         manifest_asset_name(platform),
     }
+    if sys.platform == "win32":
+        (staged / "stage" / "lib.dll").write_bytes(b"ordinary user replacement")
 
 
 def test_stage_update_rejects_an_unowned_archive_member(tmp_path: Path, monkeypatch):

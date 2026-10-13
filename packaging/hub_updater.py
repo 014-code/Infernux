@@ -381,7 +381,7 @@ def stage_update(
             with archive.open(archive_entry) as source, destination.open("wb") as target:
                 shutil.copyfileobj(source, target)
             archived_mode = (archive_entry.external_attr >> 16) & 0o777
-            if archived_mode:
+            if sys.platform != "win32" and archived_mode:
                 destination.chmod(archived_mode)
 
     shutil.copy2(manifest_path, stage / manifest_name)

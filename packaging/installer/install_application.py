@@ -11,7 +11,7 @@ import uuid
 from pathlib import Path
 from typing import Callable
 
-from publication_directory import create_publication_directory
+from publication_directory import clear_windows_readonly_tree, create_publication_directory
 
 from installer.payload import (
     HUB_EXECUTABLE,
@@ -27,6 +27,25 @@ from installer_safety import (
 
 _LOGGER = logging.getLogger(__name__)
 _SHARED_RESOURCES = Path("InfernuxHubData/Shared")
+
+
+def _replace_install_directory(source: Path, destination: Path) -> None:
+    # Windows can briefly deny renaming a directory after its large runtime
+    # archive is extracted or its executable exits. Wait for those handles to
+    # release, keeping the same atomic operation and a fixed overall deadline.
+    deadline = time.monotonic() + 10.0
+    delay = 0.05
+    while True:
+        try:
+            os.replace(source, destination)
+            return
+        except OSError as exc:
+            remaining = deadline - time.monotonic()
+            if (sys.platform != "win32" or getattr(exc, "winerror", None) not in {5, 32, 33}
+                    or remaining <= 0):
+                raise
+            time.sleep(min(delay, remaining))
+            delay = min(delay * 2, 1.0)
 
 
 def _normalized_path(path: str | os.PathLike[str]) -> str:
@@ -340,6 +359,7 @@ class HubInstallTransaction:
             shutil.copytree(self.payload_dir, self._stage_dir, dirs_exist_ok=True)
         else:
             extract_payload_archive(payload_archive, self._stage_dir)
+        clear_windows_readonly_tree(self._stage_dir)
         write_install_marker(os.fspath(self._stage_dir))
 
         if (self._stage_dir / _SHARED_RESOURCES).exists():
@@ -359,13 +379,14 @@ class HubInstallTransaction:
         close_running_hub(existing_executable, self.progress)
 
         if self.install_dir.exists():
+            clear_windows_readonly_tree(self.install_dir)
             self._backup_dir = self.install_dir.parent / (
                 f".{self.install_dir.name}.backup-{uuid.uuid4().hex}"
             )
-            os.replace(self.install_dir, self._backup_dir)
+            _replace_install_directory(self.install_dir, self._backup_dir)
 
         try:
-            os.replace(self._stage_dir, self.install_dir)
+            _replace_install_directory(self._stage_dir, self.install_dir)
             self._stage_dir = None
             self._activated = True
         except Exception:
@@ -374,7 +395,7 @@ class HubInstallTransaction:
                 and self._backup_dir.exists()
                 and not self.install_dir.exists()
             ):
-                os.replace(self._backup_dir, self.install_dir)
+                _replace_install_directory(self._backup_dir, self.install_dir)
                 self._backup_dir = None
             raise
 
@@ -383,7 +404,7 @@ class HubInstallTransaction:
             if previous_shared.exists():
                 shared = self.install_dir / _SHARED_RESOURCES
                 shared.parent.mkdir(parents=True, exist_ok=True)
-                os.replace(previous_shared, shared)
+                _replace_install_directory(previous_shared, shared)
                 self._shared_transferred = True
 
         installed_executable = self.install_dir / HUB_EXECUTABLE
@@ -414,7 +435,7 @@ class HubInstallTransaction:
         if self._shared_transferred:
             # Return the same tree, including any runtime installed during
             # activation. Never delete shared data with the failed app image.
-            os.replace(
+            _replace_install_directory(
                 self.install_dir / _SHARED_RESOURCES,
                 self._backup_dir / _SHARED_RESOURCES,
             )
@@ -425,8 +446,8 @@ class HubInstallTransaction:
                     self.install_dir.parent
                     / f".{self.install_dir.name}.failed-{uuid.uuid4().hex}"
                 )
-                os.replace(self.install_dir, failed_dir)
-                os.replace(self._backup_dir, self.install_dir)
+                _replace_install_directory(self.install_dir, failed_dir)
+                _replace_install_directory(self._backup_dir, self.install_dir)
                 self._backup_dir = None
                 shutil.rmtree(failed_dir, ignore_errors=True)
             else:
@@ -437,7 +458,7 @@ class HubInstallTransaction:
             and self._backup_dir.exists()
             and not self.install_dir.exists()
         ):
-            os.replace(self._backup_dir, self.install_dir)
+            _replace_install_directory(self._backup_dir, self.install_dir)
             self._backup_dir = None
 
         if self._stage_dir is not None:

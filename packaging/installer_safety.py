@@ -6,6 +6,7 @@ import time
 
 
 INSTALL_MARKER_FILENAME = ".infernux-hub-install.json"
+WINDOWS_ACCESS_LAYOUT = 2
 
 
 def install_marker_path(install_dir: str) -> str:
@@ -47,7 +48,7 @@ def write_install_marker(install_dir: str) -> None:
     payload = {
         "tool": "Infernux Hub",
         "kind": "install-directory",
-        "access_layout": 1,
+        "access_layout": WINDOWS_ACCESS_LAYOUT,
         "written_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
     marker_path = install_marker_path(install_dir)
