@@ -357,3 +357,40 @@ def test_release_recovery_keeps_existing_metadata_and_public_assets_immutable():
     assert '[ "$draft" != "true" ] && [ "$RECOVERY" != "true" ]' in create
     upload = next(step for step in steps if step.get('name') == 'Upload to the GitHub Release')
     assert upload['if'] == "steps.github_release.outputs.upload == 'true'"
+
+
+def test_publication_updates_current_website_without_recreating_retired_roadmap_copy(tmp_path, monkeypatch):
+    module = load('sync_release_site')
+    docs = tmp_path / 'docs'
+    for folder in ('tools', 'changelog', 'wiki/docs/en/api', 'wiki/docs/zh/api'):
+        (docs / folder).mkdir(parents=True, exist_ok=True)
+    (tmp_path / 'pyproject.toml').write_text('[project]\nversion = "0.4.2"\n', encoding='utf-8')
+    (tmp_path / 'UpdateLog.md').write_text('# Infernux v0.4.2 · Release\n\nPublished changes.\n', encoding='utf-8')
+    for path in ('README.md', 'README-zh.md'):
+        (tmp_path / path).write_text('Infernux 0.4.1\n', encoding='utf-8')
+    for language in ('en', 'zh'):
+        (docs / f'wiki/docs/{language}/api/index.md').write_text('0.4.1\n', encoding='utf-8')
+    inputs = {
+        'release.json': {'version': '0.4.2', 'published_at': '2026-10-13T05:28:41Z',
+                         'release_url': 'https://github.com/owner/engine/releases/tag/v0.4.2-v2',
+                         'assets': [{'kind': 'python-wheel', 'name': 'infernux-win_amd64.whl', 'url': 'https://files.pythonhosted.org/released.whl'}]},
+        'docs-manifest.json': {'documented_release': '0.4.1', 'indexes': {}},
+        'platform-support.json': {'released_version': '0.4.1'},
+        'changelog/history.json': [],
+        'tools/i18n-source.json': {'en': {'home.version': 'Engine 0.4.1'}, 'zh': {'home.version': '引擎 0.4.1'}},
+    }
+    for name, data in inputs.items():
+        (docs / name).write_text(json.dumps(data), encoding='utf-8')
+    (docs / 'download.html').write_text('<select data-version-select></select>', encoding='utf-8')
+    monkeypatch.setattr(module, 'ROOT', tmp_path)
+    monkeypatch.setattr(module, 'DOCS', docs)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('DOCS_SOURCE_COMMIT', '')
+    monkeypatch.setenv('SOURCE_DATE_EPOCH', '')
+    monkeypatch.setattr(module.subprocess, 'run', lambda *args, **kwargs: None)
+    monkeypatch.setattr(module.subprocess, 'check_output', lambda args, **kwargs: 'a' * 40 if args[0] == 'git' else '1700000000')
+    module.main()
+    translations = json.loads((docs / 'tools/i18n-source.json').read_text(encoding='utf-8'))
+    assert translations == {'en': {'home.version': 'Engine 0.4.2'}, 'zh': {'home.version': '引擎 0.4.2'}}
+    assert 'https://files.pythonhosted.org/released.whl' in (docs / 'download.html').read_text(encoding='utf-8')
+    assert json.loads((docs / 'docs-manifest.json').read_text())['documented_release'] == '0.4.2'

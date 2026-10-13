@@ -12,6 +12,7 @@ PUBLICATION_FILES = frozenset({
     'scripts/release/publish_hub_objects.py',
     'scripts/release/r2-upload-worker.mjs',
     'scripts/release/verify_release_recovery.py',
+    'scripts/release/sync_release_site.py',
     'scripts/release/README.md',
     'tests/hub/test_release_signing.py',
     'tests/hub/test_release_recovery.py',

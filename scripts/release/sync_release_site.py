@@ -61,12 +61,6 @@ def main():
     for lang, dictionary in translations.items():
         for key, value in dictionary.items():
             dictionary[key] = value.replace(previous, version)
-        authored = (ROOT / ("UpdateLog.md" if lang == "en" else "UpdateLog-zh.md")).read_text(encoding="utf-8")
-        title = authored.split("\n", 1)[0].partition(" · ")[2]
-        dictionary["roadmap.release.next.title"] = title
-        dictionary["roadmap.release.next.tag"] = f"{version} · " + ("PUBLISHED" if lang == "en" else "已发布")
-        dictionary["roadmap.release.next.item1"] = authored.split("\n\n")[1]
-        dictionary["roadmap.release.next.item2"] = ("Read the Changelog for features, fixes, platform boundaries and upgrade notes." if lang == "en" else "详细能力、问题修复、平台边界与升级须知请查看更新日志。")
     i18n_path.write_text(json.dumps(translations, ensure_ascii=False, indent=4) + "\n", encoding="utf-8", newline="\n")
 
     download_path = DOCS / "download.html"
