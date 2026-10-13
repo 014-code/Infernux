@@ -29,8 +29,8 @@
     {
       "kind": "hub-installer",
       "name": "InfernuxHubInstaller-0.4.2-4-windows-x64.exe",
-      "size_bytes": 169197056,
-      "url": "https://downloads.infernux-engine.com/hub/0.4.2/build-4/InfernuxHubInstaller-0.4.2-4-windows-x64.exe",
+      "size_bytes": 169203712,
+      "url": "https://downloads.infernux-engine.com/hub/0.4.2/build-4/InfernuxHubInstaller-0.4.2-4-windows-x64.exe?repair=write-access",
       "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/hub-v0.4.2-v4/InfernuxHubInstaller-0.4.2-4-windows-x64.exe"
     },
     {

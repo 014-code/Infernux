@@ -2,6 +2,7 @@ import process from "node:process";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { buildWebsiteHealthReport, renderWebsiteHealthSummary } from "./website-health-report.mjs";
+import { hubReleaseInformationErrors } from "./check-site-information.mjs";
 
 const baseArg = process.argv.indexOf("--base-url");
 const base = new URL(baseArg >= 0 ? process.argv[baseArg + 1] : "https://infernux-engine.com/");
@@ -111,10 +112,14 @@ if (published) {
     const notes = information.get("/release-notes.json");
     if (notes && notes.tag !== published.tag) mismatches.push("release-notes tag");
     const catalog = information.get("/hub-catalog.json");
-    const stable = catalog?.releases?.find(release => release.version === catalog.stable);
-    if (catalog && stable?.release_url !== published.release_url) mismatches.push("Hub stable release");
+    if (catalog) mismatches.push(...hubReleaseInformationErrors(published, catalog));
     const detail = mismatches.length ? `Published information differs: ${mismatches.join(", ")}` : `Release ${published.tag}`;
-    if (mismatches.length) failures.push(detail);
+    if (mismatches.length) {
+        failures.push(detail);
+        console.error(`FAIL release-consistency: ${detail}`);
+    } else {
+        console.log(`PASS release-consistency: ${detail}`);
+    }
     record("release-consistency", new URL("/release.json", base).toString(),
         mismatches.length ? "failed" : "passed", started, detail);
 }

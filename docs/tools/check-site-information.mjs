@@ -2,6 +2,28 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+export function hubReleaseInformationErrors(release, catalog) {
+    const errors = [];
+    const stable = catalog?.releases?.find(item => item.version === catalog.stable);
+    if (!stable) return ["Hub catalog: stable release is missing"];
+    const identity = catalog.stable?.match(/^(\d+\.\d+\.\d+)(?:-([1-9]\d*))?$/);
+    if (identity?.[1] !== release.version) errors.push("Hub stable base version differs from engine release");
+    const tag = `v${identity?.[1]}${identity?.[2] ? `-v${identity[2]}` : ""}`;
+    if (![tag, `hub-${tag}`].some(value => stable.release_url?.endsWith(`/releases/tag/${value}`))) {
+        errors.push("Hub release destination differs from its own revision");
+    }
+    const platforms = Object.entries(stable.platforms || {});
+    if (!platforms.length) errors.push("Hub catalog: platform downloads are missing");
+    for (const [id, platform] of platforms) {
+        const installer = platform.installer;
+        const asset = release.assets?.find(item => item.kind === "hub-installer" && item.name === installer?.name);
+        if (!asset || asset.url !== installer?.url || asset.fallback_url !== installer?.fallback_url) {
+            errors.push(`${id}: catalog installer and release asset differ`);
+        }
+    }
+    return errors;
+}
+
 // Check published facts and destinations, independently of the site's design.
 export async function checkSiteInformation(repoRoot = process.cwd()) {
     const docs = path.join(repoRoot, "docs");
@@ -47,14 +69,8 @@ export async function checkSiteInformation(repoRoot = process.cwd()) {
         } catch { errors.push(`${label}: invalid download URL`); }
     }
     const stable = catalog.releases?.find(item => item.version === catalog.stable);
-    require(Boolean(stable), "Hub catalog: stable release is missing");
-    const hubIdentity = catalog.stable?.match(/^(\d+\.\d+\.\d+)(?:-([1-9]\d*))?$/);
-    require(hubIdentity?.[1] === version, "Hub stable base version differs from engine release");
+    errors.push(...hubReleaseInformationErrors(release, catalog));
     const hubTag = stable?.release_url?.split("/").pop();
-    const expectedHubTag = `v${hubIdentity?.[1]}${hubIdentity?.[2] ? `-v${hubIdentity[2]}` : ""}`;
-    require([expectedHubTag, `hub-${expectedHubTag}`].some(
-        tag => stable?.release_url?.endsWith(`/releases/tag/${tag}`)
-    ), "Hub release destination differs from its own revision");
     const assets = release.assets || [];
     require(assets.length > 0, "release.json: download assets are empty");
     require(new Set(assets.map(asset => asset.name)).size === assets.length, "release.json: duplicate asset names");

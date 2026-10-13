@@ -29,6 +29,9 @@ jobs:
           node-version: "22"
           package-manager-cache: false
 
+      - name: Test website release checks
+        run: node --test docs/tools/test-site-information.mjs docs/tools/test-deployed-site.mjs
+
       - name: Check production routes and machine indexes
         env:
           GITHUB_TOKEN: ${{ github.token }}

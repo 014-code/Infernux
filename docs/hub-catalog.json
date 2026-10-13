@@ -12,18 +12,18 @@
         "windows-x64": {
           "installer": {
             "name": "InfernuxHubInstaller-0.4.2-4-windows-x64.exe",
-            "url": "https://downloads.infernux-engine.com/hub/0.4.2/build-4/InfernuxHubInstaller-0.4.2-4-windows-x64.exe",
+            "url": "https://downloads.infernux-engine.com/hub/0.4.2/build-4/InfernuxHubInstaller-0.4.2-4-windows-x64.exe?repair=write-access",
             "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/hub-v0.4.2-v4/InfernuxHubInstaller-0.4.2-4-windows-x64.exe"
           },
           "update": {
             "name": "InfernuxHub-0.4.2-4-windows-x64-full.zip",
-            "url": "https://downloads.infernux-engine.com/hub/0.4.2/build-4/InfernuxHub-0.4.2-4-windows-x64-full.zip",
+            "url": "https://downloads.infernux-engine.com/hub/0.4.2/build-4/InfernuxHub-0.4.2-4-windows-x64-full.zip?repair=write-access",
             "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/hub-v0.4.2-v4/InfernuxHub-0.4.2-4-windows-x64-full.zip",
-            "size": 30745315
+            "size": 30749819
           },
           "manifest": {
             "name": "InfernuxHub-windows-x64-manifest.json",
-            "url": "https://downloads.infernux-engine.com/hub/0.4.2/build-4/InfernuxHub-windows-x64-manifest.json",
+            "url": "https://downloads.infernux-engine.com/hub/0.4.2/build-4/InfernuxHub-windows-x64-manifest.json?repair=write-access",
             "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/hub-v0.4.2-v4/InfernuxHub-windows-x64-manifest.json"
           }
         },
