@@ -110,6 +110,7 @@ def main() -> None:
     icon.save(buffer, format="PNG", optimize=True)
     for target in (
         MASTER.with_suffix(".png"),
+        MASTER.with_name("scene.png"),
         ROOT / "packaging/resources/icon.png",
         WEB / "logo.png",
     ):
@@ -123,7 +124,7 @@ def main() -> None:
         ("infernux-apple-touch-icon.png", 180, 0.0),
     ):
         opaque_icon(svg, size, padding=padding).save(WEB / name, format="PNG", optimize=True)
-    print("Generated brand SVG, outlined wordmark and 9 raster assets.")
+    print("Generated brand SVG, outlined wordmark and 10 raster assets.")
     del application
 
 

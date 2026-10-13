@@ -51,7 +51,7 @@ The raster assets are rendered from that SVG with Qt SVG at four times their tar
 | `infernux-icon-maskable-512.png` | Adaptive launcher icon; 512×512, opaque, safe-zone padded |
 | `infernux-apple-touch-icon.png` | Apple home-screen icon; 180×180, opaque |
 
-The same command updates `packaging/resources/icon.png` for Hub and installer windows, plus the engine `icon.png` and multi-resolution `icon.ico` for Editor, Player and Windows executable resources. ICO sizes are 16, 24, 32, 48, 64, 128 and 256 pixels.
+The same command updates `packaging/resources/icon.png` for Hub and installer windows, plus the engine `icon.png`, the `scene.png` asset emblem and multi-resolution `icon.ico` for Editor, Player and Windows executable resources. The scene emblem is identical to the application PNG, so scene assets follow the same brand. ICO sizes are 16, 24, 32, 48, 64, 128 and 256 pixels.
 
 `docs/tools/check-pwa-assets.mjs` checks PNG signatures, dimensions, opacity, the maskable safe zone, manifest roles, HTML links, provenance and Service Worker loading. Regenerate and visually review the complete set together when the emblem changes.
 
