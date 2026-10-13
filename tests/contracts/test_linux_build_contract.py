@@ -162,7 +162,7 @@ def test_linux_ci_reuses_the_repository_dependency_installer() -> None:
     assert all("sudo apt-get install" not in command for command in commands)
     assert linux_job["env"]["QT_QPA_PLATFORM"] == "offscreen"
     assert linux_job["env"]["VK_ICD_FILENAMES"] == "/usr/share/vulkan/icd.d/lvp_icd.x86_64.json"
-    native_index = next(index for index, command in enumerate(commands) if "tests/python" in command)
+    native_index = next(index for index, step in enumerate(steps) if step.get("id") == "native-python")
     python_step = commands[native_index]
     command, = [line.strip() for line in python_step.splitlines() if line.strip().startswith("xvfb-run ")]
     arguments = shlex.split(command)
@@ -200,6 +200,25 @@ def test_linux_ci_reuses_the_repository_dependency_installer() -> None:
         'conda install --yes --channel conda-forge "libpython-static=3.13.15"' in command
         for command in commands
     )
+
+
+def test_global_shader_declarations_run_once_in_their_own_installed_wheel_process() -> None:
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+    module = "tests/python/test_shader_declaration_discovery.py"
+    for job_name, preset in (("windows-desktop", "windows-msvc"), ("linux-desktop", "linux-clang")):
+        steps = workflow["jobs"][job_name]["steps"]
+        isolated_index = next(index for index, step in enumerate(steps) if step.get("id") == "shader-declarations")
+        native_index = next(index for index, step in enumerate(steps) if step.get("id") == "native-python")
+        install_index = next(index for index, step in enumerate(steps)
+                             if f"cmake --build --preset {preset}-install-wheel" in step.get("run", ""))
+        isolated = steps[isolated_index]["run"].replace("\\", "/")
+        native = steps[native_index]["run"].replace("\\", "/")
+        assert install_index < isolated_index < native_index
+        assert f"python -m pytest -o pythonpath= {module} " in isolated
+        assert "--junitxml out/test-results/pytest-shader-declarations-" in isolated
+        assert f"--ignore={module}" in native
+        assert native.count(module) == 1
+        assert "PYTHONPATH" in isolated and "INFERNUX_NATIVE_MODULE_DIR" in isolated
 
 
 def test_clang_format_is_an_explicit_developer_target_dependency() -> None:

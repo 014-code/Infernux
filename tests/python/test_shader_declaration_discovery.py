@@ -1,4 +1,8 @@
-"""Project declarations resolve by exact Name across Assets and Packages."""
+"""Project declarations resolve by exact Name across Assets and Packages.
+
+Run this module in its own pytest process: Math and Unlit overrides affect
+every resident material in the session-scoped native project.
+"""
 from pathlib import Path
 
 import pytest
