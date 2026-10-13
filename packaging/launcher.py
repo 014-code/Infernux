@@ -18,6 +18,11 @@ for _stream in (sys.stdout, sys.stderr):
 
 sys.dont_write_bytecode = True
 
+if __name__ == "__main__":
+    # Establish diagnostics before importing native Qt modules or UI pages.
+    from hub_logging import configure_logging
+    configure_logging()
+
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QDialog,
     QHBoxLayout, QVBoxLayout, QSizePolicy, QStackedWidget,
@@ -825,10 +830,11 @@ def _handle_uninstall_linux() -> int:
 
 
 if __name__ == "__main__":
-    from hub_logging import configure_logging
-    configure_logging()
     from hub_network import configure_system_certificates
     configure_system_certificates()
+    if "--smoke-test" in sys.argv:
+        from hub_smoke_test import run_startup_probe
+        raise SystemExit(run_startup_probe(GameEngineLauncher))
     if "--uninstall" in sys.argv:
         raise SystemExit(_handle_uninstall())
     launcher = GameEngineLauncher(HubLaunchContext.current())

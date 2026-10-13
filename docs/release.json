@@ -15,7 +15,7 @@
     {
       "kind": "hub-installer",
       "name": "InfernuxHubInstaller-0.4.2-2-windows-x64.exe",
-      "size_bytes": 169420288,
+      "size_bytes": 169168896,
       "url": "https://downloads.infernux-engine.com/hub/0.4.2/build-2/InfernuxHubInstaller-0.4.2-2-windows-x64.exe",
       "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/v0.4.2-v2/InfernuxHubInstaller-0.4.2-2-windows-x64.exe"
     },

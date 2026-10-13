@@ -1,8 +1,12 @@
 """Persistent Hub diagnostics in the user's writable data directory."""
 import logging
+import faulthandler
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 import sys
+
+
+_native_log = None
 
 from hub_utils import get_hub_user_data_dir
 
@@ -12,6 +16,7 @@ def hub_log_path() -> Path:
 
 
 def configure_logging() -> None:
+    global _native_log
     path = hub_log_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     root = logging.getLogger()
@@ -22,6 +27,11 @@ def configure_logging() -> None:
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
     root.addHandler(handler)
     root.setLevel(logging.INFO)
+    # Keep this descriptor alive independently of the rotating Python log.
+    # Native crashes bypass sys.excepthook, especially in a console-less Hub.
+    if _native_log is None:
+        _native_log = path.with_name("hub-native-crash.log").open("a", encoding="utf-8")
+        faulthandler.enable(file=_native_log, all_threads=True)
     previous_hook = sys.excepthook
 
     def report_exception(exc_type, exc_value, traceback):

@@ -1,0 +1,5 @@
+# Qualified together by the packaged Hub startup/upgrade gate. Nuitka 4.3
+# corrupts its compiled-function free list after a PySide6 signal connection.
+nuitka[onefile]==4.2
+PySide6==6.11.2
+packaging>=24.0

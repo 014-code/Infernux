@@ -62,6 +62,8 @@ def channel(tmp_path, monkeypatch):
             requests.append((self.command, self.path, key))
             if (self.path, key) in failures:
                 self.send_error(503)
+            elif self.path == "/upload/stat":
+                self.send_json({"exists": key in objects})
             elif self.path == "/upload/start":
                 uploads[key] = []
                 self.send_json({"uploadId": "fixture"})
@@ -129,6 +131,9 @@ def test_registry_advances_only_after_all_packages_are_public(channel, existing)
     completion = requests.index(("POST", "/upload/complete", CATALOG_KEY))
     for key in [PACKAGE_KEY, "plugins/editor.inxpkg"]:
         assert requests.index(("HEAD", "/public/" + key)) < completion
+    assert requests.index(("POST", "/upload/stat", PACKAGE_KEY)) < requests.index(
+        ("POST", "/upload/start", PACKAGE_KEY)
+    )
 
 
 @pytest.mark.parametrize("key", [PACKAGE_KEY, "hub/0.4.1/build-3/payload.zip", "hub/0.4.1/build-3/manifest.json"])
@@ -138,14 +143,14 @@ def test_versioned_objects_cannot_be_replaced_even_if_json(channel, key):
     with pytest.raises(RuntimeError, match="Immutable published object differs"):
         hub.Publisher("fixture").upload(catalog, key)
     assert objects[key] == b"published release"
-    assert requests == [("GET", "/public/" + key)]
+    assert requests == [("POST", "/upload/stat", key), ("GET", "/public/" + key)]
 
 
 def test_identical_versioned_payload_is_not_uploaded_twice(channel):
     hub, _, objects, requests, _, _, payload = channel
     objects[PACKAGE_KEY] = payload.read_bytes()
     hub.Publisher("fixture").upload(payload, PACKAGE_KEY)
-    assert requests == [("GET", "/public/" + PACKAGE_KEY)]
+    assert requests == [("POST", "/upload/stat", PACKAGE_KEY), ("GET", "/public/" + PACKAGE_KEY)]
 
 
 @pytest.mark.parametrize("contents", [None, b""])

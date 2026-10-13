@@ -13,6 +13,12 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Install qualified Hub compiler and Qt pair
+      shell: pwsh
+      run: |
+        conda activate infernux
+        python -m pip install -r packaging/hub-build-requirements.txt
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     - name: Resolve Hub build identity
       id: identity
       shell: pwsh
@@ -37,6 +43,14 @@ runs:
         python packaging/stage_bundled_python_runtime.py --dest-root out/stage/windows-msvc-release/runtime/python313
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         python packaging/build_hub.py --target hub --source-root . --build-dir out/build/windows-msvc-release/hub_build --package-dir out/stage/windows-msvc-release
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    - name: Launch the frozen Hub before publishing it
+      shell: pwsh
+      env:
+        HUB_VERSION: ${{ steps.identity.outputs.hub_version }}
+      run: |
+        conda activate infernux
+        python scripts/release/verify_hub_startup.py --hub out/stage/windows-msvc-release/hub --version $env:HUB_VERSION --output out/test-results/hub-startup-windows
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     - name: Sign Hub before embedding it
       if: inputs.signing != 'none'

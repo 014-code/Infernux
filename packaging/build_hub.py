@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.metadata
 import json
 import os
 import re
@@ -36,6 +37,22 @@ _FORBIDDEN_WINDOWS_RUNTIME_IMPORTS = (
     "msys-",
 )
 _QT_PLUGIN_DIR = "PySide6/qt-plugins"
+
+
+def _validate_hub_toolchain() -> None:
+    """Reject unqualified compiler/Qt pairs before producing a distribution."""
+    requirements = Path(__file__).with_name("hub-build-requirements.txt")
+    for line in requirements.read_text(encoding="utf-8").splitlines():
+        if "==" not in line or line.startswith("#"):
+            continue
+        name, expected = line.split("==", 1)
+        name = name.split("[", 1)[0]
+        actual = importlib.metadata.version(name)
+        if actual != expected:
+            raise RuntimeError(
+                f"Hub packaging requires {name}=={expected}, found {actual}. "
+                "Install packaging/hub-build-requirements.txt in the build environment."
+            )
 # Qt pieces the Hub and installer never load. Nuitka matches these against the
 # distribution-relative destination path (case-insensitively on Windows).
 # - PDF: only the qpdf image-format plugin pulls in Qt6Pdf (~4.6 MB).
@@ -378,24 +395,20 @@ def _msvc_build_environment(
         )
 
     result = subprocess.run(
-        f'cmd.exe /d /c call "{vcvars}" >nul && set',
+        f'cmd.exe /u /d /c call "{vcvars}" >nul && set',
         check=True,
         capture_output=True,
         text=True,
-        errors="replace",
+        encoding="utf-16-le",
     )
     env = dict(os.environ)
     for line in result.stdout.splitlines():
         if "=" not in line or line.startswith("="):
             continue
         key, value = line.split("=", 1)
-        if key.casefold() == "path":
-            for existing in tuple(env):
-                if existing.casefold() == "path":
-                    env.pop(existing)
-            env["PATH"] = value
-        else:
-            env[key] = value
+        # Windows keys are case-insensitive. A plain dict must not send both
+        # SystemRoot and SYSTEMROOT (or damaged non-ASCII user paths) downstream.
+        env[key.upper()] = value
 
     # A Conda environment can expose mingw-w64 ahead of Visual Studio. Nuitka is
     # forced to MSVC below, and removing these entries prevents helper/tool lookup
@@ -799,6 +812,8 @@ def main() -> int:
     args = parser.parse_args()
     if args.target == "installer" and not args.release_dir:
         parser.error("--release-dir is required for the installer target")
+
+    _validate_hub_toolchain()
 
     source_root = Path(args.source_root).resolve()
     build_dir = Path(args.build_dir).resolve()

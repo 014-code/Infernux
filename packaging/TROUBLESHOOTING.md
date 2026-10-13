@@ -16,6 +16,13 @@ exception when reporting a problem. Review logs for private local paths before
 posting publicly. This logging is available in builds containing this change;
 the original 0.4.1 Hub did not write these persistent diagnostics.
 
+Native startup failures are written to `hub-native-crash.log` in the same Logs
+directory, including in console-less Windows builds. The repaired 0.4.2 Hub
+pins its qualified Nuitka/Qt compiler pair: Nuitka 4.3 caused a native crash
+after connecting Qt signals. If the original 0.4.2 automatic update already
+left Hub unable to open, run the repaired Windows installer over the existing
+application directory. Projects and shared engines/runtimes are preserved.
+
 ## No available engine versions
 
 The catalog combines PyPI and GitHub Releases. A failed request is logged with

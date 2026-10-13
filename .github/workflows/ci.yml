@@ -315,6 +315,7 @@ jobs:
             out/test-results/*.xml
             out/test-results/physics-profile-windows.log
             out/test-results/gpu-windows/
+            out/test-results/hub-startup-windows/
           if-no-files-found: warn
 
   linux-desktop:
@@ -397,7 +398,10 @@ jobs:
         run: |
           conda activate infernux
           cmake --build --preset linux-clang-wheel
+          python -m pip install -r packaging/hub-build-requirements.txt
           cmake --build --preset linux-hub-installer
+          HUB_VERSION=$(PYTHONPATH=packaging python -c 'from hub_release import project_hub_version; print(project_hub_version())')
+          xvfb-run --auto-servernum python scripts/release/verify_hub_startup.py --hub out/stage/linux-clang-release/hub --version "$HUB_VERSION" --output out/test-results/hub-startup-linux
 
       - name: Upload Linux desktop distribution
         uses: actions/upload-artifact@v4
@@ -419,6 +423,7 @@ jobs:
             out/test-results/*.xml
             out/test-results/physics-profile-linux.log
             out/test-results/gpu-linux/
+            out/test-results/hub-startup-linux/
           if-no-files-found: warn
 
   release-player-acceptance:
