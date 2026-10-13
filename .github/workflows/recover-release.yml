@@ -1,0 +1,50 @@
+name: Recover Infernux Release Publication
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Original failed release run with all platform acceptance jobs passed
+        required: true
+        type: string
+      expected_source_sha:
+        description: Exact original tested source revision
+        required: true
+        type: string
+      sign_windows_release:
+        description: Require the original Windows payload to have release signatures
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  actions: read
+  contents: write
+  pages: write
+
+jobs:
+  publication-tests:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test publication contracts and recovery boundaries
+        run: |
+          python -m pip install pytest pyyaml packaging
+          python -m pytest -q -o pythonpath=packaging --confcutdir=tests/hub tests/hub/test_release_signing.py tests/hub/test_release_recovery.py
+          node tests/release/test-r2-upload-worker.mjs python/infernux/resources/official_packages/official-registry.json
+  recover:
+    needs: publication-tests
+    uses: ./.github/workflows/publish-desktop-release.yml
+    with:
+      run_id: ${{ inputs.run_id }}
+      expected_source_sha: ${{ inputs.expected_source_sha }}
+      recover_partial_publication: true
+      replace_existing_release: true
+      sign_windows_release: ${{ inputs.sign_windows_release }}
+    secrets: inherit

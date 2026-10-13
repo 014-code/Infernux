@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
+import { timingSafeEqual } from "node:crypto";
 
 const source = await readFile(new URL("../../scripts/release/r2-upload-worker.mjs", import.meta.url), "utf8");
-const context = vm.createContext({ TextEncoder });
+const context = vm.createContext({ TextEncoder, URL, Response, crypto: { subtle: { timingSafeEqual } } });
 vm.runInContext(source.replace("export default", "globalThis.worker =") + "\nglobalThis.validateKey = requireKey; globalThis.releaseSources = RELEASE_SOURCES;", context);
 let packages;
 if (process.argv[2]) {
@@ -39,3 +40,19 @@ for (const key of [
   "hub/0.4.1/build-2/../../unrelated",
 ]) assert.throws(() => context.validateKey(key), /not authorized/);
 console.log("Current official plugin releases and Hub upload keys verified.");
+
+const statKey = "hub/0.4.2/build-2/InfernuxHubInstaller-0.4.2-2-windows-x64.exe";
+for (const object of [null, { size: 123 }]) {
+  let inspected = 0;
+  const response = await context.worker.fetch(new Request("https://upload.infernux-engine.com/stat", {
+    method: "POST", headers: { Authorization: "Bearer test" }, body: JSON.stringify({ key: statKey })
+  }), { UPLOAD_TOKEN: "test", BUCKET: { head: async (key) => { assert.equal(key, statKey); inspected++; return object; } } });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { exists: object !== null });
+  assert.equal(inspected, 1);
+}
+const unauthorized = await context.worker.fetch(new Request("https://upload.infernux-engine.com/stat", {
+  method: "POST", body: JSON.stringify({ key: statKey })
+}), { UPLOAD_TOKEN: "test", BUCKET: { head: () => assert.fail("unauthorized storage access") } });
+assert.equal(unauthorized.status, 401);
+console.log("R2 existence checks use authenticated storage metadata without priming public misses.");

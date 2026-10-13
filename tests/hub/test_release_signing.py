@@ -122,8 +122,9 @@ def test_test_signatures_cannot_enter_release_publication():
     assert publish['jobs']['publish']['needs'] == 'verify'
     validation = str(publish['jobs']['verify'])
     assert 'SIGNPATH_RELEASE_CERTIFICATE_THUMBPRINT' in validation
-    assert "$env:RUN_ID -ne $env:GITHUB_RUN_ID" in publish['jobs']['verify']['steps'][0]['run']
-    assert "$source.head_sha -ne $env:GITHUB_SHA" in publish['jobs']['verify']['steps'][0]['run']
+    source_check = next(step['run'] for step in publish['jobs']['verify']['steps'] if step.get('name') == 'Resolve the source revision')
+    assert "$env:RUN_ID -ne $env:GITHUB_RUN_ID" in source_check
+    assert "$source.head_sha -ne $env:GITHUB_SHA" in source_check
     assert 'test-windows-signing.yml' not in validation
     assert 'github-action-submit-signing-request' not in str(publish)
     assert "*-desktop-distribution-${{ inputs.run_id }}-${{ needs.verify.outputs.attempt }}" in str(publish)
@@ -283,7 +284,10 @@ def test_r2_recovery_skips_identical_but_refuses_changed_public_objects(tmp_path
     source.write_bytes(b'original')
     monkeypatch.setattr(module.urllib.request, 'urlopen', lambda *a, **k: io.BytesIO(b'original'))
     publisher = module.Publisher('secret')
-    monkeypatch.setattr(publisher, '_request', lambda *args: pytest.fail('must not overwrite existing object'))
+    def stat(method, path, body):
+        assert (method, path) == ('POST', '/stat'), 'must not overwrite existing object'
+        return {'exists': True}
+    monkeypatch.setattr(publisher, '_request', stat)
     publisher.upload(source, 'hub/1.2.3/build-1/hub.zip')
     source.write_bytes(b'changed')
     with pytest.raises(RuntimeError, match='differs'):
@@ -301,9 +305,39 @@ def test_r2_checks_the_download_after_upload(tmp_path, monkeypatch):
         assert expected == hashlib.sha256(b'original').hexdigest()
         return not allow_missing
     monkeypatch.setattr(publisher, '_verify_public_object', verify)
-    monkeypatch.setattr(publisher, '_request', lambda method, path, body: {'uploadId': 'id'} if path == '/start' else {'size': 8} if path == '/complete' else {'partNumber': 1, 'etag': 'tag'})
+    monkeypatch.setattr(publisher, '_request', lambda method, path, body: {'exists': False} if path == '/stat' else {'uploadId': 'id'} if path == '/start' else {'size': 8} if path == '/complete' else {'partNumber': 1, 'etag': 'tag'})
     publisher.upload(source, 'key')
-    assert checks == [True, False]
+    assert checks == [False], 'do not prime a public CDN miss before uploading'
+
+
+@pytest.mark.parametrize('failure', ['arrival', 'missing', 'changed', 'http_error'])
+def test_r2_known_object_visibility_wait_preserves_real_failures(monkeypatch, failure):
+    module = load('publish_hub_objects')
+    now, calls = [0.0], []
+    monkeypatch.setattr(module, 'PUBLIC_VISIBILITY_SECONDS', 6)
+    monkeypatch.setattr(module.time, 'monotonic', lambda: now[0])
+    monkeypatch.setattr(module.time, 'sleep', lambda seconds: now.__setitem__(0, now[0] + seconds))
+
+    def fetch(*args, **kwargs):
+        calls.append(now[0])
+        if failure == 'http_error':
+            raise urllib.error.HTTPError('https://downloads.infernux-engine.com', 503, 'Unavailable', {}, None)
+        if failure == 'missing' or failure == 'arrival' and len(calls) == 1:
+            raise urllib.error.HTTPError('https://downloads.infernux-engine.com', 404, 'Not Found', {}, None)
+        return io.BytesIO(b'changed' if failure == 'changed' else b'original')
+
+    monkeypatch.setattr(module.urllib.request, 'urlopen', fetch)
+    publisher = module.Publisher('secret')
+    expected = hashlib.sha256(b'original').hexdigest()
+    if failure == 'arrival':
+        assert publisher._verify_public_object('key', expected, allow_missing=False)
+    elif failure == 'changed':
+        with pytest.raises(RuntimeError, match='differs'):
+            publisher._verify_public_object('key', expected, allow_missing=False)
+    else:
+        with pytest.raises(urllib.error.HTTPError):
+            publisher._verify_public_object('key', expected, allow_missing=False)
+    assert calls == ([0, 5] if failure == 'arrival' else [0, 5, 6] if failure == 'missing' else [0])
 
 
 def test_r2_validates_all_files_before_any_upload(tmp_path, monkeypatch):

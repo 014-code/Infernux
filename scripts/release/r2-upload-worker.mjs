@@ -168,6 +168,12 @@ export default {
     }
     const url = new URL(request.url);
     try {
+      if (request.method === "POST" && url.pathname === "/stat") {
+        const body = await request.json();
+        const key = requireKey(body.key);
+        const object = await env.BUCKET.head(key);
+        return json({ exists: object !== null });
+      }
       if (request.method === "POST" && url.pathname === "/start") {
         const body = await request.json();
         const key = requireKey(body.key);

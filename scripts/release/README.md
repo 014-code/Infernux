@@ -115,6 +115,10 @@ object paths return HTTP 400 instead of an opaque upload failure.
 
 Deploy source changes through Cloudflare's Worker script-content endpoint,
 preserving existing bindings and routing. Never put credentials in this source.
+The authenticated `/stat` operation checks storage before an immutable upload;
+it must not query the public CDN for a file that does not yet exist. Download
+verification waits at most four minutes for an older cached 404 after a confirmed
+write. Other HTTP errors and changed contents remain immediate failures.
 
 The authoritative update document is
 [hub-catalog.json](https://infernux-engine.com/hub-catalog.json). Its asset URLs
@@ -142,7 +146,13 @@ cache. No cache-busting URL or mirror response substitutes for that check.
 Do not rerun the complete publisher against an already public tag: that would
 replace Hub files while leaving installed clients on the same version.
 
-- If the release is still a draft, use the explicit recovery switch.
+- If all platform acceptance jobs passed but publication stopped with the release
+  still a draft, run **Recover Infernux Release Publication** with the original
+  run ID and exact source SHA. It verifies every original job and permits only
+  publication-file changes in the current checkout. It reuses the original
+  distribution attempt, repeats Windows signing verification, and runs the
+  publication contract tests. Engine or build changes require a new complete run.
+  This explicitly enables draft recovery and preserves immutable PyPI files.
 - If release assets are public but the catalog commit failed, retain or retrieve
   the exact published assets and regenerate only the catalogs using
   `build_release_catalog.py --release-dir <original-assets> --published-at

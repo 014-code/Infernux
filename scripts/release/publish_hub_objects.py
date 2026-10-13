@@ -12,6 +12,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 import sys
+import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "packaging"))
 from hub_release import hub_version_for
@@ -20,6 +21,7 @@ from hub_release import hub_version_for
 UPLOAD_ENDPOINT = "https://upload.infernux-engine.com"
 PUBLIC_ENDPOINT = "https://downloads.infernux-engine.com"
 PART_SIZE = 64 * 1024 * 1024
+PUBLIC_VISIBILITY_SECONDS = 240
 _VERSION = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")
 
 
@@ -69,11 +71,14 @@ class Publisher:
             digest = hashlib.file_digest(stream, 'sha256').hexdigest()
         # The fixed registry is a moving catalog, committed after its advertised
         # packages exist. All versioned payloads (including JSON) stay immutable.
-        if key != "plugins/official-registry.json" and self._verify_public_object(
-            key, digest, allow_missing=True
-        ):
-            print(f"Already published identical object: {key}")
-            return
+        if key != "plugins/official-registry.json":
+            stored = self._request("POST", "/stat", {"key": key})
+            if type(stored.get("exists")) is not bool:
+                raise RuntimeError("The upload endpoint returned invalid object existence")
+            if stored["exists"]:
+                self._verify_public_object(key, digest, allow_missing=False)
+                print(f"Already published identical object: {key}")
+                return
         is_json = source.suffix == ".json"
         started = self._request(
             "POST",
@@ -120,13 +125,24 @@ class Publisher:
             f"{PUBLIC_ENDPOINT}/{urllib.parse.quote(key, safe='/')}",
             headers={'User-Agent': 'Infernux-Release-Publisher', 'Cache-Control': 'no-cache'},
         )
-        try:
-            with urllib.request.urlopen(request, timeout=600) as response:
-                actual = hashlib.file_digest(response, 'sha256').hexdigest()
-        except urllib.error.HTTPError as exc:
-            if exc.code == 404 and allow_missing:
-                return False
-            raise
+        deadline = time.monotonic() + PUBLIC_VISIBILITY_SECONDS
+        while True:
+            try:
+                with urllib.request.urlopen(request, timeout=600) as response:
+                    actual = hashlib.file_digest(response, 'sha256').hexdigest()
+                break
+            except urllib.error.HTTPError as exc:
+                if exc.code != 404:
+                    raise
+                if allow_missing:
+                    return False
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise
+                # The object is known to exist in R2. Only an older CDN miss
+                # may need to expire; never retry changed bytes or other errors.
+                print(f"Waiting for public R2 object visibility: {key}", flush=True)
+                time.sleep(min(5, remaining))
         if actual != expected:
             raise RuntimeError(f'Immutable published object differs: {key}; use a new build number')
         return True
