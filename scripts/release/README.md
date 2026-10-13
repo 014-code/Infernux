@@ -2,12 +2,12 @@
 
 Every public change must have a new version/build identity. A same-version
 rebuild increments `ENGINE_BUILD_NUMBER` in `python/infernux/version.py`: engine metadata stays
-`0.4.1`, the wheel uses build tag `2`, Hub uses `0.4.1-2`, and the GitHub tag
-is `v0.4.1-v2`. Numeric post-release Hub identities are understood by existing
+`0.4.2`, the wheel uses build tag `2`, Hub uses `0.4.2-2`, and the GitHub tag
+is `v0.4.2-v2`. Numeric post-release Hub identities are understood by existing
 0.4.1 installations. Published artifact URLs are immutable.
 `build_release_catalog.py --check-version` checks this before publication, and
 the release workflow allows its recovery switch only for unpublished drafts.
-The repository prepares 0.4.2 (wheel build 2, Hub 0.4.2-2, GitHub tag v0.4.2-v2). Public download pages and catalogs change only
+The published release is 0.4.2 (wheel build 2, Hub 0.4.2-2, GitHub tag v0.4.2-v2). Public download pages and catalogs change only
 after its actual artifacts have been published.
 Build 1 reached PyPI before publication stopped. Its wheel files remain immutable;
 build 2 fixes Linux wheel Vulkan-loader packaging and completes publication under

@@ -11,13 +11,17 @@ Players. macOS, native iOS and a Headless
 Player package are not supported. Headless is a Windows/Linux host mode;
 iPhone/iPad browser testing concerns the Web Player, not a native iOS export.
 
-For the exact commit `8e30428d83c668c61ab0b09dcfb6f3e233b60840`, the
-[desktop CI](https://github.com/ChenlizheMe/Infernux/actions/runs/36709014282)
+For the exact commit `9011d80c026c56acadd02961b4b90e040d16e9e2`, the
+[desktop acceptance jobs](https://github.com/ChenlizheMe/Infernux/actions/runs/38339783763)
 passed both host suites and built their wheel/Hub distributions, and the
-[Player CI](https://github.com/ChenlizheMe/Infernux/actions/runs/36709013772)
-passed Windows, Linux, Android, Web build and Web browser jobs. These public
-results cover the linked revision and automated test environments, not every
-physical device, clean installation, browser, or display configuration.
+[Player acceptance jobs](https://github.com/ChenlizheMe/Infernux/actions/runs/38339783763)
+passed Windows, Linux, Android, Web build and Web browser jobs.
+The source run's R2 publication failed on a cached 404;
+[publication recovery](https://github.com/ChenlizheMe/Infernux/actions/runs/38351978771) completed using
+the same original tested distributions. Public PyPI build-2 installations also
+passed headless and UI checks on Windows and Linux. These results cover the
+linked revision and automated environments, not every physical device,
+browser, or display configuration.
 
 The website's [Hub catalog](docs/hub-catalog.json) independently records artifacts
 for the current release. Publish the matching Windows and Linux artifacts
