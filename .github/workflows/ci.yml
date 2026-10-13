@@ -95,6 +95,8 @@ jobs:
           tests/hub/test_release_signing.py
           tests/hub/test_hub_utils.py
           tests/hub/test_bundle_resources.py
+          tests/hub/test_publication_permissions.py
+          tests/hub/test_windows_runtime_paths.py
           tests/hub/test_workspace_cleanup.py
           tests/hub/test_project_sync_audit.py
           tests/contracts

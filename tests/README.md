@@ -110,14 +110,14 @@ equivalent is:
 
 ```sh
 python -m pip install pytest PySide6 packaging PyYAML
-python -m pytest tests/hub/test_hub_project_workflow.py tests/hub/test_project_python_runtime.py tests/hub/test_hub_new_project_python_binding.py tests/hub/test_hub_launch_state.py tests/hub/test_project_runtime_strictness.py tests/hub/test_regression_guide.py tests/hub/test_cpu_jit_dependency_packaging.py tests/hub/test_release_signing.py tests/hub/test_hub_utils.py tests/hub/test_bundle_resources.py tests/hub/test_workspace_cleanup.py tests/hub/test_project_sync_audit.py tests/contracts -q -ra
+python -m pytest tests/hub/test_hub_project_workflow.py tests/hub/test_project_python_runtime.py tests/hub/test_hub_new_project_python_binding.py tests/hub/test_hub_launch_state.py tests/hub/test_project_runtime_strictness.py tests/hub/test_regression_guide.py tests/hub/test_cpu_jit_dependency_packaging.py tests/hub/test_release_signing.py tests/hub/test_hub_utils.py tests/hub/test_bundle_resources.py tests/hub/test_publication_permissions.py tests/hub/test_windows_runtime_paths.py tests/hub/test_workspace_cleanup.py tests/hub/test_project_sync_audit.py tests/contracts -q -ra
 ```
 
 For a session without a display, set `QT_QPA_PLATFORM=offscreen` first
 (`$env:QT_QPA_PLATFORM = 'offscreen'` in PowerShell,
 `export QT_QPA_PLATFORM=offscreen` in Bash). These tests use temporary projects and
 controlled launch workers; they do not download an engine or launch a real Editor.
-No skips are expected in this selected lane on the Windows/Linux GitHub runners.
+The native Windows ACL and extended-path cases are skipped on Linux; the remaining selected cases run on both GitHub runners.
 Cleanup tests require PowerShell 7 (`pwsh`) and Git; locally they report a skip
 if PowerShell is unavailable. They delete only fixtures in temporary repositories,
 never files in the working checkout.
