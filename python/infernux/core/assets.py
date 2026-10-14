@@ -49,7 +49,6 @@ from infernux.core.asset_types import (
     RENDER_EFFECT_EXTENSIONS,
     PARTICLE_GRAPH_EXTENSIONS,
     PHYSIC_MATERIAL_EXTENSIONS,
-    asset_category_from_extension,
 )
 from infernux.core.animation_clip import AnimationClip
 from infernux.core.animation_clip3d import AnimationClip3D

@@ -1642,10 +1642,7 @@ class NodeGraphView:
         # AssetRef-like objects expose to_dict()/guid/path_hint.
         to_dict = getattr(value, "to_dict", None)
         if callable(to_dict):
-            try:
-                return to_dict()
-            except Exception:
-                pass
+            return to_dict()
         guid = getattr(value, "guid", None)
         path_hint = getattr(value, "path_hint", "")
         if guid or path_hint:
@@ -1940,6 +1937,7 @@ class NodeGraphView:
 
         trim_t = 0.0
         previous = (x2, y2)
+        previous_t = 1.0
         travelled = 0.0
         samples = max(32, _LINK_SEGMENTS * 2)
         for index in range(1, samples + 1):
@@ -1948,7 +1946,7 @@ class NodeGraphView:
             segment = math.hypot(previous[0] - current[0], previous[1] - current[1])
             if travelled + segment >= cutoff:
                 ratio = (cutoff - travelled) / max(segment, 1.0e-6)
-                trim_t = t + (previous_t - t) * ratio if index > 1 else t
+                trim_t = t + (previous_t - t) * ratio
                 break
             travelled += segment
             previous = current
@@ -1997,7 +1995,7 @@ class NodeGraphView:
                 b = float(value[2])
                 a = float(value[3]) if len(value) >= 4 else 1.0
                 return (r, g, b, a)
-        except Exception:
+        except (TypeError, ValueError):
             pass
         if isinstance(fallback, (list, tuple)) and len(fallback) >= 3:
             a = float(fallback[3]) if len(fallback) >= 4 else 1.0

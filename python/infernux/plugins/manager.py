@@ -16,7 +16,7 @@ import uuid
 from contextlib import ExitStack, contextmanager, nullcontext
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping, TYPE_CHECKING
 from urllib.parse import unquote, urlsplit
 
 from packaging.specifiers import SpecifierSet
@@ -65,6 +65,9 @@ from .preload import PreloadManager
 from .project_index import _asset_database, project_guid_paths
 from .registry import PluginRegistry
 from .source_content import same_source_content
+
+if TYPE_CHECKING:
+    from .preload import PreloadState
 
 
 _URL_PACKAGE_CHUNK_BYTES = 1024 * 1024
@@ -1481,7 +1484,8 @@ class PluginManager:
                 try:
                     name = canonicalize_name(str(distribution.metadata["Name"] or ""))
                     version = str(distribution.version or "")
-                except Exception:
+                except (OSError, ValueError) as exc:
+                    Debug.log_suppressed("PluginManager.distribution_metadata", exc)
                     continue
                 if name and version and name not in snapshot:
                     snapshot[name] = version
@@ -2833,7 +2837,7 @@ def _download_url_package(
     )
     partial = f"{destination}.{uuid.uuid4().hex}.part"
     try:
-        with urllib.request.urlopen(request) as response:
+        with urllib.request.urlopen(request, timeout=30) as response:
             total = int(response.headers.get("Content-Length", "0") or 0)
             received = 0
             with open(partial, "wb") as stream:

@@ -4,6 +4,7 @@ import importlib.util
 import json
 from pathlib import Path
 import py_compile
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -15,11 +16,7 @@ GUID = "aabbccddaabbccddaabbccddaabbccdd"
 
 
 @pytest.fixture
-def projects(tmp_path, monkeypatch):
-    for name in ("_project_root", "_guid_manifest", "_runtime_asset_resolver",
-                 "_runtime_package_resolver", "_runtime_asset_query", "_runtime_asset_extension_resolver"):
-        monkeypatch.setattr(context, name, None)
-    monkeypatch.setattr(context, "_guid_manifest_loaded", False)
+def projects(tmp_path):
     result = []
     for name, script_name in (("第一位作者", "Original"), ("另一台设备", "Renamed"), ("构建项目", "Third")):
         root = tmp_path / name
@@ -32,7 +29,8 @@ def projects(tmp_path, monkeypatch):
         manifest = root / "_script_guid_map.json"
         manifest.write_text(json.dumps({GUID: compiled.relative_to(root).as_posix()}), encoding="utf-8")
         result.append((root, compiled, name))
-    return result
+    with context.using_project_root(None):
+        yield result
 
 
 def _assert_script(project, database=None, *, guid=GUID):
@@ -45,6 +43,23 @@ def _assert_script(project, database=None, *, guid=GUID):
     loader.exec_module(module)
     assert module.PROJECT_MARKER == marker
     assert Path(context.get_project_root()) == root
+
+
+def test_worker_project_scope_does_not_replace_the_editor_context(projects):
+    first, second, _ = projects
+    context.set_project_root(str(first[0]))
+    context.set_runtime_asset_resolver(lambda guid: str(first[1]) if guid == GUID else None)
+    _assert_script(first)
+
+    def resolve_other_project():
+        with context.using_project_root(str(second[0])):
+            _assert_script(second)
+            return context.get_project_root()
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        assert Path(executor.submit(resolve_other_project).result()) == second[0]
+    _assert_script(first)
+    assert context.resolve_runtime_asset_guid(GUID) == str(first[1])
 
 
 @pytest.mark.parametrize("sequence", ["fresh", "unbound", "switch", "unbind", "missing_manifest", "unknown_guid"])

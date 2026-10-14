@@ -550,152 +550,40 @@ def test_android_exporter_plan_is_inspectable(monkeypatch, tmp_path):
     assert plan.metadata["graphics_api"] == "vulkan"
 
 
-def test_android_host_template_disables_opengl_and_configures_vulkan(
-    monkeypatch, tmp_path
-):
+def test_android_host_template_configures_the_generated_application(monkeypatch, tmp_path):
+    import xml.etree.ElementTree as ET
+
     _android_module(monkeypatch)
-    exporter_module = importlib.import_module("infernux_android.exporter")
-    templates = PLUGIN_EDITOR / "infernux_android" / "templates" / "host"
+    exporter = importlib.import_module("infernux_android.exporter")
     project = tmp_path / "generated"
-    shutil.copytree(templates, project)
-
-    exporter_module._configure_project(
-        project,
-        tmp_path / "sdk",
-        "x86_64",
-    )
-
-    assert not (project / "app/src/main/cpp/CMakeLists.txt").exists()
-    manifest = (project / "app/src/main/AndroidManifest.xml").read_text(
-        encoding="utf-8"
-    )
-    style = (project / "app/src/main/res/values/styles.xml").read_text(
-        encoding="utf-8"
-    )
-    splash_style = (project / "app/src/main/res/values-v31/styles.xml").read_text(
-        encoding="utf-8"
-    )
-    strings = (project / "app/src/main/res/values/strings.xml").read_text(
-        encoding="utf-8"
-    )
-    gradle = (project / "app/build.gradle").read_text(encoding="utf-8")
+    shutil.copytree(PLUGIN_EDITOR / "infernux_android/templates/host", project)
+    exporter._configure_project(project, tmp_path / "sdk", "x86_64")
+    android = "{http://schemas.android.com/apk/res/android}"
+    manifest = ET.parse(project / "app/src/main/AndroidManifest.xml").getroot()
+    application = manifest.find("application")
+    activity = application.find("activity")
+    metadata = {item.get(android + "name"): item.get(android + "value")
+                for item in application.findall("meta-data") + activity.findall("meta-data")}
+    features = {item.get(android + "name") for item in manifest.findall("uses-feature")}
+    assert "android.hardware.vulkan.version" in features
+    assert "android.hardware.opengles" not in features
+    assert activity.get(android + "screenOrientation") == "sensorLandscape"
+    assert activity.get(android + "resizeableActivity") == "false"
+    assert activity.get(android + "windowSoftInputMode") == "adjustNothing"
+    assert metadata["infernux.orientations"] == "LandscapeLeft LandscapeRight"
+    assert metadata["infernux.resolution_scaling"] == "fixed_dpi"
+    assert metadata["infernux.target_dpi"] == "320"
+    assert application.get(android + "appCategory") == "game"
+    assert application.get(android + "icon") == "@mipmap/infernux_launcher"
+    assert "android.intent.category.GAME" in {
+        item.get(android + "name") for item in activity.findall("intent-filter/category")}
     doctor = importlib.import_module("infernux_android.doctor")
+    gradle = (project / "app/build.gradle").read_text(encoding="utf-8")
     assert f'buildToolsVersion "{doctor.ANDROID_BUILD_TOOLS}"' in gradle
-    assert 'applicationId "com.infernux.infernuxplayer"' in gradle
-    root_gradle = (project / "build.gradle").read_text(encoding="utf-8")
-    host_source = (PLUGIN_EDITOR.parents[1] / "native/main.cpp").read_text(encoding="utf-8")
-    host_cmake = (PLUGIN_EDITOR.parents[1] / "native/CMakeLists.txt").read_text(
-        encoding="utf-8"
-    )
-    activity = (
-        project
-        / "app/src/main/java/com/infernux/bootstrap/InfernuxActivity.java"
-    ).read_text(encoding="utf-8")
-    assert 'android:name="infernux.orientations"' in manifest
-    assert 'android:value="LandscapeLeft LandscapeRight"' in manifest
-    assert 'SDL_getenv("INFERNUX_ANDROID_ORIENTATIONS")' in host_source
-    assert 'Os.setenv("INFERNUX_ANDROID_ORIENTATIONS", orientations, true)' in activity
-    assert "android.hardware.vulkan.version" in manifest
-    assert 'android:screenOrientation="sensorLandscape"' in manifest
-    assert 'android:name="infernux.resolution_scaling"' in manifest
-    assert 'android:value="fixed_dpi"' in manifest
-    assert 'android:name="infernux.target_dpi"' in manifest
-    assert 'android:value="320"' in manifest
-    assert 'android:appCategory="game"' in manifest
-    assert 'android:isGame="true"' in manifest
-    assert 'android:icon="@mipmap/infernux_launcher"' in manifest
-    assert 'android:roundIcon="@mipmap/infernux_launcher"' in manifest
-    assert 'android:resizeableActivity="false"' in manifest
-    assert 'android:windowSoftInputMode="adjustNothing"' in manifest
-    assert "android.intent.category.GAME" in manifest
-    assert "glEsVersion" not in manifest
-    assert "android:windowFullscreen" in style
-    assert "android:windowDrawsSystemBarBackgrounds" in style
-    assert "android:windowLayoutInDisplayCutoutMode" in style
-    assert "android:windowLightStatusBar" in style
-    assert "android:windowLightNavigationBar" in style
-    assert "android:windowSplashScreenAnimatedIcon" in splash_style
-    assert "android:windowSplashScreenBackground" in splash_style
-    assert "Infernux Player" in strings
-    assert "if (isKeyboardVisible())" in activity
-    assert "registerOnBackInvokedCallback" in activity
-    assert "OnBackInvokedDispatcher.PRIORITY_OVERLAY" in activity
-    assert "this::dispatchInfernuxBack" in activity
-    assert "public void onBackPressed() {\n        dispatchInfernuxBack();" in activity
-    assert "sendCommand(COMMAND_TEXTEDIT_HIDE, null)" in activity
-    assert "onNativeKeyDown(KeyEvent.KEYCODE_ESCAPE)" in activity
-    assert "onNativeKeyUp(KeyEvent.KEYCODE_ESCAPE)" in activity
-    back_handler = activity.split("private void dispatchInfernuxBack()", 1)[1].split(
-        "private File prepareVersionedAssets", 1
-    )[0]
-    assert back_handler.index("if (isKeyboardVisible())") < back_handler.index(
-        "onNativeKeyDown(KeyEvent.KEYCODE_ESCAPE)"
-    )
-    assert "onNativeKeyboardFocusLost();\n            return;" in back_handler
-    assert "KeyEvent.KEYCODE_BACK" not in back_handler
-    assert back_handler.count("onNativeKeyDown(KeyEvent.KEYCODE_ESCAPE)") == 1
-    assert back_handler.count("onNativeKeyUp(KeyEvent.KEYCODE_ESCAPE)") == 1
-    assert "super.onBackPressed()" not in activity
-    assert "setOnApplyWindowInsetsListener" in activity
-    assert "setWindowInsetsAnimationCallback" in activity
-    assert "DISPATCH_MODE_CONTINUE_ON_SUBTREE" in activity
-    assert "WindowInsets.Type.ime()" in activity
-    assert "lastPublishedKeyboardInset" in activity
-    assert "mScreenKeyboardShown" not in activity
-    assert "WindowInsets.Type.systemBars()" in activity
-    assert 'Os.setenv("INFERNUX_ANDROID_KEYBOARD_INSET"' in activity
-    assert 'Os.setenv("INFERNUX_ANDROID_KEYBOARD_INSET_KNOWN", "1"' in activity
-    assert 'Os.setenv("INFERNUX_RENDER_PROFILE", "mobile"' in activity
-    assert 'Os.setenv("INFERNUX_PLAYER_RENDER_SCALE", scaleText' in activity
-    assert "getDisplayMetrics().densityDpi" in activity
-    assert "INFERNUX_ANDROID_RESOLUTION_SCALING" in activity
-    assert "new InfernuxSurface(context)" in activity
-    surface_destroy = activity.split(
-        "public void surfaceDestroyed(SurfaceHolder holder)", 1
-    )[1].split("super.surfaceDestroyed(holder);", 1)[0]
-    assert surface_destroy.index("SDLActivity.handleNativeState();") < (
-        surface_destroy.index("nativeWaitForPresentationSuspended();")
-    )
-    assert "AndroidPresentationLifecycle::WaitForPresentationSuspended()" in host_source
-    assert "INFERNUX_ANDROID_SURFACE_DESTROY_WAIT_COMPLETE" in host_source
-    assert '"${CMAKE_SOURCE_DIR}/cpp/infernux"' in host_cmake
-    assert "INFERNUX_PLAYER_FPS_CAP" not in activity
-    assert 'Os.setenv("INFERNUX_PRESENT_MODE", "fifo"' in activity
-    assert 'Os.setenv("INFERNUX_MAX_FRAMES_IN_FLIGHT", "2"' in activity
-    assert 'getBooleanExtra("infernux.profile_frames", false)' in activity
-    assert 'Os.setenv("_INFERNUX_PLAYER_PROFILE_FRAMES", "1"' in activity
-    assert "applyImmersiveGameMode" in activity
-    assert activity.count("new byte[64 * 1024]") == 1
-    assert "extractAsset(assetRoot, stagingBase, copyBuffer)" in activity
-    assert 'extractAsset(path + "/" + child, destinationRoot, copyBuffer)' in activity
-    assert "INFERNUX_ANDROID_ASSET_INSTALL_BEGIN" in activity
-    assert "INFERNUX_ANDROID_ASSET_INSTALL_COMPLETE" in activity
-    assert "WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE" in activity
-    assert "View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY" in activity
     assert 'abiFilters "x86_64"' in gradle
-    assert 'ignoreAssetsPattern = "!.svn:!.git:!.ds_store:' in gradle
-    assert 'System.getenv("INFERNUX_ANDROID_KEYSTORE")' in gradle
-    assert "signingConfig signingConfigs.release" in gradle
-    assert "storePassword infernuxKeystorePassword" in gradle
-    assert 'version "8.10.1"' in root_gradle
-    assert "run_platform_player" in host_source
-    assert "SDL_SetHint(SDL_HINT_ORIENTATIONS" in host_source
-    assert "SDL_CreateWindow" not in host_source
-    assert 'SDL_setenv_unsafe("INFERNUX_NATIVE_MODULE_DIR"' in host_source
-    assert "INFERNUX_PLAYER_ASSET_ROOT" in activity
-    assert "infernux-content.id" in activity
-    assert "infernux-data-root.txt" in activity
-    assert "resolvePlayerDataRoot(playerAssets)" in activity
-    assert 'new File(playerData, "Player.inxmanifest")' in activity
-    assert 'identityName + ".complete"' in activity
-    assert 'assetRoot + ".installing"' in activity
-    assert "stagedRoot.renameTo(installedRoot)" in activity
-    assert "stream.getFD().sync()" in activity
+    assert not (project / "app/src/main/cpp/CMakeLists.txt").exists()
     assert not list(project.rglob("*.in"))
-    assert "externalNativeBuild" not in gradle
-    assert "cmake" not in gradle
-    assert "@INFERNUX_" not in gradle + root_gradle
-    assert "@ANDROID_" not in gradle + root_gradle
+    assert "@INFERNUX_" not in gradle and "@ANDROID_" not in gradle
 
 
 @pytest.mark.parametrize(

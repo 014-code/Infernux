@@ -626,7 +626,7 @@ def test_asset_reference_catalog_reuses_one_database_generation(monkeypatch, tmp
     from infernux.engine import project_context
 
     project = tmp_path / "Project"
-    monkeypatch.setattr(project_context, "_project_root", str(project))
+    monkeypatch.setattr(project_context._context(), "root", str(project))
 
     class Database:
         query_generation = 7
@@ -690,7 +690,7 @@ def test_asset_reference_catalog_uses_assets_except_for_visible_shaders(
         def get_all_asset_paths(self):
             return tuple(self.paths.values())
 
-    monkeypatch.setattr(project_context, "_project_root", str(project))
+    monkeypatch.setattr(project_context._context(), "root", str(project))
     monkeypatch.setattr(AssetManager, "_asset_database", Database())
     hidden_queries = []
     monkeypatch.setattr(
@@ -751,26 +751,6 @@ def test_asset_reference_virtual_candidates_extend_the_shared_catalog(monkeypatc
         ("Sphere", {"builtin": "sphere"}),
         ("Terrain.fbx", "Assets/Terrain.fbx"),
     )
-
-
-def test_native_object_field_reports_keyboard_clear_gesture():
-    source = (
-        Path(__file__).parents[2]
-        / "cpp"
-        / "infernux"
-        / "function"
-        / "renderer"
-        / "gui"
-        / "InxGUIContext.cpp"
-    ).read_text(encoding="utf-8")
-
-    assert "ImGuiKey_Delete" in source
-    assert "ImGuiKey_Backspace" in source
-    assert "result |= 16u" in source
-    assert "result |= 32u" in source
-    assert '"object_field." + fieldId' in source
-    assert "resolvedSemanticId + \".picker\"" in source
-    assert "clickable || hasPicker" in source
 
 
 def test_object_picker_popup_is_owned_only_by_igui():

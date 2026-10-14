@@ -18,7 +18,7 @@ import os
 from typing import Dict, Optional
 
 from infernux.components.component import InxComponent
-from infernux.components.fields import serialized_field, FieldType
+from infernux.components.fields import serialized_field
 from infernux.components.decorators import require_component, disallow_multiple, add_component_menu
 from infernux.components.builtin.sprite_renderer import SpriteRenderer
 from infernux.core.anim_state_machine import (
@@ -623,8 +623,9 @@ class SpiritAnimator(InxComponent):
             tr.local_euler_angles = Vector3(*pose[3:6])
             tr.local_scale = Vector3(*pose[6:9])
             self._last_timeline_pose = pose
-        except Exception:
-            pass
+        except RuntimeError as exc:
+            Debug.log_exception(exc)
+            self.enabled = False
 
     def _enter_state(self, state_name: str) -> bool:
         """Enter a state: load its clip and reset playback."""

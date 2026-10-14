@@ -23,7 +23,7 @@ from datetime import datetime
 from enum import Enum, auto
 from threading import RLock
 from typing import Any, Optional, List, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 class LogType(Enum):
@@ -128,12 +128,13 @@ class DebugConsole:
     def __init__(self):
         from infernux.engine.runtime_dispatch import ReloadableCallbackRegistry
 
-        self._entries: List[LogEntry] = []
+        self._entries: deque[LogEntry] = deque()
         self._max_entries: int = 1000
         self._listener_registry = ReloadableCallbackRegistry()
         self._native_console = None  # C++ ConsolePanel (set by bootstrap)
         self._native_bridge_lock = RLock()
         self._pending_native_entries = deque()
+        self._suppressed_errors: dict[str, tuple[str, str]] = {}
 
         # Counters for quick filtering
         self._log_count: int = 0
@@ -215,7 +216,7 @@ class DebugConsole:
         # logs emitted while the Editor is attaching its Console panel.
         with self._native_bridge_lock:
             if len(self._entries) >= self._max_entries:
-                removed = self._entries.pop(0)
+                removed = self._entries.popleft()
                 self._update_counters(removed.log_type, -1)
                 if self._pending_native_entries and self._pending_native_entries[0] is removed:
                     self._pending_native_entries.popleft()
@@ -258,7 +259,8 @@ class DebugConsole:
     
     def get_entries(self) -> List[LogEntry]:
         """Get all log entries."""
-        return self._entries.copy()
+        with self._native_bridge_lock:
+            return list(self._entries)
     
     def get_filtered_entries(self, 
                             show_logs: bool = True,
@@ -266,7 +268,7 @@ class DebugConsole:
                             show_errors: bool = True) -> List[LogEntry]:
         """Get filtered log entries."""
         result = []
-        for entry in self._entries:
+        for entry in self.get_entries():
             if entry.log_type == LogType.LOG and show_logs:
                 result.append(entry)
             elif entry.log_type == LogType.WARNING and show_warnings:
@@ -280,11 +282,21 @@ class DebugConsole:
         with self._native_bridge_lock:
             self._entries.clear()
             self._pending_native_entries.clear()
+            self._suppressed_errors.clear()
             self._log_count = 0
             self._warning_count = 0
             self._error_count = 0
             if self._native_console is not None:
                 self._native_console.clear()
+
+    def _record_suppressed(self, where: str, signature: tuple[str, str]) -> bool:
+        with self._native_bridge_lock:
+            if self._suppressed_errors.get(where) == signature:
+                return False
+            if where not in self._suppressed_errors and len(self._suppressed_errors) >= self._max_entries:
+                del self._suppressed_errors[next(iter(self._suppressed_errors))]
+            self._suppressed_errors[where] = signature
+            return True
 
     @staticmethod
     def _source_key(source_file: str) -> str:
@@ -319,7 +331,7 @@ class DebugConsole:
         ]
         removed = len(self._entries) - len(retained)
         if removed:
-            self._entries = retained
+            self._entries = deque(retained)
             self._pending_native_entries = deque(
                 entry for entry in self._pending_native_entries
                 if self._source_key(entry.source_file) != source_key or not entry.message.startswith(message_prefix)
@@ -506,8 +518,9 @@ class Debug:
     def log_suppressed(where: str, exc: BaseException, context: Any = None):
         """Log an exception that was deliberately swallowed by the caller.
 
-        Routes swallowed exceptions through ``log_warning`` so bug-shaped
-        events remain visible in the editor console by default.
+        Repeated identical failures at one site are recorded once until the
+        Console is cleared. A changed failure is recorded again. Ordinary
+        log_warning/error calls are never deduplicated.
 
         Args:
             where: Short human-readable label of the suppression site
@@ -515,7 +528,10 @@ class Debug:
             exc: The caught exception instance.
             context: Optional context object forwarded to the console entry.
         """
-        message = f"[Suppressed @ {where}] {type(exc).__name__}: {exc}"
+        signature = (type(exc).__name__, str(exc))
+        if not DebugConsole.instance()._record_suppressed(str(where), signature):
+            return
+        message = f"[Suppressed @ {where}] {signature[0]}: {signature[1]}"
         Debug.log_warning(message, context=context)
 
     @staticmethod

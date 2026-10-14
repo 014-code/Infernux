@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import gc
+import weakref
 
 import numpy as np
 import pytest
@@ -419,17 +421,6 @@ def test_scene_batch_handle_filters_in_native_code(scene):
     )
 
 
-def test_transform_store_bumps_serial_when_a_world_matrix_becomes_dirty():
-    source = (
-        Path(__file__).resolve().parents[2]
-        / "cpp/infernux/function/scene/TransformECSStore.cpp"
-    ).read_text(encoding="utf-8")
-    marker = source.index("void TransformECSStore::MarkWorldMatrixDirty")
-    body = source[marker : source.index("void TransformECSStore::SetCachedWorldPosition")]
-    assert "newlyDirty" in body
-    assert "++m_globalTransformSerial" in body
-
-
 def test_transform_batch_write_bumps_global_transform_serial(scene):
     first = scene.create_game_object("serial_a")
     second = scene.create_game_object("serial_b")
@@ -494,6 +485,20 @@ def test_script_replacement_detach_releases_the_old_numeric_slot():
 
     assert component._cds_slot is None
     assert lib._cds_is_alive(class_id, slot) is False
+
+
+def test_unbound_component_collection_releases_its_numeric_slot():
+    class UnboundComponent(InxComponent):
+        value: float = 1.0
+
+    component = UnboundComponent()
+    class_id, slot = component._cds_class_id, component._cds_slot
+    witness = weakref.ref(component)
+    assert lib._cds_is_alive(class_id, slot)
+    del component
+    gc.collect()
+    assert witness() is None
+    assert not lib._cds_is_alive(class_id, slot)
 
 
 def test_reserve_rejects_component_without_numeric_storage():

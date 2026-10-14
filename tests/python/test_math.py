@@ -326,6 +326,3 @@ class TestPowerOfTwo:
         assert Mathf.closest_power_of_two(3) == 4
         assert Mathf.closest_power_of_two(5) == 4
         assert Mathf.closest_power_of_two(7) == 8
-
-
-

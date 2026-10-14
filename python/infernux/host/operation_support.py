@@ -10,12 +10,12 @@ from typing import Any
 
 from infernux.engine.path_utils import resolved_path
 
-from .commands import MainThreadCommandQueue
+from .commands import MainThreadCommandQueue, CommandTimeoutError
 from .editor import EditorAutomationHost
-from .operations import Operation, OperationError, OperationKind, OperationSchema
+from .operations import Operation, OperationError, OperationKind, OperationSchema, ENGINE_OPERATION_OWNER
 
 
-OWNER = "infernux/engine"
+OWNER = ENGINE_OPERATION_OWNER
 
 _ANY = {}
 _STRING = {"type": "string"}
@@ -186,6 +186,8 @@ def operation(
             {"code": "editor.unavailable"},
             {"code": "asset.not_found"},
             {"code": "scene.object_not_found"},
+            {"code": "host.timeout_pending"},
+            {"code": "host.timeout_running"},
         ),
         thread=thread,
         side_effects=side_effects,
@@ -206,11 +208,13 @@ def operation(
 
 
 def on_editor(operation_id: str, callback: Callable[[], Any]) -> Any:
-    return MainThreadCommandQueue.instance().run_sync(
-        operation_id,
-        callback,
-        timeout_ms=30000,
-    )
+    try:
+        return MainThreadCommandQueue.instance().run_sync(operation_id, callback)
+    except CommandTimeoutError as exc:
+        raise OperationError(
+            "host.timeout_running" if exc.may_have_applied else "host.timeout_pending",
+            str(exc), details={"may_have_applied": exc.may_have_applied},
+        ) from exc
 
 
 def interaction_core():

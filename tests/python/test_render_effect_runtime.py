@@ -1766,7 +1766,7 @@ def test_effect_group_compiles_without_reentering_its_own_asset_load(
     from infernux.engine import project_context
 
     RenderEffectArtifactRegistry.clear()
-    monkeypatch.setattr(project_context, "_project_root", str(tmp_path))
+    monkeypatch.setattr(project_context._context(), "root", str(tmp_path))
     rendering_dir = tmp_path / "Assets" / "Rendering"
     rendering_dir.mkdir(parents=True)
     bloom_path = rendering_dir / "Bloom.effect"

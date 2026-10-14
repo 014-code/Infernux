@@ -163,4 +163,3 @@ def test_editor_entry_point_cleans_up_before_releasing_project_lock(monkeypatch,
         with pytest.raises(KeyboardInterrupt):
             entry.release_engine(str(tmp_path))
     assert calls == ["cleanup", "unlock"]
-

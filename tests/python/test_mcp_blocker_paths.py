@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import inspect
 import os
 from pathlib import Path
 import re
@@ -22,7 +23,7 @@ class _GatewayRecorder:
 
     def tool(self, *, name):
         def register(callback):
-            self.tools[name] = callback
+            self.tools[name] = callback.__wrapped__ if inspect.iscoroutinefunction(callback) else callback
             return callback
         return register
 

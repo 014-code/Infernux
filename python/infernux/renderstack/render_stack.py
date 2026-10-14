@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import json as _json
 from dataclasses import dataclass, field
-from typing import Dict, Optional, TYPE_CHECKING
+from typing import Dict, Optional
 
 from infernux.components.component import InxComponent
 from infernux.components.fields import FieldType, list_field
@@ -46,8 +46,6 @@ from infernux.renderstack._pipeline_common import (
 from infernux.renderstack.effect_slot import EffectSlot
 from infernux.renderstack.resource_bus import ResourceBus
 
-if TYPE_CHECKING:
-    from infernux.rendergraph.graph import RenderGraph
 
 
 from ._render_pipeline_reload import PipelineReloadMixin
@@ -306,7 +304,6 @@ class RenderStack(PipelineReloadMixin, InxComponent):
     def _promote_next_stack(self) -> None:
         """Scan the scene for another enabled RenderStack and promote it."""
         try:
-            from infernux.lib import SceneManager as _NativeSceneManager
             scene = self._owning_scene
         except Exception as _exc:
             Debug.log(f"[Suppressed] {type(_exc).__name__}: {_exc}")

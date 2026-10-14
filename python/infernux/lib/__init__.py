@@ -319,6 +319,11 @@ except (ModuleNotFoundError, ImportError, OSError) as _initial_native_error:
 
 _export_native_module(_native_module)
 
+from ._Infernux import (
+    AssetRegistry, CollisionInfo, GameObject, InvalidNativeObjectError,
+    RaycastHit, Scene, Transform, Vector3, quatf,
+)
+
 _SceneDocumentReadTicket = _native_module._SceneDocumentReadTicket
 _preflight_scene_resource_dependencies = (
     _native_module._preflight_scene_resource_dependencies
@@ -369,8 +374,7 @@ for _internal_name in (
     "_transform_batch_write",
     "_create_scene_transform_batch_handle",
 ):
-    if hasattr(_native_module, _internal_name):
-        globals()[_internal_name] = getattr(_native_module, _internal_name)
+    globals()[_internal_name] = getattr(_native_module, _internal_name)
 
 
 class _Vec3WritebackProxy:

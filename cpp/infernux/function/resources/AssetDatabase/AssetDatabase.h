@@ -7,6 +7,7 @@
 #include <function/resources/AssetImporter/ImporterRegistry.h>
 #include <function/resources/AssetRegistry/IAssetLoader.h>
 #include <function/resources/InxResource/InxResourceMeta.h>
+#include <function/scene/NativeLifetime.h>
 #include <platform/filesystem/DocumentTransaction.h>
 
 #include <atomic>
@@ -112,7 +113,7 @@ class AssetCatalogSnapshot final
  *   boundary, before the reference is
  * persisted.
  */
-class AssetDatabase
+class AssetDatabase : public NativeLifetimeOwner
 {
   public:
     AssetDatabase();

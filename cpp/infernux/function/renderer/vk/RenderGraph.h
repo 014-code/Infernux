@@ -245,6 +245,8 @@ struct ResourceState
     rhi::QueueRole queue = rhi::QueueRole::Count;
     uint32_t queueFamily = VK_QUEUE_FAMILY_IGNORED;
     uint32_t nativeQueueLane = UINT32_MAX;
+    rhi::Access visibleReadAccess = rhi::Access::None;
+    rhi::PipelineStage visibleReadStages = rhi::PipelineStage::None;
 };
 
 struct NativeQueueBinding

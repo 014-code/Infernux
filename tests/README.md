@@ -77,7 +77,7 @@ Remove-Item Env:PYTHONPATH, Env:INFERNUX_NATIVE_MODULE_DIR -ErrorAction Silently
 $env:SDL_AUDIODRIVER = 'dummy'
 $env:QT_QPA_PLATFORM = 'offscreen'
 python -m pytest -o pythonpath= tests/python/test_shader_declaration_discovery.py -q -ra
-python -m pytest -o pythonpath= tests/python tests/contracts --ignore=tests/python/test_shader_declaration_discovery.py -q -ra
+python -m pytest -o pythonpath= tests/python tests/isolated --ignore=tests/python/test_shader_declaration_discovery.py -q -ra
 python -m pytest tests/hub -q -ra
 ```
 
@@ -104,6 +104,17 @@ to skip the tests. Both desktop CI jobs build the Player before pytest. The
 `windows-release` / `linux-release` workflow presets build the release artifacts
 and run CTest, but the full Python suite above is a separate step.
 
+Native tests are divided into `tests/python` (shared Editor/renderer fixtures) and
+`tests/isolated` (one native child process per lifetime/crash scenario). Isolated
+parents locate the selected package without importing it or starting Vulkan; the
+child owns initialization and teardown. All parameter scenarios remain in CI.
+The architecture rules in `tests/contracts/test_architecture_rules.py` check
+dependency direction and ownership. Rendering, layout, selection, and resource
+publication behavior are checked by native/GPU tests, not source spelling.
+
+The large builder, plugin, scene, UI, and particle suites are split by subject.
+Their shared fixtures are imported explicitly, including autouse fixtures.
+
 Both desktop CI jobs install a complete wheel before the Python tests and
 disable pytest's source-path setting. Windows CI uses a test wheel containing
 the pinned software Vulkan driver, then rebuilds the shipping wheel without
@@ -121,14 +132,14 @@ equivalent is:
 
 ```sh
 python -m pip install pytest PySide6 packaging PyYAML
-python -m pytest tests/hub/test_hub_project_workflow.py tests/hub/test_project_python_runtime.py tests/hub/test_hub_new_project_python_binding.py tests/hub/test_hub_launch_state.py tests/hub/test_project_runtime_strictness.py tests/hub/test_regression_guide.py tests/hub/test_cpu_jit_dependency_packaging.py tests/hub/test_release_signing.py tests/hub/test_hub_utils.py tests/hub/test_bundle_resources.py tests/hub/test_publication_permissions.py tests/hub/test_windows_runtime_paths.py tests/hub/test_workspace_cleanup.py tests/hub/test_project_sync_audit.py tests/contracts -q -ra
+python -m pytest tests/hub tests/contracts -q -ra
 ```
 
 For a session without a display, set `QT_QPA_PLATFORM=offscreen` first
 (`$env:QT_QPA_PLATFORM = 'offscreen'` in PowerShell,
 `export QT_QPA_PLATFORM=offscreen` in Bash). These tests use temporary projects and
 controlled launch workers; they do not download an engine or launch a real Editor.
-The native Windows ACL and extended-path cases are skipped on Linux; the remaining selected cases run on both GitHub runners.
+The native Windows ACL and extended-path cases are skipped on Linux; the remaining cases run on both GitHub runners.
 Cleanup tests require PowerShell 7 (`pwsh`) and Git; locally they report a skip
 if PowerShell is unavailable. They delete only fixtures in temporary repositories,
 never files in the working checkout.

@@ -159,7 +159,8 @@ class _PolicyVisitor(ast.NodeVisitor):
 
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
-            self.imported_modules[alias.asname or alias.name.split(".", 1)[0]] = alias.name
+            bound = alias.asname or alias.name.split(".", 1)[0]
+            self.imported_modules[bound] = alias.name if alias.asname else bound
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         module = "." * node.level + (node.module or "")
@@ -370,6 +371,7 @@ class _PolicyVisitor(ast.NodeVisitor):
                     "top-level process/thread/timer/socket/atexit operation is not allowed",
                 )
 
+        self.visit(node.func)
         for argument in node.args:
             self.visit(argument)
         for keyword in node.keywords:

@@ -23,6 +23,7 @@ import uuid
 import zlib
 from dataclasses import dataclass, field
 from enum import Enum
+from itertools import islice
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from infernux.lib import InxGUIContext
@@ -55,9 +56,11 @@ from .imgui_keys import KEY_LEFT_CTRL, KEY_RIGHT_CTRL
 from infernux.engine.texture_task_bridge import texture_stamp, query_or_schedule_texture
 from infernux.engine.path_utils import relative_path, resolved_path, same_path
 from infernux.debug import Debug
+from infernux.core.file_read_cache import FileReadCache
 
 
 _U64 = 0xFFFFFFFFFFFFFFFF
+_shader_source_cache = FileReadCache(16)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -390,7 +393,6 @@ class _ImportSettingsController:
             _ImportSettingsBatch.model_save_completed(self.document_id, False, "model Apply was cancelled")
 
     def discard(self, *, document_id: str):
-        from infernux.engine.interaction import DocumentRegistry
 
         if str(document_id) != self.document_id:
             return False
@@ -1735,7 +1737,7 @@ def _load_animclip(path: str):
 
 def _render_animclip_body(ctx: InxGUIContext, panel, state: _State):
     from infernux.core.animation_clip import AnimationClip
-    from .inspector_utils import render_compact_section_header, render_info_text
+    from .inspector_utils import render_compact_section_header
     from .inspector_components import render_asset_reference_field
 
     clip: AnimationClip = state.settings
@@ -1968,10 +1970,7 @@ def _render_animclip3d_body(ctx: InxGUIContext, panel, state: _State):
         if not p:
             return
         model_guid = supplied_guid
-        try:
-            model_guid = model_guid or AssetManager._get_guid_from_path(p) or ""
-        except Exception:
-            pass
+        model_guid = model_guid or AssetManager._get_guid_from_path(p) or ""
         bone_names = []
         # Pull bind pose bone names from import metadata (cheap UX).
         meta = read_meta_file(p) or {}
@@ -2051,15 +2050,10 @@ def _render_animclip3d_body(ctx: InxGUIContext, panel, state: _State):
 def _resolve_authoring_texture_path(clip) -> str:
     """Resolve the actual file path for the clip's authoring texture."""
     if clip.authoring_texture_guid:
-        try:
-            from infernux.engine.bootstrap import EditorBootstrap
-            adb = EditorBootstrap.instance().engine.get_asset_database()
-            if adb:
-                p = adb.get_path_from_guid(clip.authoring_texture_guid)
-                if p and os.path.isfile(p):
-                    return p
-        except Exception:
-            pass
+        from infernux.core.assets import AssetManager
+        p = AssetManager._get_path_from_guid(clip.authoring_texture_guid)
+        if p and os.path.isfile(p):
+            return p
     return ""
 
 
@@ -2079,26 +2073,13 @@ def _animclip_texture_stamp(path: str, nearest: bool, srgb: bool) -> int:
 
 
 def _read_animclip_preview_settings(tex_file: str):
-    use_nearest = False
-    use_srgb = False
-    frames = []
-    source_w = 0
-    source_h = 0
-    try:
-        settings = read_texture_import_settings(tex_file)
-        if settings:
-            use_nearest = getattr(settings, "filter_mode", None) == FilterMode.POINT
-            use_srgb = bool(getattr(settings, "srgb", False))
-            if settings.sprite_frames:
-                frames = list(settings.sprite_frames)
-    except Exception:
-        pass
-    try:
-        meta = read_meta_file(tex_file) or {}
-        source_w = int(meta.get("width", 0) or 0)
-        source_h = int(meta.get("height", 0) or 0)
-    except Exception:
-        pass
+    settings = read_texture_import_settings(tex_file)
+    use_nearest = settings.filter_mode == FilterMode.POINT
+    use_srgb = bool(settings.srgb)
+    frames = list(settings.sprite_frames)
+    meta = read_meta_file(tex_file) or {}
+    source_w = int(meta.get("width", 0) or 0)
+    source_h = int(meta.get("height", 0) or 0)
     if (source_w <= 0 or source_h <= 0) and frames:
         source_w = max((int(f.x) + int(f.w) for f in frames), default=0)
         source_h = max((int(f.y) + int(f.h) for f in frames), default=0)
@@ -2187,7 +2168,7 @@ def _ensure_animclip_preview_texture(state: _State, tex_file: str) -> bool:
         }
         return True
     except Exception as exc:
-        Debug.log_warning(f"[AnimClipPreview] {exc}")
+        Debug.log_suppressed("AssetInspector.animclip_preview", exc)
         return False
 
 
@@ -2290,25 +2271,14 @@ def _render_animclip_preview(ctx: InxGUIContext, clip, state: _State):
 
 
 def _get_sprite_frames(texture_guid: str, texture_path: str = "") -> list[SpriteFrame]:
-    path = ""
+    from infernux.core.assets import AssetManager
+
+    path = texture_path
     if texture_guid:
-        try:
-            from infernux.engine.bootstrap import EditorBootstrap
-            adb = EditorBootstrap.instance().engine.get_asset_database()
-            if adb:
-                path = adb.get_path_from_guid(texture_guid) or ""
-        except Exception:
-            pass
-    if not path and texture_path:
-        path = texture_path
+        path = AssetManager._get_path_from_guid(texture_guid) or path
     if not path:
         return []
-    try:
-        from infernux.core.asset_types import read_texture_import_settings
-        settings = read_texture_import_settings(path)
-        return list(settings.sprite_frames)
-    except Exception:
-        return []
+    return list(read_texture_import_settings(path).sprite_frames)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -2400,14 +2370,8 @@ def _render_animfsm_body(ctx: InxGUIContext, panel, state: _State):
             ctx.label(f"{prefix}{s.name}")
             clip_path = ""
             if s.clip_guid:
-                try:
-                    from infernux.engine.bootstrap import EditorBootstrap
-                    bs = EditorBootstrap.instance()
-                    adb = bs.engine.get_asset_database() if bs and bs.engine else None
-                    if adb:
-                        clip_path = adb.get_path_from_guid(s.clip_guid) or ""
-                except Exception:
-                    pass
+                from infernux.core.assets import AssetManager
+                clip_path = AssetManager._get_path_from_guid(s.clip_guid) or ""
             if clip_path:
                 ctx.same_line()
                 ctx.label(f"  [{os.path.basename(clip_path)}]")
@@ -3753,7 +3717,7 @@ def _live_sprite_texture_id(ss: "_SpriteEditorState", cur_srgb, cur_filter) -> i
         resource_key = f"spriteedit|sprite_preview|{srgb_tag}_{filter_tag}|{norm_path}"
         return int(native.get_texture_preview_texture_id(resource_key) or 0)
     except Exception as exc:
-        Debug.log_warning(f"[SpriteEditor] live texture lookup failed: {exc}")
+        Debug.log_suppressed("SpriteEditor.live_texture_lookup", exc)
         return 0
 
 
@@ -3836,7 +3800,7 @@ def _ensure_sprite_texture(state: _State) -> bool:
         ss.tex_w = source_w
         ss.tex_h = source_h
     except Exception as exc:
-        Debug.log_warning(f"[SpriteEditor] Preview task exception: {exc}")
+        Debug.log_suppressed("SpriteEditor.texture_preview", exc)
         ss.texture_id = 0
     return ss.tex_w > 0
 
@@ -4448,10 +4412,14 @@ def _render_shader_source(ctx: InxGUIContext, file_path: str):
         ctx.label(t("asset.file_not_found"))
         return
     try:
-        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-            lines = f.readlines()[:40]
-        text = "".join(lines)
-        if len(lines) == 40:
+        def read_source(observed):
+            observed.watch(file_path)
+            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                return tuple(islice(f, 41))
+
+        lines = _shader_source_cache.get(file_path, read_source)
+        text = "".join(lines[:40])
+        if len(lines) > 40:
             text += "\n" + t("asset.shader_truncated")
         ctx.push_style_color(ImGuiCol.Text, *Theme.SUCCESS_TEXT)
         ctx.label(text)

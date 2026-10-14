@@ -143,7 +143,7 @@ class MeshRenderer : public Component
     void ClearMeshAsset();
 
     /// @brief Handle asset graph notifications for the referenced mesh asset.
-    void OnMeshAssetEvent(AssetEvent event);
+    void OnMeshAssetEvent(const std::string &meshGuid, AssetEvent event);
 
     /// @brief Invalidate or reconnect material slots without changing GUIDs.
     void OnMaterialAssetEvent(const std::string &guid, AssetEvent event);

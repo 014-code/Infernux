@@ -36,6 +36,7 @@ from typing import Any, Sequence, TYPE_CHECKING
 if TYPE_CHECKING:
     import numpy as np
     from numpy.typing import NDArray
+    from infernux.lib import TransformBatchHandle
 
 # NumPy is a required engine runtime dependency. Import it on first batch API
 # use so importing this module itself stays lightweight.

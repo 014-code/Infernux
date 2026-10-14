@@ -9,7 +9,7 @@ from dataclasses import dataclass, replace
 from enum import Enum
 from typing import Callable
 
-from infernux.engine.path_utils import path_key, portable_path, resolved_path
+from infernux.engine.path_utils import path_key as _path_key, portable_path, resolved_path
 
 
 class AssetFsEventKind(str, Enum):
@@ -41,10 +41,6 @@ def _absolute_path(path: str) -> str:
     if not path:
         raise ValueError("asset event path cannot be empty")
     return resolved_path(path)
-
-
-def _path_key(path: str) -> str:
-    return path_key(path)
 
 
 _DOCUMENT_STORE_TEMP_PATTERN = re.compile(r"\.tmp\.\d+\.\d+$")

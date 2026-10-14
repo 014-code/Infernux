@@ -59,7 +59,6 @@ from infernux.graph.types import (
 from infernux.lib import InxGUIContext
 from infernux.particle.asset import (
     EmitterSettings,
-    EmitterShape,
     EmitterShapeKind,
     MeshEmissionMode,
     SdfEmissionMode,
@@ -79,11 +78,8 @@ from infernux.particle.artifact import (
     PreparedParticleGraphArtifact,
 )
 from infernux.particle.data_interface import (
-    SdfFilter,
     SdfVolume,
     VectorField,
-    VectorFieldBoundary,
-    VectorFieldFilter,
     particle_data_interface_from_dict,
 )
 from infernux.particle.nodes import (
@@ -3892,10 +3888,7 @@ class ParticleGraphEditorPanel(NodeGraphEditorPanel):
 
             ping_path = str(reference.path_hint or "").strip()
             if ping_path:
-                try:
-                    ping_path = resolved_path(ping_path) or ping_path
-                except Exception:
-                    pass
+                ping_path = _resolve_project_asset_path(ping_path)
             render_asset_reference_field(
                 ctx,
                 f"particle_parameter_default_{kind.value}",
@@ -4276,10 +4269,7 @@ class ParticleGraphEditorPanel(NodeGraphEditorPanel):
 
             _mesh_ping = str(mesh.path_hint or "").strip()
             if _mesh_ping:
-                try:
-                    _mesh_ping = resolved_path(_mesh_ping) or _mesh_ping
-                except Exception:
-                    pass
+                _mesh_ping = _resolve_project_asset_path(_mesh_ping)
             render_asset_reference_field(
                 ctx,
                 "particle_emitter_shape_mesh",
@@ -4441,234 +4431,6 @@ class ParticleGraphEditorPanel(NodeGraphEditorPanel):
         ctx.end_popup()
         return mask & 0xFFFFFFFF
 
-    def _render_data_interfaces(self, ctx: InxGUIContext) -> None:
-        ctx.separator()
-        ctx.label(t("particle_graph_editor.data_interfaces"))
-        emitter = self._selected_emitter()
-        interfaces = list(emitter.data_interfaces)
-        changed = False
-        remove_index = -1
-
-        for index, interface in enumerate(interfaces):
-            ctx.separator()
-            kind_label = t(f"particle_graph_editor.interface_{interface.kind}")
-            ctx.label(f"{kind_label} {index + 1}")
-            replacement = interface
-
-            name = ctx.text_input(
-                f"{t('particle_graph_editor.name')}##particle_interface_name_{interface.stable_id}",
-                interface.name,
-                128,
-            ).strip()
-            if name and name != replacement.name:
-                replacement = replace(replacement, name=name)
-
-            reference = self._data_interface_reference(replacement)
-            path_hint = str(reference.path_hint or "")
-            selected_references: list[AssetReference] = []
-            asset_type = self._data_interface_asset_contract(replacement)
-            descriptor = asset_type_registry.require(asset_type)
-
-            def _select_asset(value):
-                try:
-                    selected_references.append(
-                        _particle_asset_reference(asset_type, value)
-                    )
-                except (KeyError, TypeError, ValueError) as exc:
-                    Debug.log_error(
-                        f"Particle Data Interface assignment rejected: {exc}"
-                    )
-
-            _iface_ping = str(path_hint or "").strip()
-            if _iface_ping:
-                try:
-                    _iface_ping = resolved_path(_iface_ping) or _iface_ping
-                except Exception:
-                    pass
-            render_asset_reference_field(
-                ctx,
-                f"particle_interface_asset_{interface.stable_id}",
-                os.path.basename(path_hint) if path_hint else t("igui.none"),
-                descriptor.display_name,
-                accept_drag_type=descriptor.drag_types,
-                on_assign=_select_asset,
-                on_clear=lambda: selected_references.append(AssetReference()),
-                ping_path=_iface_ping or None,
-                has_value=bool(reference.guid or reference.path_hint),
-                asset_type=descriptor.type_id,
-                reference_value=_particle_reference_value(asset_type, reference),
-                semantic_id=f"particle_graph.interface.{interface.stable_id}.asset",
-            )
-            if selected_references:
-                selected = selected_references[-1]
-                replacement = replace(
-                    replacement,
-                    texture=selected,
-                )
-
-            spaces = [CoordinateSpace.EMITTER_LOCAL, CoordinateSpace.WORLD]
-            space_index = ctx.combo(
-                f"{t('particle_graph_editor.interface_space')}##particle_interface_space_{interface.stable_id}",
-                spaces.index(replacement.space),
-                [t(f"particle_graph_editor.shape_space_{item.value}") for item in spaces],
-                -1,
-            )
-            replacement = replace(
-                replacement,
-                space=spaces[max(0, min(space_index, len(spaces) - 1))],
-            )
-
-            matrix_name = "field_to_space"
-            matrix = list(getattr(replacement, matrix_name))
-            for row in range(4):
-                values = []
-                for column in range(4):
-                    offset = row * 4 + column
-                    values.append(
-                        float(
-                            ctx.drag_float(
-                                f"{t('particle_graph_editor.interface_transform')} {row + 1}.{column + 1}"
-                                f"##particle_interface_matrix_{interface.stable_id}_{offset}",
-                                matrix[offset],
-                                0.02,
-                                -1.0e7,
-                                1.0e7,
-                            )
-                        )
-                    )
-                matrix[row * 4 : row * 4 + 4] = values
-            replacement = replace(replacement, **{matrix_name: tuple(matrix)})
-
-            if isinstance(replacement, SdfVolume):
-                distance_scale = max(
-                    1.0e-6,
-                    float(
-                        ctx.drag_float(
-                            f"{t('particle_graph_editor.distance_scale')}##particle_interface_distance_{interface.stable_id}",
-                            replacement.distance_scale,
-                            0.02,
-                            1.0e-6,
-                            1.0e7,
-                        )
-                    ),
-                )
-                filters = list(SdfFilter)
-                filter_index = ctx.combo(
-                    f"{t('particle_graph_editor.filtering')}##particle_interface_filter_{interface.stable_id}",
-                    filters.index(replacement.filtering),
-                    [t(f"particle_graph_editor.filter_{item.value}") for item in filters],
-                    -1,
-                )
-                replacement = replace(
-                    replacement,
-                    distance_scale=distance_scale,
-                    filtering=filters[max(0, min(filter_index, len(filters) - 1))],
-                )
-            elif isinstance(replacement, VectorField):
-                boundaries = list(VectorFieldBoundary)
-                boundary_index = ctx.combo(
-                    f"{t('particle_graph_editor.boundary')}##particle_interface_boundary_{interface.stable_id}",
-                    boundaries.index(replacement.boundary),
-                    [t(f"particle_graph_editor.boundary_{item.value}") for item in boundaries],
-                    -1,
-                )
-                filters = list(VectorFieldFilter)
-                filter_index = ctx.combo(
-                    f"{t('particle_graph_editor.filtering')}##particle_interface_filter_{interface.stable_id}",
-                    filters.index(replacement.filtering),
-                    [t(f"particle_graph_editor.filter_{item.value}") for item in filters],
-                    -1,
-                )
-                replacement = replace(
-                    replacement,
-                    vector_scale=float(
-                        ctx.drag_float(
-                            f"{t('particle_graph_editor.vector_scale')}##particle_interface_scale_{interface.stable_id}",
-                            replacement.vector_scale,
-                            0.02,
-                            -1.0e7,
-                            1.0e7,
-                        )
-                    ),
-                    boundary=boundaries[
-                        max(0, min(boundary_index, len(boundaries) - 1))
-                    ],
-                    filtering=filters[max(0, min(filter_index, len(filters) - 1))],
-                )
-            replacement = preserve_ui_float_precision(replacement, interface)
-            if replacement != interface:
-                interfaces[index] = replacement
-                changed = True
-            if ctx.button(
-                f"{t('particle_graph_editor.remove_interface')}##particle_interface_remove_{interface.stable_id}"
-            ):
-                remove_index = index
-
-        if remove_index >= 0:
-            interface = interfaces[remove_index]
-            referenced = any(
-                node.properties.get("interface") == interface.stable_id
-                for stage in _STAGES
-                for document in (getattr(emitter, stage),)
-                if document is not None
-                for node in document.nodes
-            )
-            if referenced:
-                Debug.log_warning(
-                    f"Particle Data Interface {interface.name!r} is still used by a node"
-                )
-            else:
-                del interfaces[remove_index]
-                changed = True
-
-        if changed:
-            emitter_id = emitter.stable_id
-            old_by_id = {
-                item.stable_id: (index, item)
-                for index, item in enumerate(emitter.data_interfaces)
-            }
-            new_by_id = {
-                item.stable_id: (index, item)
-                for index, item in enumerate(interfaces)
-            }
-            mutations = []
-            for stable_id, (index, item) in old_by_id.items():
-                ref = GraphElementRef(
-                    GraphElementKind.DATA_INTERFACE,
-                    self._particle_element_id(emitter_id, stable_id),
-                )
-                if stable_id not in new_by_id:
-                    mutations.append(
-                        GraphMutation(
-                            GraphMutationKind.REMOVE,
-                            ref,
-                            before=item.to_dict(),
-                            before_index=index,
-                        )
-                    )
-                    continue
-                new_index, replacement = new_by_id[stable_id]
-                if replacement != item or new_index != index:
-                    mutations.append(
-                        GraphMutation(
-                            GraphMutationKind.UPDATE,
-                            ref,
-                            before=item.to_dict(),
-                            after=replacement.to_dict(),
-                            before_index=index,
-                            after_index=new_index,
-                        )
-                    )
-            if mutations:
-                self._execute_graph_mutations(
-                    "Edit Particle Graph Data Interfaces",
-                    tuple(mutations),
-                )
-
-        if ctx.button(t("particle_graph_editor.add_vector_field")):
-            self.add_authoring_data_interface(
-                self._selected_emitter().stable_id, VectorField.kind
-            )
     def _render_node_properties(self, ctx: InxGUIContext) -> None:
         if self._model is None or not self._selected_node_uid:
             return
@@ -4799,19 +4561,14 @@ class ParticleGraphEditorPanel(NodeGraphEditorPanel):
                         )
 
                 def _clear_texture():
-                    nonlocal reference_committed
-                    self.set_node_asset_reference(node.uid, key, None)
-                    reference_committed = True
+                    _select_texture(None)
 
                 ping_path = str(reference.path_hint or "").strip()
                 if ping_path:
-                    try:
-                        ping_path = _resolve_project_asset_path(ping_path) or ping_path
-                    except Exception:
-                        pass
+                    ping_path = _resolve_project_asset_path(ping_path)
                 render_asset_reference_field(
                     ctx,
-                    f"particle_node_{key}",
+                    f"particle_node_{node.uid}_{key}",
                     os.path.basename(reference.path_hint)
                     if reference.path_hint
                     else (reference.guid or t("igui.none")),
@@ -4857,19 +4614,14 @@ class ParticleGraphEditorPanel(NodeGraphEditorPanel):
                         )
 
                 def _clear_asset():
-                    nonlocal reference_committed
-                    self.set_node_asset_reference(node.uid, key, None)
-                    reference_committed = True
+                    _select_asset(None)
 
                 _node_ping = str(path_hint or "").strip()
                 if _node_ping:
-                    try:
-                        _node_ping = resolved_path(_node_ping) or _node_ping
-                    except Exception:
-                        pass
+                    _node_ping = _resolve_project_asset_path(_node_ping)
                 render_asset_reference_field(
                     ctx,
-                    f"particle_node_{key}",
+                    f"particle_node_{node.uid}_{key}",
                     display,
                     descriptor.display_name,
                     asset_type=descriptor.type_id,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import inspect
 import socket
 import sys
 import threading
@@ -14,7 +15,6 @@ import pytest
 from infernux.host import OperationRegistry
 from infernux_mcp import server
 from infernux_mcp import capabilities
-from infernux_mcp import scene_operations
 from infernux_mcp.adapter import (
     MAX_GATEWAY_TOOLS,
     adapter_status,
@@ -31,7 +31,7 @@ class _FakeMCP:
         name = kwargs.get("name") or (args[0] if args else "")
 
         def decorate(fn):
-            self.tools[str(name or fn.__name__)] = fn
+            self.tools[str(name or fn.__name__)] = fn.__wrapped__ if inspect.iscoroutinefunction(fn) else fn
             return fn
 
         return decorate
@@ -67,7 +67,7 @@ def test_default_mcp_surface_is_schema_gateway_not_flat_tools(tmp_path):
     (tmp_path / "ProjectSettings").mkdir()
     mcp = _FakeMCP()
     try:
-        state = register_gateways(mcp, str(tmp_path), {})
+        state = register_gateways(mcp, str(tmp_path), {"granted_capabilities": list(capabilities.DEFAULT_GRANTED_CAPABILITIES)})
 
         assert state["operation_count"] == 105
         assert state["owned_operation_count"] == 71
@@ -206,7 +206,7 @@ def test_capability_grants_are_explicit_and_diff_is_machine_readable(tmp_path):
     (tmp_path / "ProjectSettings").mkdir()
     mcp = _FakeMCP()
     try:
-        register_gateways(mcp, str(tmp_path), {})
+        register_gateways(mcp, str(tmp_path), {"granted_capabilities": list(capabilities.DEFAULT_GRANTED_CAPABILITIES)})
 
         # The default grant is an explicit whitelist, never a wildcard.
         config = capabilities.current_config()
@@ -280,7 +280,7 @@ def test_schema_search_and_execution_use_formal_operation_ids(tmp_path):
     (tmp_path / "ProjectSettings").mkdir()
     mcp = _FakeMCP()
     try:
-        register_gateways(mcp, str(tmp_path), {})
+        register_gateways(mcp, str(tmp_path), {"granted_capabilities": list(capabilities.DEFAULT_GRANTED_CAPABILITIES)})
         expected = {
             "project": "infernux.project.info",
             "checkpoint": "infernux.mcp.checkpoint.list",
@@ -346,7 +346,7 @@ def test_schema_gateway_can_create_and_transform_real_scene_object(tmp_path, sce
     queue.drain()
     mcp = _FakeMCP()
     try:
-        register_gateways(mcp, str(tmp_path), {})
+        register_gateways(mcp, str(tmp_path), {"granted_capabilities": list(capabilities.DEFAULT_GRANTED_CAPABILITIES)})
         created = mcp.tools["operation_command_execute"](
             "infernux.scene.object.create",
             {"kind": "empty", "name": "SchemaCreated"},
@@ -409,7 +409,7 @@ def test_schema_gateway_repeated_transform_is_success_without_extra_history(scen
     queue.drain()
     mcp = _FakeMCP()
     try:
-        register_gateways(mcp, str(tmp_path), {})
+        register_gateways(mcp, str(tmp_path), {"granted_capabilities": list(capabilities.DEFAULT_GRANTED_CAPABILITIES)})
         execute = mcp.tools["operation_command_execute"]
         arguments = dict(object_id=owner.id, **transform)
         first = execute("infernux.scene.object.transform.set", arguments)
@@ -445,7 +445,7 @@ def test_schema_gateway_transform_rejection_does_not_masquerade_as_no_change(sce
     queue.drain()
     mcp = _FakeMCP()
     try:
-        register_gateways(mcp, str(tmp_path), {})
+        register_gateways(mcp, str(tmp_path), {"granted_capabilities": list(capabilities.DEFAULT_GRANTED_CAPABILITIES)})
         before = owner.serialize_document()
         if not invalid:
             undo.enabled = False
@@ -493,12 +493,12 @@ def test_schema_gateway_repeated_component_field_set_is_success_without_history(
         field, value = "pipeline_class_name", "Default Deferred" if changed else "Default Forward"
     previous_undo = UndoManager._instance
     core = EditorInteractionCore()
-    undo = UndoManager(core.action_journal)
+    UndoManager(core.action_journal)
     queue = MainThreadCommandQueue.instance()
     queue.drain()
     mcp = _FakeMCP()
     try:
-        register_gateways(mcp, str(tmp_path), {})
+        register_gateways(mcp, str(tmp_path), {"granted_capabilities": list(capabilities.DEFAULT_GRANTED_CAPABILITIES)})
         arguments = {"object_id": owner.id, "component_id": component.component_id,
                      "field": field, "value": value}
         first = mcp.tools["operation_command_execute"](
@@ -554,7 +554,7 @@ def test_schema_gateway_component_field_rejection_is_not_no_change(scene, tmp_pa
     queue.drain()
     mcp = _FakeMCP()
     try:
-        register_gateways(mcp, str(tmp_path), {})
+        register_gateways(mcp, str(tmp_path), {"granted_capabilities": list(capabilities.DEFAULT_GRANTED_CAPABILITIES)})
         before = owner.serialize_document()
         revision = core.action_journal.revision
         if not invalid:
@@ -598,7 +598,7 @@ def test_schema_gateway_native_and_python_fields_share_constraints_and_undo(
     queue.drain()
     mcp = _FakeMCP()
     try:
-        register_gateways(mcp, str(tmp_path), {})
+        register_gateways(mcp, str(tmp_path), {"granted_capabilities": list(capabilities.DEFAULT_GRANTED_CAPABILITIES)})
 
         native_schema = mcp.tools["operation_query_execute"](
             "infernux.scene.component.schema",
@@ -706,7 +706,7 @@ def test_schema_gateway_can_edit_real_material_document(engine):
     queue.drain()
     mcp = _FakeMCP()
     try:
-        register_gateways(mcp, str(project_root), {})
+        register_gateways(mcp, str(project_root), {"granted_capabilities": list(capabilities.DEFAULT_GRANTED_CAPABILITIES)})
         changed = mcp.tools["operation_command_execute"](
             "infernux.material.property.set",
             {
@@ -817,7 +817,7 @@ def test_schema_gateway_material_render_state_edit_claims_only_requested_overrid
     queue.drain()
     mcp = _FakeMCP()
     try:
-        register_gateways(mcp, str(project_root), {})
+        register_gateways(mcp, str(project_root), {"granted_capabilities": list(capabilities.DEFAULT_GRANTED_CAPABILITIES)})
         if field is None:
             value = Material.load(str(path)).serialize_document()["renderState"]
         arguments = {"asset_guid": guid, "pointer": f"/renderState/{field}" if field is not None else "/renderState", "value": value}
@@ -891,7 +891,7 @@ def test_schema_gateway_repeated_material_slot_assignment_is_success(engine, sce
     queue.drain()
     mcp = _FakeMCP()
     try:
-        register_gateways(mcp, str(project_root), {})
+        register_gateways(mcp, str(project_root), {"granted_capabilities": list(capabilities.DEFAULT_GRANTED_CAPABILITIES)})
         arguments = {
             "object_id": owner.id,
             "component_id": renderer.component_id,
@@ -978,7 +978,7 @@ def test_schema_gateway_can_edit_real_data_asset_document(engine):
     try:
         source.save_to(str(path), database=database)
         guid = source.guid
-        register_gateways(mcp, str(project_root), {})
+        register_gateways(mcp, str(project_root), {"granted_capabilities": list(capabilities.DEFAULT_GRANTED_CAPABILITIES)})
 
         schema = mcp.tools["operation_query_execute"](
             "infernux.data_asset.schema", {"asset_guid": guid}
@@ -1083,7 +1083,7 @@ def test_schema_gateway_can_validate_and_edit_real_particle_graph(engine):
     queue.drain()
     mcp = _FakeMCP()
     try:
-        register_gateways(mcp, str(project_root), {})
+        register_gateways(mcp, str(project_root), {"granted_capabilities": list(capabilities.DEFAULT_GRANTED_CAPABILITIES)})
         changed = mcp.tools["operation_command_execute"](
             "infernux.particle.graph.property.set",
             {
@@ -1141,7 +1141,7 @@ def test_schema_gateway_reads_and_replaces_guid_text_asset_with_undo(engine, new
     queue.drain()
     mcp = _FakeMCP()
     try:
-        register_gateways(mcp, str(project_root), {})
+        register_gateways(mcp, str(project_root), {"granted_capabilities": list(capabilities.DEFAULT_GRANTED_CAPABILITIES)})
         read = mcp.tools["operation_query_execute"](
             "infernux.asset.text.read", {"asset_guid": guid}
         )
@@ -1214,7 +1214,7 @@ def test_schema_gateway_can_create_move_and_delete_guid_asset(engine):
     queue.drain()
     mcp = _FakeMCP()
     try:
-        register_gateways(mcp, str(project_root), {})
+        register_gateways(mcp, str(project_root), {"granted_capabilities": list(capabilities.DEFAULT_GRANTED_CAPABILITIES)})
         kinds = mcp.tools["operation_query_execute"](
             "infernux.asset.create.kinds", {}
         )
@@ -1276,6 +1276,109 @@ def test_server_start_rejects_occupied_port_without_false_loaded_state(tmp_path)
             server.start_server(str(tmp_path), port=port)
     assert server.is_running() is False
     assert adapter_status()["active"] is False
+
+
+def test_discovery_replaces_legacy_http_entries_and_preserves_other_servers(tmp_path):
+    info = server.connection_info(port=9728)
+    for client in info["clients"].values():
+        path = tmp_path / client["file"]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"user_setting": True, client["format"]: {
+            "infernux-editor": {"type": "http", "url": "http://127.0.0.1:9713/mcp"},
+            "other": {"command": "other-server"}}}), encoding="utf-8")
+    damaged = tmp_path / ".vscode/mcp.json"
+    damaged.write_text('{ // preserved user JSONC\n"servers": {}\n}', encoding="utf-8")
+    original = damaged.read_bytes()
+
+    server._write_discovery_files(str(tmp_path), host="127.0.0.1", port=9728)
+    for client in info["clients"].values():
+        path = tmp_path / client["file"]
+        if path == damaged:
+            assert path.read_bytes() == original
+            continue
+        actual = json.loads(path.read_text(encoding="utf-8"))
+        assert actual["user_setting"] is True
+        assert actual[client["format"]]["other"] == {"command": "other-server"}
+        assert actual[client["format"]]["infernux-editor"] == client["config"][client["format"]]["infernux-editor"]
+        assert "url" not in actual[client["format"]]["infernux-editor"]
+    server._remove_discovery_files(str(tmp_path), host="127.0.0.1", port=9728)
+    assert damaged.read_bytes() == original
+    for client in info["clients"].values():
+        path = tmp_path / client["file"]
+        if path != damaged:
+            actual = json.loads(path.read_text(encoding="utf-8"))
+            assert actual == {"user_setting": True, client["format"]: {"other": {"command": "other-server"}}}
+
+
+def test_http_boundary_and_same_stdio_bridge_after_editor_restart(tmp_path):
+    import asyncio
+    import httpx
+    from fastmcp import Client
+    from infernux.engine.project_context import get_project_root, using_project_root
+    from infernux.host import Operation, OperationKind, OperationSchema
+    from infernux_mcp.client import create_loopback_client
+    from infernux_mcp.credentials import credential_path, load_token
+
+    (tmp_path / "Assets").mkdir()
+    (tmp_path / "ProjectSettings").mkdir()
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    endpoint = server.endpoint_url(port=port)
+    health = server.health_url(port=port)
+    blocked, release = threading.Event(), threading.Event()
+    registry = OperationRegistry.instance()
+
+    def slow_query():
+        blocked.set()
+        assert release.wait(10), "test did not release the gateway"
+        return {"root": get_project_root()}
+
+    async def verify():
+        async with httpx.AsyncClient(trust_env=False) as http:
+            assert (await http.post(endpoint, json={})).status_code == 401
+            assert (await http.post(endpoint, headers={"Authorization": "Bearer wrong"}, json={})).status_code == 401
+            assert (await http.get(health, headers={"Host": f"attacker.example:{port}"})).status_code == 421
+            assert (await http.get(health, headers={"Origin": "https://attacker.example"})).status_code == 403
+            assert (await http.get(health)).json() == {"name": "Infernux Editor", "ready": True}
+            async with create_loopback_client(endpoint, timeout_seconds=20) as client:
+                assert (await client.call_tool("mcp_ping")).data["ok"]
+                query = asyncio.create_task(client.call_tool("operation_query_execute", {"operation": "test.transport.slow"}))
+                deadline = time.monotonic() + 5
+                while not blocked.is_set() and time.monotonic() < deadline:
+                    await asyncio.sleep(.01)
+                assert blocked.is_set()
+                assert (await http.get(health, timeout=2)).status_code == 200
+                assert not release.is_set()
+                release.set()
+                result = (await query).data
+                assert result["ok"] and result["data"]["result"]["root"] == str(tmp_path)
+            config = server.connection_info(port=port)["clients"]["generic"]["config"]
+            async with Client(config, timeout=20) as bridge:
+                assert (await bridge.call_tool("mcp_ping")).data["ok"]
+                old_token = load_token(endpoint)
+                server.stop_server()
+                assert not credential_path(endpoint).exists()
+                assert server.start_server(str(tmp_path), port=port)
+                token_changed = load_token(endpoint) != old_token
+                assert token_changed, "Editor restart must rotate its credential"
+                assert (await bridge.call_tool("mcp_ping")).data["ok"]
+
+    try:
+        with using_project_root(str(tmp_path)):
+            assert server.start_server(str(tmp_path), port=port)
+            registry.register(Operation(OperationSchema(
+                id="test.transport.slow", kind=OperationKind.QUERY,
+                summary="Block one gateway while testing health isolation.",
+                input_schema={"type": "object", "properties": {}}, output_schema={"type": "object"},
+                errors=(), side_effects=(), reversible=False, cost={"class": "constant"},
+                thread="any", capabilities=("project.read",)), slow_query, "transport-test"))
+            assert not credential_path(endpoint).is_relative_to(tmp_path)
+            asyncio.run(verify())
+    finally:
+        release.set()
+        server.stop_server()
+        registry.unregister_owner("transport-test")
 
 
 def test_server_hot_reload_keeps_one_owner_and_stops_without_error(

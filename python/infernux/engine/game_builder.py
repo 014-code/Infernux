@@ -25,12 +25,10 @@ import ctypes
 import filecmp
 import importlib.machinery
 import json
-import hashlib
 import os
 import py_compile
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 import threading
@@ -44,7 +42,6 @@ from infernux.core.asset_types import MESH_EXTENSIONS
 from infernux.debug import Debug
 from infernux.engine.build_cancellation import BuildCancelled
 from infernux.engine.i18n import t
-from infernux.engine.nuitka_builder import NuitkaBuilder
 from infernux.engine.player_package_native import (
     ASSET_CATALOG_ARCHIVE_FILENAME,
     ASSET_CATALOG_ENTRY_PATH,

@@ -158,7 +158,7 @@ def test_embedded_texture_is_in_picker_and_accepts_guid_or_path_drop(imported_mo
         if not length or buffer.value == project_root:
             pytest.skip("8.3 short paths are unavailable on this volume")
         project_root = buffer.value
-    monkeypatch.setattr(project_context, "_project_root", project_root)
+    monkeypatch.setattr(project_context._context(), "root", project_root)
     assert any(value == path for label, value in AssetReferenceCatalog().items("Texture", "Embedded Color"))
     for value in (guid, path):
         resolved_guid, resolved_path = _project_texture_guid_and_path(value)

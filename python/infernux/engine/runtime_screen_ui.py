@@ -674,7 +674,6 @@ def _collect_world_ui_elements(*scenes):
     """Share one hierarchy snapshot between UI rendering, input and picking."""
     global _world_elements_key, _world_elements
     from infernux.ui import UICanvas
-    from infernux.ui.inx_ui_screen_component import InxUIScreenComponent
 
     key = tuple(
         (scene, int(getattr(scene, "world_id", 0)),

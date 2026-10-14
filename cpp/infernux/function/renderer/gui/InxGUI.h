@@ -216,6 +216,7 @@ class InxGUI
     InxVkCoreModular *m_vkCore_ptr = nullptr;
     SDL_Window *m_window_ptr = nullptr;
     ImGuiContext *m_imguiContext_ptr = nullptr;
+    std::unique_ptr<InxGUIContext> m_guiContext;
     float m_dpiScale = 1.0f;
     VkDescriptorPool m_descriptorPool_vk = VK_NULL_HANDLE;
 

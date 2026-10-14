@@ -665,6 +665,13 @@ class TestPlayModeManager:
         assert game_object.remove_calls == 0
         assert game_object.add_calls == 0
 
+        saved_missing = manager._serialize_py_component(missing)
+        missing._preserved_fields["speed"] = 999.0
+        manager._apply_py_component_state(missing, saved_missing)
+        assert missing._serialize_fields_document()["speed"] == 7.5
+        assert missing._serialize_fields_document()["material"]["guid"] == "material-guid"
+        assert missing.component_id == original_id
+
         script.write_text(
             "from infernux.components import InxComponent\n"
             "from infernux.core.asset_ref import MaterialRef\n"

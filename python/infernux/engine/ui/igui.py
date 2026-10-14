@@ -30,7 +30,7 @@ Usage::
 
 from __future__ import annotations
 
-from typing import Any, Callable, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Optional, Sequence, Union
 
 from infernux.lib import InxGUIContext
 from infernux.engine.i18n import t
@@ -51,7 +51,7 @@ from infernux.engine.interaction.context_menus import (
     ContextMenuCommand,
 )
 from .editor_icons import EditorIcons
-from .theme import Theme, ImGuiCol, ImGuiStyleVar, ImGuiTreeNodeFlags
+from .theme import Theme, ImGuiCol, ImGuiStyleVar
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  Constants

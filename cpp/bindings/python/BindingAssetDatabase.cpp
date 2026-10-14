@@ -4,6 +4,7 @@
 #include "function/resources/AssetDatabase/AssetDatabase.h"
 #include "function/resources/AssetDependencyGraph.h"
 #include "function/resources/InxResource/InxResourceMeta.h"
+#include <function/scene/PythonNativeLifetime.h>
 
 #include <pybind11/functional.h>
 #include <pybind11/pybind11.h>
@@ -79,7 +80,7 @@ void RegisterAssetDatabaseBindings(py::module_ &m)
         .def("clear", &AssetDependencyGraph::Clear, "Clear the entire graph");
 
     // AssetDatabase
-    py::class_<AssetDatabase>(m, "AssetDatabase")
+    NativeClass<AssetDatabase>(m, "AssetDatabase")
         .def(py::init<>())
         .def("initialize", &AssetDatabase::Initialize, py::arg("project_root"),
              "Initialize asset database with project root")

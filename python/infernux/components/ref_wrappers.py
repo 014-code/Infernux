@@ -20,11 +20,10 @@ import logging
 import os
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any, Optional
+from typing import Any
 
 # Re-export MaterialRef from core so existing callers still work.
 from infernux.core.asset_ref import MaterialRef  # noqa: F401
-from infernux.debug import Debug
 
 _log = logging.getLogger("infernux.ref")
 _retiring_worlds = ContextVar('infernux_retiring_reference_worlds', default=frozenset())

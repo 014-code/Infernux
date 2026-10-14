@@ -33,7 +33,7 @@ def test_cached_ui_texture_refreshes_replaced_native_descriptor(monkeypatch, tmp
     texture = tmp_path / "Assets" / "UI" / "button.png"
     texture.parent.mkdir(parents=True)
     texture.write_bytes(b"png")
-    monkeypatch.setattr(project_context, "_project_root", str(tmp_path))
+    monkeypatch.setattr(project_context._context(), "root", str(tmp_path))
     monkeypatch.setattr(texture_cache_module, "texture_stamp", lambda *_args: 17)
     monkeypatch.setattr(
         AssetManager,

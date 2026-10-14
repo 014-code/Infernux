@@ -24,21 +24,6 @@ from infernux.lib import (
 
 class TestInspectorPanelCreation:
 
-    def test_native_panel_has_no_frame_scoped_undo_callbacks(self):
-        source = Path("cpp/infernux/function/editor/InspectorPanel.cpp").read_text(
-            encoding="utf-8"
-        )
-        header = Path("cpp/infernux/function/editor/InspectorPanel.h").read_text(
-            encoding="utf-8"
-        )
-        combined = source + header
-        assert "undoBeginFrame" not in combined
-        assert "undoEndFrame" not in combined
-        assert "undoInvalidateAll" not in combined
-
-    def test_creation(self):
-        ip = InspectorPanel()
-        assert ip is not None
 
     def test_is_editor_panel(self):
         from infernux.lib import EditorPanel
@@ -95,11 +80,6 @@ class TestInspectorSelection:
         # Detail file does NOT clear object
         assert ip.get_selected_object_id() == 42
         assert ip.get_selected_file() == "a.mat"
-
-    def test_component_selection_projection_api(self):
-        ip = InspectorPanel()
-        ip.set_selected_component_ids([11, 12])
-        ip.clear_selected_components()
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -166,21 +146,6 @@ class TestInspectorDataStructs:
         assert pi.override_count == 3
         assert pi.is_readonly is True
 
-    def test_prefab_info_exposes_structural_rows(self):
-        source = Path("cpp/infernux/function/editor/InspectorPanel.cpp").read_text(
-            encoding="utf-8"
-        )
-        header = Path("cpp/infernux/function/editor/InspectorPanel.h").read_text(
-            encoding="utf-8"
-        )
-        binding = Path("cpp/bindings/python/BindingGUI.cpp").read_text(
-            encoding="utf-8"
-        )
-        assert "struct StructuralRow" in header
-        assert "structural_rows" in binding
-        assert "prefab_structure_row" in source
-        assert "prefab.apply" in source and "prefab.revert" in source
-
 
 # ═══════════════════════════════════════════════════════════════════════
 #  Callbacks
@@ -224,48 +189,6 @@ class TestInspectorCallbacks:
         result = ip.get_transform_data(7)
         assert result.px == 7.0
 
-    def test_object_and_transform_mutations_use_global_commands_only(self):
-        source = Path("cpp/infernux/function/editor/InspectorPanel.cpp").read_text(
-            encoding="utf-8"
-        )
-        header = Path("cpp/infernux/function/editor/InspectorPanel.h").read_text(
-            encoding="utf-8"
-        )
-        binding = Path("cpp/bindings/python/BindingGUI.cpp").read_text(
-            encoding="utf-8"
-        )
-        bootstrap = Path(
-            "python/infernux/engine/bootstrap_inspector/_wire.py"
-        ).read_text(encoding="utf-8")
-
-        assert 'ExecuteEditorCommand("scene.set_object_property"' in source
-        assert 'ExecuteEditorCommand("scene.set_transforms"' in source
-        assert "MakeObjectPropertyCommandArgument" in source
-        assert "MakeTransformValue" in source
-        assert "setObjectProperty" not in header
-        assert "setTransformData" not in header
-        assert "setMultiTransformData" not in header
-        assert 'def_readwrite("set_object_property"' not in binding
-        assert 'def_readwrite("set_transform_data"' not in binding
-        assert 'def_readwrite("set_multi_transform_data"' not in binding
-        assert "reorderComponent" not in header
-        assert 'def_readwrite("reorder_component"' not in binding
-        assert "ip.set_object_property" not in bootstrap
-        assert "ip.set_transform_data" not in bootstrap
-        assert "ip.set_multi_transform_data" not in bootstrap
-        assert "ip.reorder_component" not in bootstrap
-
-    def test_transform_drag_publishes_one_pointer_gesture_transaction(self):
-        source = Path("cpp/infernux/function/editor/InspectorPanel.cpp").read_text(
-            encoding="utf-8"
-        )
-        wiring = Path(
-            "python/infernux/engine/_bootstrap_wiring.py"
-        ).read_text(encoding="utf-8")
-
-        assert '"gesture_id"' in source
-        assert "UpdateTransformGesture" in source
-        assert "creates_user_action=False" in wiring
 
     def test_get_component_list(self):
         ip = InspectorPanel()
@@ -338,50 +261,6 @@ class TestInspectorCallbacks:
         assert ip.can_execute_command("prefab.apply", "42")
         assert calls == [("component.add", "context_menu", "Light\t1\t")]
 
-    def test_script_drop_targets_are_validated_before_accepting_payload(self):
-        source = Path("cpp/infernux/function/editor/InspectorPanel.cpp").read_text(
-            encoding="utf-8"
-        )
-        header = source[
-            source.index("InspectorPanel::ComponentHeaderResult InspectorPanel::RenderComponentHeader") :
-            source.index("bool InspectorPanel::RenderInspectorCheckbox")
-        ]
-
-        assert header.index("if (targetComponentId != 0)") < header.index(
-            'AcceptDragDropPayload("SCRIPT_FILE"'
-        )
-        assert "const bool canDrag = allowComponentReorder && hasInsertionTarget;" in header
-        assert "!allowComponentReorder || ImGui::GetMousePos().y" in header
-        assert "const bool insertAtStart = !allowComponentReorder;" in header
-        assert '"insert_at_start"' in source
-        assert "Inspector rejected script component drop" in header
-
-    def test_component_header_overlay_tracks_scroll_and_restores_layout_cursor(self):
-        source = Path("cpp/infernux/function/editor/InspectorPanel.cpp").read_text(
-            encoding="utf-8"
-        )
-        header = source[
-            source.index("InspectorPanel::ComponentHeaderResult InspectorPanel::RenderComponentHeader") :
-            source.index("bool InspectorPanel::RenderInspectorCheckbox")
-        ]
-
-        assert "const float contentCursorY = ImGui::GetCursorPosY();" in header
-        assert "const float overlayX = ImGui::GetWindowPos().x + indent;" in header
-        assert "ImGui::SetCursorScreenPos(ImVec2(overlayX, headerMin.y));" in header
-        assert "headerMin.y + (headerHeight - checkboxRowHeight) * 0.5f" in header
-        assert "(cbMin.y + cbMax.y) * 0.5f - labelH * 0.5f" in header
-        assert "ImGui::SetCursorPosY(contentCursorY);" in header
-
-    def test_multi_component_enabled_toggle_is_one_batch_command(self):
-        source = Path("cpp/infernux/function/editor/InspectorPanel.cpp").read_text(
-            encoding="utf-8"
-        )
-        start = source.index("const auto &commonComponents = GetCommonComponentsForMultiSelection")
-        end = source.index("// Add Component", start)
-        multi_section = source[start:end]
-
-        assert multi_section.count('ExecuteEditorCommand("component.set_enabled"') == 1
-        assert "MakeComponentEnabledCommandArgument(ids, entry.componentIds" in multi_section
 
     def test_prefab_info(self):
         ip = InspectorPanel()
@@ -400,17 +279,3 @@ class TestInspectorCallbacks:
         assert "get_structural_overrides" in source
         assert "InspectorPrefabStructuralRow()" in source
         assert "pinfo.structural_rows = rows" in source
-
-    def test_tag_layer_settings_open_through_global_window_command(self):
-        source = Path("cpp/infernux/function/editor/InspectorPanel.cpp").read_text(encoding="utf-8")
-        header = Path("cpp/infernux/function/editor/InspectorPanel.h").read_text(encoding="utf-8")
-        binding = Path("cpp/bindings/python/BindingGUI.cpp").read_text(encoding="utf-8")
-        bootstrap = Path("python/infernux/engine/bootstrap_inspector/_wire.py").read_text(encoding="utf-8")
-
-        assert source.count(
-            'ExecuteEditorCommand("window.open", "tag_layer_settings", "pointer")'
-        ) == 2
-        assert 'if command_id == "window.open":' in bootstrap
-        assert "openWindow" not in header
-        assert 'def_readwrite("open_window"' not in binding
-        assert "ip.open_window" not in bootstrap

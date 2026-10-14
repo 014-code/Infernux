@@ -83,21 +83,6 @@ struct PropertyBatchPlan
     std::vector<PropertyDesc> descriptors;
 };
 
-struct MaterialTopInteraction
-{
-    uint32_t vertexFlags = 0;
-    bool vertexPickerOpen = false;
-    std::string vertexPayload;
-    bool vertexListPopupOpen = false;
-    uint32_t fragmentFlags = 0;
-    bool fragmentPickerOpen = false;
-    std::string fragmentPayload;
-    bool fragmentListPopupOpen = false;
-    std::vector<PropertyChange> surfaceChanges;
-    int activeSurfaceIndex = -1;
-    int deactivatedSurfaceIndex = -1;
-};
-
 class InxGUIContext
 {
   public:
@@ -470,14 +455,6 @@ class InxGUIContext
                                                                           const std::vector<std::string> &slotLabels,
                                                                           const std::vector<std::string> &slotDisplays,
                                                                           uint64_t pickerTextureId, float labelWidth);
-    MaterialTopInteraction RenderMaterialTop(const std::string &shaderSectionLabel, const std::string &vertexLabel,
-                                             const std::string &vertexDisplay, const std::string &fragmentLabel,
-                                             const std::string &fragmentDisplay, float shaderLabelWidth,
-                                             const std::string &surfaceSectionLabel,
-                                             const PropertyBatchPlan *surfacePlan, float surfaceLabelWidth,
-                                             uint64_t pickerTextureId, uint64_t previewTextureId,
-                                             const std::string &previewUnavailableLabel, bool defaultOpen,
-                                             bool readOnly);
 
   private:
     struct SearchableComboState

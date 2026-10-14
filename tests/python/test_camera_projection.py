@@ -91,7 +91,6 @@ def test_default_ray_cache_follows_fov_and_explicit_viewport_without_changing_ca
     np.testing.assert_allclose(tuple(origin), [-5 * 4 / 3, 5, camera.near_clip], atol=1e-5)
 
 
-@pytest.mark.skipif(not hasattr(lib, "PhysicalGateFit"), reason="native PhysicalGateFit binding not built")
 @pytest.mark.parametrize("gate, expected_sensor_axis", [
     ("Horizontal", "width"),
     ("Vertical", "height"),
@@ -118,7 +117,6 @@ def test_physical_camera_uses_vertical_fov_and_selected_gate(camera, gate, expec
     np.testing.assert_allclose(abs(matrix[1, 1]), 1.0 / np.tan(fov_y / 2.0), rtol=2e-5)
 
 
-@pytest.mark.skipif(not hasattr(lib, "PhysicalGateFit"), reason="native PhysicalGateFit binding not built")
 def test_physical_camera_lens_shift_changes_frustum_center(camera):
     camera.projection_mode = lib.CameraProjection.Perspective
     camera.use_physical_properties = True
@@ -133,7 +131,6 @@ def test_physical_camera_lens_shift_changes_frustum_center(camera):
     assert shifted[1, 2] != pytest.approx(centered[1, 2])
 
 
-@pytest.mark.skipif(not hasattr(lib, "PhysicalGateFit"), reason="native PhysicalGateFit binding not built")
 def test_physical_gate_fit_ignores_the_non_fitted_sensor_axis(camera):
     camera.projection_mode = lib.CameraProjection.Perspective
     camera.use_physical_properties = True

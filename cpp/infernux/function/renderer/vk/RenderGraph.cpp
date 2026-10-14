@@ -1878,10 +1878,10 @@ void RenderGraph::RecordPasses(VkCommandBuffer commandBuffer, const std::vector<
 #endif
             try {
                 pass.executeCallback(context);
-            } catch (const std::exception &e) {
-                INXLOG_ERROR("RenderGraph::Execute - Pass '", pass.name, "' callback threw exception: ", e.what());
             } catch (...) {
-                INXLOG_ERROR("RenderGraph::Execute - Pass '", pass.name, "' callback threw unknown exception");
+                if (isGraphicsPass)
+                    m_cmdEndRendering(commandBuffer);
+                throw;
             }
 #if INFERNUX_FRAME_PROFILE
             stageNow = Clock::now();

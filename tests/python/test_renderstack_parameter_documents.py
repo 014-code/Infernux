@@ -1,19 +1,16 @@
-"""Pipeline author parameters survive unavailable providers and typed reloads."""
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
-
 import pytest
-
 from infernux.components.fields import FieldType, get_raw_field_value, list_field, serialized_field
 from infernux.components.serializable_object import SerializableObject
 from infernux.components.value_codec import VALUE_CODECS
 from infernux.core.asset_ref import TextureRef
 from infernux.math import vector2 as Vector2, vector3 as Vector3, vector4 as Vector4
 from infernux.renderstack import RenderPipeline, RenderStack
-from infernux.renderstack.default_forward_pipeline import MSAASamples
+from infernux.renderstack.forward_parameters import MSAASamples
 
 
 class ParameterSettings(SerializableObject):

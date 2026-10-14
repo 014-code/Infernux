@@ -19,14 +19,13 @@ Hierarchy of abstractions
 from __future__ import annotations
 
 import math
-import os
 from dataclasses import fields as dataclass_fields, is_dataclass, replace
 from functools import lru_cache
 from typing import Any
 
 from infernux.lib import InxGUIContext
 from .dpi import editor_dpi_scale
-from .theme import Theme, ImGuiCol, ImGuiStyleVar, ImGuiTreeNodeFlags
+from .theme import Theme, ImGuiCol, ImGuiStyleVar
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -34,13 +33,10 @@ from .theme import Theme, ImGuiCol, ImGuiStyleVar, ImGuiTreeNodeFlags
 # ═══════════════════════════════════════════════════════════════════════════
 
 DRAG_SPEED_DEFAULT: float = 0.1
-"""Default drag-float speed — matches Unity feel."""
 
 DRAG_SPEED_FINE: float = 0.01
-"""Fine drag speed for scale / small-precision fields."""
 
 DRAG_SPEED_INT: float = 1.0
-"""Drag speed for integer fields."""
 
 
 # ═══════════════════════════════════════════════════════════════════════════

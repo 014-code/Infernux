@@ -1,36 +1,14 @@
 """ComponentLifecycleMixin — extracted from InxComponent."""
 from __future__ import annotations
 
-"""
-InxComponent - Base class for all Python-defined components.
 
-Provides Unity-style lifecycle methods and property injection.
-Users inherit from this class to create custom game logic.
-
-Example:
-    from infernux.components import InxComponent, serialized_field
-    
-    class PlayerController(InxComponent):
-        speed: float = serialized_field(default=5.0)
-        
-        def start(self):
-            print("Player started!")
-        
-        def update(self, delta_time: float):
-            pos = self.transform.position
-            self.transform.position = Vector3(pos.x + self.speed * delta_time, pos.y, pos.z)
-"""
-
-import copy
-import threading
 import weakref
 from collections import defaultdict
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Dict, List, Mapping, Optional, TYPE_CHECKING, Type
+from typing import Any, Mapping, Optional
 
-from infernux.lib import GameObject
 
 
 _RUNTIME_PHASE_NAMES = (
@@ -1228,12 +1206,24 @@ class ComponentLifecycleMixin:
             self._invalidate_native_binding()
             self.__dict__.pop("_play_domain_retirement_owner", None)
 
+    def _set_component_data_slot(self, slot, class_id):
+        """Bind slot ownership; transactions retain responsibility for replaced slots."""
+        if self._cds_finalizer is not None:
+            self._cds_finalizer.detach()
+        self._cds_slot = slot
+        self._cds_class_id = class_id
+        self._cds_finalizer = None
+        if slot is not None and class_id is not None:
+            from ._cds_bridge import release_slot
+
+            self._cds_finalizer = weakref.finalize(self, release_slot, type(self), slot, class_id)
+            self._cds_finalizer.atexit = False
+
     def _release_component_data_slot(self):
         """Relinquish the numeric-field slot exactly once."""
         cds_slot = getattr(self, '_cds_slot', None)
         cds_class_id = getattr(self, '_cds_class_id', None)
-        self._cds_slot = None
-        self._cds_class_id = None
+        self._set_component_data_slot(None, None)
         if cds_slot is None or cds_class_id is None:
             return
         from ._cds_bridge import release_slot as _cds_free

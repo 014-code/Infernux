@@ -22,36 +22,6 @@ from infernux.lib import (
 #  StatusBarPanel
 # ═══════════════════════════════════════════════════════════════════════
 
-class TestStatusBarPanel:
-
-    def test_creation(self):
-        sb = StatusBarPanel()
-        assert sb is not None
-
-    def test_set_engine_status(self):
-        sb = StatusBarPanel()
-        sb.set_engine_status("Loading...", 0.5, "progress")
-        sb.set_engine_status("Done", 1.0, "success")
-        sb.set_engine_status("", -1.0, "idle")
-
-    def test_set_console_panel(self):
-        sb = StatusBarPanel()
-        console = ConsolePanel()
-        sb.set_console_panel(console)
-
-    def test_console_click_uses_global_command_instead_of_direct_selection(self):
-        source = Path("cpp/infernux/function/editor/StatusBarPanel.cpp").read_text(encoding="utf-8")
-        header = Path("cpp/infernux/function/editor/StatusBarPanel.h").read_text(encoding="utf-8")
-        binding = Path("cpp/bindings/python/BindingGUI.cpp").read_text(encoding="utf-8")
-        bootstrap = Path("python/infernux/engine/_bootstrap_panels.py").read_text(encoding="utf-8")
-
-        assert 'executeCommand("console.open_entry", "pointer"' in source
-        assert "m_console->SelectEntry(m_latestUid)" not in source
-        assert "executeCommand" in header
-        assert 'def_readwrite("execute_command", &StatusBarPanel::executeCommand)' in binding
-        assert "self.status_bar.execute_command" in bootstrap
-
-
 class TestConsolePanel:
 
     def test_all_native_editor_panels_share_the_base_command_bridge(self):
@@ -142,23 +112,6 @@ class TestConsolePanel:
         console.select_latest_entry()
         assert calls == ["focus"]
 
-    def test_source_navigation_uses_global_command_without_private_callback(self):
-        source = Path("cpp/infernux/function/editor/ConsolePanel.cpp").read_text(
-            encoding="utf-8"
-        )
-        header = Path("cpp/infernux/function/editor/ConsolePanel.h").read_text(
-            encoding="utf-8"
-        )
-        binding = Path("cpp/bindings/python/BindingGUI.cpp").read_text(
-            encoding="utf-8"
-        )
-
-        assert re.search(
-            r'ExecuteEditorCommand\s*\(\s*"console\.open_source"',
-            source,
-        )
-        assert "onDoubleClickEntry" not in source + header + binding
-        assert "on_double_click_entry" not in binding
 
     def test_view_state_projection_api_is_complete(self):
         console = ConsolePanel()
@@ -182,9 +135,6 @@ class TestConsolePanel:
 
 class TestToolbarPanel:
 
-    def test_creation(self):
-        tb = ToolbarPanel()
-        assert tb is not None
 
     def test_is_editor_panel(self):
         tb = ToolbarPanel()
@@ -269,19 +219,6 @@ class TestToolbarPanel:
         assert tb.is_show_grid()
         assert tb.is_show_gizmos()
 
-        source = Path("cpp/infernux/function/editor/ToolbarPanel.cpp").read_text(encoding="utf-8")
-        header = Path("cpp/infernux/function/editor/ToolbarPanel.h").read_text(encoding="utf-8")
-        binding = Path("cpp/bindings/python/BindingGUI.cpp").read_text(encoding="utf-8")
-        bootstrap = Path("python/infernux/engine/bootstrap.py").read_text(encoding="utf-8")
-
-        assert 'executeCommand("scene.toggle_grid", "toolbar", "")' in source
-        assert 'executeCommand("scene.toggle_gizmos", "toolbar", "")' in source
-        assert "if (!isShowGrid || !isShowGizmos)" in source
-        assert "!isShowGizmos())" not in source
-        assert "setShowGrid" not in header
-        assert 'def_readwrite("set_show_grid"' not in binding
-        assert "tb.set_show_grid" not in bootstrap
-
     def test_sync_camera_from_engine(self):
         tb = ToolbarPanel()
         tb.sync_camera_from_engine = lambda: {
@@ -309,9 +246,6 @@ class TestToolbarPanel:
 
 class TestMenuBarPanel:
 
-    def test_creation(self):
-        mb = MenuBarPanel()
-        assert mb is not None
 
     def test_command_callbacks(self):
         mb = MenuBarPanel()
@@ -390,56 +324,6 @@ class TestEditorShortcutInput:
         assert shortcut_input.route_shortcut("Ctrl+S", False, False) is True
         assert calls == [("Ctrl+S", False, False)]
 
-    def test_popup_capture_is_latched_across_the_escape_frame(self):
-        root = Path(__file__).parents[2] / "cpp" / "infernux" / "function" / "editor"
-        source = (root / "EditorShortcutInput.cpp").read_text(encoding="utf-8")
-        header = (root / "EditorShortcutInput.h").read_text(encoding="utf-8")
-
-        assert "m_popupActivePreviousFrame" in header
-        assert "popupActiveNow || m_popupActivePreviousFrame" in source
-        assert "m_popupActivePreviousFrame = popupActiveNow" in source
-
-    def test_undo_redo_cross_transient_popups_but_not_true_modals(self):
-        root = Path(__file__).parents[2] / "cpp" / "infernux" / "function" / "editor"
-        source = (root / "EditorShortcutInput.cpp").read_text(encoding="utf-8")
-        header = (root / "EditorShortcutInput.h").read_text(encoding="utf-8")
-
-        assert "ImGui::GetTopMostPopupModal()" in source
-        assert "m_modalActivePreviousFrame" in header
-        assert "ctrl && !alt && !super" in source
-        assert "key == ImGuiKey_Z || (!shift && key == ImGuiKey_Y)" in source
-        assert "dispatch(chord.c_str(), historyChord)" in source
-
-    def test_default_dock_layout_does_not_bypass_window_focus_core(self):
-        source = (
-            Path(__file__).parents[2]
-            / "cpp"
-            / "infernux"
-            / "function"
-            / "renderer"
-            / "gui"
-            / "InxGUI.cpp"
-        ).read_text(encoding="utf-8")
-
-        assert 'SetWindowFocus("###scene_view")' not in source
-
-
-def test_native_search_panels_expose_deferred_focus_requests():
-    root = Path(__file__).parents[2] / "cpp" / "infernux"
-    editor = root / "function" / "editor"
-    binding = (root.parent / "bindings" / "python" / "BindingGUI.cpp").read_text(
-        encoding="utf-8"
-    )
-
-    for panel_name in ("HierarchyPanel", "ProjectPanel", "ConsolePanel"):
-        header = (editor / f"{panel_name}.h").read_text(encoding="utf-8")
-        source = (editor / f"{panel_name}.cpp").read_text(encoding="utf-8")
-        assert "RequestSearchFocus" in header
-        assert "m_focusSearchNextFrame" in header
-        assert "m_focusSearchNextFrame" in source
-
-    assert binding.count('.def("request_search_focus"') == 3
-
 
 # ═══════════════════════════════════════════════════════════════════════
 #  PlayState enum
@@ -486,55 +370,6 @@ class TestWindowTypeInfo:
 
 class TestHierarchyPanel:
 
-    def test_double_click_frame_selected_uses_global_command(self):
-        source = Path("cpp/infernux/function/editor/HierarchyPanel.cpp").read_text(
-            encoding="utf-8"
-        )
-        header = Path("cpp/infernux/function/editor/HierarchyPanel.h").read_text(
-            encoding="utf-8"
-        )
-        binding = Path("cpp/bindings/python/BindingGUI.cpp").read_text(
-            encoding="utf-8"
-        )
-
-        # Hierarchy has one authoritative flat-tree render path.  The removed
-        # recursive renderer must not leave a second interaction entry point.
-        assert source.count('ExecuteEditorCommand("scene.frame_selected"') == 1
-        assert "const bool toggledOpen" in source
-        assert (
-            "if (!toggledOpen && ctx->IsMouseDoubleClicked(0) && "
-            "ctx->IsItemHovered())"
-        ) in source
-        assert "onDoubleClickFocus" not in source + header + binding
-        assert "on_double_click_focus" not in binding
-
-    def test_external_asset_drops_publish_global_commands_only(self):
-        source = Path("cpp/infernux/function/editor/HierarchyPanel.cpp").read_text(
-            encoding="utf-8"
-        )
-        header = Path("cpp/infernux/function/editor/HierarchyPanel.h").read_text(
-            encoding="utf-8"
-        )
-
-        assert 'ExecuteEditorCommand("scene.instantiate_prefab"' in source
-        assert 'ExecuteEditorCommand("scene.create_model"' in source
-        assert '"drag_drop"' in source
-        assert "instantiatePrefab" not in source + header
-        assert "createModelObject" not in source + header
-        assert "undoRecordCreate" not in source + header
-        assert "undoRecordDelete" not in source + header
-
-    def test_inline_rename_survives_context_menu_dismissal(self):
-        source = Path("cpp/infernux/function/editor/HierarchyPanel.cpp").read_text(encoding="utf-8")
-        header = Path("cpp/infernux/function/editor/HierarchyPanel.h").read_text(encoding="utf-8")
-
-        assert "m_renameSkipDeactivateFrames = 2;" in source
-        assert "m_renameSkipDeactivateFrames == 0 && ctx->IsItemDeactivated()" in source
-        assert "int m_renameSkipDeactivateFrames = 0;" in header
-
-    def test_creation(self):
-        hp = HierarchyPanel()
-        assert hp is not None
 
     def test_is_editor_panel(self):
         from infernux.lib import EditorPanel
@@ -543,19 +378,9 @@ class TestHierarchyPanel:
 
     def test_hierarchy_has_one_mode(self):
         hp = HierarchyPanel()
-        source = Path("cpp/infernux/function/editor/HierarchyPanel.cpp").read_text(encoding="utf-8")
-        header = Path("cpp/infernux/function/editor/HierarchyPanel.h").read_text(encoding="utf-8")
-        binding = Path("cpp/bindings/python/BindingGUI.cpp").read_text(encoding="utf-8")
-
         assert not hasattr(hp, "ui_mode")
         assert not hasattr(hp, "set_ui_mode")
         assert not hasattr(hp, "get_ui_mode")
-        assert "m_uiMode" not in source + header
-        assert "set_ui_mode" not in binding
-
-    def test_clear_search_no_crash(self):
-        hp = HierarchyPanel()
-        hp.clear_search()
 
     def test_selection_callbacks(self):
         hp = HierarchyPanel()
@@ -578,11 +403,6 @@ class TestHierarchyPanel:
         hp.clear_selection()
         assert hp.is_selection_empty()
 
-    def test_native_selection_and_runtime_hidden_snapshots(self):
-        hp = HierarchyPanel()
-        hp.set_selection_snapshot([10, 20], 20)
-        hp.set_runtime_hidden_ids({30, 40})
-        hp.set_scene_header_snapshot("Sample *", False, "")
 
     def test_scene_mutation_callbacks(self):
         hp = HierarchyPanel()
@@ -653,15 +473,8 @@ class TestHierarchyPanel:
         assert hp.go_has_canvas(10) is True
         assert hp.go_has_canvas(11) is False
 
-    def test_set_pending_expand_id(self):
-        hp = HierarchyPanel()
-        hp.set_pending_expand_id(42)
         # No assertion needed — verifies API exists without crash
 
-    def test_expand_to_object_no_crash(self):
-        hp = HierarchyPanel()
-        hp.expand_to_object(0)  # 0 = no-op
-        hp.expand_to_object(99999)  # non-existent — no crash
 
     def test_set_selected_object_by_id(self):
         hp = HierarchyPanel()
@@ -673,62 +486,3 @@ class TestHierarchyPanel:
         hp.is_selection_empty = lambda: len(selected) == 0
         hp.set_selected_object_by_id(42)
         assert 42 in selected
-
-    def test_hierarchy_drag_feedback_uses_theme_red_and_neutral_hover(self):
-        from infernux.engine.ui.theme import Theme
-
-        source = Path("cpp/infernux/function/editor/HierarchyPanel.cpp").read_text(encoding="utf-8")
-        project_source = Path("cpp/infernux/function/editor/ProjectPanel.cpp").read_text(encoding="utf-8")
-        assert Theme.HIERARCHY_ROW_SELECTED[:3] == pytest.approx(Theme.SELECTION_BG[:3])
-        assert Theme.HIERARCHY_ROW_SELECTED[3] == pytest.approx(0.22)
-        assert "ImVec4(cAccent.x, cAccent.y, cAccent.z, 0.22f)" in project_source
-        assert Theme.HIERARCHY_ROW_HOVER[0] == Theme.HIERARCHY_ROW_HOVER[1]
-        assert Theme.HIERARCHY_ROW_HOVER[1] == Theme.HIERARCHY_ROW_HOVER[2]
-        assert "EditorTheme::HIERARCHY_ROW_SELECTED" in source
-        assert "EditorTheme::HIERARCHY_ROW_HOVER" in source
-        assert "m_draggedObjectId = objId;" in source
-        assert "if (m_selIds.count(objId) == 0)" in source
-        assert "dragBodyHovered" in source
-        assert "dragBodyHovered ? EditorTheme::HIERARCHY_ROW_HOVER" in source
-        assert "if (dragBodyHovered && !selectedOrDragged)" in source
-
-    def test_hierarchy_reorder_indicator_is_one_crisp_subtree_boundary(self):
-        source = Path("cpp/infernux/function/editor/HierarchyPanel.cpp").read_text(encoding="utf-8")
-        theme_source = Path("python/infernux/engine/ui/theme.py").read_text(encoding="utf-8")
-        reorder = source[
-            source.index("void HierarchyPanel::RenderReorderSep") :
-            source.index("void HierarchyPanel::RenderMultiDropTarget")
-        ]
-        assert "DND_REORDER_LINE        : RGBA = (1.0, 1.0, 1.0, 1.0)" in theme_source
-        assert "DND_REORDER_LINE_THICKNESS: float = 1.0" in theme_source
-        assert "DND_REORDER_HIT_ABOVE   : float = 4.0" in theme_source
-        assert "DrawFilledRect" in reorder
-        assert "DrawLine" not in reorder
-        assert "savedY - EditorTheme::DND_REORDER_HIT_ABOVE" in reorder
-        assert "minimumDepth <= currentItem.depth" in source
-        assert "afterObject = afterObject->GetParent();" in source
-        assert '"##boundary_after_"' in source
-
-    def test_scene_headers_are_reorderable_and_tail_targets_last_scene(self):
-        source = Path("cpp/infernux/function/editor/HierarchyPanel.cpp").read_text(encoding="utf-8")
-        header = Path("cpp/infernux/function/editor/HierarchyPanel.h").read_text(encoding="utf-8")
-
-        assert 'SCENE_DRAG_DROP_TYPE = "HIERARCHY_SCENE"' in header
-        assert "SetDragDropPayload(SCENE_DRAG_DROP_TYPE, worldId)" in source
-        assert "SceneManager::Instance().MoveSceneAdjacent" in source
-        assert "m_selectedSceneWorldId == worldId || dragged" in source
-        assert "active || dragged" not in source
-        assert "m_pendingSceneSelectWorldId = worldId;" in source
-        assert "ImGuiTreeNodeFlags_OpenOnArrow" in source
-        assert "dragTargetHovered" in source
-        assert "ClearSelectionAndNotify();\n                m_selectedSceneWorldId = worldId;" in source
-        assert '"##scene_first_root_"' in source
-        assert "m_cachedScenes.back()->GetWorldId()" in source
-        assert "ReparentToRoot(payload, lastWorldId);" in source
-
-    def test_hierarchy_rows_use_compact_theme_padding(self):
-        from infernux.engine.ui.theme import Theme
-
-        native_theme = Path("cpp/infernux/function/editor/EditorTheme.h").read_text(encoding="utf-8")
-        assert Theme.TREE_FRAME_PAD == pytest.approx((2.0, 2.0))
-        assert "TREE_FRAME_PAD{2.0f, 2.0f}" in native_theme

@@ -11,7 +11,7 @@ wrapper — the two are parallel, same-level renderer types.
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Optional
 
 from infernux.components.builtin_component import BuiltinComponent, CppProperty
 from infernux.components.fields import FieldType

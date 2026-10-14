@@ -32,7 +32,6 @@
 #include "rhi/RhiRenderTexture.h"
 #include "vk/RenderGraph.h"
 #include "vk/RhiVulkanTypes.h"
-#include "vk/TransientResourcePool.h"
 #include "vk/VkHandle.h"
 #include "vk/VmaContext.h"
 #include <SDL3/SDL.h>
@@ -415,12 +414,13 @@ CompiledParticleProgramBundle CompileParticleProgramBundle()
 uint32_t ResolveMaxFramesInFlight() noexcept
 {
     auto &config = EngineConfig::Get();
-    uint32_t frames = std::clamp(config.maxFramesInFlight, 1u, 4u);
+    uint32_t frames = std::clamp(config.maxFramesInFlight, 1u, EngineConfig::kFrameSlotCapacity);
     if (const char *raw = std::getenv("INFERNUX_MAX_FRAMES_IN_FLIGHT")) {
         const char *end = raw + std::strlen(raw);
         uint32_t requested = 0;
         const auto parsed = std::from_chars(raw, end, requested);
-        if (parsed.ec == std::errc{} && parsed.ptr == end && requested >= 1u && requested <= 4u)
+        if (parsed.ec == std::errc{} && parsed.ptr == end && requested >= 1u &&
+            requested <= EngineConfig::kFrameSlotCapacity)
             frames = requested;
     }
     config.maxFramesInFlight = frames;
@@ -609,7 +609,7 @@ InxRenderer::~InxRenderer()
     //    vkDeviceWaitIdle calls inside subsystem destructors are redundant.
     const bool hasVulkanDevice = m_vkCore && m_vkCore->GetDeviceContext().IsValid();
     if (hasVulkanDevice) {
-        m_vkCore->GetDeviceContext().WaitIdle();
+        m_vkCore->GetDeviceContext().WaitIdleForShutdown();
         m_vkCore->SetShuttingDown(true);
         m_vkCore->ReleaseActiveDrawLists();
     }
@@ -629,8 +629,6 @@ InxRenderer::~InxRenderer()
 
     m_gameRenderTarget.reset();
     m_sceneRenderTarget.reset();
-
-    m_transientResourcePool.reset();
 
     m_outlineRenderer.reset();
     m_editorGizmos.reset();
@@ -1054,10 +1052,6 @@ void InxRenderer::PreparePipeline()
         m_vkCore->SetGuiRenderCallback(
             [this](vk::RenderContext &ctx) { m_gui->RecordCommand(ctx.GetCommandBuffer()); });
 
-        // Create TransientResourcePool for CommandBuffer temporary render targets
-        m_transientResourcePool = std::make_unique<TransientResourcePool>();
-        m_transientResourcePool->Initialize(&m_vkCore->GetDeviceContext(), &m_vkCore->GetResourceManager());
-
         // The Scene RenderGraph owns the outline passes and target layouts.
         m_outlineRenderer = std::make_unique<OutlineRenderer>();
     }
@@ -1065,6 +1059,17 @@ void InxRenderer::PreparePipeline()
 
 void InxRenderer::DrawFrame()
 {
+    if (m_drawingFrame)
+        throw std::logic_error("DrawFrame cannot reenter an active frame");
+    struct FrameScope
+    {
+        bool &active;
+        ~FrameScope()
+        {
+            active = false;
+        }
+    } frameScope{m_drawingFrame};
+    m_drawingFrame = true;
     const bool samplePerformanceFrame = m_framePerformanceWindowActive;
     const auto performanceWindowFrameStart =
         samplePerformanceFrame ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
@@ -1234,18 +1239,17 @@ void InxRenderer::DrawFrame()
     // is minimized. Authoring/reload runs before UI work and before the native
     // scene frame, independently of whether a swapchain can present.
     // Actual ImGui/Vulkan work remains below the minimized early return.
-    if (m_preSceneUpdateCallback)
-        m_preSceneUpdateCallback(m_deltaTime);
-    if (m_preGuiCallback) {
-        m_preGuiCallback();
-    }
+    if (auto callback = m_preSceneUpdateCallback)
+        callback(m_deltaTime);
+    if (auto callback = m_preGuiCallback)
+        callback();
 
     // Deferred owner work must also advance when no image can be presented.
     // Call only outside SceneManager's active frame: either before Update,
     // or after EndFrame on the draw/submission paths below.
     const auto runDeferredTasks = [this]() {
-        if (m_postDrawCallback)
-            m_postDrawCallback();
+        if (auto callback = m_postDrawCallback)
+            callback();
     };
 
     if (m_view->NeedsSurfaceRecreation() && !m_view->IsApplicationInBackground()) {
@@ -1335,24 +1339,12 @@ void InxRenderer::DrawFrame()
 #endif
 
     // ========================================================================
-    // Per-Frame Fence Synchronization (Fix 1: replaces vkDeviceWaitIdle)
-    //
-    // Wait on the current frame slot's fence so that GPU resources bound
-    // to this slot are guaranteed idle.  Then flush deferred deletions
-    // that have aged past maxFramesInFlight, ensuring no in-flight
-    // command buffer references them.
-    //
-    // This replaces the blanket vkDeviceWaitIdle() that was serialising
-    // 100% of CPU/GPU work.  Combined with vkCmdUpdateBuffer-based UBO
-    // writes, this allows true double-buffered CPU/GPU parallelism.
+    // Wait for this frame slot before reusing its resources. Deletion and
+    // transient recycling follow completed submission epochs, never frame age.
     // ========================================================================
     if (m_vkCore) {
         m_vkCore->WaitForCurrentFrame();
         m_vkCore->CollectRetiredGpuResources();
-        if (m_transientResourcePool) {
-            const auto completedEpoch = m_vkCore->GetBackendContext().Queues().GetCompletedCompletionEpoch();
-            m_transientResourcePool->Collect(completedEpoch);
-        }
         // SDL pixel-size changes are authoritative even when acquire/present
         // keep succeeding. Commit the new attachments before GUI layout and
         // render-graph construction, rather than relying on driver errors.
@@ -1440,9 +1432,6 @@ void InxRenderer::DrawFrame()
         // ---- Scene View: always use editor camera ----
         if (sceneViewActive) {
             ScriptableRenderContext ctx(m_vkCore.get(), m_sceneRenderGraph.get(), gizmoCtx);
-            if (m_transientResourcePool) {
-                ctx.SetTransientResourcePool(m_transientResourcePool.get());
-            }
             Camera *editorCam = SceneManager::Instance().GetEditorCameraController().GetCamera();
 
             // World-space Billboard UI is gameplay-facing UI.  The Scene view
@@ -1490,9 +1479,6 @@ void InxRenderer::DrawFrame()
                 if (GameObject *cameraObject = gameCam->GetGameObject())
                     gameContentCtx.activeScene = cameraObject->GetScene();
                 ScriptableRenderContext gameCtx(m_vkCore.get(), graph, gameContentCtx);
-                if (m_transientResourcePool) {
-                    gameCtx.SetTransientResourcePool(m_transientResourcePool.get());
-                }
 
                 graph->SetBillboardViewMatrix(gameCam->GetViewMatrix());
 
@@ -1519,8 +1505,6 @@ void InxRenderer::DrawFrame()
     // before any stale render graph executes this frame.
     if (CheckAndApplyMsaaRequest(true, sceneViewActive,
                                  m_gameCameraEnabled || HasPendingCapture(CaptureSource::Game))) {
-        if (m_transientResourcePool)
-            m_transientResourcePool->AbandonReleased();
         sceneManager.EndFrame();
         runDeferredTasks();
         return;
@@ -1628,8 +1612,6 @@ void InxRenderer::DrawFrame()
     if (HasPendingCapture(CaptureSource::Editor))
         m_vkCore->RequestPresentationReadback();
     m_vkCore->DrawFrame(m_cameraPos, m_cameraLookAt, m_cameraUp);
-    if (m_transientResourcePool)
-        m_transientResourcePool->RetireReleased(m_vkCore->GetLastSubmittedCompletionEpoch());
     sceneManager.CommitSkinPoseHistories();
     if (m_vkCore->ConsumeFirstVisiblePresentation())
         m_view->RevealAfterFirstPresentation();
@@ -2517,7 +2499,8 @@ GpuResidencySnapshot InxRenderer::GetGpuResidencySnapshot() const
         (void)cameraId;
         snapshot.renderGraphBytes += graph->GetTransientResidentBytes();
     }
-    snapshot.transientPoolBytes = m_transientResourcePool ? m_transientResourcePool->GetResidentBytes() : 0;
+    // Legacy telemetry field; temporary image ownership is in each RenderGraph.
+    snapshot.transientPoolBytes = 0;
     const MaterialGpuResidencySnapshot materialResidency = m_vkCore->GetMaterialGpuResidency();
     snapshot.materialUboBytes = materialResidency.uboBytes;
     snapshot.materialRenderDataCount = materialResidency.renderDataCount;
@@ -4339,53 +4322,6 @@ void InxRenderer::RemoveMaterialPipeline(const std::string &materialName)
         return;
     }
     m_vkCore->RemoveMaterialPipeline(materialName);
-}
-
-bool InxRenderer::RefreshMaterialsUsingShader(const std::string &shaderId)
-{
-    INXLOG_DEBUG("RefreshMaterialsUsingShader called: ", shaderId);
-
-    if (!m_vkCore) {
-        INXLOG_ERROR("RefreshMaterialsUsingShader: VkCore is null");
-        return false;
-    }
-
-    // Get all materials from AssetRegistry
-    auto &registry = AssetRegistry::Instance();
-    auto materials = registry.GetAllMaterials();
-
-    bool anyRefreshed = false;
-    for (auto &material : materials) {
-        if (!material)
-            continue;
-
-        // Check if this material uses the shader
-        const std::string &vertName = material->GetVertShaderName();
-        const std::string &fragName = material->GetFragShaderName();
-
-        INXLOG_DEBUG("RefreshMaterialsUsingShader: checking material '", material->GetName(), "' with vert='", vertName,
-                     "' frag='", fragName, "' against shaderId='", shaderId, "'");
-
-        // Check for match: either vert or frag uses this shader
-        auto matchesId = [&](const std::string &name) {
-            if (name == shaderId)
-                return true;
-            if (name.empty())
-                return false;
-            return PortablePathStem(name) == shaderId;
-        };
-        bool matches = matchesId(vertName) || matchesId(fragName);
-
-        if (matches) {
-            INXLOG_DEBUG("RefreshMaterialsUsingShader: refreshing material '", material->GetName(), "'");
-            if (RefreshMaterialPipeline(material)) {
-                anyRefreshed = true;
-            }
-        }
-    }
-
-    INXLOG_INFO("RefreshMaterialsUsingShader: refreshed materials using shader '", shaderId, "'");
-    return anyRefreshed;
 }
 
 SceneRenderGraph *InxRenderer::GetSceneRenderGraph()

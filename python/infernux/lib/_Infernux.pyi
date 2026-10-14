@@ -1,8 +1,8 @@
 """
 Python type stubs for the Infernux C++ bindings module.
 
-This file is AUTO-GENERATED from the pybind11 binding source files.
-Do not edit by hand — regenerate from the C++ binding definitions.
+These declarations are maintained alongside the pybind11 bindings.
+Update them when the native Python API changes.
 
 Provides IDE auto-completion and type checking for:
   - Scene hierarchy (GameObject, Component, Transform, etc.)
@@ -2321,8 +2321,12 @@ class CommandBuffer:
         height: int,
         format: PixelFormat = ...,
         samples: SampleCount = ...,
-    ) -> RenderTargetHandle: ...
-    def release_temporary_rt(self, handle: RenderTargetHandle) -> None: ...
+    ) -> RenderTargetHandle:
+        """Unsupported; declare transient textures with RenderGraphDescription."""
+        ...
+    def release_temporary_rt(self, handle: RenderTargetHandle) -> None:
+        """Unsupported; RenderGraphDescription owns transient texture lifetimes."""
+        ...
     def set_render_target(self, color: RenderTargetHandle) -> None: ...
     def set_render_target_with_depth(self, color: RenderTargetHandle, depth: RenderTargetHandle) -> None: ...
     def clear_render_target(
@@ -2833,14 +2837,6 @@ class InxGUIContext:
     def render_property_batch(self, descriptors: List[dict], label_width: float) -> Dict[int, object]: ...
     def render_property_batch_plan(self, plan: PropertyBatchPlan, label_width: float) -> Dict[int, object]: ...
     def render_property_batch_plan_values(self, plan: PropertyBatchPlan, values: Sequence[object], label_width: float) -> Dict[int, object]: ...
-    def render_material_top(
-        self, shader_section_label: str, vertex_label: str, vertex_display: str,
-        fragment_label: str, fragment_display: str, shader_label_width: float,
-        surface_section_label: str, surface_plan: PropertyBatchPlan,
-        surface_values: Sequence[object], surface_label_width: float,
-        picker_texture_id: int, preview_texture_id: int,
-        preview_unavailable_label: str, default_open: bool, read_only: bool,
-    ) -> Tuple[int, bool, str, bool, int, bool, str, bool, Dict[int, object], int, int]: ...
     def render_object_field_chrome(self, field_id: str, display_text: str, type_hint: str, selected: bool = False, clickable: bool = True, has_picker: bool = False, picker_texture_id: int = 0, semantic_id: str = "", fixed_width: float = 0.0) -> int: ...
     def render_mesh_renderer_inspector_fields(
         self, mesh_field_id: str, mesh_label: str, mesh_display: str,

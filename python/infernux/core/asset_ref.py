@@ -138,6 +138,8 @@ class AssetRefBase:
 
     def __eq__(self, other):
         if isinstance(other, AssetRefBase):
+            if not self._guid and not other._guid:
+                return type(self) is type(other)
             return self._guid == other._guid
         return NotImplemented
 
@@ -603,8 +605,9 @@ class MaterialRef(AssetRefBase):
             try:
                 native = getattr(mat, "native", mat)
                 return native.name or "(Runtime Material)"
-            except Exception:
-                pass
+            except RuntimeError as exc:
+                from infernux.debug import Debug
+                Debug.log_suppressed("MaterialRef.display_name", exc)
         return "None"
 
     def __getattr__(self, name: str) -> Any:
@@ -617,10 +620,10 @@ class MaterialRef(AssetRefBase):
         return getattr(mat, name)
 
     def __copy__(self):
-        return type(self)(guid=self._guid)
+        return type(self)(guid=self._guid) if self._guid else type(self)(self._cached)
 
     def __deepcopy__(self, memo):
-        copied = type(self)(guid=self._guid)
+        copied = self.__copy__()
         memo[id(self)] = copied
         return copied
 
@@ -628,5 +631,12 @@ class MaterialRef(AssetRefBase):
         if other is None:
             return not self._guid and self._cached is None
         if isinstance(other, AssetRefBase):
-            return self._guid == other._guid
+            if self._guid or other._guid:
+                return self._guid == other._guid
+            return isinstance(other, MaterialRef) and self._cached is other._cached
         return NotImplemented
+
+    def __hash__(self):
+        if self._guid:
+            return hash(self._guid)
+        return hash(None) if self._cached is None else hash(id(self._cached))

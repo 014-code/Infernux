@@ -56,6 +56,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  python-correctness:
+    name: Python correctness
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install ruff==0.17.0
+      - run: python -m ruff check python/infernux packaging scripts cmake
+
   portable-hub:
     name: Portable Hub regressions (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -81,24 +95,10 @@ jobs:
       - name: Audit project synchronization contract
         run: |
           python scripts/maintenance/audit_project_sync.py tests/fixtures/multiplatform_player --tracked
-      # Keep this focused list synchronized with tests/README.md.
       - name: Test critical Hub workflows without a native engine
         run: >-
           python -m pytest
-          tests/hub/test_hub_project_workflow.py
-          tests/hub/test_project_python_runtime.py
-          tests/hub/test_hub_new_project_python_binding.py
-          tests/hub/test_hub_launch_state.py
-          tests/hub/test_project_runtime_strictness.py
-          tests/hub/test_regression_guide.py
-          tests/hub/test_cpu_jit_dependency_packaging.py
-          tests/hub/test_release_signing.py
-          tests/hub/test_hub_utils.py
-          tests/hub/test_bundle_resources.py
-          tests/hub/test_publication_permissions.py
-          tests/hub/test_windows_runtime_paths.py
-          tests/hub/test_workspace_cleanup.py
-          tests/hub/test_project_sync_audit.py
+          tests/hub
           tests/contracts
           -q -ra --junitxml out/test-results/portable-hub.xml
       - uses: actions/upload-artifact@v4
@@ -106,10 +106,10 @@ jobs:
         with:
           name: portable-hub-${{ matrix.os }}
           path: out/test-results/portable-hub.xml
-          if-no-files-found: warn
+          if-no-files-found: error
 
   windows-desktop:
-    needs: portable-hub
+    needs: [portable-hub, python-correctness]
     runs-on: windows-2022
     timeout-minutes: 240
     permissions:
@@ -260,7 +260,7 @@ jobs:
           # context pressure from unbounded parallelism.
           $parallelXml = "out\test-results\pytest-windows-parallel.xml"
           python -m pytest -n 2 --dist loadfile --max-worker-restart=0 -o pythonpath= `
-            tests\python `
+            tests\python tests\isolated `
             --ignore=tests\python\test_shader_declaration_discovery.py `
             --ignore=tests\python\test_engine_play_mode.py `
             --ignore=tests\python\test_ui_shader_dependency_runtime.py `
@@ -278,13 +278,6 @@ jobs:
             tests\python\test_physics_drag_push.py `
             -q --durations=20 --junitxml out\test-results\pytest-windows.xml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Run Hub tests
-        shell: pwsh
-        run: |
-          conda activate infernux
-          $env:PYTHONPATH = 'packaging'
-          python -m pytest tests\hub -q --junitxml out\test-results\pytest-hub-windows.xml
 
       - name: Run Windows headless physics profile gate
         shell: pwsh
@@ -336,7 +329,7 @@ jobs:
           if-no-files-found: warn
 
   linux-desktop:
-    needs: portable-hub
+    needs: [portable-hub, python-correctness]
     runs-on: ubuntu-22.04
     timeout-minutes: 120
     env:
@@ -412,7 +405,7 @@ jobs:
         run: |
           conda activate infernux
           unset PYTHONPATH INFERNUX_NATIVE_MODULE_DIR
-          xvfb-run --auto-servernum python -m pytest -o pythonpath= tests/python --ignore=tests/python/test_shader_declaration_discovery.py -q --durations=20 --junitxml out/test-results/pytest-linux.xml
+          xvfb-run --auto-servernum python -m pytest -o pythonpath= tests/python tests/isolated --ignore=tests/python/test_shader_declaration_discovery.py -q --durations=20 --junitxml out/test-results/pytest-linux.xml
 
       - name: Run Linux headless physics profile gate
         run: |

@@ -2019,8 +2019,7 @@ void ProjectPanel::BeginRename(const std::string &path)
         if (!stem.empty())
             name = stem;
     }
-    std::strncpy(m_renameBuf, name.c_str(), sizeof(m_renameBuf) - 1);
-    m_renameBuf[sizeof(m_renameBuf) - 1] = '\0';
+    m_renameBuf = std::move(name);
     m_renameFocusRequested = true;
     m_renameSkipDeactivateFrames = 2;
     BeginTransientInteraction("rename", "inline_rename", 100, [this]() {
@@ -2355,7 +2354,7 @@ void ProjectPanel::RenderBreadcrumb(InxGUIContext *ctx)
         ctx->SetKeyboardFocusHere();
         m_focusSearchNextFrame = false;
     }
-    ctx->InputTextWithHint("##project_search", Tr("project.search_hint"), m_searchBuf, sizeof(m_searchBuf));
+    ctx->InputTextWithHint("##project_search", Tr("project.search_hint"), m_searchBuf);
     ctx->RecordSemanticItem("text_input", Tr("project.search_hint"), true, "project.search", std::nullopt, std::nullopt,
                             std::string(m_searchBuf));
     (void)m_search.SetQuery(m_searchBuf);
@@ -2667,7 +2666,7 @@ void ProjectPanel::RenderSearchResults(InxGUIContext *ctx)
                                                               : RequestAssetLocation(activatedItem.path);
     if (!accepted)
         return;
-    m_searchBuf[0] = '\0';
+    m_searchBuf.clear();
     (void)m_search.Clear();
     ResetAsyncSearch();
 }
@@ -3479,7 +3478,7 @@ void ProjectPanel::RenderItemLabel(InxGUIContext *ctx, const FileItem &item, flo
 
         ctx->SetCursorPosX(cellStartX);
         ctx->SetNextItemWidth(iconSize);
-        ctx->TextInput("##rename_" + item.path, m_renameBuf, sizeof(m_renameBuf));
+        ctx->TextInput("##rename_" + item.path, m_renameBuf);
         ctx->RecordSemanticItem("text_input", "Name", true, "project.rename.input");
 
         if (m_renameSkipDeactivateFrames > 0)

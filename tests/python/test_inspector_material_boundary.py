@@ -179,4 +179,3 @@ def test_material_shader_reference_ignores_stale_structured_path(monkeypatch):
         'shader_id': 'Current',
         'path_hint': 'Assets/Shaders/Current.frag',
     }
-

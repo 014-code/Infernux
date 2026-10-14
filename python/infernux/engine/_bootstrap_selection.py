@@ -1,13 +1,6 @@
 """BootstrapSelectionMixin — extracted from EditorBootstrap."""
 from __future__ import annotations
 
-"""
-EditorBootstrap — structured editor initialization.
-
-Breaks the monolithic ``release_engine()`` startup path into explicit
-startup steps. Each step is a separate method, closures become instance
-methods, and panel/manager references live on the bootstrap instance.
-"""
 
 
 _PROJECT_SUBRESOURCE_TOKENS = {
@@ -380,7 +373,7 @@ class BootstrapSelectionMixin:
     ) -> bool:
         import os
 
-        from infernux.engine.interaction import SelectionDomain, ViewCommandService
+        from infernux.engine.interaction import ViewCommandService
         from infernux.engine.path_utils import is_path_within, lexical_path, same_path
         from infernux.engine.project_context import get_project_root
 
@@ -942,7 +935,6 @@ class BootstrapSelectionMixin:
         from infernux.engine.interaction import (
             SelectionService,
             SelectionSnapshot,
-            SelectionTarget,
         )
 
         targets = tuple(

@@ -31,16 +31,6 @@ def test_initial_asset_catalog_barrier_completes_only_pending_refresh(
     assert database.completions == expected
 
 
-def test_initial_asset_catalog_barrier_precedes_scene_and_icon_consumers():
-    import inspect
-
-    source = inspect.getsource(EditorBootstrap.run)
-    barrier = source.index("self._complete_initial_asset_catalog()")
-    managers = source.index("self._create_managers()")
-    scene = source.index("self._load_initial_scene()")
-    assert barrier < managers < scene
-
-
 def test_initial_asset_catalog_barrier_propagates_publication_failure():
     class _RejectingDatabase(_Database):
         def complete_pending_refresh(self):

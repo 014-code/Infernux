@@ -37,4 +37,3 @@ def test_guard_accepts_idle_installed_package(monkeypatch, tmp_path: Path) -> No
     )
 
     _MODULE.guard_not_loaded((tmp_path,))
-

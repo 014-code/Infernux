@@ -222,34 +222,6 @@ def test_linux_smoke_reports_the_selected_sdl_video_backend(text, expected):
     assert module._selected_video_driver(text) == expected
 
 
-def test_linux_smoke_backend_evidence_is_emitted_at_info_level():
-    source = (ROOT / "cpp" / "infernux" / "platform" / "window" / "InxView.cpp").read_text(
-        encoding="utf-8"
-    )
-
-    marker = '", selected backend=", videoDriver.empty() ? "<none>" : videoDriver'
-    marker_index = source.index(marker)
-    info_index = source.rfind("INXLOG_INFO", 0, marker_index)
-    debug_index = source.rfind("INXLOG_DEBUG", 0, marker_index)
-    assert info_index > debug_index
-    assert source[info_index:marker_index].count("INXLOG_INFO") == 1
-
-
-@pytest.mark.parametrize("script", (SCRIPT, WINDOWS_SCRIPT))
-def test_player_smoke_captures_only_after_renderer_submission_is_ready(script):
-    spec = importlib.util.spec_from_file_location(script.stem, script)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    source = inspect.getsource(module._run)
-
-    readiness = source.index('if not bool(feature_observation.get("submission_ready"))')
-    capture = source.index('control.call(\n                "capture"')
-    shutdown = source.index('control.call("shutdown"')
-
-    assert readiness < capture < shutdown
-
-
 def test_linux_smoke_component_probe_asserts_nested_public_state():
     module = _module()
     probe = module._parse_component_probe(

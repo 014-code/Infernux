@@ -248,7 +248,7 @@ def test_prepare_project_registry_imports_runtime_package_scripts_only(
     from infernux.plugins import PluginManager
 
     monkeypatch.setattr(library_sync, "sync_resources", lambda _root: None)
-    monkeypatch.setattr(project_context, "_project_root", None)
+    monkeypatch.setattr(project_context._context(), "root", None)
     monkeypatch.setattr(
         PluginManager,
         "startup",
@@ -301,7 +301,7 @@ def test_installed_registry_publishes_project_data_asset_types_before_cook(
     from infernux.plugins import PluginManager
 
     monkeypatch.setattr(library_sync, "sync_resources", lambda _root: None)
-    monkeypatch.setattr(project_context, "_project_root", None)
+    monkeypatch.setattr(project_context._context(), "root", None)
     monkeypatch.setattr(PluginManager, "startup", lambda _root, *, runtime: None)
     monkeypatch.setattr(
         component_registry,

@@ -185,14 +185,68 @@ def test_operation_execution_accepts_json_schema_union_types():
         "properties": {"key": {"type": ["string", "integer"]}},
         "required": ["key"],
         "additionalProperties": False,
-    })
+    }, output_schema={"type": ["string", "integer"]})
     registry = OperationRegistry()
     registry.register(Operation(schema, lambda key: key, "owner"))
 
     assert registry.execute("test.input.key", {"key": "d"}, capabilities=("*",)) == "d"
     assert registry.execute("test.input.key", {"key": 7}, capabilities=("*",)) == 7
-    with pytest.raises(OperationError, match="one of string, integer"):
+    with pytest.raises(OperationError) as rejected:
         registry.execute("test.input.key", {"key": False}, capabilities=("*",))
+    assert rejected.value.code == "operation.invalid_arguments"
+
+
+def test_operation_schema_validates_nested_data_and_declared_result():
+    schema = replace(_schema("test.settings"), input_schema={
+        "type": "object", "required": ["settings"],
+        "properties": {"settings": {
+            "type": "object", "required": ["mode", "weights"],
+            "properties": {"mode": {"enum": ["cpu", "gpu"]},
+                           "weights": {"type": "array", "items": {"type": ["number", "null"], "minimum": 0, "maximum": 1}}},
+            "additionalProperties": False}}, "additionalProperties": False},
+        output_schema={"type": "object"})
+    registry = OperationRegistry()
+    registry.register(Operation(schema, lambda settings: settings, "owner"))
+    assert registry.execute("test.settings", {"settings": {"mode": "gpu", "weights": (0, None, 1)}}, capabilities=("*",)) == {
+        "mode": "gpu", "weights": (0, None, 1)}
+    for settings in ({"mode": "auto", "weights": []}, {"mode": "cpu", "weights": [-1]},
+                     {"mode": "cpu", "weights": [2]}, {"mode": "gpu", "weights": ["bad"]}):
+        with pytest.raises(OperationError) as invalid:
+            registry.execute("test.settings", {"settings": settings}, capabilities=("*",))
+        assert invalid.value.code == "operation.invalid_arguments"
+    registry.register(Operation(schema, lambda settings: 5, "owner"))
+    with pytest.raises(OperationError) as invalid_result:
+        registry.execute("test.settings", {"settings": {"mode": "cpu", "weights": []}}, capabilities=("*",))
+    assert invalid_result.value.code == "operation.invalid_result"
+
+
+def test_operation_signature_errors_and_handler_errors_have_distinct_codes():
+    registry = OperationRegistry()
+    registry.register(Operation(_schema(), lambda value: value, "owner"))
+    with pytest.raises(OperationError) as signature_error:
+        registry.execute("test.math.add", {"left": 1, "right": 2}, capabilities=("*",))
+    assert signature_error.value.code == "operation.invalid_arguments"
+
+    def broken_handler(left, right):
+        raise TypeError("handler bug")
+
+    registry.register(Operation(_schema(), broken_handler, "owner"))
+    with pytest.raises(OperationError) as handler_error:
+        registry.execute("test.math.add", {"left": 1, "right": 2}, capabilities=("*",))
+    assert handler_error.value.code == "operation.failed"
+    assert "handler bug" in str(handler_error.value)
+
+
+def test_engine_operation_remains_authoritative_in_either_registration_order():
+    engine = Operation(_schema(), lambda left, right: left + right, "infernux/engine")
+    plugin = Operation(_schema(), lambda left, right: 0, "plugin")
+    for operations in ((engine, plugin), (plugin, engine)):
+        registry = OperationRegistry()
+        assert registry.register(operations[0]) is True
+        assert registry.register(operations[1]) is (operations[1] is engine)
+        assert registry.get("test.math.add") is engine
+        assert registry.unregister_owner("plugin") == 0
+        assert registry.execute("test.math.add", {"left": 2, "right": 3}, capabilities=("*",)) == 5
 
 
 def test_operation_batch_has_structured_stop_and_continue_semantics():

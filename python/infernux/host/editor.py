@@ -651,8 +651,6 @@ class EditorAutomationHost:
                 ParticleArtifactRegistry.save_graph_asset(graph, path, guid=guid)
                 result = AssetManager.reimport_asset(path)
                 if not result:
-                    result = AssetManager.import_asset(path)
-                if not result:
                     raise RuntimeError(
                         str(getattr(result, "error", "Particle Graph import failed"))
                     )
@@ -660,11 +658,18 @@ class EditorAutomationHost:
             def _apply(command_self, graph, rollback):
                 try:
                     command_self._publish(graph)
-                except Exception:
+                except Exception as publication_error:
                     try:
                         command_self._publish(rollback)
-                    except Exception:
-                        pass
+                    except Exception as rollback_error:
+                        raise OperationError(
+                            "particle.rollback_failed",
+                            "Particle Graph publication and rollback both failed.",
+                            details={
+                                "publication": str(publication_error),
+                                "rollback": str(rollback_error),
+                            },
+                        ) from rollback_error
                     raise
 
             def execute(command_self):

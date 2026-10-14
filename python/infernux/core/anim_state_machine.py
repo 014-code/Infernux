@@ -26,7 +26,7 @@ from infernux.graph.parameters import (
     GraphParameterCollection,
     GraphParameterDefinition,
 )
-from infernux.graph.types import CoordinateSpace, TypeRef, ValueType
+from infernux.graph.types import CoordinateSpace, ValueType
 
 
 # ═══════════════════════════════════════════════════════════════════════════

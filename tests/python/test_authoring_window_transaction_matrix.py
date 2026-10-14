@@ -232,4 +232,3 @@ def test_authoring_window_save_close_and_history_matrix(
     assert saved == ["saved"]
     assert close.state is CloseState.IDLE
     assert view.value == 3 and not document.is_dirty
-

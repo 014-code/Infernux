@@ -1329,6 +1329,7 @@ void RenderGraph::InsertBarriers(VkCommandBuffer cmdBuffer, uint32_t passIndex)
             return;
 
         const auto &prevState = m_resourceStates[access.handle.id];
+        const bool currentWrite = (access.usage & ResourceUsage::Write) != ResourceUsage::None;
         const bool present = (access.usage & ResourceUsage::Present) != ResourceUsage::None;
         const rhi::QueueRole targetQueue = present ? rhi::QueueRole::Present : recordingQueue;
         const NativeQueueBinding targetBinding = bindingFor(targetQueue);
@@ -1338,6 +1339,9 @@ void RenderGraph::InsertBarriers(VkCommandBuffer cmdBuffer, uint32_t passIndex)
         const bool familyChange = hasPreviousOwner && prevState.queueFamily != targetBinding.family;
         const bool ownershipTransfer =
             m_recordingSubmissionBatches && laneChange && familyChange && !resource.concurrentQueueSharing;
+        const bool readAlreadyVisible = !currentWrite && !laneChange &&
+                                        (prevState.visibleReadAccess & access.access) == access.access &&
+                                        (prevState.visibleReadStages & access.stages) == access.stages;
 
         VkAccessFlags srcAccessMask = ToVkAccessFlags(prevState.accessMask);
         VkAccessFlags dstAccessMask = ToVkAccessFlags(access.access);
@@ -1366,8 +1370,7 @@ void RenderGraph::InsertBarriers(VkCommandBuffer cmdBuffer, uint32_t passIndex)
             const bool previousWrite =
                 rhi::HasAny(prevState.accessMask, rhi::Access::ShaderWrite | rhi::Access::TransferWrite |
                                                       rhi::Access::MemoryWrite | rhi::Access::HostWrite);
-            const bool currentWrite = (static_cast<int>(access.usage & ResourceUsage::Write) != 0);
-            if (!previousWrite && !currentWrite && !laneChange)
+            if ((!previousWrite && !currentWrite && !laneChange) || readAlreadyVisible)
                 return;
 
             VkBufferMemoryBarrier barrier{};
@@ -1393,10 +1396,11 @@ void RenderGraph::InsertBarriers(VkCommandBuffer cmdBuffer, uint32_t passIndex)
         const VkImageLayout newLayout = ToVkImageLayout(access.layout);
 
         // Skip barrier if layout is already correct and no write hazard
-        if (oldLayout == newLayout && (static_cast<int>(access.usage & ResourceUsage::Write) == 0) && !laneChange &&
-            !rhi::HasAny(prevState.accessMask, rhi::Access::ColorWrite | rhi::Access::DepthWrite |
-                                                   rhi::Access::ShaderWrite | rhi::Access::TransferWrite |
-                                                   rhi::Access::MemoryWrite | rhi::Access::HostWrite)) {
+        if (oldLayout == newLayout && !currentWrite && !laneChange &&
+            (readAlreadyVisible ||
+             !rhi::HasAny(prevState.accessMask, rhi::Access::ColorWrite | rhi::Access::DepthWrite |
+                                                    rhi::Access::ShaderWrite | rhi::Access::TransferWrite |
+                                                    rhi::Access::MemoryWrite | rhi::Access::HostWrite))) {
             return;
         }
 
@@ -1409,9 +1413,9 @@ void RenderGraph::InsertBarriers(VkCommandBuffer cmdBuffer, uint32_t passIndex)
         barrier.image = image;
         barrier.subresourceRange.aspectMask = aspectMaskFor(resource, isDepthInput);
         barrier.subresourceRange.baseMipLevel = 0;
-        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.levelCount = resource.textureDesc.mipLevels;
         barrier.subresourceRange.baseArrayLayer = 0;
-        barrier.subresourceRange.layerCount = 1;
+        barrier.subresourceRange.layerCount = resource.textureDesc.arrayLayers;
         barrier.srcAccessMask = srcAccessMask;
         barrier.dstAccessMask = dstAccessMask;
 
@@ -1428,8 +1432,18 @@ void RenderGraph::InsertBarriers(VkCommandBuffer cmdBuffer, uint32_t passIndex)
         const NativeQueueBinding targetBinding = bindingFor(targetQueue);
         auto &state = m_resourceStates[access.handle.id];
         state.layout = layout;
-        state.accessMask = access.access;
-        state.stages = access.stages;
+        const bool write = (access.usage & ResourceUsage::Write) != ResourceUsage::None;
+        if (write || state.nativeQueueLane != targetBinding.lane) {
+            state.accessMask = access.access;
+            state.stages = access.stages;
+        } else {
+            // Keep the producing write until every subsequent read stage has
+            // acquired it; a compute read cannot stand in for vertex/indirect visibility.
+            state.accessMask = state.accessMask | access.access;
+            state.stages = state.stages | access.stages;
+        }
+        state.visibleReadAccess = write ? rhi::Access::None : access.access;
+        state.visibleReadStages = write ? rhi::PipelineStage::None : access.stages;
         state.writerPassId = passIndex;
         state.queue = targetQueue;
         state.queueFamily = targetBinding.family;
@@ -1450,8 +1464,18 @@ void RenderGraph::InsertBarriers(VkCommandBuffer cmdBuffer, uint32_t passIndex)
             });
         if (duplicateTransition)
             continue;
-        bool isDepthInput = (static_cast<int>(read.usage & ResourceUsage::DepthRead) != 0);
-        addBarrier(read, isDepthInput);
+        ResourceAccess combinedRead = read;
+        for (size_t later = readIndex + 1; later < pass.reads.size(); ++later) {
+            const auto &other = pass.reads[later];
+            if (other.handle.id == read.handle.id && other.layout == read.layout &&
+                (other.usage & ResourceUsage::VersionDependency) == ResourceUsage::None) {
+                combinedRead.access = combinedRead.access | other.access;
+                combinedRead.stages = combinedRead.stages | other.stages;
+                combinedRead.usage = combinedRead.usage | other.usage;
+            }
+        }
+        const bool isDepthInput = (combinedRead.usage & ResourceUsage::DepthRead) != ResourceUsage::None;
+        addBarrier(combinedRead, isDepthInput);
     }
 
     // Check read-write overlap without heap allocation
@@ -1512,11 +1536,11 @@ void RenderGraph::InsertBarriers(VkCommandBuffer cmdBuffer, uint32_t passIndex)
     }
 
     // Read-only depth remains in its declared sampled attachment layout.
-    if (pass.depthInput.IsValid() && !pass.depthOutput.IsValid()) {
+    if (pass.depthInput.IsValid() && !pass.depthOutput.IsValid() && pass.depthInput.id < m_resourceStates.size()) {
         auto &state = m_resourceStates[pass.depthInput.id];
         state.layout = rhi::TextureLayout::DepthStencilReadOnly;
-        state.accessMask = rhi::Access::DepthRead;
-        state.stages = rhi::PipelineStage::EarlyDepth | rhi::PipelineStage::LateDepth;
+        state.accessMask = state.accessMask | rhi::Access::DepthRead;
+        state.stages = state.stages | rhi::PipelineStage::EarlyDepth | rhi::PipelineStage::LateDepth;
     }
 }
 
@@ -1594,9 +1618,9 @@ void RenderGraph::InsertQueueOwnershipReleases(VkCommandBuffer cmdBuffer, uint32
         barrier.image = image;
         barrier.subresourceRange.aspectMask = aspectMaskFor(resource);
         barrier.subresourceRange.baseMipLevel = 0;
-        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.levelCount = resource.textureDesc.mipLevels;
         barrier.subresourceRange.baseArrayLayer = 0;
-        barrier.subresourceRange.layerCount = 1;
+        barrier.subresourceRange.layerCount = resource.textureDesc.arrayLayers;
         m_barrierScratch.push_back(barrier);
     }
 

@@ -312,11 +312,11 @@ def detect_runtime_identity(
         or os.environ.get("_INFERNUX_BUILD_PRESET")
     )
     engine_version = ""
-    try:
-        from importlib.metadata import version
+    from importlib.metadata import PackageNotFoundError, version
 
+    try:
         engine_version = version("infernux")
-    except Exception:
+    except PackageNotFoundError:
         pass
 
     build_label = (

@@ -823,20 +823,17 @@ def _resolve_asset_disk_path(value) -> str:
     guid = str(getattr(value, "guid", "") or "")
     path_hint = str(getattr(value, "path_hint", "") or "")
 
-    adb = None
-    try:
-        from infernux.core.asset_ref import _get_asset_database
-        adb = _get_asset_database()
-    except Exception:
-        adb = None
+    from infernux.core.asset_ref import _get_asset_database
+    from infernux.debug import Debug
+    adb = _get_asset_database()
 
     if guid and adb is not None:
         try:
             resolved = adb.get_path_from_guid(guid) or ""
             if resolved:
                 return resolved
-        except Exception:
-            pass
+        except RuntimeError as exc:
+            Debug.log_suppressed("Inspector.asset_guid_path", exc)
 
     resolved_obj = None
     if hasattr(value, "resolve"):
@@ -869,8 +866,8 @@ def _resolve_asset_disk_path(value) -> str:
                 guid_from_hint = adb.get_guid_from_path(path_hint) or ""
                 if guid_from_hint:
                     return adb.get_path_from_guid(guid_from_hint) or path_hint
-            except Exception:
-                pass
+            except RuntimeError as exc:
+                Debug.log_suppressed("Inspector.asset_hint_path", exc)
         return path_hint
 
     if isinstance(value, str) and value:

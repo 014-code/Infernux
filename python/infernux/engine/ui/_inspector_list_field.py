@@ -1,12 +1,9 @@
 """List field rendering helpers for the Inspector component renderers."""
 
-from dataclasses import replace
 import json
-from infernux.components.component import InxComponent
 from infernux.lib import InxGUIContext
 from .inspector_utils import (
-    max_label_w, render_serialized_field, has_field_changed,
-    render_compact_section_header, pretty_field_name,
+    render_serialized_field, render_compact_section_header, pretty_field_name,
     get_enum_members as _get_enum_members,
 )
 from .theme import Theme
@@ -16,7 +13,6 @@ from ._inspector_references import (
     _reference_owner_scene,
     _render_serializable_members,
     _get_reference_display_name,
-    _game_object_has_required_component,
     _picker_scene_gameobjects,
     _picker_scene_components,
     render_asset_reference_field,

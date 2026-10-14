@@ -12,7 +12,7 @@ Usage:
 """
 
 from enum import Enum, auto
-from typing import Any, Tuple, Optional, Type, Dict, Callable, TYPE_CHECKING, List, Union, ClassVar, get_origin
+from typing import Any, Tuple, Optional, Type, Dict, Mapping, Callable, TYPE_CHECKING, ClassVar, get_origin
 from dataclasses import dataclass
 import copy
 import os
@@ -282,6 +282,8 @@ class FieldMetadata:
 
 def copy_serialized_field_default(metadata: FieldMetadata) -> Any:
     """Copy and normalize the default using the ordinary field-write contract."""
+    if metadata.field_type in (FieldType.VEC2, FieldType.VEC3, FieldType.VEC4):
+        return normalize_runtime_field_value(metadata.default, metadata)
     try:
         value = copy.deepcopy(metadata.default)
     except Exception:
@@ -313,7 +315,6 @@ class SerializedFieldDescriptor:
         # this descriptor is being updated. The callback must be able to
         # re-enter and then prove it still owns the slot before removing data.
         self._lock = threading.RLock()
-        self._set_count: int = 0  # Counter for periodic dead-ref cleanup
         # CDS backing (set by _cds_bridge.register_class; None = Python-only).
         self._cds_class_id: Optional[int] = None
         self._cds_field_id: Optional[int] = None
@@ -336,13 +337,16 @@ class SerializedFieldDescriptor:
             owner._serialized_fields_ = {}
         owner._serialized_fields_[name] = self.metadata
     
-    def _cleanup_dead_refs(self):
-        """Remove entries for garbage-collected instances."""
+    def _python_value(self, instance):
+        """Read instance-owned storage, initializing an unset/deleted declaration."""
+        inst_id = id(instance)
         with self._lock:
-            dead_ids = [inst_id for inst_id, ref in self._weak_refs.items() if ref() is None]
-            for inst_id in dead_ids:
-                self._values.pop(inst_id, None)
-                self._weak_refs.pop(inst_id, None)
+            tracked = self._weak_refs.get(inst_id)
+            if tracked is None or tracked() is not instance:
+                value = copy_serialized_field_default(self.metadata)
+                self._weak_refs[inst_id] = weakref.ref(instance, self._make_ref_callback(inst_id))
+                self._values[inst_id] = value
+            return self._values[inst_id]
     
     def get_raw(self, instance: 'InxComponent') -> Any:
         """Get the raw stored value without auto-resolution."""
@@ -351,9 +355,7 @@ class SerializedFieldDescriptor:
             if slot is not None and getattr(instance, '_cds_class_id', None) == self._cds_class_id:
                 from ._cds_bridge import cds_get
                 return cds_get(self._cds_class_id, self._cds_field_id, self._cds_type_code, slot)
-        inst_id = id(instance)
-        with self._lock:
-            return self._values.get(inst_id, self.metadata.default)
+        return self._python_value(instance)
 
     def __get__(self, instance: Optional['InxComponent'], owner: Type) -> Any:
         if instance is None:
@@ -364,9 +366,7 @@ class SerializedFieldDescriptor:
             if slot is not None and getattr(instance, '_cds_class_id', None) == self._cds_class_id:
                 from ._cds_bridge import cds_get
                 return cds_get(self._cds_class_id, self._cds_field_id, self._cds_type_code, slot)
-        inst_id = id(instance)
-        with self._lock:
-            value = self._values.get(inst_id, self.metadata.default)
+        value = self._python_value(instance)
         # Reference wrappers own their caches and lifetime checks. Bypassing
         # resolve() here can expose a retired native wrapper after scene reload.
         return resolve_runtime_field_value(value, self.metadata)
@@ -398,12 +398,6 @@ class SerializedFieldDescriptor:
 
         self._notify_runtime_value_changed(instance)
 
-        # Periodic batch cleanup as a safety net for ref-cycle GC edge cases.
-        self._set_count += 1
-        if self._set_count >= 128:
-            self._set_count = 0
-            self._cleanup_dead_refs()
-
     def _notify_runtime_value_changed(self, instance: 'InxComponent') -> None:
         """Publish one authoritative field write after storage accepted it."""
         if getattr(instance, '_registered_go_id', None) is None:
@@ -422,75 +416,15 @@ class SerializedFieldDescriptor:
 
     def default_value(self) -> Any:
         """Return an instance-owned copy of the declared default value."""
-        return copy.deepcopy(self.metadata.default)
+        return copy_serialized_field_default(self.metadata)
 
-    def _coerce_other(self, other: Any) -> Any:
-        if isinstance(other, SerializedFieldDescriptor):
-            return other.default_value()
-        return other
+    @property
+    def default(self) -> Any:
+        """The field's declared default, copied using the runtime value contract."""
+        return self.default_value()
 
     def __repr__(self) -> str:
-        return repr(self.default_value())
-
-    def __str__(self) -> str:
-        return str(self.default_value())
-
-    def __format__(self, format_spec: str) -> str:
-        return format(self.default_value(), format_spec)
-
-    def __bool__(self) -> bool:
-        return bool(self.default_value())
-
-    def __int__(self) -> int:
-        return int(self.default_value())
-
-    def __float__(self) -> float:
-        return float(self.default_value())
-
-    def __index__(self) -> int:
-        return int(self.default_value())
-
-    def __lt__(self, other: Any) -> bool:
-        return self.default_value() < self._coerce_other(other)
-
-    def __le__(self, other: Any) -> bool:
-        return self.default_value() <= self._coerce_other(other)
-
-    def __gt__(self, other: Any) -> bool:
-        return self.default_value() > self._coerce_other(other)
-
-    def __ge__(self, other: Any) -> bool:
-        return self.default_value() >= self._coerce_other(other)
-
-    def __eq__(self, other: Any) -> bool:
-        return self.default_value() == self._coerce_other(other)
-
-    def __ne__(self, other: Any) -> bool:
-        return self.default_value() != self._coerce_other(other)
-
-    def __add__(self, other: Any) -> Any:
-        return self.default_value() + self._coerce_other(other)
-
-    def __radd__(self, other: Any) -> Any:
-        return self._coerce_other(other) + self.default_value()
-
-    def __sub__(self, other: Any) -> Any:
-        return self.default_value() - self._coerce_other(other)
-
-    def __rsub__(self, other: Any) -> Any:
-        return self._coerce_other(other) - self.default_value()
-
-    def __mul__(self, other: Any) -> Any:
-        return self.default_value() * self._coerce_other(other)
-
-    def __rmul__(self, other: Any) -> Any:
-        return self._coerce_other(other) * self.default_value()
-
-    def __truediv__(self, other: Any) -> Any:
-        return self.default_value() / self._coerce_other(other)
-
-    def __rtruediv__(self, other: Any) -> Any:
-        return self._coerce_other(other) / self.default_value()
+        return f"SerializedFieldDescriptor({self.metadata.name!r}, {self.metadata.field_type.name})"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -728,7 +662,19 @@ def normalize_runtime_field_value(value: Any, field_meta_or_type) -> Any:
         return _ensure_shader_ref(value)
     if field_type == FieldType.ASSET:
         return _ensure_asset_ref(value, asset_type)
+    if field_type in (FieldType.VEC2, FieldType.VEC3, FieldType.VEC4):
+        from infernux.lib import Vector2, Vector3, vec4f
+
+        constructor, axes = {
+            FieldType.VEC2: (Vector2, "xy"),
+            FieldType.VEC3: (Vector3, "xyz"),
+            FieldType.VEC4: (vec4f, "xyzw"),
+        }[field_type]
+        components = value if isinstance(value, (tuple, list)) else (getattr(value, axis) for axis in axes)
+        return constructor(*components)
     if field_type == FieldType.LIST and isinstance(value, list):
+        if element_type in (FieldType.VEC2, FieldType.VEC3, FieldType.VEC4):
+            return [normalize_runtime_field_value(item, element_type) for item in value]
         if element_type == FieldType.COMPONENT:
             return [_ensure_component_ref(v) for v in value]
         if element_type == FieldType.GAME_OBJECT:
@@ -1802,8 +1748,9 @@ def _compile_serialized_fields(cls, *, descriptors: bool = True) -> None:
             if isinstance(_v, str):
                 try:
                     resolved_hints[_k] = eval(_v, _globalns, dict(vars(cls)))  # noqa: S307
-                except Exception:
-                    pass  # Keep raw strings for deferred annotation resolution.
+                except NameError:
+                    # Forward references may resolve after the class/module exists.
+                    resolved_hints[_k] = _v
             else:
                 resolved_hints[_k] = _v
 
@@ -1980,7 +1927,9 @@ def _compile_serialized_fields(cls, *, descriptors: bool = True) -> None:
 
     schemas = {}
     for name, metadata in merged_fields.items():
-        declaration = next(base.__dict__[name] for base in cls.__mro__ if name in base.__dict__)
+        declaration = next((base.__dict__[name] for base in cls.__mro__ if name in base.__dict__), None)
+        if declaration is None:
+            raise TypeError(f"{cls.__name__}.{name}: serialized field declaration is missing")
         if getattr(declaration, '_is_cpp_property', False):
             # Native fields are owned by the native catalog, not re-inferred
             # from Python wrapper metadata. Unmigrated wrappers have no schema.
@@ -1995,7 +1944,7 @@ def _compile_serialized_fields(cls, *, descriptors: bool = True) -> None:
             setattr(cls, name, None)
 
 
-_SERIALIZED_FIELDS_CACHE: dict = {}  # component_class -> Dict[str, FieldMetadata]
+_SERIALIZED_FIELDS_CACHE = weakref.WeakKeyDictionary()
 
 
 def clear_serialized_fields_cache(component_class=None):
@@ -2015,7 +1964,7 @@ def get_field_schema(component_class: type, field_name: str) -> 'FieldSchema':
     return component_class.__dict__['_field_schemas_'][field_name]
 
 
-def get_serialized_fields(component_class: Type['InxComponent']) -> Dict[str, FieldMetadata]:
+def get_serialized_fields(component_class: Type['InxComponent']) -> Mapping[str, FieldMetadata]:
     """
     Get all serialized fields from a component class.  Results are cached.
     """
@@ -2023,8 +1972,9 @@ def get_serialized_fields(component_class: Type['InxComponent']) -> Dict[str, Fi
     if cached is not None:
         return cached
     fields = _merge_serialized_fields(component_class)
-    _SERIALIZED_FIELDS_CACHE[component_class] = fields
-    return fields
+    cached = MappingProxyType(fields)
+    _SERIALIZED_FIELDS_CACHE[component_class] = cached
+    return cached
 
 
 def get_field_value(component: 'InxComponent', field_name: str) -> Any:

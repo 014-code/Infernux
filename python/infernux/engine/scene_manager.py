@@ -16,7 +16,7 @@ This module orchestrates those primitives into a complete workflow.
 """
 
 import os
-from infernux.engine.path_utils import is_path_within, resolved_path
+from infernux.engine.path_utils import resolved_path
 import json
 from dataclasses import dataclass
 from typing import Any, Optional, Callable
@@ -1593,8 +1593,8 @@ class SceneFileManager(ScenePrefabMixin, SceneSaveMixin):
                 if scene is not None:
                     try:
                         native.unload_scene(scene)
-                    except Exception:
-                        pass
+                    except RuntimeError as cleanup_error:
+                        Debug.log_suppressed("SceneManager.unload_failed_additive", cleanup_error)
                 self._scene_load_failed(path, str(exc))
                 self._load_in_progress = False
                 self._deferred_additive_record_history = False

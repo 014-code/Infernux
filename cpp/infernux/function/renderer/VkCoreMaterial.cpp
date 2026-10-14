@@ -225,7 +225,7 @@ TextureResolveResult InxVkCoreModular::ResolveTextureAsset(const std::string &te
             infTex = registry.GetAsset<InxTexture>(textureGuid);
         } catch (const std::exception &exception) {
             INXLOG_ERROR("TextureResolver: metadata load failed for '", textureGuid, "': ", exception.what());
-            m_pendingTextureAssetLoads.erase(pending);
+            m_pendingTextureAssetLoads.erase(textureGuid);
             return {TextureResolveStatus::Failed, {}};
         }
     }
@@ -832,26 +832,6 @@ bool InxVkCoreModular::RefreshPreviewMaterialPipeline(std::shared_ptr<InxMateria
         return forwardOk;
     }
 
-    static std::unordered_set<std::string> reportedMissingPrograms;
-    const std::string missingProgramKey =
-        vertShaderName + "|" + fragShaderName + (m_materialPipelineManagerInitialized ? "|ready" : "|initializing");
-    if (reportedMissingPrograms.insert(missingProgramKey).second) {
-        // INXLOG_WARN("RefreshMaterialPipeline: shader codes not found or MPM not initialized for '",
-        // material->GetName(),
-        //             "' (vert='", vertShaderName, "', frag='", fragShaderName, "')");
-    }
-
-    // Dump available shader keys for debugging
-    static int dumpCount = 0;
-    if (dumpCount++ < 2) {
-        std::string vertKeys, fragKeys;
-        m_shaderCache.DumpAvailableKeys(vertKeys, fragKeys);
-        // INXLOG_WARN("  Available vert shaders:", vertKeys);
-        // INXLOG_WARN("  Available frag shaders:", fragKeys);
-        // INXLOG_WARN("  MPM initialized: ", m_materialPipelineManagerInitialized ? "true" : "false",
-        //             ", vertCode found: ", (vertCode ? "yes" : "no"), ", fragCode found: ", (fragCode ? "yes" :
-        //             "no"));
-    }
     return false;
 }
 

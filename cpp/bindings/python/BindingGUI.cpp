@@ -28,6 +28,7 @@
 #include <pybind11/stl.h>
 
 #include "BindingRegistration.h"
+#include <function/scene/PythonNativeLifetime.h>
 
 namespace py = pybind11;
 
@@ -1066,33 +1067,6 @@ void RegisterGUIBindings(py::module_ &m)
             },
             py::arg("plan"), py::arg("values"), py::arg("label_width"),
             "Update only the values of a compiled property plan, render it, and return changed fields.")
-        .def(
-            "render_material_top",
-            [](InxGUIContext &ctx, const std::string &shaderSectionLabel, const std::string &vertexLabel,
-               const std::string &vertexDisplay, const std::string &fragmentLabel,
-               const std::string &fragmentDisplay, float shaderLabelWidth, const std::string &surfaceSectionLabel,
-               const std::shared_ptr<PropertyBatchPlan> &surfacePlan, py::sequence surfaceValues,
-               float surfaceLabelWidth, uint64_t pickerTextureId, uint64_t previewTextureId,
-               const std::string &previewUnavailableLabel, bool defaultOpen, bool readOnly) -> py::tuple {
-                if (surfacePlan)
-                    UpdatePropertyBatchValues(*surfacePlan, surfaceValues);
-                const auto interaction = ctx.RenderMaterialTop(
-                    shaderSectionLabel, vertexLabel, vertexDisplay, fragmentLabel, fragmentDisplay,
-                    shaderLabelWidth, surfaceSectionLabel, surfacePlan.get(), surfaceLabelWidth,
-                    pickerTextureId, previewTextureId, previewUnavailableLabel, defaultOpen, readOnly);
-                return py::make_tuple(
-                    interaction.vertexFlags, interaction.vertexPickerOpen, interaction.vertexPayload,
-                     interaction.vertexListPopupOpen, interaction.fragmentFlags, interaction.fragmentPickerOpen,
-                     interaction.fragmentPayload, interaction.fragmentListPopupOpen,
-                     EncodePropertyChanges(interaction.surfaceChanges), interaction.activeSurfaceIndex,
-                     interaction.deactivatedSurfaceIndex);
-            },
-            py::arg("shader_section_label"), py::arg("vertex_label"), py::arg("vertex_display"),
-            py::arg("fragment_label"), py::arg("fragment_display"), py::arg("shader_label_width"),
-            py::arg("surface_section_label"), py::arg("surface_plan"), py::arg("surface_values"),
-            py::arg("surface_label_width"), py::arg("picker_texture_id"), py::arg("preview_texture_id"),
-            py::arg("preview_unavailable_label"), py::arg("default_open"), py::arg("read_only"),
-            "Render the stable material shader/surface/preview header in one native call.")
         .def("render_object_field_chrome", &InxGUIContext::RenderObjectFieldChrome, py::arg("field_id"),
              py::arg("display_text"), py::arg("type_hint"), py::arg("selected") = false,
              py::arg("clickable") = true, py::arg("has_picker") = false, py::arg("picker_texture_id") = 0,
@@ -1125,7 +1099,7 @@ void RegisterGUIBindings(py::module_ &m)
         .def(py::init<>());
 
     // ResourcePreviewManager - manages resource previewers for Inspector
-    py::class_<ResourcePreviewManager>(m, "ResourcePreviewManager")
+    NativeClass<ResourcePreviewManager>(m, "ResourcePreviewManager")
         .def("has_previewer", &ResourcePreviewManager::HasPreviewer, py::arg("extension"),
              "Check if there's a previewer for the given file extension")
         .def("get_previewer_type_name", &ResourcePreviewManager::GetPreviewerTypeName, py::arg("extension"),

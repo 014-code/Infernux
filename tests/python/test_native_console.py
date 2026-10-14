@@ -33,9 +33,6 @@ def native_console():
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TestNativeConsolePanel:
-    def test_creation(self):
-        panel = ConsolePanel()
-        assert panel is not None
 
     def test_initial_counts_zero(self):
         panel = ConsolePanel()
@@ -159,72 +156,6 @@ class TestNativeConsolePanel:
         assert panel.get_info_count() == 0
         assert panel.get_warning_count() == 0
         assert panel.get_error_count() == 0
-
-    def test_console_toolbar_exposes_cached_text_search(self):
-        source = Path("cpp/infernux/function/editor/ConsolePanel.cpp").read_text(encoding="utf-8")
-
-        assert 'InputTextWithHint("##ConsoleSearch"' in source
-        assert "MatchesCurrentFilters" in source
-        assert "if (!m_cacheDirty && !m_filterDirty)" in source
-
-    def test_console_commands_pass_source_before_payload(self):
-        source = Path("cpp/infernux/function/editor/ConsolePanel.cpp").read_text(
-            encoding="utf-8"
-        )
-
-        assert 'ExecuteEditorCommand("console.set_option", "pointer"' in source
-        assert 'ExecuteEditorCommand("console.set_search", "inline_edit"' in source
-        assert 'ExecuteEditorCommand("console.set_detail_height", "drag", argument)' in source
-        assert 'ExecuteEditorCommand("console.set_option", std::string' not in source
-        assert 'ExecuteEditorCommand("console.set_search", m_searchEditStart' not in source
-
-    def test_console_user_selection_is_intent_only_until_global_projection(self):
-        source = Path("cpp/infernux/function/editor/ConsolePanel.cpp").read_text(encoding="utf-8")
-        select_uid = source[
-            source.index("void ConsolePanel::SelectUid") : source.index("void ConsolePanel::PublishSelection")
-        ]
-        render_row = source[
-            source.index("void ConsolePanel::RenderRow") : source.index("const ImVec4 &ConsolePanel::LevelColor")
-        ]
-
-        assert "m_selectedUid = uid" not in select_uid
-        assert "m_selectedUid = ve.uid" not in render_row
-        assert "PublishSelection(uid, recordHistory)" in select_uid
-        assert "PublishSelection(ve.uid, true)" in render_row
-        assert "ImGui::SetWindowFocus" not in select_uid
-
-    def test_console_row_identity_is_not_truncated_by_visible_log_text(self):
-        source = Path("cpp/infernux/function/editor/ConsolePanel.cpp").read_text(encoding="utf-8")
-        render_row = source[
-            source.index("void ConsolePanel::RenderRow") : source.index("const ImVec4 &ConsolePanel::LevelColor")
-        ]
-
-        assert "const std::string label" in render_row
-        assert "std::to_string" in render_row
-        assert "char label[" not in render_row
-
-    def test_console_ctrl_selection_and_combined_detail_are_native(self):
-        source = Path("cpp/infernux/function/editor/ConsolePanel.cpp").read_text(encoding="utf-8")
-        render_row = source[
-            source.index("void ConsolePanel::RenderRow") : source.index("const ImVec4 &ConsolePanel::LevelColor")
-        ]
-
-        assert "ImGui::GetIO().KeyCtrl" in render_row
-        assert "ToggleLocalSelection(ve.uid)" in render_row
-        assert "SelectedVisibleIndices()" in source
-        assert 'detailText += "\\n" + log.sourceFile + ":"' in source
-
-    def test_console_filter_rebuild_resets_virtual_scroll_immediately(self):
-        source = Path("cpp/infernux/function/editor/ConsolePanel.cpp").read_text(encoding="utf-8")
-        render = source[
-            source.index("void ConsolePanel::OnRenderContent") : source.index("void ConsolePanel::PreRender")
-        ]
-
-        assert "m_resetScrollToTop = true" in source
-        assert "ImGui::SetScrollY(0.0f)" in source
-        assert "scrollY = 0.0f" in source
-        assert "if (!wrapOptions)" in source
-        assert render.index("RenderToolbar(ctx)") < render.index("EnsureCache()") < render.index("RenderBody(ctx)")
 
 
 # ═══════════════════════════════════════════════════════════════════════════

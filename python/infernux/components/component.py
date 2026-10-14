@@ -18,7 +18,7 @@ Example:
             self.transform.position = Vector3(pos.x + self.speed * delta_time, pos.y, pos.z)
 """
 
-from typing import Optional, Dict, Any, Type, TYPE_CHECKING, List
+from typing import Optional, Dict, Any, TYPE_CHECKING, List
 import threading
 import weakref
 
@@ -32,7 +32,6 @@ from infernux.lib import GameObject
 
 if TYPE_CHECKING:
     from infernux.lib import GameObject, Transform
-    from infernux.coroutine import Coroutine
 
 from ._component_native import ComponentNativeMixin
 from ._component_lifecycle import ComponentLifecycleMixin
@@ -195,10 +194,10 @@ class InxComponent(ComponentNativeMixin, ComponentLifecycleMixin, ComponentPhysi
 
         self._cds_slot: Optional[tuple[int, int]] = None
         self._cds_class_id: Optional[int] = None
+        self._cds_finalizer = None
         if self._uses_component_data_store:
             from ._cds_bridge import allocate_slot as _cds_alloc, get_class_id as _cds_class_id
-            self._cds_slot = _cds_alloc(self.__class__)
-            self._cds_class_id = _cds_class_id(self.__class__)
+            self._set_component_data_slot(_cds_alloc(self.__class__), _cds_class_id(self.__class__))
 
         # Initialize serialized fields with defaults (from class-level declarations)
         self._init_serialized_fields()

@@ -1538,50 +1538,30 @@ bool AssetDatabase::IsRefreshPending() const
 
 void AssetDatabase::WaitForPendingWork() const noexcept
 {
-    if (const auto pending = m_pendingModelReimport;
-        pending && pending->job.IsValid() && !pending->job.IsComplete() && JobSystem::IsAvailable()) {
-        try {
-            JobSystem::Get().WaitPassive(pending->job);
-        } catch (...) {
+    const auto wait = [](const JobHandle &job) {
+        if (!job.IsValid() || job.IsComplete())
+            return;
+        if (!JobSystem::IsAvailable()) {
+            INXLOG_ERROR("AssetDatabase pending work outlived JobSystem");
+            return;
         }
-    }
+        JobSystem::Get().WaitPassiveCompletion(job);
+    };
+    if (const auto pending = m_pendingModelReimport)
+        wait(pending->job);
     if (m_pendingAssetScan) {
-        // The scan is a JobSystem task. Waiting on its fence also drives it in
-        // inline mode, where no worker exists to signal a condition variable.
-        try {
-            JobSystem::Get().WaitPassive(m_pendingAssetScanJob);
-        } catch (...) {
-        }
+        wait(m_pendingAssetScanJob);
         return;
     }
     if (const auto commit = m_pendingRefreshCommit) {
-        if (commit->phase == PendingRefreshCommit::Phase::MetadataPrepare && commit->metadataJobs.IsValid() &&
-            !commit->metadataJobs.IsComplete() && JobSystem::IsAvailable()) {
-            try {
-                JobSystem::Get().WaitPassive(commit->metadataJobs);
-            } catch (...) {
-            }
-        } else if (commit->phase == PendingRefreshCommit::Phase::Import && commit->importJobs.IsValid() &&
-                   !commit->importJobs.IsComplete() && JobSystem::IsAvailable()) {
-            try {
-                JobSystem::Get().WaitPassive(commit->importJobs);
-            } catch (...) {
-            }
-        } else if (commit->phase == PendingRefreshCommit::Phase::MetadataWrite) {
-            if (commit->metadataWriteJob.IsValid() && !commit->metadataWriteJob.IsComplete() &&
-                JobSystem::IsAvailable()) {
-                try {
-                    JobSystem::Get().WaitPassive(commit->metadataWriteJob);
-                } catch (...) {
-                }
-            }
-        } else if (commit->phase == PendingRefreshCommit::Phase::IndexBuild && commit->indexBuildJob.IsValid() &&
-                   !commit->indexBuildJob.IsComplete() && JobSystem::IsAvailable()) {
-            try {
-                JobSystem::Get().WaitPassive(commit->indexBuildJob);
-            } catch (...) {
-            }
-        }
+        if (commit->phase == PendingRefreshCommit::Phase::MetadataPrepare)
+            wait(commit->metadataJobs);
+        else if (commit->phase == PendingRefreshCommit::Phase::Import)
+            wait(commit->importJobs);
+        else if (commit->phase == PendingRefreshCommit::Phase::MetadataWrite)
+            wait(commit->metadataWriteJob);
+        else if (commit->phase == PendingRefreshCommit::Phase::IndexBuild)
+            wait(commit->indexBuildJob);
     }
 }
 
@@ -3041,19 +3021,28 @@ AssetDatabase::MoveAssetsBatch(const std::vector<std::pair<std::string, std::str
         }
         PublishQuerySnapshotForPaths(changedPaths);
     } catch (const std::exception &exc) {
+        std::string rollbackFailures;
         for (auto it = metadataMoved.rbegin(); it != metadataMoved.rend(); ++it) {
             try {
                 MoveMetadata((*it)->newPath, (*it)->oldPath);
-            } catch (...) {
+            } catch (const std::exception &rollbackError) {
+                if (!rollbackFailures.empty())
+                    rollbackFailures += "; ";
+                rollbackFailures += (*it)->newPath + ": " + rollbackError.what();
             }
         }
         m_guidToPath = guidToPathBefore;
         m_pathToGuid = pathToGuidBefore;
         m_metas = metasBefore;
         m_fileStates = fileStatesBefore;
-        m_assetIndexDirty = assetIndexDirtyBefore;
-        return failure(prepared.front().oldPath, prepared.front().newPath, AssetMutationErrorCode::RuntimeApplyFailed,
-                       std::string("asset relocation batch failed: ") + exc.what());
+        m_assetIndexDirty = assetIndexDirtyBefore || !rollbackFailures.empty();
+        if (!rollbackFailures.empty())
+            INXLOG_ERROR("Asset relocation failed: ", exc.what(),
+                         "; metadata rollback also failed: ", rollbackFailures);
+        return failure(
+            prepared.front().oldPath, prepared.front().newPath, AssetMutationErrorCode::RuntimeApplyFailed,
+            std::string("asset relocation batch failed: ") + exc.what() +
+                (rollbackFailures.empty() ? std::string{} : "; metadata rollback failed: " + rollbackFailures));
     }
 
     std::vector<AssetMutationResult> results;

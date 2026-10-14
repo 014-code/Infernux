@@ -146,7 +146,7 @@ InxVkCoreModular::~InxVkCoreModular()
     }
 
     if (m_backend.Device().IsValid() && !m_shuttingDown) {
-        m_backend.Device().WaitIdle();
+        m_backend.Device().WaitIdleForShutdown();
     }
     // Async preview submissions retain transient buffers and cloned materials.
     // Release those leases while every renderer subsystem and the device are

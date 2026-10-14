@@ -1,38 +1,3 @@
-/**
- * @file InxVkCoreModular.h
- * @brief Modern modular Vulkan core using the new RAII-based architecture
- *
- * This file provides a drop-in replacement for InxVkCore that uses the new
- * modular architecture. It maintains API compatibility with the original
- * InxVkCore while internally using:
- *
- * - VkDeviceContext for device management
- * - VkSwapchainManager for swapchain lifecycle
- * - VkPipelineManager for pipeline/shader management
- * - VkResourceManager for resource creation
- * - RenderGraph for declarative rendering (optional)
- *
- * Migration Guide:
- * 1. Include this header instead of InxVkCore.h
- * 2. Change InxVkCore to InxVkCoreModular
- * 3. Optionally use RenderGraph for declarative rendering
- *
- * Example:
- *   // Old code:
- *   InxVkCore core;
- *   core.Init(...);
- *   core.DrawFrame(...);
- *
- *   // New code:
- *   InxVkCoreModular core;
- *   core.Init(...);
- *   core.DrawFrame(...);  // Same API!
- *
- *   // Or use RenderGraph:
- *   auto& graph = core.GetRenderGraph();
- *   graph.AddPass("MyPass", [](PassBuilder& builder) { ... });
- */
-
 #pragma once
 
 #include "EngineGlobals.h"
@@ -430,7 +395,7 @@ class InxVkCoreModular
     /// not own or advance it, so offscreen views do not depend on swapchain state.
     [[nodiscard]] uint32_t GetCurrentFrameSlot() const noexcept
     {
-        return m_maxFramesInFlight == 0 ? 0 : m_currentFrame % m_maxFramesInFlight;
+        return m_currentFrame % m_maxFramesInFlight;
     }
 
     /// Exact device-wide completion epoch assigned to the most recently
@@ -844,18 +809,6 @@ class InxVkCoreModular
     [[nodiscard]] const vk::VkResourceManager &GetResourceManager() const
     {
         return m_resourceManager;
-    }
-
-    /**
-     * @brief Get the render graph for declarative rendering
-     */
-    [[nodiscard]] vk::RenderGraph &GetRenderGraph()
-    {
-        return m_renderGraph;
-    }
-    [[nodiscard]] const vk::RenderGraph &GetRenderGraph() const
-    {
-        return m_renderGraph;
     }
 
     /// @brief Get the shader cache (modules, SPIR-V code, annotations)
@@ -2061,10 +2014,6 @@ class InxVkCoreModular
     /// update their descriptor bindings. Must be called before command-buffer
     /// recording begins.
     void PreallocateInstances(size_t requiredInstances);
-
-    /// @brief Write a single instance matrix into the frame's instance SSBO.
-    /// Grows the buffer and refreshes the descriptor if needed.
-    [[nodiscard]] bool WriteInstanceMatrix(uint32_t frameIndex, uint32_t instanceIndex, const glm::mat4 &matrix);
 
     /// @brief Lazily prepare the optional picking/motion stream for one logical frame.
     void PrepareInstanceAuxiliary(uint64_t frameSerial, size_t totalInstances);

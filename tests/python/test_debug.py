@@ -237,3 +237,15 @@ class TestDebugStaticMethods:
         entry = console.get_entries()[-1]
         assert entry.source_file == __file__
         assert entry.source_line == source_line
+
+    def test_suppressed_diagnostics_deduplicate_without_hiding_public_warnings(self, console):
+        for _ in range(2):
+            Debug.log_suppressed("worker", RuntimeError("failed"))
+            Debug.log_warning("public warning")
+        assert len(console.get_entries()) == 3
+        assert sum(entry.message == "public warning" for entry in console.get_entries()) == 2
+        Debug.log_suppressed("worker", ValueError("different"))
+        assert len(console.get_entries()) == 4
+        console.clear()
+        Debug.log_suppressed("worker", ValueError("different"))
+        assert len(console.get_entries()) == 1

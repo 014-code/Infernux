@@ -48,7 +48,7 @@ def test_inspector_asset_path_hint_is_project_relative(monkeypatch, tmp_path):
     asset = project / "Assets" / "VFX" / "Smoke.particlegraph"
     asset.parent.mkdir(parents=True)
     asset.write_text("{}", encoding="ascii")
-    monkeypatch.setattr(project_context, "_project_root", str(project))
+    monkeypatch.setattr(project_context._context(), "root", str(project))
 
     assert _portable_asset_path_hint(str(asset)) == "Assets/VFX/Smoke.particlegraph"
 
@@ -61,7 +61,7 @@ def test_builtin_asset_is_resolvable_but_not_project_navigable(monkeypatch, tmp_
     builtin = tmp_path / "infernux" / "lib" / "shaders" / "standard.vert"
     builtin.parent.mkdir(parents=True)
     builtin.write_text("builtin", encoding="ascii")
-    monkeypatch.setattr(project_context, "_project_root", str(project))
+    monkeypatch.setattr(project_context._context(), "root", str(project))
 
     assert not _is_project_asset_path(str(builtin))
     assert ping_asset_in_project(str(builtin)) is False
@@ -74,7 +74,7 @@ def test_project_asset_ping_uses_the_assets_boundary(monkeypatch, tmp_path):
     asset = project / "Assets" / "Materials" / "Test.mat"
     asset.parent.mkdir(parents=True)
     asset.write_text("{}", encoding="ascii")
-    monkeypatch.setattr(project_context, "_project_root", str(project))
+    monkeypatch.setattr(project_context._context(), "root", str(project))
 
     assert _is_project_asset_path(str(asset))
 
@@ -95,7 +95,7 @@ def test_generated_project_shader_is_not_revealed_outside_assets(monkeypatch, tm
             locate=lambda target, **kwargs: located.append((target, kwargs)) or True
         )
     )
-    monkeypatch.setattr(project_context, "_project_root", str(project))
+    monkeypatch.setattr(project_context._context(), "root", str(project))
     monkeypatch.setattr(
         EditorInteractionCore,
         "instance",

@@ -279,7 +279,6 @@ class UICanvas(InxUIComponent):
         go = self.game_object
         if go is None:
             return
-        from .inx_ui_screen_component import InxUIScreenComponent
 
         for comp in go.get_py_components():
             if is_ui_screen_component(comp):

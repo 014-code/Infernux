@@ -605,10 +605,11 @@ class RuntimeDispatchPublication:
                         component_type,
                         phase_presence_changed=phase_presence_changed,
                     )
-                except Exception:
+                except Exception as exc:
                     # Epoch publication is already restored. Scheduler
                     # invalidation is an observer and cannot own rollback.
-                    pass
+                    from infernux.debug import Debug
+                    Debug.log_suppressed("RuntimeDispatch.scheduler_rollback", exc)
             self._scheduler_notified = False
         self._committed = False
         self._rolled_back = True
@@ -626,17 +627,25 @@ def current_runtime_epoch() -> RuntimeRevisionEpoch:
         return _current_epoch
 
 
+def bind_runtime_dispatch_owner() -> None:
+    """Bind publication explicitly when the Engine/Player owner starts."""
+    global _owner_thread_id
+    current = threading.get_ident()
+    with _EPOCH_LOCK:
+        if _owner_thread_id is not None and _owner_thread_id != current:
+            raise RuntimeError("runtime dispatch already belongs to another owner thread")
+        _owner_thread_id = current
+
+
 def assert_runtime_dispatch_safe_point() -> None:
     """Reject publication while any scheduler still owns an execution frame."""
-    global _owner_thread_id
     current_thread_id = threading.get_ident()
     with _EPOCH_LOCK:
-        if _owner_thread_id is None:
-            _owner_thread_id = current_thread_id
-        elif _owner_thread_id != current_thread_id:
+        owner = _owner_thread_id if _owner_thread_id is not None else threading.main_thread().ident
+        if owner != current_thread_id:
             raise RuntimeError(
                 "runtime dispatch publication requires the owner thread; "
-                f"owner={_owner_thread_id}, current={current_thread_id}"
+                f"owner={owner}, current={current_thread_id}"
             )
     try:
         from infernux.components._component_lifecycle import RuntimeExecutionScheduler
@@ -724,10 +733,11 @@ def _notify_coroutine_epoch(epoch: RuntimeRevisionEpoch) -> None:
         from infernux.coroutine import notify_runtime_epoch_published
 
         notify_runtime_epoch_published(epoch)
-    except Exception:
+    except Exception as exc:
         # Coroutine epoch observation is diagnostic/cache state, not the
         # publication authority.  It must never make commit/rollback partial.
-        pass
+        from infernux.debug import Debug
+        Debug.log_suppressed("RuntimeDispatch.coroutine_epoch", exc)
 
 
 def ensure_runtime_dispatch_types(component_types: Iterable[type]) -> RuntimeRevisionEpoch:

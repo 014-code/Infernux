@@ -79,8 +79,8 @@ def test_managed_load_and_file_resolution_reject_the_same_invalid_paths(
     monkeypatch.setattr(Application, "is_player", staticmethod(lambda: player))
     monkeypatch.setattr(Application, "is_editor", staticmethod(lambda: not player))
     monkeypatch.setattr(AssetManager, "_asset_database", _Database({}))
-    monkeypatch.setattr(project_context, "_runtime_asset_query", lambda _path, *, exact=False: ("wrong-guid",) if player else ())
-    monkeypatch.setattr(project_context, "_runtime_asset_resolver", lambda _guid: str(tmp_path / "wrong.json") if player else None)
+    monkeypatch.setattr(project_context._context(), "asset_query", lambda _path, *, exact=False: ("wrong-guid",) if player else ())
+    monkeypatch.setattr(project_context._context(), "asset_resolver", lambda _guid: str(tmp_path / "wrong.json") if player else None)
     with pytest.raises(ValueError):
         AssetManager.load(path)
     assert project_context.resolve_asset_path(path) is None
@@ -235,8 +235,8 @@ def test_managed_find_returns_guid_identity_and_player_uses_frozen_path_query(
     monkeypatch.setattr(Application, "is_editor", staticmethod(lambda: False))
     monkeypatch.setattr(Application, "is_player", staticmethod(lambda: True))
     monkeypatch.setattr(
-        project_context,
-        "_runtime_asset_query",
+        project_context._context(),
+        "asset_query",
         lambda pattern, *, exact=False: ("material-guid",)
         if pattern in {
             "Assets/Materials/*.mat",
@@ -246,13 +246,13 @@ def test_managed_find_returns_guid_identity_and_player_uses_frozen_path_query(
         } else (),
     )
     monkeypatch.setattr(
-        project_context,
-        "_runtime_asset_resolver",
+        project_context._context(),
+        "asset_resolver",
         lambda guid: str(material) if guid == "material-guid" else None,
     )
     monkeypatch.setattr(
-        project_context,
-        "_runtime_asset_extension_resolver",
+        project_context._context(),
+        "asset_extension_resolver",
         lambda guid: ".mat" if guid == "material-guid" else "",
     )
     class ForbiddenPlayerDatabase:
@@ -343,19 +343,19 @@ def test_player_load_resolves_path_to_guid_without_asset_database(
     monkeypatch.setattr(Application, "is_editor", staticmethod(lambda: False))
     monkeypatch.setattr(Application, "is_player", staticmethod(lambda: True))
     monkeypatch.setattr(
-        project_context,
-        "_runtime_asset_query",
+        project_context._context(),
+        "asset_query",
         lambda path, *, exact=False: ("material-guid",)
         if path == "Assets/Materials/Gold.mat" else (),
     )
     monkeypatch.setattr(
-        project_context,
-        "_runtime_asset_resolver",
+        project_context._context(),
+        "asset_resolver",
         lambda guid: str(cooked) if guid == "material-guid" else None,
     )
     monkeypatch.setattr(
-        project_context,
-        "_runtime_asset_extension_resolver",
+        project_context._context(),
+        "asset_extension_resolver",
         lambda guid: ".mat" if guid == "material-guid" else "",
     )
     class ForbiddenPlayerDatabase:
@@ -390,8 +390,8 @@ def test_player_managed_file_reads_cooked_guid_payload(monkeypatch, tmp_path):
     monkeypatch.setattr(Application, "is_editor", staticmethod(lambda: False))
     monkeypatch.setattr(Application, "is_player", staticmethod(lambda: True))
     monkeypatch.setattr(
-        project_context,
-        "_runtime_asset_resolver",
+        project_context._context(),
+        "asset_resolver",
         lambda guid: str(cooked) if guid == "config-guid" else None,
     )
 
@@ -505,9 +505,9 @@ def test_player_managed_resolution_never_falls_back_to_project_disk(
     source.write_text("source", encoding="utf-8")
     monkeypatch.setattr(Application, "is_editor", staticmethod(lambda: False))
     monkeypatch.setattr(Application, "is_player", staticmethod(lambda: True))
-    monkeypatch.setattr(project_context, "_project_root", str(tmp_path))
-    monkeypatch.setattr(project_context, "_runtime_asset_resolver", None)
-    monkeypatch.setattr(project_context, "_runtime_asset_query", None)
+    monkeypatch.setattr(project_context._context(), "root", str(tmp_path))
+    monkeypatch.setattr(project_context._context(), "asset_resolver", None)
+    monkeypatch.setattr(project_context._context(), "asset_query", None)
 
     with pytest.raises(RuntimeError, match="query is not configured"):
         project_context.resolve_asset_path("Assets/Data/source.txt")

@@ -174,8 +174,16 @@ class TestFieldMetadata:
 
 class TestSerializedFieldFactory:
     def test_returns_descriptor(self):
-        sf = serialized_field(default=0)
-        assert isinstance(sf, SerializedFieldDescriptor)
+        class Counter(InxComponent):
+            _uses_component_data_store = False
+            count: int = serialized_field(default=7)
+
+        descriptor = Counter.count
+        assert isinstance(descriptor, SerializedFieldDescriptor)
+        assert descriptor.default == 7
+        assert Counter().count == 7
+        assert descriptor != 7
+        assert {descriptor: "field"}[Counter.count] == "field"
 
     def test_int_field_shortcut(self):
         sf = int_field(default=7)

@@ -1146,7 +1146,7 @@ def test_builtin_asset_reference_field_records_native_property(monkeypatch, tmp_
 
     project_root = tmp_path / "project"
     material_path = str(project_root / "Assets" / "Bouncy.physicMaterial")
-    monkeypatch.setattr(project_context, "_project_root", str(project_root))
+    monkeypatch.setattr(project_context._context(), "root", str(project_root))
 
     class _AssetDatabase:
         @staticmethod
@@ -1362,7 +1362,7 @@ def test_builtin_shader_picker_persists_only_the_shader_id(monkeypatch, tmp_path
     shader_path = project_root / "Library" / "Resources" / "shaders" / "lit.frag"
     shader_path.parent.mkdir(parents=True)
     shader_path.write_text('ShaderInfo { Name "Lit" }\n', encoding="utf-8")
-    monkeypatch.setattr(project_context, "_project_root", str(project_root))
+    monkeypatch.setattr(project_context._context(), "root", str(project_root))
     monkeypatch.setattr(shader_utils, "_read_compiled_shader_metadata", lambda _path: None)
     monkeypatch.setattr(shader_utils, "_get_shader_catalog", lambda _ext: {"items": [], "paths": {}})
 
@@ -1380,7 +1380,7 @@ def test_generated_library_shader_persists_only_id_before_project_context(
     shader_path = tmp_path / "Project" / "Library" / "Resources" / "shaders" / "standard.vert"
     shader_path.parent.mkdir(parents=True)
     shader_path.write_text('ShaderInfo { Name "Standard" }\n', encoding="utf-8")
-    monkeypatch.setattr(project_context, "_project_root", None)
+    monkeypatch.setattr(project_context._context(), "root", None)
     monkeypatch.setattr(shader_utils, "_read_compiled_shader_metadata", lambda _path: None)
     monkeypatch.setattr(shader_utils, "_get_shader_catalog", lambda _ext: {"items": [], "paths": {}})
 

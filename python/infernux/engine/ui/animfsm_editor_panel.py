@@ -13,8 +13,6 @@ from __future__ import annotations
 import copy
 import json
 import os
-import threading
-import uuid
 from typing import Dict, List, Optional, Tuple
 
 from infernux.engine.path_utils import path_key, resolved_path, same_path
@@ -26,6 +24,7 @@ from infernux.core.anim_state_machine import (
     AnimParameter,
 )
 from infernux.core.asset_ref import AnimationClipRef, AnimationClip3DRef
+from infernux.core.assets import AssetManager
 from infernux.core.asset_reference_types import (
     AssetReferenceCodec,
     asset_type_registry,
@@ -33,9 +32,6 @@ from infernux.core.asset_reference_types import (
 )
 from infernux.core.node_graph import (
     GraphLink,
-    GraphNode,
-    NodeGraph,
-    NodeGraphAuthoringState,
     NodeGraphElementKind,
     NodeGraphMutation,
     NodeGraphMutationKind,
@@ -67,7 +63,6 @@ from infernux.lib import InxGUIContext
 from .asset_save_dialog import AssetSaveAsDialog
 from .animfsm_graph_authoring import (
     AnimFSMGraphAuthoringModel,
-    FSM_ENTRY_NODE_TYPE_ID,
     FSM_STATE_NODE_TYPE_ID,
 )
 from .graph_details import GraphDetailContributor
@@ -85,6 +80,16 @@ from .inspector_utils import field_label, max_label_w
 from .panel_registry import editor_panel
 from .theme import ImGuiCol, Theme
 from .igui import IGUI
+
+
+def _clip_path_from_guid(guid: str) -> str:
+    if not guid:
+        return ""
+    try:
+        return AssetManager._get_path_from_guid(guid) or ""
+    except RuntimeError as exc:
+        Debug.log_suppressed("AnimFSM.clip_path", exc)
+        return ""
 
 
 def _bind_animfsm_panel(panel: object) -> PanelCommandAdapter:
@@ -1071,23 +1076,17 @@ class AnimFSMEditorPanel(NodeGraphEditorPanel):
 
     def on_enable(self) -> None:
         super().on_enable()
-        try:
-            from infernux.engine.play_mode import PlayModeManager
-            pmm = PlayModeManager.instance()
-            if pmm:
-                pmm.add_state_change_listener(self._on_play_mode_changed)
-        except Exception:
-            pass
+        from infernux.engine.play_mode import PlayModeManager
+        pmm = PlayModeManager.instance()
+        if pmm:
+            pmm.add_state_change_listener(self._on_play_mode_changed)
 
     def on_disable(self) -> None:
         super().on_disable()
-        try:
-            from infernux.engine.play_mode import PlayModeManager
-            pmm = PlayModeManager.instance()
-            if pmm:
-                pmm.remove_state_change_listener(self._on_play_mode_changed)
-        except Exception:
-            pass
+        from infernux.engine.play_mode import PlayModeManager
+        pmm = PlayModeManager.instance()
+        if pmm:
+            pmm.remove_state_change_listener(self._on_play_mode_changed)
 
     # ── State persistence ──────────────────────────────────────────────
 
@@ -1186,16 +1185,7 @@ class AnimFSMEditorPanel(NodeGraphEditorPanel):
 
     @staticmethod
     def _resolved_clip_path_for_state(state: AnimState) -> str:
-        path = ""
-        if state.clip_guid:
-            try:
-                from infernux.core.assets import AssetManager
-
-                adb = getattr(AssetManager, "_asset_database", None)
-                if adb:
-                    path = adb.get_path_from_guid(state.clip_guid) or ""
-            except Exception:
-                pass
+        path = _clip_path_from_guid(state.clip_guid)
         return path.replace("\\", "/") if path else ""
 
     def _render_toolbar(self, ctx: InxGUIContext):
@@ -1665,16 +1655,7 @@ class AnimFSMEditorPanel(NodeGraphEditorPanel):
 
     def _clip_ref_for_state(self, state: AnimState):
         """Build a clip ref (2D/3D) with path hint resolved for Inspector-style labels."""
-        path = ""
-        if not path and state.clip_guid:
-            try:
-                from infernux.core.assets import AssetManager
-
-                adb = getattr(AssetManager, "_asset_database", None)
-                if adb:
-                    path = adb.get_path_from_guid(state.clip_guid) or ""
-            except Exception:
-                pass
+        path = _clip_path_from_guid(state.clip_guid)
         if self._fsm_clip_asset_type() == "AnimationClip3D":
             return AnimationClip3DRef(guid=state.clip_guid or "", path_hint=path)
         return AnimationClipRef(guid=state.clip_guid or "", path_hint=path)
@@ -1703,16 +1684,8 @@ class AnimFSMEditorPanel(NodeGraphEditorPanel):
 
     def _clip_b_ref_for_state(self, state: AnimState):
         """Build a clip ref for the blend node's second clip (B)."""
-        path = ""
         guid = getattr(state, "clip_b_guid", "") or ""
-        if guid:
-            try:
-                from infernux.core.assets import AssetManager
-                adb = getattr(AssetManager, "_asset_database", None)
-                if adb:
-                    path = adb.get_path_from_guid(guid) or ""
-            except Exception:
-                pass
+        path = _clip_path_from_guid(guid)
         if self._fsm_clip_asset_type() == "AnimationClip3D":
             return AnimationClip3DRef(guid=guid, path_hint=path)
         return AnimationClipRef(guid=guid, path_hint=path)
@@ -1729,13 +1702,7 @@ class AnimFSMEditorPanel(NodeGraphEditorPanel):
             return cache[ckey]
         resolved = path
         if (not resolved or "::subanim:" not in resolved) and guid:
-            try:
-                from infernux.core.assets import AssetManager
-                adb = getattr(AssetManager, "_asset_database", None)
-                if adb:
-                    resolved = adb.get_path_from_guid(guid) or resolved
-            except Exception:
-                pass
+            resolved = _clip_path_from_guid(guid) or resolved
         name = self._clip_name_from(
             guid, path, resolved, lambda: (ref or self._clip_b_ref_for_state(state)))
         cache[ckey] = name
@@ -1785,14 +1752,7 @@ class AnimFSMEditorPanel(NodeGraphEditorPanel):
         field_label(ctx, t("animfsm_editor.clip_b"), lw)
         clip_b_ping = str(getattr(ref, "path_hint", "") or "").strip()
         if not clip_b_ping:
-            try:
-                from infernux.core.assets import AssetManager
-                adb = getattr(AssetManager, "_asset_database", None)
-                guid_b = str(getattr(state, "clip_b_guid", "") or "")
-                if adb and guid_b:
-                    clip_b_ping = adb.get_path_from_guid(guid_b) or ""
-            except Exception:
-                pass
+            clip_b_ping = _clip_path_from_guid(state.clip_b_guid)
         render_asset_reference_field(
             ctx,
             f"{prefix}_fsm_clipb_{node.uid}",
@@ -1843,16 +1803,16 @@ class AnimFSMEditorPanel(NodeGraphEditorPanel):
                 ec = AnimationClip3D.from_embedded_take_virtual_path(emb)
                 if ec is not None and getattr(ec, "take_name", ""):
                     return str(ec.name)
-            except Exception:
-                pass
+            except (OSError, RuntimeError, ValueError) as exc:
+                Debug.log_suppressed("AnimFSM.embedded_clip_name", exc)
         try:
             obj = ref_factory().resolve()
             if obj is not None:
                 nm = str(getattr(obj, "take_name", "") or getattr(obj, "name", "") or "")
                 if nm:
                     return nm
-        except Exception:
-            pass
+        except (OSError, RuntimeError, ValueError) as exc:
+            Debug.log_suppressed("AnimFSM.clip_name", exc)
         p = resolved or path
         if p and "::subanim:" not in p:
             base = os.path.basename(p)
@@ -2642,16 +2602,7 @@ class AnimFSMEditorPanel(NodeGraphEditorPanel):
 
     def _timeline_display_name(self, state: AnimState) -> str:
         guid = str(getattr(state, "timeline_guid", "") or "")
-        path = ""
-        resolved = path
-        if not resolved and guid:
-            try:
-                from infernux.core.assets import AssetManager
-                adb = getattr(AssetManager, "_asset_database", None)
-                if adb:
-                    resolved = adb.get_path_from_guid(guid) or ""
-            except Exception:
-                resolved = path
+        resolved = _clip_path_from_guid(guid)
         if resolved:
             base = os.path.basename(resolved)
             dot = base.rfind(".")
@@ -2662,16 +2613,7 @@ class AnimFSMEditorPanel(NodeGraphEditorPanel):
         display = self._timeline_display_name(state)
 
         field_label(ctx, t("animfsm_editor.timeline_ref"), lw)
-        tl_ping = ""
-        if not tl_ping:
-            try:
-                from infernux.core.assets import AssetManager
-                adb = getattr(AssetManager, "_asset_database", None)
-                tl_guid = str(getattr(state, "timeline_guid", "") or "")
-                if adb and tl_guid:
-                    tl_ping = adb.get_path_from_guid(tl_guid) or ""
-            except Exception:
-                pass
+        tl_ping = _clip_path_from_guid(state.timeline_guid)
         render_asset_reference_field(
             ctx,
             f"atl_fsm_tl_{node.uid}",
@@ -2927,5 +2869,5 @@ class AnimFSMEditorPanel(NodeGraphEditorPanel):
                     if fsm_obj is not None and same_path(
                             getattr(fsm_obj, "file_path", "") or "", fsm_path):
                         ta.reload_controller()
-        except Exception:
-            pass
+        except RuntimeError as exc:
+            Debug.log_suppressed("AnimFSM.notify_running_animators", exc)

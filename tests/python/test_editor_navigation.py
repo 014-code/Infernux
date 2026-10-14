@@ -191,7 +191,7 @@ def test_explicit_asset_navigation_changes_project_directory_as_non_dirty_view_s
     asset = second / "Target.mat"
     asset.write_text("{}", encoding="utf-8")
     asset_guid = "target-material-guid"
-    monkeypatch.setattr(project_context, "_project_root", str(tmp_path))
+    monkeypatch.setattr(project_context._context(), "root", str(tmp_path))
     monkeypatch.setattr(
         AssetManager,
         "_asset_database",
@@ -265,7 +265,7 @@ def test_asset_navigation_rejects_existing_engine_path(tmp_path, monkeypatch):
     builtin = tmp_path / "infernux" / "lib" / "standard.vert"
     builtin.parent.mkdir(parents=True)
     builtin.write_text("builtin", encoding="ascii")
-    monkeypatch.setattr(project_context, "_project_root", str(project))
+    monkeypatch.setattr(project_context._context(), "root", str(project))
     monkeypatch.setattr(
         AssetManager,
         "_asset_database",
@@ -304,7 +304,7 @@ def test_asset_navigation_can_restore_the_assets_folder(tmp_path, monkeypatch):
     asset = assets / "Materials" / "Test.mat"
     asset.parent.mkdir(parents=True)
     asset.write_text("{}", encoding="ascii")
-    monkeypatch.setattr(project_context, "_project_root", str(project))
+    monkeypatch.setattr(project_context._context(), "root", str(project))
     monkeypatch.setattr(
         AssetManager,
         "_asset_database",

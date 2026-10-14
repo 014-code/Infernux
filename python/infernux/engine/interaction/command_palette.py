@@ -43,14 +43,6 @@ class CommandPaletteService:
         focus: FocusService,
         modals: ModalService,
     ) -> None:
-        if not isinstance(commands, EditorCommandRegistry):
-            raise TypeError("command palette requires EditorCommandRegistry")
-        if not isinstance(shortcuts, ShortcutRouter):
-            raise TypeError("command palette requires ShortcutRouter")
-        if not isinstance(focus, FocusService):
-            raise TypeError("command palette requires FocusService")
-        if not isinstance(modals, ModalService):
-            raise TypeError("command palette requires ModalService")
         self._commands = commands
         self._shortcuts = shortcuts
         self._focus = focus

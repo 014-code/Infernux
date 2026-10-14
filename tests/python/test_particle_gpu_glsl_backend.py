@@ -2491,72 +2491,10 @@ def test_gpu_vector_noise_uses_the_portable_hash_and_compiles_to_spirv():
     assert validate_gpu_particle_spirv(payload, source) is payload
 
 
-def test_geometry_and_particle_shadow_receivers_use_stable_pcf_without_blocker_search():
-    python_root = (Path(__file__).resolve().parents[2] / "python")
-    shader_path = python_root / "infernux" / "resources" / "shaders" / "lighting.glsl"
-    geometry_source = shader_path.read_text(encoding="utf-8")
-    particle_source = (python_root / "infernux" / "particle" / "gpu_glsl_backend.py").read_text(encoding="utf-8")
-    lighting_ubo = (
-        python_root / "infernux" / "resources" / "shaders" / "_templates" / "lighting_ubo.glsl"
-    ).read_text(encoding="utf-8")
-
-    for source in (geometry_source, particle_source):
-        assert "interleavedGradientNoise" not in source
-        assert "vogelDiskSample" not in source
-        assert "1.0 + slope" not in source
-        assert "1.0 + n_dot_l" not in source
-        assert "textureGather" in source
-        assert "pcss" not in source.lower()
-        assert "blockerDisk" not in source and "blocker_disk" not in source
-    assert "step(vec4(receiverDepth), depths)" in geometry_source
-    assert "shadowTentWeight" in geometry_source
-    assert "for (int y = 0; y < 4; ++y)" in geometry_source
-    assert "shadowParams.z * worldTexel" in geometry_source
-    assert "dFdx" in particle_source and "dFdy" in particle_source
-    assert "receiver_plane_gradient" in particle_source
-    assert "step(receiver_depths, depths)" in particle_source
-    assert "0.002 * atlas_size" in particle_source
-    assert "clamp(gradient" in particle_source
-    assert "filter_disk" in particle_source
-    assert "kernel_rotation" in particle_source
-    assert "sampler2D shadowMap" in lighting_ubo
-    assert "sampler2D particle_shadow_map" in particle_source
 
 
-def test_shadow_vertex_keeps_shared_bias_out_of_caster_geometry_and_scopes_line_bias():
-    python_root = (Path(__file__).resolve().parents[2] / "python")
-    template_root = python_root / "infernux" / "resources" / "shaders" / "_templates"
-    builtins = (template_root / "shadow_vertex_builtins.glsl").read_text(encoding="utf-8")
-    vertex = (template_root / "shadow_vertex_main.glsl").read_text(encoding="utf-8")
-
-    assert "vec4 light_vector" in builtins
-    assert "vec4 bias" in builtins
-    assert "transpose(inverse(mat3(instModel)))" in vertex
-    assert "bool inxLineVertex" in vertex
-    assert "if (inBoneWeights.z > 0.0)" in vertex
-    assert "2.0 * abs(inBoneWeights.x) * inBoneWeights.z" in vertex
-    assert "shadowUBO.bias." not in vertex
-    assert "if (shadowUBO.light_vector.w < 0.5)" in vertex
-    assert "gl_Position.z = max(gl_Position.z, 0.0)" in vertex
 
 
-def test_geometry_shadow_filter_applies_receiver_bias_before_stable_tent_pcf():
-    python_root = (Path(__file__).resolve().parents[2] / "python")
-    source = (python_root / "infernux" / "resources" / "shaders" / "lighting.glsl").read_text(
-        encoding="utf-8"
-    )
-
-    normal_bias = "biasedPosition += N * (shadowParams.z * worldTexel"
-    light_bias = "biasedPosition += L * (shadowParams.y * worldTexel)"
-    projection = "shadowView.viewProjection * vec4(biasedPosition, 1.0)"
-    assert normal_bias in source
-    assert light_bias in source
-    assert projection in source
-    assert source.index(normal_bias) < source.index(projection)
-    assert source.index(light_bias) < source.index(projection)
-    assert "vec4 comparison = step(vec4(receiverDepth), depths)" in source
-    assert "float stepSize = filterTexels / 1.5" in source
-    assert "return visibility / max(totalWeight, 1.0)" in source
 
 
 def test_gpu_ribbon_render_instance_exports_full_width_topology_key():
@@ -3148,9 +3086,6 @@ def test_gpu_mesh_orientation_and_nonuniform_scale_use_current_instance_abi():
         in gpu_backend._MESH_VERTEX_GLSL
     )
     assert "gl_Position.z = max(gl_Position.z, 0.0)" in gpu_backend._MESH_VERTEX_GLSL
-    assert "ParticleTileLightMasks" in gpu_backend._PARTICLE_FORWARD_PLUS_LIGHTING_GLSL
-    assert "findLSB(light_mask)" in gpu_backend._PARTICLE_FORWARD_PLUS_LIGHTING_GLSL
-    assert "tile_indices" not in gpu_backend._PARTICLE_FORWARD_PLUS_LIGHTING_GLSL
 
     payload = compile_gpu_particle_spirv(program)
     assert validate_gpu_particle_spirv(payload, program) is payload

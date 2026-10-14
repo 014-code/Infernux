@@ -17,7 +17,7 @@ import math
 import os
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from infernux.core.animation_event import AnimationEvent, events_from_list
 from infernux.engine.path_utils import lexical_path

@@ -36,8 +36,9 @@ class SerializedFieldCollectorMixin:
             if isinstance(annotation, str):
                 try:
                     annotation = eval(annotation, globalns, dict(vars(cls)))  # noqa: S307
-                except Exception:
-                    pass
+                except NameError:
+                    # Preserve a forward reference until its declaration exists.
+                    annotation = own_annotations[name]
             resolved_annotations[name] = annotation
 
         for attr_name in list(cls.__dict__):

@@ -141,6 +141,7 @@ void InxGUI::Init(SDL_Window *window)
 
     IMGUI_CHECKVERSION();
     m_imguiContext_ptr = ImGui::CreateContext();
+    m_guiContext = std::make_unique<InxGUIContext>();
     ImGui::SetCurrentContext(m_imguiContext_ptr);
     m_imguiContext_ptr->ErrorCallback = [](ImGuiContext *context, void *, const char *message) {
         static thread_local bool handlingError = false;
@@ -507,7 +508,7 @@ void InxGUI::RequestSyntheticInputFrame() noexcept
 
 void InxGUI::BuildFrameInternal()
 {
-    static auto ctx = std::make_unique<InxGUIContext>();
+    auto &ctx = m_guiContext;
     ++m_guiFrameCounter;
 
     // ImGui invalidates the previous ImDrawData as soon as NewFrame() starts.
@@ -994,6 +995,7 @@ void InxGUI::Shutdown()
     // The central descriptor manager owns the external pool. ImGui has
     // released its sets above; the pool survives until backend shutdown.
     m_descriptorPool_vk = VK_NULL_HANDLE;
+    m_guiContext.reset();
 }
 
 void InxGUI::Register(const std::string &name, std::shared_ptr<InxGUIRenderable> renderable, int priority)

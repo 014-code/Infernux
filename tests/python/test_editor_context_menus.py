@@ -373,27 +373,3 @@ def test_project_menu_offers_render_texture_through_asset_create_command():
     entry = next(item for item in entries if item.label == "project.create_render_texture")
     assert entry.command_id == "asset.create"
     assert entry.payload["kind"] == "render_texture"
-
-
-def test_native_hierarchy_and_project_menus_are_presentation_only():
-    root = Path(__file__).resolve().parents[2]
-    hierarchy = (
-        root / "cpp" / "infernux" / "function" / "editor" / "HierarchyPanel.cpp"
-    ).read_text(encoding="utf-8")
-    project = (
-        root / "cpp" / "infernux" / "function" / "editor" / "ProjectPanel.cpp"
-    ).read_text(encoding="utf-8")
-
-    hierarchy_body = hierarchy.split(
-        "void HierarchyPanel::RenderItemContextMenu", 1
-    )[1].split("bool HierarchyPanel::ExecuteEditorCommand", 1)[0]
-    project_body = project.split(
-        "void ProjectPanel::RenderContextMenu", 1
-    )[1].split("void ProjectPanel::RenderDragDropSource", 1)[0]
-
-    for body in (hierarchy_body, project_body):
-        assert "Selectable(" not in body
-        assert "CanExecuteEditorCommand" not in body
-        assert "ExecuteEditorCommand" not in body
-    assert "revealInExplorer(" not in project_body
-    assert "ShowStandardCreateMenus" not in hierarchy

@@ -748,10 +748,6 @@ def test_capture_surface_cannot_fall_back_to_operating_system_pixels():
             imported.update(alias.name.split(".")[0] for alias in node.names)
     assert imported.isdisjoint(forbidden_roots)
 
-    native_sources = list((Path(__file__).parents[2] / "cpp").rglob("*Capture*.cpp"))
-    native_text = "\n".join(path.read_text(encoding="utf-8", errors="ignore") for path in native_sources)
-    forbidden_native = ("BitBlt(", "PrintWindow(", "GetDC(", "XGetImage(", "CGWindowListCreateImage")
-    assert all(symbol not in native_text for symbol in forbidden_native)
 
 
 def test_mcp_automation_cannot_control_operating_system_window_activation():

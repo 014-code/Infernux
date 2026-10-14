@@ -1,48 +1,17 @@
 """BootstrapPanelsMixin — extracted from EditorBootstrap."""
 from __future__ import annotations
 
-"""
-EditorBootstrap — structured editor initialization.
-
-Breaks the monolithic ``release_engine()`` startup path into explicit
-startup steps. Each step is a separate method, closures become instance
-methods, and panel/manager references live on the bootstrap instance.
-"""
 
 
-import logging
-import os
-import pathlib
 from dataclasses import dataclass
-from typing import Optional
 
-from infernux.lib import TagLayerManager
-import infernux.resources as _resources
-from infernux.engine.engine import Engine, LogLevel
-from infernux.engine.resources_manager import ResourcesManager
-from infernux.engine.play_mode import PlayModeManager, PlayModeState
-from infernux.engine.scene_manager import SceneFileManager
 from infernux.engine.ui import (
     SceneViewPanel,
     GameViewPanel,
-    WindowManager,
     TagLayerSettingsPanel,
-    BuildSettingsPanel,
-    PreferencesPanel,
-    HistoryPanel,
-    PluginPanel,
-    InxPackageImportPanel,
     PhysicsLayerMatrixPanel,
-    EnvironmentSettingsPanel,
     UIEditorPanel,
-    AnimClip2DEditorPanel,
-    AnimFSMEditorPanel,
-    AnimTimelineEditorPanel,
-    ParticleGraphEditorPanel,
-    EditorPanel,
-    EditorServices,
     PanelRegistry,
-    editor_panel,
 )
 from infernux.engine.ui import panel_state as _panel_state
 @dataclass(frozen=True, slots=True)
@@ -170,7 +139,6 @@ class BootstrapPanelsMixin:
         engine = self.engine
         project_path = self.project_path
 
-        from infernux.engine.interaction import SelectionDomain
         from infernux.engine.ui.core_panel_interactions import (
             console_panel_interaction,
             hierarchy_panel_interaction,
@@ -472,7 +440,7 @@ class BootstrapPanelsMixin:
         engine.register_gui("menu_bar", self.menu_bar)
 
         # Toolbar (native C++ panel)
-        from infernux.lib import ToolbarPanel as NativeToolbarPanel, PlayState
+        from infernux.lib import ToolbarPanel as NativeToolbarPanel
         self.toolbar = NativeToolbarPanel()
         wm.register_existing_window("toolbar", self.toolbar, "toolbar")
         enforce_native_builtin_window_policy("toolbar", self.toolbar)

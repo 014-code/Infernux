@@ -964,12 +964,6 @@ void InxVkCoreModular::DrawSceneFiltered(VkCommandBuffer cmdBuf, uint32_t width,
     if (s_filterDiagFrames < 3) {
         INXLOG_DEBUG("[DrawSceneFiltered] queue=[", queueMin, ",", queueMax, "] totalDC=", drawCalls().size(),
                      " eligible=", eligibleDraws.size());
-        if (!eligibleDraws.empty()) {
-            for (const auto &entry : eligibleDraws) {
-                INXLOG_DEBUG("  -> objId=", entry.dc->objectId, " mat='", entry.material->GetName(),
-                             "' queue=", entry.material->GetRenderQueue());
-            }
-        }
         ++s_filterDiagFrames;
     }
 
@@ -1540,21 +1534,18 @@ void InxVkCoreModular::DrawSceneFiltered(VkCommandBuffer cmdBuf, uint32_t width,
 
         // Commit CPU-side material changes before selecting the immutable GPU
         // generation used by this draw. Texture resolution may publish a new
-        // descriptor set, so refresh only when the update could have changed
-        // the committed render data. The old code unconditionally resolved the
-        // same material twice, which was especially visible in SkyboxPass.
+        // Resolve again only when an update can publish different render data.
         if (matRaw != currentMaterialRaw) {
             const std::string materialKey = matRaw->GetMaterialKey();
             const bool hasPendingTextures = m_materialPipelineManager.HasPendingTextureProperties(materialKey);
             const bool needsMaterialUpdate = matRaw->IsPropertiesDirty() || hasPendingTextures;
-            const bool mayPublishDescriptor = needsMaterialUpdate;
             // Pending texture resolution may become ready between draw-list
             // passes, so preserve the old retry behavior for that state.
             if (needsMaterialUpdate && (updatedMaterials.insert(matRaw).second || hasPendingTextures)) {
                 ++materialUpdateCalls;
                 UpdateMaterialUBO(*matRaw);
             }
-            if (mayPublishDescriptor) {
+            if (needsMaterialUpdate) {
                 MaterialRenderData *updated = m_materialPipelineManager.GetRenderData(materialKey);
                 if (!updated || !updated->isValid || updated->pipeline != resolved.pipeline ||
                     updated->pipelineLayout != resolved.layout || updated->descriptorSet != resolved.descriptorSet ||
@@ -1627,11 +1618,6 @@ void InxVkCoreModular::DrawSceneFiltered(VkCommandBuffer cmdBuf, uint32_t width,
         // The raw handles are backed by the active draw-list lease (or the
         // function-local fallback lease) for this entire command recording.
         if (entry.vertexBuf == VK_NULL_HANDLE || entry.indexBuf == VK_NULL_HANDLE) {
-            static int bufWarnCount = 0;
-            if (bufWarnCount++ < 10) {
-                // INXLOG_WARN("[DrawSceneFiltered] no GPU buffers for objectId=", dc.objectId, " material='",
-                //             matRaw->GetName(), "' queue=", matRaw->GetRenderQueue());
-            }
             emitBatch();
             continue;
         }
@@ -1674,7 +1660,7 @@ void InxVkCoreModular::DrawSceneFiltered(VkCommandBuffer cmdBuf, uint32_t width,
         }
 
         if (descriptorSet != currentDescriptorSet || pipelineLayout != currentLayout) {
-            if (descriptorSet != VK_NULL_HANDLE && !m_materialPipelineManager.IsDescriptorSetLive(descriptorSet)) {
+            if (!m_materialPipelineManager.IsDescriptorSetLive(descriptorSet)) {
                 static int staleSet0WarnCount = 0;
                 if (staleSet0WarnCount++ < 32) {
                     const uint64_t rawHandle = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(descriptorSet));

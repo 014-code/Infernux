@@ -380,15 +380,14 @@ class TestStrictSerializationFailures:
         from infernux.math import Vector3
 
         class CameraRig(InxComponent):
+            _uses_component_data_store = False
             speed: float = serialized_field(default=2.4)
             sway: Vector3 = serialized_field(default=Vector3(0.1, 0.2, 0.3))
 
         component = CameraRig()
         component.speed = 5.0
-        # C++ Vector3 rejects NaN at construction. Bypass CDS so encode sees
-        # the leftover non-finite payload the way a stale Python store would.
-        component._cds_slot = None
-        type(component).__dict__["speed"]._values[id(component)] = 5.0
+        # Inject stale payload into the existing Python store; native Vector3
+        # rejects NaN at construction before it can reach serialization.
         type(component).__dict__["sway"]._values[id(component)] = [
             float("nan"),
             0.0,

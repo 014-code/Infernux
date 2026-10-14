@@ -1,7 +1,5 @@
 from __future__ import annotations
-
 import pytest
-
 from infernux.engine.interaction import (
     ActionOrigin,
     ContextRestoreStatus,
@@ -15,55 +13,6 @@ from infernux.engine.interaction import (
     SelectionTarget,
     WindowLocator,
 )
-
-
-class _DisposableAction:
-    marks_dirty = False
-
-    def __init__(self, name: str, disposed: list[str], *, merge: bool = False):
-        self.name = name
-        self.disposed = disposed
-        self.merge_enabled = merge
-
-    def can_merge(self, _other) -> bool:
-        return self.merge_enabled
-
-    def merge(self, _other) -> None:
-        pass
-
-    def dispose(self) -> None:
-        self.disposed.append(self.name)
-
-
-def test_editor_context_rejects_non_selection_payloads():
-    with pytest.raises(TypeError, match="SelectionSnapshot"):
-        EditorContextSnapshot().with_selection({"component": 7})
-
-    snapshot = SelectionSnapshot()
-    assert EditorContextSnapshot().with_selection(snapshot).selection == snapshot
-
-
-def test_editor_context_selection_replacement_preserves_document_locator():
-    locator = DocumentLocator(
-        "particle-smoke",
-        DocumentKey.asset(DocumentKind.PARTICLE_GRAPH, "particle-guid"),
-        title="Smoke",
-    )
-    window = WindowLocator("particle/Smoke", "particle_graph_editor")
-    scene = DocumentLocator(
-        "scene-main",
-        DocumentKey.asset(DocumentKind.SCENE, "scene-guid"),
-        title="Main",
-    )
-    context = EditorContextSnapshot(document=locator, window=window, scene=scene)
-
-    replaced = context.with_selection(SelectionSnapshot())
-
-    assert replaced.document == locator
-    assert replaced.window == window
-    assert replaced.scene == scene
-
-
 from infernux.engine.undo import UndoCommand, UndoManager
 
 

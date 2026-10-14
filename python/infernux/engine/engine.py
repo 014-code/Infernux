@@ -32,6 +32,9 @@ def _runtime_acceptance_services():
 
 class Engine():
     def __init__(self, engine_log_level=LogLevel.Info, mode=RuntimeMode.Graphical):
+        from infernux.engine.runtime_dispatch import bind_runtime_dispatch_owner
+
+        bind_runtime_dispatch_owner()
         self._mode = RuntimeMode(mode)
         self._application_role = (
             "headless" if self._mode == RuntimeMode.Headless

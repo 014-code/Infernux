@@ -15,10 +15,8 @@ from __future__ import annotations
 import hashlib
 import weakref
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, Optional, TYPE_CHECKING
+from typing import Any, Dict, Iterable, Optional
 
-if TYPE_CHECKING:
-    from .fields import FieldType
 
 # Lazy-loaded C++ module reference.
 _lib = None
@@ -119,34 +117,27 @@ def _drain_retired_layout(class_id: int) -> None:
 
 def _retain_layout_epoch(class_id: int, component_type: type):
     """Pin only the old epoch object, never the class or its layout state."""
-    try:
-        from infernux.engine.runtime_dispatch import current_runtime_epoch
+    from infernux.engine.runtime_dispatch import current_runtime_epoch
 
-        epoch = current_runtime_epoch()
-        if epoch.descriptor_for(component_type) is None:
-            return None
-        state = _retired_layouts.setdefault(int(class_id), _RetiredLayoutState())
-        if state.sentinel_slot is None:
-            try:
-                state.sentinel_slot = tuple(_get_lib()._cds_alloc(int(class_id)))
-            except AttributeError:
-                # Lightweight Python probes may not expose native allocation.
-                # They still exercise epoch ordering without a native sentinel.
-                pass
-
-        def on_epoch_collected(_reference, retired_class_id=int(class_id)):
-            try:
-                _drain_retired_layout(retired_class_id)
-            except Exception:
-                # A weakref callback must not surface errors during GC.
-                pass
-
-        reference = weakref.ref(epoch, on_epoch_collected)
-        if all(existing() is not epoch for existing in state.epoch_refs):
-            state.epoch_refs.append(reference)
-        return reference
-    except (ImportError, AttributeError, TypeError):
+    epoch = current_runtime_epoch()
+    if epoch.descriptor_for(component_type) is None:
         return None
+    state = _retired_layouts.setdefault(int(class_id), _RetiredLayoutState())
+    if state.sentinel_slot is None:
+        state.sentinel_slot = tuple(_get_lib()._cds_alloc(int(class_id)))
+
+    def on_epoch_collected(_reference, retired_class_id=int(class_id)):
+        try:
+            _drain_retired_layout(retired_class_id)
+        except Exception as exc:
+            # GC observers cannot make the already committed epoch partial.
+            from infernux.debug import Debug
+            Debug.log_suppressed("CDS.retire_collected_epoch", exc)
+
+    reference = weakref.ref(epoch, on_epoch_collected)
+    if all(existing() is not epoch for existing in state.epoch_refs):
+        state.epoch_refs.append(reference)
+    return reference
 
 
 def _cancel_layout_epoch(class_id: int, reference) -> None:

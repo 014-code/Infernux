@@ -787,6 +787,7 @@ def test_player_observation_reports_component_diagnostics(monkeypatch):
         "active": True,
         "transform": _Transform(),
         "is_active_in_hierarchy": lambda self: True,
+        "get_components": lambda self: [],
         "get_py_components": lambda self: [RaceHUDController()],
     })()
     scene = type(

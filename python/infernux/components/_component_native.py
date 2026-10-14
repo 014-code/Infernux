@@ -1,32 +1,14 @@
 """ComponentNativeMixin — extracted from InxComponent."""
 from __future__ import annotations
 
-"""
-InxComponent - Base class for all Python-defined components.
 
-Provides Unity-style lifecycle methods and property injection.
-Users inherit from this class to create custom game logic.
-
-Example:
-    from infernux.components import InxComponent, serialized_field
-    
-    class PlayerController(InxComponent):
-        speed: float = serialized_field(default=5.0)
-        
-        def start(self):
-            print("Player started!")
-        
-        def update(self, delta_time: float):
-            pos = self.transform.position
-            self.transform.position = Vector3(pos.x + self.speed * delta_time, pos.y, pos.z)
-"""
-
-from typing import Optional, Dict, Any, Type, TYPE_CHECKING, List
-import copy
-import threading
+from typing import Optional, Any, TYPE_CHECKING
 import weakref
 
 from infernux.lib import GameObject
+
+if TYPE_CHECKING:
+    from infernux.lib import Transform
 
 
 class ComponentNativeMixin:
@@ -135,7 +117,7 @@ class ComponentNativeMixin:
                 lst = _registry.get(go_id)
                 if lst is None:
                     _registry[go_id] = [self]
-                elif self not in lst:
+                elif all(item is not self for item in lst):
                     lst.append(self)
                 self._registered_go_id = go_id
                 from ._component_lifecycle import notify_runtime_component_added
@@ -152,8 +134,10 @@ class ComponentNativeMixin:
         _registry = type(self)._active_instances
         lst = _registry.get(old_id)
         if lst is not None:
-            if self in lst:
-                lst.remove(self)
+            for index, item in enumerate(lst):
+                if item is self:
+                    del lst[index]
+                    break
             if not lst:
                 _registry.pop(old_id, None)
         self._registered_go_id = None

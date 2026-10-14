@@ -13,13 +13,12 @@ import os
 import copy
 import json
 import math
-import threading
 import time
 import uuid
 import zlib
-from infernux.engine.path_utils import path_key, resolved_path, same_path
+from infernux.engine.path_utils import resolved_path, same_path
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from infernux.debug import Debug
 from infernux.engine.i18n import t
@@ -754,17 +753,10 @@ class AnimClip2DEditorPanel(EditorPanel):
     ) -> None:
         del document_id, source_path, destination_path, guid
 
-    def save_state(self) -> dict:
-        return super().save_state()
-
-    def load_state(self, data: dict) -> None:
-        super().load_state(data)
-
     # ------------------------------------------------------------------
     # Render — layout: header -> tabs -> preview/details -> sequence -> palette
     # ------------------------------------------------------------------
 
-    # ImGuiKey / ImGuiMod constants
     def on_render_content(self, ctx: InxGUIContext):
         try:
             if self._tex is not None:
@@ -801,7 +793,7 @@ class AnimClip2DEditorPanel(EditorPanel):
             finally:
                 ctx.pop_style_var(1)
         except Exception as exc:
-            Debug.log_warning(f"[AnimClipEditor] Render error: {exc}")
+            Debug.log_suppressed("AnimClip2D.render", exc)
 
     # ------------------------------------------------------------------
     # Header / empty state helpers
@@ -1185,7 +1177,7 @@ class AnimClip2DEditorPanel(EditorPanel):
                     if tex.texture_id:
                         ctx.image(tex.texture_id, pw, ph, uv0_x, uv0_y, uv1_x, uv1_y)
         except Exception as exc:
-            Debug.log_warning(f"[AnimClipEditor] Preview error: {exc}")
+            Debug.log_suppressed("AnimClip2D.preview", exc)
         finally:
             # Centering uses SetCursorPos on both axes. The image can be
             # unavailable for a frame, so always submit the resulting cursor
@@ -1448,7 +1440,7 @@ class AnimClip2DEditorPanel(EditorPanel):
                 ctx.end_child()
 
         except Exception as exc:
-            Debug.log_warning(f"[AnimClipEditor] Frame palette error: {exc}")
+            Debug.log_suppressed("AnimClip2D.frame_palette", exc)
         finally:
             ctx.dummy(0.0, 0.0)
             ctx.end_child()
@@ -1504,58 +1496,36 @@ class AnimClip2DEditorPanel(EditorPanel):
 
     @staticmethod
     def _get_native_engine():
-        try:
-            from .editor_services import EditorServices
+        from .editor_services import EditorServices
 
-            svc = EditorServices.instance()
-            return svc.native_engine if svc else None
-        except Exception:
-            return None
+        svc = EditorServices.instance()
+        return svc.native_engine if svc else None
 
     @staticmethod
     def _read_texture_sampling(file_path: str):
-        filter_tag = "default"
-        srgb_tag = "linear"
-        use_nearest = False
-        use_srgb = False
-        try:
-            from infernux.core.asset_types import read_texture_import_settings, FilterMode
+        from infernux.core.asset_types import read_texture_import_settings, FilterMode
 
-            settings = read_texture_import_settings(file_path)
-            cur_filter = getattr(settings, 'filter_mode', None)
-            use_srgb = bool(getattr(settings, 'srgb', False))
-            filter_tag = cur_filter.name if cur_filter else "default"
-            srgb_tag = "srgb" if use_srgb else "linear"
-            use_nearest = (cur_filter == FilterMode.POINT)
-        except Exception:
-            pass
+        settings = read_texture_import_settings(file_path)
+        cur_filter = settings.filter_mode
+        use_srgb = bool(settings.srgb)
+        filter_tag = cur_filter.name
+        srgb_tag = "srgb" if use_srgb else "linear"
+        use_nearest = cur_filter == FilterMode.POINT
         return filter_tag, srgb_tag, use_nearest, use_srgb
 
     @staticmethod
     def _read_sprite_frames(file_path: str):
-        frames = []
-        try:
-            from infernux.core.asset_types import read_texture_import_settings
+        from infernux.core.asset_types import read_texture_import_settings
 
-            settings = read_texture_import_settings(file_path)
-            if settings and settings.sprite_frames:
-                frames = list(settings.sprite_frames)
-        except Exception:
-            pass
-        return frames
+        return list(read_texture_import_settings(file_path).sprite_frames)
 
     @staticmethod
     def _read_source_dimensions(file_path: str, frames=None):
-        source_w = 0
-        source_h = 0
-        try:
-            from infernux.core.asset_types import read_meta_file
+        from infernux.core.asset_types import read_meta_file
 
-            meta = read_meta_file(file_path) or {}
-            source_w = int(meta.get('width', 0) or 0)
-            source_h = int(meta.get('height', 0) or 0)
-        except Exception:
-            pass
+        meta = read_meta_file(file_path) or {}
+        source_w = int(meta.get('width', 0) or 0)
+        source_h = int(meta.get('height', 0) or 0)
 
         if (source_w <= 0 or source_h <= 0) and frames:
             source_w = max((int(f.x) + int(f.w) for f in frames), default=0)
@@ -1618,14 +1588,8 @@ class AnimClip2DEditorPanel(EditorPanel):
             source_h = max(tex_h, 0)
 
         # Resolve GUID
-        guid = ""
-        try:
-            from infernux.engine.bootstrap import EditorBootstrap
-            adb = EditorBootstrap.instance().engine.get_asset_database()
-            if adb:
-                guid = adb.get_guid_from_path(file_path) or ""
-        except Exception:
-            pass
+        from infernux.core.assets import AssetManager
+        guid = AssetManager._get_guid_from_path(file_path) or ""
 
         next_texture = _TextureState(
             file_path=norm_path,
@@ -1650,8 +1614,8 @@ class AnimClip2DEditorPanel(EditorPanel):
         if tex and native and tex.resource_key:
             try:
                 native.invalidate_texture_preview_task(tex.resource_key)
-            except Exception:
-                pass
+            except RuntimeError as exc:
+                Debug.log_suppressed("AnimClip2D.invalidate_texture_preview", exc)
 
     # ------------------------------------------------------------------
     # Texture validation — detect stale handles & sampling changes
@@ -1666,6 +1630,7 @@ class AnimClip2DEditorPanel(EditorPanel):
         if tex is None:
             return False
 
+        tex.texture_id = 0
         if not tex.file_path or not os.path.isfile(tex.file_path):
             return False
 
@@ -1739,16 +1704,10 @@ class AnimClip2DEditorPanel(EditorPanel):
             self._tex = None
         tex_resolved = False
         if clip_data.authoring_texture_guid:
-            try:
-                from infernux.engine.bootstrap import EditorBootstrap
-                adb = EditorBootstrap.instance().engine.get_asset_database()
-                if adb:
-                    tex_path = adb.get_path_from_guid(clip_data.authoring_texture_guid)
-                    if tex_path and os.path.isfile(tex_path):
-                        self._load_texture(tex_path)
-                        tex_resolved = True
-            except Exception:
-                pass
+            from infernux.core.assets import AssetManager
+            tex_path = AssetManager._get_path_from_guid(clip_data.authoring_texture_guid)
+            if tex_path and os.path.isfile(tex_path):
+                tex_resolved = self._load_texture(tex_path)
 
         # Import clip state
         cs = _ClipState(

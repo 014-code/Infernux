@@ -6,10 +6,8 @@ UIEditorPanel and GameViewPanel.
 
 from __future__ import annotations
 
-from typing import List, Tuple, TYPE_CHECKING
+from typing import List, Tuple
 
-if TYPE_CHECKING:
-    pass  # avoid circular imports at runtime
 
 def _sort_key(canvas):
     # Older Web component overlays may not carry newly added serialized

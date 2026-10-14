@@ -14,17 +14,13 @@ Handles:
 
 import time
 import os
-import sys
 import types
 from enum import Enum, auto
-from typing import Optional, List, Dict, Any, Callable, Iterable, TYPE_CHECKING
+from typing import Optional, List, Any, Callable, Iterable
 from dataclasses import dataclass
-from infernux.debug import Debug, LogType
+from infernux.debug import Debug
 from infernux.engine.project_context import resolve_script_path
 
-if TYPE_CHECKING:
-    from infernux.lib import SceneManager, Scene, GameObject
-    from infernux.components.component import InxComponent
 
 
 class PlayModeState(Enum):

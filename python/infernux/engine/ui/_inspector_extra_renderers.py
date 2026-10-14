@@ -3,7 +3,7 @@
 import os
 
 from infernux.debug import Debug
-from infernux.core.asset_types import IMAGE_EXTENSIONS, MESH_EXTENSIONS
+from infernux.core.asset_types import MESH_EXTENSIONS
 from infernux.graph.types import (
     AssetReference,
     BUILTIN_MESH_NAMES,
