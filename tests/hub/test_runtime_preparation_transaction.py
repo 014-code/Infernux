@@ -213,6 +213,24 @@ def test_bundle_failure_preserves_previous_runtime(installation, monkeypatch, ph
     assert manager.get_runtime_path() == manager.private_runtime_python()
 
 
+def test_bundle_publication_denial_is_not_reported_as_a_corrupt_bundle(installation, monkeypatch):
+    manager, target, source = installation
+    write_runtime(target, "old")
+    select_source("zip", manager, source, monkeypatch)
+    monkeypatch.setattr(manager, "_prepare_managed_runtime", lambda *a, **kw: None)
+    denied = PermissionError("publication access denied")
+    def fail(*args):
+        raise denied
+    monkeypatch.setattr(runtime, "_replace_runtime_directory", fail)
+    with pytest.raises(module.PythonRuntimeError, match="Failed to install bundled Python") as error:
+        manager.reinstall_runtime()
+    assert error.value.__cause__ is denied
+    assert str(target) in str(error.value)
+    assert "runtime is invalid" not in str(error.value)
+    assert (target / "identity.txt").read_text() == "old"
+    assert not list(target.parent.glob(".python313.extract-*"))
+
+
 @pytest.mark.parametrize("member", ["python313/../outside", "python313/C:/outside", "python313/sub/../../outside"])
 def test_bundle_rejects_noncanonical_paths_before_copy(installation, monkeypatch, member):
     manager, target, source = installation

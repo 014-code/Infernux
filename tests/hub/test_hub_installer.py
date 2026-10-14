@@ -263,6 +263,7 @@ def test_windows_shared_permissions_target_only_installing_user_and_shared(tmp_p
         return SimpleNamespace(stdout='"machine\\author","S-1-5-21-123-456-789-1001"\n')
 
     monkeypatch.setattr(install_python_runtime.subprocess, "run", execute)
+    monkeypatch.setattr(install_python_runtime, "restore_windows_inherited_access_tree", lambda root: None)
     result = install_python_runtime.prepare_shared_storage(str(tmp_path / "Hub"))
     expected = str((tmp_path / "Hub/InfernuxHubData/Shared").resolve())
     assert result == expected
