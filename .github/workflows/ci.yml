@@ -109,6 +109,7 @@ jobs:
           if-no-files-found: warn
 
   windows-desktop:
+    needs: portable-hub
     runs-on: windows-2022
     timeout-minutes: 240
     permissions:
@@ -216,7 +217,7 @@ jobs:
           conda activate infernux
           $env:VULKAN_SDK = "C:\VulkanSDK\$env:VULKAN_SDK_VERSION"
           New-Item -ItemType Directory -Path out\test-results -Force | Out-Null
-          ctest --preset windows-msvc-release -LE "performance|requires_vulkan_device" --parallel 8 --timeout 120 --output-on-failure --output-junit out\test-results\ctest-windows.xml
+          ctest --preset windows-msvc-release -LE "performance|requires_vulkan_device" --parallel 8 --timeout 120 --output-on-failure --output-junit "$PWD/out/test-results/ctest-windows.xml"
 
       - name: Run required Windows software GPU correctness gate
         shell: pwsh
@@ -234,7 +235,20 @@ jobs:
           cmake --build --preset windows-msvc-install-wheel
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Run Python and platform contract tests
+      - name: Run project shader declaration tests
+        id: shader-declarations
+        shell: pwsh
+        run: |
+          conda activate infernux
+          $env:VULKAN_SDK = "C:\VulkanSDK\$env:VULKAN_SDK_VERSION"
+          Remove-Item Env:PYTHONPATH, Env:INFERNUX_NATIVE_MODULE_DIR -ErrorAction SilentlyContinue
+          # Builtin-name overrides affect the entire project. Give these tests
+          # a fresh native project before other scenarios author missing references.
+          python -m pytest -o pythonpath= tests/python/test_shader_declaration_discovery.py -q --durations=10 --junitxml out/test-results/pytest-shader-declarations-windows.xml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run native Python tests
+        id: native-python
         shell: pwsh
         run: |
           conda activate infernux
@@ -246,12 +260,13 @@ jobs:
           # context pressure from unbounded parallelism.
           $parallelXml = "out\test-results\pytest-windows-parallel.xml"
           python -m pytest -n 2 --dist loadfile --max-worker-restart=0 -o pythonpath= `
-            tests\python tests\contracts `
+            tests\python `
+            --ignore=tests\python\test_shader_declaration_discovery.py `
             --ignore=tests\python\test_engine_play_mode.py `
             --ignore=tests\python\test_ui_shader_dependency_runtime.py `
             --ignore=tests\python\test_model_refresh_subassets.py `
             --ignore=tests\python\test_physics_drag_push.py `
-            -q --junitxml $parallelXml
+            -q --durations=20 --junitxml $parallelXml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # These files exercise process-wide editor/render state. Run them
           # in one process so their lifecycle and software-Vulkan ordering
@@ -261,7 +276,7 @@ jobs:
             tests\python\test_ui_shader_dependency_runtime.py `
             tests\python\test_model_refresh_subassets.py `
             tests\python\test_physics_drag_push.py `
-            -q --junitxml out\test-results\pytest-windows.xml
+            -q --durations=20 --junitxml out\test-results\pytest-windows.xml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Run Hub tests
@@ -321,6 +336,7 @@ jobs:
           if-no-files-found: warn
 
   linux-desktop:
+    needs: portable-hub
     runs-on: ubuntu-22.04
     timeout-minutes: 120
     env:
@@ -354,7 +370,7 @@ jobs:
         run: |
           conda activate infernux
           mkdir -p out/test-results
-          xvfb-run --auto-servernum env QT_QPA_PLATFORM=xcb QT_DEBUG_PLUGINS=1 PYTHONPATH=packaging python -m pytest tests/hub -q -s --junitxml out/test-results/pytest-hub-linux.xml
+          xvfb-run --auto-servernum env QT_QPA_PLATFORM=xcb PYTHONPATH=packaging python -m pytest tests/hub -q --junitxml out/test-results/pytest-hub-linux.xml
 
       - name: Configure Linux release preset
         run: |
@@ -371,7 +387,7 @@ jobs:
         run: |
           conda activate infernux
           mkdir -p out/test-results
-          ctest --preset linux-clang-release -LE "performance|requires_vulkan_device" --parallel 8 --timeout 120 --output-on-failure --output-junit out/test-results/ctest-linux.xml
+          ctest --preset linux-clang-release -LE "performance|requires_vulkan_device" --parallel 8 --timeout 120 --output-on-failure --output-junit "$PWD/out/test-results/ctest-linux.xml"
 
       - name: Run required Linux software GPU correctness gate
         run: |
@@ -383,11 +399,20 @@ jobs:
           conda activate infernux
           cmake --build --preset linux-clang-install-wheel
 
-      - name: Run Python and platform contract tests
+      - name: Run project shader declaration tests
+        id: shader-declarations
         run: |
           conda activate infernux
           unset PYTHONPATH INFERNUX_NATIVE_MODULE_DIR
-          xvfb-run --auto-servernum python -m pytest -o pythonpath= tests/python tests/contracts -q --junitxml out/test-results/pytest-linux.xml
+          # Builtin-name overrides require their own native project.
+          xvfb-run --auto-servernum python -m pytest -o pythonpath= tests/python/test_shader_declaration_discovery.py -q --durations=10 --junitxml out/test-results/pytest-shader-declarations-linux.xml
+
+      - name: Run native Python tests
+        id: native-python
+        run: |
+          conda activate infernux
+          unset PYTHONPATH INFERNUX_NATIVE_MODULE_DIR
+          xvfb-run --auto-servernum python -m pytest -o pythonpath= tests/python --ignore=tests/python/test_shader_declaration_discovery.py -q --durations=20 --junitxml out/test-results/pytest-linux.xml
 
       - name: Run Linux headless physics profile gate
         run: |

@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://infernux-engine.com/"><img src="docs/assets/logo.png" width="96" alt="Infernux logo"></a>
+  <a href="https://infernux-engine.com/"><img src="docs/assets/logo.svg" width="96" alt="Infernux logo"></a>
 </p>
 
 <h1 align="center">Infernux · 熔炉</h1>

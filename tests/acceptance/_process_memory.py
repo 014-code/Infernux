@@ -32,6 +32,20 @@ if sys.platform == "win32":
         ctypes.c_ulong,
     ]
     _GET_PROCESS_MEMORY_INFO.restype = ctypes.c_int
+    class _HeapOptimizeResourcesInformation(ctypes.Structure):
+        _fields_ = [("version", ctypes.c_ulong), ("flags", ctypes.c_ulong)]
+
+    _HEAP_OPTIMIZE_RESOURCES = 3
+    _HEAP_OPTIMIZE_INFO = _HeapOptimizeResourcesInformation(1, 0)
+    _KERNEL32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _HEAP_SET_INFORMATION = _KERNEL32.HeapSetInformation
+    _HEAP_SET_INFORMATION.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_int,
+        ctypes.POINTER(_HeapOptimizeResourcesInformation),
+        ctypes.c_size_t,
+    ]
+    _HEAP_SET_INFORMATION.restype = ctypes.c_int
 elif sys.platform == "linux":
     _LIBC = ctypes.CDLL("libc.so.6")
     _MALLOC_TRIM = _LIBC.malloc_trim
@@ -47,6 +61,17 @@ def process_memory_bytes() -> tuple[int, int]:
     runs only in acceptance instrumentation, outside the engine's frame path.
     """
     if sys.platform == "win32":
+        # Match Linux's malloc_trim below. With a NULL heap handle,
+        # HeapOptimizeResources reclaims unused LFH caches in all process
+        # heaps. CRT compaction alone does not reclaim these caches.
+        # This does not evict working-set pages or free live allocations.
+        if not _HEAP_SET_INFORMATION(
+            None, _HEAP_OPTIMIZE_RESOURCES,
+            ctypes.byref(_HEAP_OPTIMIZE_INFO), ctypes.sizeof(_HEAP_OPTIMIZE_INFO),
+        ):
+            raise ctypes.WinError(
+                ctypes.get_last_error(), "HeapSetInformation(HeapOptimizeResources) failed"
+            )
         counters = _ProcessMemoryCountersEx()
         counters.cb = ctypes.sizeof(counters)
         if not _GET_PROCESS_MEMORY_INFO(

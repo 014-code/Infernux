@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">Infernux — striped monolith</title>
+  <desc>A hollow red monolith. Its 80-unit top and 129.442-unit base have a golden-ratio width relationship.</desc>
+  <path fill="#B33D49" fill-rule="evenodd" d="M88 16H168L192.721 240H63.279Z M106 40H150L169.424 216H86.576Z"/>
+  <g fill="#B33D49">
+    <path d="M116 52H135.2L114.055 69.621Z"/>
+    <path d="M112.111 87.241L141.213 62.989L143.032 79.473L109.923 107.064Z"/>
+    <path d="M107.978 124.685L144.649 94.126L146.468 110.61L105.791 144.508Z"/>
+    <path d="M103.846 162.128L148.085 125.262L149.905 141.746L101.658 181.951Z"/>
+    <path d="M99.714 199.572L151.522 156.399L153.341 172.883L116 204H99.225Z"/>
+    <path d="M135.2 204L154.958 187.535L156.775 204Z"/>
+  </g>
+</svg>

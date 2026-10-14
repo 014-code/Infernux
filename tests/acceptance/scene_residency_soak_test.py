@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from array import array
+from collections.abc import Sequence
 import gc
 import sys
 import tempfile
@@ -27,7 +29,7 @@ WARMUP_CYCLES = 10
 MIB = 1024 * 1024
 
 
-def _assert_stable(name: str, values: list[int], tolerance: int) -> None:
+def _assert_stable(name: str, values: Sequence[int], tolerance: int) -> None:
     tail = values[WARMUP_CYCLES:]
     if len(tail) != CYCLES - WARMUP_CYCLES:
         raise AssertionError(f"{name}: incomplete samples ({len(values)}/{CYCLES})")
@@ -42,7 +44,7 @@ def _assert_stable(name: str, values: list[int], tolerance: int) -> None:
         raise AssertionError(f"{name}: final window did not stabilize: {tail[-10:]}")
 
 
-def _assert_process_memory_stable(name: str, values: list[int]) -> None:
+def _assert_process_memory_stable(name: str, values: Sequence[int]) -> None:
     tail = values[WARMUP_CYCLES:]
     if len(tail) != CYCLES - WARMUP_CYCLES:
         raise AssertionError(f"{name}: incomplete samples ({len(values)}/{CYCLES})")
@@ -118,25 +120,28 @@ def main() -> int:
                 "settle_frames": 0,
                 "scene": None,
             }
-            rss_samples: list[int] = []
-            private_samples: list[int] = []
-            python_block_samples: list[int] = []
-            python_object_samples: list[int] = []
-            scene_count_samples: list[int] = []
-            device_samples: list[int] = []
-            allocation_count_samples: list[int] = []
-            cpu_samples: list[int] = []
-            gpu_asset_samples: list[int] = []
-            material_ubo_samples: list[int] = []
-            material_render_data_samples: list[int] = []
-            material_descriptor_samples: list[int] = []
-            retired_material_descriptor_samples: list[int] = []
-            material_descriptor_pool_samples: list[int] = []
-            material_pipeline_samples: list[int] = []
-            runtime_material_samples: list[int] = []
-            asset_material_samples: list[int] = []
-            runtime_mesh_samples: list[int] = []
-            physics_body_samples: list[int] = []
+            # Store counters as packed integers. Keeping each sampled Python
+            # int alive can pin pymalloc arenas and make the observer itself
+            # appear as growing process residency.
+            rss_samples = array("Q")
+            private_samples = array("Q")
+            python_block_samples = array("Q")
+            python_object_samples = array("Q")
+            scene_count_samples = array("Q")
+            device_samples = array("Q")
+            allocation_count_samples = array("Q")
+            cpu_samples = array("Q")
+            gpu_asset_samples = array("Q")
+            material_ubo_samples = array("Q")
+            material_render_data_samples = array("Q")
+            material_descriptor_samples = array("Q")
+            retired_material_descriptor_samples = array("Q")
+            material_descriptor_pool_samples = array("Q")
+            material_pipeline_samples = array("Q")
+            runtime_material_samples = array("Q")
+            asset_material_samples = array("Q")
+            runtime_mesh_samples = array("Q")
+            physics_body_samples = array("Q")
             peak_physics_body_count = 0
 
             def run_cycle() -> None:
@@ -279,6 +284,29 @@ def main() -> int:
             if callback_failures:
                 raise callback_failures[0]
 
+            # Emit all ownership counters before assertions so a failed
+            # process-memory check still has the native residency evidence.
+            print(
+                "Scene residency soak samples: "
+                f"cycles={CYCLES}, rss={list(rss_samples)}, "
+                f"private={list(private_samples)}, "
+                f"pyblocks_tail={list(python_block_samples[-10:])}, "
+                f"pyobjects_tail={list(python_object_samples[-10:])}, "
+                f"device_tail={list(device_samples[-10:])}, "
+                f"alloc_count_tail={list(allocation_count_samples[-10:])}, "
+                f"cpu_tail={list(cpu_samples[-10:])}, gpu_tail={list(gpu_asset_samples[-10:])}, "
+                f"material_ubo_tail={list(material_ubo_samples[-10:])}, "
+                f"material_data_tail={list(material_render_data_samples[-10:])}, "
+                f"descriptor_tail={list(material_descriptor_samples[-10:])}, "
+                f"retired_descriptor_tail={list(retired_material_descriptor_samples[-10:])}, "
+                f"descriptor_pool_tail={list(material_descriptor_pool_samples[-10:])}, "
+                f"pipeline_tail={list(material_pipeline_samples[-10:])}, "
+                f"runtime_material_tail={list(runtime_material_samples[-10:])}, "
+                f"asset_material_tail={list(asset_material_samples[-10:])}, "
+                f"runtime_mesh_tail={list(runtime_mesh_samples[-10:])}, "
+                f"peak_physics_bodies={peak_physics_body_count}",
+                flush=True,
+            )
             _assert_process_memory_stable("RSS", rss_samples)
             _assert_process_memory_stable("private bytes", private_samples)
             # CPython/pybind's small-object allocator retains a bounded set of
@@ -329,26 +357,7 @@ def main() -> int:
                     f"mixed soak never created the expected Jolt bodies: {peak_physics_body_count}"
                 )
 
-            print(
-                "Scene residency soak passed: "
-                f"cycles={CYCLES}, rss_tail={rss_samples[-10:]}, "
-                f"private_tail={private_samples[-10:]}, "
-                f"pyblocks_tail={python_block_samples[-10:]}, "
-                f"pyobjects_tail={python_object_samples[-10:]}, "
-                f"device_tail={device_samples[-10:]}, "
-                f"alloc_count_tail={allocation_count_samples[-10:]}, "
-                f"cpu_tail={cpu_samples[-10:]}, gpu_tail={gpu_asset_samples[-10:]}, "
-                f"material_ubo_tail={material_ubo_samples[-10:]}, "
-                f"material_data_tail={material_render_data_samples[-10:]}, "
-                f"descriptor_tail={material_descriptor_samples[-10:]}, "
-                f"retired_descriptor_tail={retired_material_descriptor_samples[-10:]}, "
-                f"descriptor_pool_tail={material_descriptor_pool_samples[-10:]}, "
-                f"pipeline_tail={material_pipeline_samples[-10:]}, "
-                f"runtime_material_tail={runtime_material_samples[-10:]}, "
-                f"asset_material_tail={asset_material_samples[-10:]}, "
-                f"runtime_mesh_tail={runtime_mesh_samples[-10:]}, "
-                f"peak_physics_bodies={peak_physics_body_count}"
-            )
+            print(f"Scene residency soak passed: cycles={CYCLES}")
             return 0
         finally:
             engine.cleanup()

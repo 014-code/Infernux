@@ -57,7 +57,7 @@ async function shellRuntimeRoutes(pages) {
 const precacheRoutes = [
     ...shellPages,
     "/site.webmanifest",
-    "/assets/logo-mark.webp",
+    "/assets/logo.svg",
     "/assets/favicon-64.png",
     ...await shellRuntimeRoutes(shellPages),
     ...shellFontRoutes,

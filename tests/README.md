@@ -45,6 +45,9 @@ All paths below are pytest modules. Run one with `python -m pytest PATH -q -ra`.
 | Hub launch readiness, errors and repeated launch | `tests/hub/test_hub_launch_state.py`, `tests/hub/test_project_runtime_strictness.py` | Portable Hub; full desktop CI |
 | Host-specific wheel delivery and refresh | `tests/hub/test_hub_release.py`, `tests/hub/test_project_wheel_refresh.py` | Full Hub CI; real download check before release |
 | Inside-out Windows signing and immutable publication | `tests/hub/test_release_signing.py` | Portable Hub; real SignPath test workflow before signed releases |
+| Exact-source release publication and Player acceptance prerequisites | `tests/contracts/test_release_player_gate.py` | Portable contracts; actual PowerShell source guard before native builds |
+| Linux toolchain, dependency installation and installed-wheel test ordering | `tests/contracts/test_linux_build_contract.py` | Portable contracts before native builds; native CTest and Python retain runtime coverage |
+| Project-wide builtin library and shading model overrides | `tests/python/test_shader_declaration_discovery.py` | Dedicated native pytest process after wheel installation, before the bulk suite |
 | Scene activation, defaults and Play/Stop transitions | `tests/python/test_scene_manager_runtime_loading.py`, `tests/python/test_scene_manager_defaults.py`, `tests/python/test_engine_play_mode.py` | Native Python; visible editor acceptance |
 | Script refresh and transactional publication | `tests/python/test_play_mode_component_body_reload.py`, `tests/python/test_plugin_updates.py` | Native Python |
 | Component batch storage, validation and field-change publication | `tests/python/test_component_data_store.py`, `tests/python/test_runtime_change_journal.py` | Native Python |
@@ -73,7 +76,8 @@ cmake --build --preset windows-msvc-install-wheel
 Remove-Item Env:PYTHONPATH, Env:INFERNUX_NATIVE_MODULE_DIR -ErrorAction SilentlyContinue
 $env:SDL_AUDIODRIVER = 'dummy'
 $env:QT_QPA_PLATFORM = 'offscreen'
-python -m pytest -o pythonpath= tests/python tests/contracts -q -ra
+python -m pytest -o pythonpath= tests/python/test_shader_declaration_discovery.py -q -ra
+python -m pytest -o pythonpath= tests/python tests/contracts --ignore=tests/python/test_shader_declaration_discovery.py -q -ra
 python -m pytest tests/hub -q -ra
 ```
 
@@ -86,6 +90,13 @@ not build anything. The default build generates the bundled MCP archive at
 runtime payload and invokes the host platform submodule's `release.py`, producing
 `external/plugins/infernux_<platform>/dist/infernux.platform-<platform>.inxpkg`.
 Building only the editor wheel does not build this platform package.
+
+The declaration discovery module overrides the project-wide `Math` and `Unlit`
+names. Run it in a fresh pytest process before the bulk suite so unrelated
+missing references authored by other scenarios do not become part of its
+global recompilation. Both desktop CI jobs run all eight cases once against the
+installed wheel and preserve a separate report. The bulk suite retains its
+missing-reference and rejected-publication tests.
 
 The MCP install/restart and MCP-free editor/export integration tests require
 those actual archives. Missing artifacts are preparation failures, not reasons
@@ -133,6 +144,10 @@ Pure runtime contracts can also be run alone with
 private package namespace, so they neither initialize Vulkan nor replace the
 `Infernux` package in native tests. Scene activation and runtime integration
 remain in `tests/python/test_player_service_graph.py` and require the native engine.
+
+Desktop builds require the portable jobs to pass first. CI runs these contracts
+once per platform in the portable lane; native Python lanes do not repeat them.
+Native test logs include the twenty slowest cases to guide further reductions.
 
 Hub imports are configured once in `tests/hub/conftest.py`; individual
 Hub modules must pass without relying on another test's collection order.

@@ -36,18 +36,24 @@ The homepage reel is cut from the author's own Bilibili video `BV1538P6jELT`, pa
 
 ### Install and touch icons
 
-`logo-mark.webp` (76×76, Pillow 12.2.0 Lanczos, WebP quality 88; 3,410 bytes, SHA-256 `6b1b775c01bced8d73551bb11190df8e1828ae96009c49eed4e6b65474aaf123`) replaces the 256×256 `logo.png` in every navigation, footer and offline-page brand mark, which displays at 38 CSS pixels. `favicon-64.png` (64×64 Lanczos PNG; 5,520 bytes, SHA-256 `c127ac7f561a58aae6059e47591cb41cb372d7525417412a83448d26130e43a7`) is the page favicon. Both derive from the repository-owned `logo.png`, which remains the structured-data organisation logo.
+The engine emblem is a project-authored hollow red tapered monolith with rising diagonal stripes. The inset and stripe gaps are transparent, not painted white. The top is 80 units wide and the base 129.442 units wide (a ratio of approximately 1:1.618), with a 224-unit height for a slender silhouette. Its editable source is `python/infernux/resources/icons/icon.svg`. The geometry uses filled paths without clipping, filters or embedded images so browser and Qt rendering agree.
 
-The install icons are deterministic, project-authored derivatives of the repository-owned `logo.png`; they do not introduce an external artwork source or license. Pillow 12.2.0 in the repository `infernux` environment resized the source with Lanczos sampling, composited it over the site background `#0a0c11`, and wrote optimized 256-color opaque PNGs. The standalone maskable asset keeps the complete emblem inside the Web App Manifest safe-zone circle (radius 40% of the canvas); it is intentionally more padded than the ordinary launcher icons.
+Run `python scripts/maintenance/generate_brand_assets.py` in the `infernux` environment to regenerate the complete set. `logo.svg` is a byte-for-byte copy of the engine source and is used directly by website navigation, the API header, the offline page and both READMEs. `logo-wordmark.svg` adds outlined Space Grotesk Bold lettering and a red rule; the second word inherits `currentColor` for light or dark surfaces. Its font source and SIL OFL license are preserved under `packaging/resources/fonts/`.
 
-| Local file | Role and geometry | Bytes | SHA-256 |
-|---|---|---:|---|
-| `infernux-icon-192.png` | Chromium install icon; 192×192, opaque | 10,064 | `edfa0d3e709db4ac3100978575147579d4ccdb63c695c3d551e78bc7891c0f4a` |
-| `infernux-icon-512.png` | Chromium install/splash icon; 512×512, opaque | 49,570 | `9f73c451f95f09decaf95702971099c1a6237a8e454c293f201dddfc7473e280` |
-| `infernux-icon-maskable-512.png` | Adaptive launcher icon; 512×512, opaque, safe-zone padded | 25,603 | `54c43fee25612ce3d2d0fa4f14cff5191149201faa2d97d0b834860bfd3fbcc1` |
-| `infernux-apple-touch-icon.png` | Apple home-screen icon; 180×180, opaque | 9,163 | `a4e54a3d319ab3badace561328c94233c07fc3181b116ca137033a68a31de7f5` |
+The raster assets are rendered from that SVG with Qt SVG at four times their target size and downsampled with Pillow Lanczos. Desktop icons retain a transparent background. Install icons are composited over the site background `#0a0c11` and saved as optimized 256-color opaque PNGs. The maskable emblem remains inside the Web App Manifest safe-zone circle (radius 40% of the canvas).
 
-`docs/tools/check-pwa-assets.mjs` locks each file's PNG signature, dimensions, opacity, reviewed hash, manifest role, HTML link, provenance, and Service Worker precache entry. Regenerate and review the complete set together if the emblem or background color changes.
+| Local file | Role and geometry |
+|---|---|
+| `logo.png` | Structured-data organisation logo; 256×256, transparent; identical to the engine and Hub PNG |
+| `favicon-64.png` | Browser favicon; 64×64, transparent |
+| `infernux-icon-192.png` | Chromium install icon; 192×192, opaque |
+| `infernux-icon-512.png` | Chromium install/splash icon; 512×512, opaque |
+| `infernux-icon-maskable-512.png` | Adaptive launcher icon; 512×512, opaque, safe-zone padded |
+| `infernux-apple-touch-icon.png` | Apple home-screen icon; 180×180, opaque |
+
+The same command updates `packaging/resources/icon.png` for Hub and installer windows, plus the engine `icon.png`, the `scene.png` asset emblem and multi-resolution `icon.ico` for Editor, Player and Windows executable resources. The scene emblem is identical to the application PNG, so scene assets follow the same brand. ICO sizes are 16, 24, 32, 48, 64, 128 and 256 pixels.
+
+`docs/tools/check-pwa-assets.mjs` checks PNG signatures, dimensions, opacity, the maskable safe zone, manifest roles, HTML links, provenance and Service Worker loading. Regenerate and visually review the complete set together when the emblem changes.
 
 ## Font Awesome subsetting
 
