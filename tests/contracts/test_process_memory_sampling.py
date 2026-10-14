@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 import subprocess
 import sys
 import textwrap
 from pathlib import Path
+
+import pytest
 
 
 def test_live_allocations_remain_visible_after_allocator_reclamation():
@@ -16,6 +19,7 @@ def test_live_allocations_remain_visible_after_allocator_reclamation():
     size = 8 * 1024 * 1024
     script = textwrap.dedent('''
         import ctypes
+        import gc
         import importlib.util
         import json
         import sys
@@ -29,7 +33,10 @@ def test_live_allocations_remain_visible_after_allocator_reclamation():
             allocation[offset] = 1
         after = module.process_memory_bytes()
         assert allocation[0] == 1
-        print(json.dumps({"before": before, "after": after}))
+        del allocation
+        gc.collect()
+        after_free = module.process_memory_bytes()
+        print(json.dumps({"before": before, "after": after, "after_free": after_free}))
     ''')
     result = subprocess.run(
         [sys.executable, "-c", script, str(path)],
@@ -38,3 +45,16 @@ def test_live_allocations_remain_visible_after_allocator_reclamation():
     values = json.loads(result.stdout)
     for before, after in zip(values["before"], values["after"], strict=True):
         assert after >= before + size - 512 * 1024
+    for after, after_free in zip(values["after"], values["after_free"], strict=True):
+        assert after_free <= after - size + 512 * 1024
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows LFH reclamation contract")
+def test_failed_heap_reclamation_rejects_the_sample(monkeypatch):
+    path = Path(__file__).resolve().parents[1] / "acceptance/_process_memory.py"
+    spec = importlib.util.spec_from_file_location("residency_memory", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(module, "_HEAP_SET_INFORMATION", lambda *args: 0)
+    with pytest.raises(OSError, match="HeapSetInformation"):
+        module.process_memory_bytes()
