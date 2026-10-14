@@ -268,7 +268,7 @@ def test_windows_shared_permissions_target_only_installing_user_and_shared(tmp_p
     expected = str((tmp_path / "Hub/InfernuxHubData/Shared").resolve())
     assert result == expected
     assert commands[1][0] == [
-        str(tmp_path / "Windows/System32/icacls.exe"), expected,
+        str(tmp_path / "Windows/System32/icacls.exe"), install_python_runtime.windows_native_path(expected),
         "/grant", "*S-1-5-21-123-456-789-1001:(OI)(CI)M",
     ]
     assert all(options["check"] and options["creationflags"] == 0x08000000 for _, options in commands)

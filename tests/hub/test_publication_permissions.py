@@ -129,6 +129,33 @@ def restrict_fixture_to_owner_acl_control(path):
         kernel.LocalFree(descriptor)
 
 
+def dacl_snapshot(path):
+    advapi = ctypes.WinDLL("advapi32", use_last_error=True)
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    get_security = advapi.GetNamedSecurityInfoW
+    get_security.argtypes = [wintypes.LPWSTR, wintypes.DWORD, wintypes.DWORD,
+                            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
+                            ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+    get_security.restype = wintypes.DWORD
+    convert = advapi.ConvertSecurityDescriptorToStringSecurityDescriptorW
+    convert.argtypes = [ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD,
+                        ctypes.POINTER(wintypes.LPWSTR), ctypes.c_void_p]
+    convert.restype = wintypes.BOOL
+    kernel.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel.LocalFree.restype = ctypes.c_void_p
+    descriptor, sddl = ctypes.c_void_p(), wintypes.LPWSTR()
+    result = get_security(str(path), 1, 4, None, None, None, None, ctypes.byref(descriptor))
+    if result:
+        raise ctypes.WinError(result)
+    try:
+        if not convert(descriptor, 1, 4, ctypes.byref(sddl), None):
+            raise ctypes.WinError(ctypes.get_last_error())
+        return sddl.value
+    finally:
+        kernel.LocalFree(sddl)
+        kernel.LocalFree(descriptor)
+
+
 def test_published_hub_inherits_install_parent_access(tmp_path):
     payload = tmp_path / "payload"
     payload.mkdir()
@@ -300,24 +327,27 @@ def test_installer_publishes_writable_files_from_readonly_payload(tmp_path, arch
         clear_windows_readonly_tree(payload)
 
 
-def test_shared_repair_clears_readonly_and_preserves_external_junction(tmp_path):
+@pytest.mark.parametrize("external_protected", [False, True])
+def test_shared_repair_clears_readonly_and_preserves_external_junction(tmp_path, external_protected):
     shared = tmp_path / "Hub/InfernuxHubData/Shared"
     retained = shared / "Runtimes/python313/keep.txt"
     retained.parent.mkdir(parents=True)
     retained.write_text("retained")
     retained.chmod(stat.S_IREAD)
-    external = Path(tempfile.mkdtemp(prefix="external-", dir=tmp_path))
-    assert protected_dacl(external)
+    external = (Path(tempfile.mkdtemp(prefix="external-", dir=tmp_path))
+                if external_protected else tmp_path / "external")
+    external.mkdir(exist_ok=True)
     untouched = external / "outside.txt"
     untouched.write_text("external")
     untouched.chmod(stat.S_IREAD)
+    external_access = dacl_snapshot(external), dacl_snapshot(untouched)
     link = shared / "external-link"
     subprocess.run(["cmd.exe", "/c", "mklink", "/J", str(link), str(external)],
                    check=True, capture_output=True, creationflags=0x08000000)
     try:
         install_python_runtime.prepare_shared_storage(str(tmp_path / "Hub"))
         retained.write_text("ordinary user replacement")
-        assert protected_dacl(external)
+        assert (dacl_snapshot(external), dacl_snapshot(untouched)) == external_access
         assert untouched.stat().st_file_attributes & stat.FILE_ATTRIBUTE_READONLY
     finally:
         link.rmdir()

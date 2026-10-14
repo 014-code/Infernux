@@ -22,6 +22,7 @@ from installer_safety import (
     WINDOWS_ACCESS_LAYOUT, install_marker_path, is_marked_install_dir, write_install_marker,
 )
 from publication_directory import clear_windows_readonly_tree, restore_windows_inherited_access_tree
+from python_execution import windows_native_path
 
 
 def _show_message_box(title: str, message: str, icon: int = 0x40) -> None:
@@ -51,7 +52,7 @@ def prepare_shared_storage(app_dir: str) -> str:
         )
         sid = next(csv.reader(identity.stdout.splitlines()))[1]
         subprocess.run(
-            [str(system / "icacls.exe"), str(shared), "/grant", f"*{sid}:(OI)(CI)M"],
+            [str(system / "icacls.exe"), windows_native_path(str(shared)), "/grant", f"*{sid}:(OI)(CI)M"],
             **options,
         )
         restore_windows_inherited_access_tree(shared)

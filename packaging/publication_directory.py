@@ -8,6 +8,8 @@ import sys
 import tempfile
 import uuid
 
+from python_execution import windows_native_path
+
 
 def restore_windows_inherited_access_tree(root: Path) -> None:
     """Restore parent access on owned files and directories from old staging.
@@ -48,7 +50,8 @@ def restore_windows_inherited_access_tree(root: Path) -> None:
             continue
         descriptor = ctypes.c_void_p()
         dacl = ctypes.c_void_p()
-        result = get_security(str(path), 1, 4, None, None, ctypes.byref(dacl),
+        native_path = windows_native_path(str(path))
+        result = get_security(native_path, 1, 4, None, None, ctypes.byref(dacl),
                               None, ctypes.byref(descriptor))
         if result:
             error = ctypes.WinError(result)
@@ -60,7 +63,7 @@ def restore_windows_inherited_access_tree(root: Path) -> None:
                 raise ctypes.WinError(ctypes.get_last_error())
             if control.value & 0x1000:  # SE_DACL_PROTECTED
                 # DACL_SECURITY_INFORMATION | UNPROTECTED_DACL_SECURITY_INFORMATION
-                result = set_security(str(path), 1, 4 | 0x20000000, None, None, dacl, None)
+                result = set_security(native_path, 1, 4 | 0x20000000, None, None, dacl, None)
                 if result:
                     error = ctypes.WinError(result)
                     error.filename = str(path)
