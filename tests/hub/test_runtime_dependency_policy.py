@@ -22,12 +22,12 @@ def test_managed_mcp_requirements_match_the_default_plugin():
 
 
 @pytest.mark.parametrize('mcp_version,client_version,ready', [
-    ('1.24.0','3.0.0',True),
-    ('1.28.0','3.5.0',True),
-    ('2.0.0','3.5.0',False),
-    ('1.28.0','4.1.0',False),
-    ('1.23.0','3.0.0',False),
-    ('1.28.0','2.14.0',False),
+    ('1.29.0','3.4.0',True),
+    ('1.29.1','3.4.7',True),
+    ('1.28.0','3.4.7',False),
+    ('1.30.0','3.4.7',False),
+    ('1.29.1','3.3.0',False),
+    ('1.29.1','3.5.0',False),
 ])
 def test_runtime_rejects_importable_but_incompatible_sdk(tmp_path,mcp_version,client_version,ready):
     # Run against real distribution metadata in an isolated Python process.
