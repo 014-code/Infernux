@@ -1561,10 +1561,6 @@ if(INFERNUX_BUILD_TESTS)
         endif()
         get_target_property(_infernux_target_type ${_infernux_target} TYPE)
         if(_infernux_target_type STREQUAL "EXECUTABLE")
-            # Keep Jolt headers ABI-compatible with the optimized Jolt library:
-            # enabling C assertions must not enable Jolt's debug-only members.
-            target_compile_definitions(${_infernux_target} PRIVATE
-                "$<$<CONFIG:Release,RelWithDebInfo,MinSizeRel>:JPH_NO_DEBUG>")
             if(MSVC)
                 target_compile_options(${_infernux_target} PRIVATE
                     /utf-8 /UNDEBUG "/FI${CMAKE_SOURCE_DIR}/tests/native/TestAssertionsEnabled.h")

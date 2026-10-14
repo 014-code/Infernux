@@ -344,6 +344,11 @@ add_subdirectory(sdl_for_infernux)
 
 # Jolt Physics (CMakeLists.txt is in Build/ subdirectory)
 add_subdirectory(joltphysics_for_infernux/Build joltphysics_for_infernux)
+# Jolt's optimized builds omit debug-only members. Keep that header ABI for
+# every consumer even when first-party code enables C assertions with -UNDEBUG.
+target_compile_definitions(Jolt PUBLIC
+    "$<$<CONFIG:Release,RelWithDebInfo,MinSizeRel,Distribution,ReleaseASAN,ReleaseUBSAN,ReleaseTSAN,ReleaseCoverage>:JPH_NO_DEBUG>"
+)
 
 # Vulkan
 find_package(Vulkan REQUIRED)
