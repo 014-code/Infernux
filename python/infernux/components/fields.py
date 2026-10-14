@@ -1927,8 +1927,8 @@ def _compile_serialized_fields(cls, *, descriptors: bool = True) -> None:
 
     schemas = {}
     for name, metadata in merged_fields.items():
-        declaration = next((base.__dict__[name] for base in cls.__mro__ if name in base.__dict__), None)
-        if declaration is None:
+        declaration = next((base.__dict__[name] for base in cls.__mro__ if name in base.__dict__), _UNSET)
+        if declaration is _UNSET:
             raise TypeError(f"{cls.__name__}.{name}: serialized field declaration is missing")
         if getattr(declaration, '_is_cpp_property', False):
             # Native fields are owned by the native catalog, not re-inferred

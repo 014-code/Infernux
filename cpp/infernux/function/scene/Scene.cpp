@@ -644,9 +644,10 @@ void Scene::RekeyAuthoringComponent(uint64_t previousId, uint64_t componentId)
     // A prepared component receives its ID before it is attached/published.
     if (previous == m_authoringIdentity.components.end())
         return;
-    const auto destination = m_authoringIdentity.components.find(componentId);
-    if (destination != m_authoringIdentity.components.end() && destination->second != previous->second)
-        throw std::invalid_argument("Component ID is reserved by another Scene author identity");
+    if (Component::FindByComponentId(componentId))
+        throw std::invalid_argument("Component ID is already assigned to a live component");
+    // Deleted identities remain reserved for Undo and missing references.
+    // Explicitly restoring such an ID restores its existing author GUID.
     m_authoringIdentity.components.try_emplace(componentId, previous->second);
     m_authoringIdentity.components.erase(previousId);
     if (m_pendingStartComponentIdSet.erase(previousId)) {

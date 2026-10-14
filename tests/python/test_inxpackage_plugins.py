@@ -2305,7 +2305,7 @@ def test_direct_local_github_git_and_http_sources_converge_on_same_inventory(
     assert all(inventory == inventories[0] for inventory in inventories)
 
 
-def test_http_package_download_streams_without_forced_time_or_size_limits(
+def test_http_package_download_streams_and_preserves_destination_on_failure(
     tmp_path, monkeypatch
 ):
     class Response:
@@ -2324,8 +2324,9 @@ def test_http_package_download_streams_without_forced_time_or_size_limits(
 
     observed = {}
 
-    def urlopen(request):
+    def urlopen(request, *, timeout):
         observed["url"] = request.full_url
+        observed["timeout"] = timeout
         return Response((b"1234", b"5678", b"9"), content_length="999999999999")
 
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
@@ -2334,7 +2335,7 @@ def test_http_package_download_streams_without_forced_time_or_size_limits(
         "https://packages.example/plugin.inxpkg",
         str(destination),
     )
-    assert observed == {"url": "https://packages.example/plugin.inxpkg"}
+    assert observed == {"url": "https://packages.example/plugin.inxpkg", "timeout": 30}
     assert destination.read_bytes() == b"123456789"
 
     class FailedResponse(Response):
@@ -2344,7 +2345,8 @@ def test_http_package_download_streams_without_forced_time_or_size_limits(
                 raise OSError("connection lost")
             return chunk
 
-    def interrupted(_request):
+    def interrupted(_request, *, timeout):
+        assert timeout == 30
         return FailedResponse((b"partial",))
 
     monkeypatch.setattr(

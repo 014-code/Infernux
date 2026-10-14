@@ -44,6 +44,24 @@ class ValueAction(UndoCommand):
         self.new_value = other.new_value
 
 
+class _DisposableAction:
+    marks_dirty = False
+
+    def __init__(self, name, disposed, *, merge=False):
+        self.name = name
+        self.disposed = disposed
+        self.merge_enabled = merge
+
+    def can_merge(self, _other):
+        return self.merge_enabled
+
+    def merge(self, _other):
+        pass
+
+    def dispose(self):
+        self.disposed.append(self.name)
+
+
 def test_action_journal_uses_one_cursor_and_discards_redo_branch():
     journal = EditorActionJournal()
     first = ValueAction({"value": 0}, 0, 1)

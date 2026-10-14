@@ -350,8 +350,8 @@ class ParticleSystem(InxComponent):
     _artifact_registry_revision: int = 0
     _artifact_source_key: str = ""
     _graph_simulation_time_ticks: int = 0
-    _emitter_to_world_cache: Optional[np.ndarray] = None
-    _gpu_transform_buffers: dict[bool, np.ndarray]
+    _emitter_to_world_cache: Optional["np.ndarray"] = None
+    _gpu_transform_buffers: dict[bool, "np.ndarray"]
     _batch_id: int = 0
     _gpu_diagnostic_requests: set[int]
     _gpu_view_diagnostic_requests: set[tuple[str, int, int]]

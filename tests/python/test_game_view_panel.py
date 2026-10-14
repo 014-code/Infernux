@@ -319,14 +319,7 @@ def test_game_viewport_activates_on_mouse_down_before_imgui_button_release(monke
     assert route_calls[0][4] is True
 
 
-def test_visible_fps_counter_has_stable_semantic_target(monkeypatch):
-    import infernux.engine.ui.game_view_panel as module
-
-    monkeypatch.setattr(
-        module,
-        "Time",
-        SimpleNamespace(unscaled_delta_time=0.0, game_delta_time=0.0),
-    )
+def test_visible_fps_counter_has_stable_semantic_target():
     panel = GameViewPanel(engine=_Engine())
 
     class _FpsContext:

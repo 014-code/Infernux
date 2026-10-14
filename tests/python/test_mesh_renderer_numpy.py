@@ -62,6 +62,7 @@ def test_renderer_parameters_layer_over_shared_material_without_mutation(scene):
 
     restored_object = scene.create_game_object("restored parameter override")
     restored = restored_object.add_component("MeshRenderer")
+    document["component_id"] = restored.component_id
     assert restored.deserialize_document(document) is True
     restored = restored_object.get_component("MeshRenderer")
     assert restored.get_parameter("baseColor") == pytest.approx((0.8, 0.2, 0.1, 1.0))
@@ -139,6 +140,7 @@ def test_renderer_texture_parameter_uses_asset_guid_boundary(scene):
     document = json.loads(renderer._require_cpp_component().serialize())
     document["parameterOverrides"] = [{"texSampler": {"type": 0, "value": 1.0}}]
     restored = scene.create_game_object("invalid renderer document").add_component("MeshRenderer")
+    document["component_id"] = restored.component_id
     assert restored.deserialize_document(document) is False
 
 

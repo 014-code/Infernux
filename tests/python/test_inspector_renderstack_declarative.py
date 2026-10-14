@@ -240,7 +240,7 @@ def test_default_pipelines_publish_depth_tested_motion_for_both_queue_domains():
 
 def test_forward_motion_targets_follow_every_supported_msaa_value():
     from infernux.rendergraph.graph import RenderGraph
-    from infernux.renderstack.default_forward_pipeline import MSAASamples
+    from infernux.renderstack.forward_parameters import MSAASamples
 
     revisions = set()
     for samples in MSAASamples:
@@ -301,7 +301,7 @@ def test_default_pipelines_omit_motion_without_a_consumer():
 
 
 def test_pipeline_parameter_change_is_mirrored_into_serialized_stack_state(action_journal):
-    from infernux.renderstack.default_forward_pipeline import MSAASamples
+    from infernux.renderstack.forward_parameters import MSAASamples
 
     stack = RenderStack()
     model = build_renderstack_inspector_model(stack)
@@ -331,7 +331,7 @@ def test_pipeline_parameter_change_is_mirrored_into_serialized_stack_state(actio
 
 def test_pipeline_parameter_undo_keeps_serialized_document_and_rebuild_in_sync():
     from infernux.engine.undo import UndoManager
-    from infernux.renderstack.default_forward_pipeline import MSAASamples
+    from infernux.renderstack.forward_parameters import MSAASamples
 
     previous_manager = UndoManager.instance()
     manager = UndoManager()

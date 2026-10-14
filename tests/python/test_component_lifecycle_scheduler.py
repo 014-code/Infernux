@@ -339,7 +339,9 @@ def test_scene_registry_rebuild_keeps_persistent_components_in_runtime_plan(monk
             )()
 
     monkeypatch.setattr(native_lib, "SceneManager", _SceneManager)
-    monkeypatch.setattr(InxComponent, "_active_instances", {999: [_ScheduledProbe(99)]})
+    stale_component = InxComponent()
+    stale_component._registered_go_id = 999
+    monkeypatch.setattr(InxComponent, "_active_instances", {999: [stale_component]})
 
     transaction = SceneDocumentTransaction(active_scene, document={})
     transaction._rebuild_python_registries()

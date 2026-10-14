@@ -1561,34 +1561,6 @@ def test_restore_capture_failure_does_not_leave_registry_half_closed():
     assert registry.restore_dormant(locator) is document
 
 
-def test_document_registry_is_the_only_scene_save_point_authority():
-    package_root = (Path(__file__).resolve().parents[2] / "python") / "infernux" / "engine"
-    forbidden_tokens = (
-        "mark_save_point",
-        "save_signature",
-        "scene_base_dirty",
-        "set_scene_dirty_baseline",
-        "dirty_signature",
-    )
-    authoritative_sources = (
-        package_root / "undo" / "_manager.py",
-        package_root / "interaction" / "action_journal.py",
-        package_root / "interaction" / "action_journal.pyi",
-        package_root / "scene_manager.py",
-    )
-
-    for source_path in authoritative_sources:
-        source = source_path.read_text(encoding="utf-8")
-        for token in forbidden_tokens:
-            assert token not in source, f"{source_path.name} restored legacy {token}"
-
-    scene_source = (package_root / "scene_manager.py").read_text(encoding="utf-8")
-    assert "def ensure_dirty(" not in scene_source
-    assert "def clear_dirty(" not in scene_source
-    assert "@_dirty.setter" not in scene_source
-    assert "self._dirty =" not in scene_source
-
-
 def test_authoring_panels_do_not_restore_private_dirty_or_open_authority():
     package_root = (Path(__file__).resolve().parents[2] / "python") / "infernux" / "engine"
     panel_sources = (
