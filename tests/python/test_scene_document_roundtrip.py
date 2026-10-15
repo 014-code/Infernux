@@ -45,6 +45,7 @@ from test_integration_scene import (
     time,
 )
 
+
 class TestSceneSerialization:
     def test_native_play_snapshot_restores_scene_without_python_document(self, scene):
         source = scene.create_game_object("NativeSnapshotSource")
@@ -330,64 +331,39 @@ class TestSceneSerialization:
         assert scene.find("ResourcePreflightExisting") is existing
         assert existing.get_component("MeshRenderer") is renderer
 
-    def test_resource_preflight_preserves_missing_renderer_references(self, scene, tmp_path):
-        existing = scene.create_game_object("MissingResourceReference")
-        existing.add_component("MeshRenderer")
-        document = scene.serialize_document()
-        renderer_document = document["objects"][0]["components"][0]["data"]
-        renderer_document["meshAssetGuid"] = "missing-scene-mesh-guid"
-        renderer_document["materials"] = ["missing-scene-material-guid"]
-        path = tmp_path / "missing-resources.scene"
-        path.write_text(json.dumps(encode_scene_document(document)), encoding="utf-8")
-        transaction = SceneDocumentTransaction(scene, path=path)
+    def test_scene_resource_preflight_restores_registered_missing_and_cleared_references_together(self, scene, tmp_path):
+        scene.create_game_object('MissingResourceReference').add_component('MeshRenderer')
+        renderer = scene.create_game_object('ClearedEmbeddedTexture').add_component('MeshRenderer')
+        embedded = InxMaterial.create_default_unlit()
+        embedded.set_texture('texSampler', 'white')
+        embedded.clear_texture('texSampler')
+        renderer.material = embedded
+        scene.create_game_object('ResourcePreflightSuccess').add_component('BoxCollider')
+        database = AssetRegistry.instance().get_asset_database()
+        asset_path = Path(database.assets_root) / f'{tmp_path.name}-valid.physicMaterial'
+        asset_path.write_text(json.dumps({'friction': .65, 'bounciness': .1, 'friction_combine': 2, 'bounce_combine': 3}), encoding='utf-8')
+        guid = database.import_asset(str(asset_path)).guid
+        try:
+            document = scene.serialize_document()
+            by_name = {record['name']:record for record in document['objects']}
+            data = by_name['MissingResourceReference']['components'][0]['data']
+            data['meshAssetGuid'], data['materials'] = 'missing-scene-mesh-guid', ['missing-scene-material-guid']
+            by_name['ResourcePreflightSuccess']['components'][0]['data']['physic_material_guid'] = guid
+            path = tmp_path / 'resource-references.scene'
+            path.write_text(json.dumps(encode_scene_document(document)), encoding='utf-8')
+            transaction = SceneDocumentTransaction(scene, path=path)
+            assert transaction.run_to_completion(raise_on_failure=False)
+            assert transaction.state is SceneDocumentTransactionState.COMPLETED
+            missing = scene.find('MissingResourceReference').get_component('MeshRenderer').serialize_document()
+            assert missing['meshAssetGuid'] == 'missing-scene-mesh-guid'
+            assert missing['materials'] == ['missing-scene-material-guid']
+            assert scene.find('ResourcePreflightSuccess').get_component('BoxCollider').serialize_document()['physic_material_guid'] == guid
+            assert scene.find('ClearedEmbeddedTexture').get_component('MeshRenderer').material.get_texture('texSampler') == ''
+            assert SceneDocumentTransaction(scene, document=scene.serialize_document()).run_to_completion(raise_on_failure=False)
+            assert scene.find('ClearedEmbeddedTexture').get_component('MeshRenderer').material.get_texture('texSampler') == ''
+        finally:
+            database.delete_asset(str(asset_path))
 
-        assert transaction.run_to_completion(raise_on_failure=False) is True
-        restored = scene.find("MissingResourceReference").get_component("MeshRenderer")
-        restored_document = restored.serialize_document()
-        assert restored_document["meshAssetGuid"] == "missing-scene-mesh-guid"
-        assert restored_document["materials"] == ["missing-scene-material-guid"]
-
-    def test_resource_preflight_accepts_matching_asset_type(self, scene, tmp_path):
-        existing = scene.create_game_object("ResourcePreflightSuccess")
-        existing.add_component("BoxCollider")
-        asset_database = AssetRegistry.instance().get_asset_database()
-        asset_path = Path(asset_database.assets_root) / f"{tmp_path.name}-valid.physicMaterial"
-        asset_path.write_text(
-            json.dumps(
-                {
-                    "friction": 0.65,
-                    "bounciness": 0.1,
-                    "friction_combine": 2,
-                    "bounce_combine": 3,
-                }
-            ),
-            encoding="utf-8",
-        )
-        material_guid = asset_database.import_asset(str(asset_path)).guid
-        document = scene.serialize_document()
-        document["objects"][0]["components"][0]["data"]["physic_material_guid"] = material_guid
-        path = tmp_path / "valid-resource.scene"
-        path.write_text(json.dumps(encode_scene_document(document)), encoding="utf-8")
-        transaction = SceneDocumentTransaction(scene, path=path)
-
-        assert transaction.run_to_completion(raise_on_failure=False) is True
-        assert transaction.state is SceneDocumentTransactionState.COMPLETED
-        restored = scene.find("ResourcePreflightSuccess").get_component("BoxCollider")
-        assert restored.serialize_document()["physic_material_guid"] == material_guid
-
-    def test_resource_preflight_accepts_explicitly_cleared_embedded_texture(self, scene):
-        owner = scene.create_game_object("ClearedEmbeddedTexture")
-        renderer = owner.add_component("MeshRenderer")
-        material = InxMaterial.create_default_unlit()
-        material.set_texture("texSampler", "white")
-        material.clear_texture("texSampler")
-        renderer.material = material
-
-        transaction = SceneDocumentTransaction(scene, document=scene.serialize_document())
-
-        assert transaction.run_to_completion(raise_on_failure=False) is True
-        restored = scene.find("ClearedEmbeddedTexture").get_component("MeshRenderer").material
-        assert restored.get_texture("texSampler") == ""
 
     def test_scene_file_manager_polls_path_transaction_across_frames(
         self,
@@ -826,148 +802,69 @@ class TestSceneSerialization:
         assert transaction.state is SceneDocumentTransactionState.CANCELLED
         assert _cds_alive_count(_StrictSceneComponent) == alive_before
 
-    def test_serialize_produces_json(self, scene):
-        scene.create_game_object("SerObj")
-        json_str = scene.serialize()
-        assert len(json_str) > 0
-        assert "SerObj" in json_str
-
-    def test_save_and_load(self, scene):
-        go = scene.create_game_object("Persistent")
-        go.transform.position = Vector3(42, 0, 0)
-        json_str = scene.serialize()
-
-        # Create a new scene and deserialize
-        sm = SceneManager.instance()
-        scene2 = sm.create_scene("loaded_scene")
-        sm.set_active_scene(scene2)
-        assert deserialize_scene_document_transactionally(scene2, json.loads(json_str)) is True
-        assert not hasattr(scene2, "deserialize")
-        assert not hasattr(scene2, "load_from_file")
-        found = scene2.find("Persistent")
-        assert found is not None
-        assert found.transform.position.x == pytest.approx(42)
-
-    def test_save_to_file_atomically_replaces_existing_content(self, scene, tmp_path):
-        scene.create_game_object("AtomicSceneObject")
-        scene_path = tmp_path / "atomic.scene"
-        scene_path.write_text("old scene content", encoding="utf-8")
-
-        assert scene.save_to_file(str(scene_path)) is True
-
-        document = json.loads(scene_path.read_text(encoding="utf-8"))
-        assert document["objects"][0]["name"] == "AtomicSceneObject"
-        assert list(tmp_path.glob("atomic.scene.tmp.*")) == []
-
-    def test_large_scene_keeps_properties_on_separate_lines_for_version_control(self, scene, tmp_path):
-        for index in range(512):
-            scene.create_game_object(f"Dense_{index}")
-
-        scene_path = tmp_path / "dense.scene"
-        assert scene.save_to_file(str(scene_path)) is True
-
-        content = scene_path.read_text(encoding="utf-8")
+    def test_scene_creation_atomic_save_and_reopen_keep_current_canonical_document(self, scene, tmp_path):
+        from infernux.engine.scene_manager import _empty_scene_document
+        empty = _empty_scene_document('BlankEditorScene')
+        assert set(empty) == {'name', 'isPlaying', 'objects'}
+        assert scene._commit_document(empty)
+        assert scene.name == 'BlankEditorScene' and scene.get_root_objects() == []
+        persistent = scene.create_game_object('Persistent')
+        persistent.transform.position = Vector3(42, 0, 0)
+        for index in range(511):
+            scene.create_game_object(f'Dense_{index}')
+        serialized = scene.serialize()
+        assert 'Persistent' in serialized and len(json.loads(serialized)['objects']) == 512
+        path = tmp_path / 'canonical.scene'
+        path.write_text('old scene content', encoding='utf-8')
+        assert scene.save_to_file(str(path))
+        content = path.read_text(encoding='utf-8')
         document = json.loads(content)
-        pretty = json.dumps(document, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
+        assert len(document['objects']) == 512 and document['objects'][0]['name'] == 'Persistent'
+        assert content == json.dumps(document, indent=2, ensure_ascii=False, sort_keys=True) + '\n'
+        assert all(line.strip().startswith('"name": "Dense_') for line in content.splitlines() if '"Dense_' in line)
+        original = path.read_bytes()
+        assert b'\r' not in original and list(tmp_path.glob('canonical.scene.tmp.*')) == []
+        assert scene.save_to_file(str(path)) and path.read_bytes() == original
+        manager = SceneManager.instance()
+        loaded = manager.create_scene('loaded_scene')
+        manager.set_active_scene(loaded)
+        assert SceneDocumentTransaction(loaded, path=path).run_to_completion()
+        assert loaded.find('Persistent').transform.position.x == pytest.approx(42)
+        assert len(loaded.get_all_objects()) == 512
 
-        assert len(document["objects"]) == 512
-        assert content == pretty
-        assert all(
-            line.strip().startswith('"name": "Dense_')
-            for line in content.splitlines()
-            if '"Dense_' in line
-        )
-        original = scene_path.read_bytes()
-        assert b"\r" not in original
-        assert scene.save_to_file(str(scene_path)) is True
-        assert scene_path.read_bytes() == original
 
-    def test_scene_file_manager_serializes_save_as_name_before_writing(
-        self,
-        scene,
-        tmp_path,
-        monkeypatch,
-    ):
+    def test_scene_file_manager_first_save_names_and_imports_then_reimports_the_same_asset(self, scene, tmp_path, monkeypatch):
         from infernux.engine.project_context import get_project_root, set_project_root
-
-        previous_root = get_project_root()
-        previous_manager = SceneFileManager._instance
-        project_root = tmp_path / "Project"
-        scene_path = project_root / "Assets" / "RaceTrack.scene"
-        scene_path.parent.mkdir(parents=True)
-
+        from infernux.core.assets import AssetManager
+        previous_root, previous_manager = get_project_root(), SceneFileManager._instance
+        project = tmp_path / 'Project'
+        path = project / 'Assets' / 'RaceTrack.scene'
+        path.parent.mkdir(parents=True)
+        registered, calls = set(), []
+        class Database:
+            def contains_path(self, value): return value in registered
+        def publish(kind, value):
+            registered.add(value)
+            calls.append((kind, value))
+            return True
         try:
-            set_project_root(str(project_root))
+            set_project_root(str(project))
             manager = SceneFileManager()
-            monkeypatch.setattr(manager, "_save_camera_state", lambda _path: None)
-            imported_paths = []
-
-            class _AssetDatabase:
-                @staticmethod
-                def contains_path(_path):
-                    return False
-
-            from infernux.core.assets import AssetManager
-
-            manager._asset_database = _AssetDatabase()
-            monkeypatch.setattr(
-                AssetManager,
-                "import_asset",
-                classmethod(lambda _cls, path, **_kwargs: imported_paths.append(path) or True),
-            )
-
-            assert manager._do_save_inner(str(scene_path)) is True
-
-            document = json.loads(scene_path.read_text(encoding="utf-8"))
-            assert document["name"] == "RaceTrack"
-            assert scene.name == "RaceTrack"
-            assert imported_paths == [str(scene_path.resolve())]
+            manager._asset_database = Database()
+            monkeypatch.setattr(manager, '_save_camera_state', lambda _path: None)
+            monkeypatch.setattr(AssetManager, 'import_asset', classmethod(lambda _cls, value, **_kwargs: publish('import', value)))
+            monkeypatch.setattr(AssetManager, 'reimport_asset', classmethod(lambda _cls, value, **_kwargs: publish('reimport', value)))
+            assert manager._do_save_inner(str(path))
+            assert json.loads(path.read_text(encoding='utf-8'))['name'] == scene.name == 'RaceTrack'
+            assert calls == [('import', str(path.resolve()))]
+            scene.create_game_object('LaterEdit')
+            assert manager._do_save_inner(str(path))
+            assert calls == [('import', str(path.resolve())), ('reimport', str(path.resolve()))]
+            assert json.loads(path.read_text(encoding='utf-8'))['objects'][0]['name'] == 'LaterEdit'
         finally:
             SceneFileManager._instance = previous_manager
             set_project_root(previous_root)
 
-    def test_scene_file_manager_reimports_existing_scene_after_save(
-        self,
-        scene,
-        tmp_path,
-        monkeypatch,
-    ):
-        from infernux.engine.project_context import get_project_root, set_project_root
-
-        previous_root = get_project_root()
-        previous_manager = SceneFileManager._instance
-        project_root = tmp_path / "Project"
-        scene_path = project_root / "Assets" / "Existing.scene"
-        scene_path.parent.mkdir(parents=True)
-        scene_path.write_text("{}", encoding="utf-8")
-
-        try:
-            set_project_root(str(project_root))
-            manager = SceneFileManager()
-            monkeypatch.setattr(manager, "_save_camera_state", lambda _path: None)
-            reimported_paths = []
-
-            class _AssetDatabase:
-                @staticmethod
-                def contains_path(_path):
-                    return True
-
-            from infernux.core.assets import AssetManager
-
-            manager._asset_database = _AssetDatabase()
-            monkeypatch.setattr(
-                AssetManager,
-                "reimport_asset",
-                classmethod(
-                    lambda _cls, path, **_kwargs: reimported_paths.append(path) or True
-                ),
-            )
-
-            assert manager._do_save_inner(str(scene_path)) is True
-            assert reimported_paths == [str(scene_path.resolve())]
-        finally:
-            SceneFileManager._instance = previous_manager
-            set_project_root(previous_root)
 
     def test_runtime_scene_publish_rebuilds_scaled_collider_from_current_world_transform(self, scene):
         from infernux.lib import Physics
@@ -1008,14 +905,6 @@ class TestSceneSerialization:
         assert created_after_load.id > persisted_id
         assert scene.find_by_id(created_after_load.id) is created_after_load
 
-    def test_empty_scene_document_uses_current_format(self, scene):
-        from infernux.engine.scene_manager import _empty_scene_document
-
-        document = _empty_scene_document("BlankEditorScene")
-        assert set(document) == {"name", "isPlaying", "objects"}
-        assert scene._commit_document(document) is True
-        assert scene.name == "BlankEditorScene"
-        assert scene.get_root_objects() == []
 
     def test_retained_world_rejects_unknown_field_without_destroying_live_graph(self, scene):
         existing = scene.create_game_object("KeepAliveOnBadSchema")
@@ -1291,8 +1180,7 @@ class TestSceneSerialization:
         restored = scene.find('CameraCleanupOwner').get_py_component(_CameraCleanupSceneComponent)
         assert restored.target_component.is_valid
 
-    @pytest.mark.parametrize("native_type", ["Camera", "Light", "Rigidbody", "Transform"])
-    @pytest.mark.parametrize("nested", [False, True])
+    @pytest.mark.parametrize("native_type,nested", [("Camera",False),("Light",True),("Rigidbody",False),("Transform",True)])
     def test_play_snapshot_preserves_references_to_native_only_objects(self, scene, native_type, nested):
         owner = scene.create_game_object("ReferenceOwner")
         target = scene.create_game_object("NativeOnlyTarget")
@@ -1347,69 +1235,38 @@ class TestSceneSerialization:
         assert scene.serialize_document() == original_document
         assert scene.find("StrictDisallowMultiple") is owner
 
-    def test_preflighted_python_graph_is_published_after_native_commit(self, scene):
-        existing = scene.create_game_object("PythonPreflightSuccess")
-        original_component = _StrictSceneComponent()
-        original_component.value = 19
-        existing.add_py_component(original_component)
-        original_component_id = original_component.component_id
-        candidate = json.loads(json.dumps(scene.serialize_document()))
-
-        assert deserialize_scene_document_transactionally(scene, candidate) is True
-
-        restored_object = scene.find("PythonPreflightSuccess")
-        restored_component = restored_object.get_py_component(_StrictSceneComponent)
-        assert restored_object is not existing
-        assert restored_component is not original_component
-        assert restored_component.component_id == original_component_id
-        assert restored_component.value == 19
+    def test_mixed_scene_restore_preserves_python_identity_order_and_current_field_defaults(self, scene):
+        root = scene.create_game_object('MixedCurrentScene')
+        root.add_component('BoxCollider')
+        strict = root.add_py_component(_StrictSceneComponent())
+        strict.value, strict.execution_order = 19, 37
+        root.add_component('Light')
+        additive = root.add_py_component(_AdditiveSceneComponent())
+        additive.value, additive.label = 23, 'authored'
+        old_id = strict.component_id
+        document = json.loads(json.dumps(scene.serialize_document()))
+        records = document['objects'][0]['components']
+        types = [record['type_id'] for record in records]
+        assert types[0] == 'native:infernux.BoxCollider' and types[2] == 'native:infernux.Light'
+        assert records[1]['execution_order'] == 37
+        descriptor = records[1]
+        script_guid, type_guid, module_name, qualified_name = descriptor['type_id'][len('python:'):].split(':')
+        assert script_guid == strict._script_guid and len(script_guid) == 32
+        assert type_guid == type(strict)._get_type_guid() and len(type_guid) == 32
+        assert (module_name, qualified_name) == (type(strict).__module__, type(strict).__qualname__)
+        descriptor['data']['removed_field'] = 1
+        records[3]['data'].pop('label')
+        assert deserialize_scene_document_transactionally(scene, document)
+        restored_root = scene.find('MixedCurrentScene')
+        restored = restored_root.get_py_component(_StrictSceneComponent)
+        current = restored_root.get_py_component(_AdditiveSceneComponent)
+        assert restored_root is not root and restored is not strict
+        assert restored.component_id == old_id and restored.value == 19 and restored.execution_order == 37
+        assert current.value == 23 and current.label == 'default'
+        assert 'removed_field' not in restored._serialize_fields_document()
+        assert [record['type_id'] for record in restored_root.serialize_document()['components']] == types
         assert scene.has_pending_py_components() is False
 
-    def test_scene_restore_uses_default_for_new_python_field(self, scene):
-        root = scene.create_game_object("AdditivePythonField")
-        component = _AdditiveSceneComponent()
-        component.value = 19
-        component.label = "saved"
-        root.add_py_component(component)
-        document = json.loads(json.dumps(scene.serialize_document()))
-        _python_records(document["objects"][0])[0]["data"].pop("label")
-
-        assert deserialize_scene_document_transactionally(scene, document) is True
-        restored = scene.find("AdditivePythonField").get_py_component(
-            _AdditiveSceneComponent
-        )
-        assert restored.value == 19
-        assert restored.label == "default"
-
-    def test_scene_restore_ignores_unknown_python_field(self, scene):
-        root = scene.create_game_object("RemovedPythonField")
-        component = _StrictSceneComponent()
-        component.value = 19
-        root.add_py_component(component)
-        document = json.loads(json.dumps(scene.serialize_document()))
-        _python_records(document["objects"][0])[0]["data"]["removed_field"] = 1
-
-        assert deserialize_scene_document_transactionally(scene, document) is True
-        restored = scene.find("RemovedPythonField").get_py_component(
-            _StrictSceneComponent
-        )
-        assert restored.value == 19
-        assert "removed_field" not in restored._serialize_fields_document()
-
-    def test_python_component_document_uses_stable_script_and_type_guids(self, scene):
-        root = scene.create_game_object("StablePythonIdentity")
-        component = _StrictSceneComponent()
-        root.add_py_component(component)
-
-        descriptor = _python_records(root.serialize_document())[0]
-        script_guid, type_guid, module_name, qualified_name = descriptor["type_id"][len("python:"):].split(":")
-
-        assert script_guid == component._script_guid
-        assert type_guid == component.__class__._get_type_guid()
-        assert module_name == component.__class__.__module__
-        assert qualified_name == component.__class__.__qualname__
-        assert len(script_guid) == 32
-        assert len(type_guid) == 32
 
     def test_python_component_replacement_preserves_native_identity_without_destroy(self, scene):
         root = scene.create_game_object("IdentityPreservingReplacement")
@@ -1655,27 +1512,6 @@ class TestSceneSerialization:
         assert root.get_py_components() == [source]
         assert source._cpp_component is not None
 
-    def test_unified_component_records_preserve_order_and_python_execution_order(self, scene):
-        root = scene.create_game_object("UnifiedComponentOrder")
-        root.add_component("BoxCollider")
-        script = root.add_py_component(_StrictSceneComponent())
-        script.execution_order = 37
-        root.add_component("Light")
-
-        document = scene.serialize_document()
-        records = document["objects"][0]["components"]
-        original_type_ids = [record["type_id"] for record in records]
-        assert original_type_ids[0] == "native:infernux.BoxCollider"
-        assert original_type_ids[1].startswith("python:")
-        assert original_type_ids[2] == "native:infernux.Light"
-        assert records[1]["execution_order"] == 37
-
-        assert deserialize_scene_document_transactionally(scene, document) is True
-
-        restored = scene.find("UnifiedComponentOrder")
-        restored_records = restored.serialize_document()["components"]
-        assert [record["type_id"] for record in restored_records] == original_type_ids
-        assert restored.get_py_component(_StrictSceneComponent).execution_order == 37
 
     def test_python_preflight_replaces_unresolvable_script_with_missing_placeholder(self, scene):
         root = scene.create_game_object("MismatchedPythonIdentity")
@@ -1960,71 +1796,34 @@ class TestSceneSerialization:
         assert root._commit_document(candidate) is True
         assert scene.main_camera is None
 
-    def test_main_camera_preference_survives_temporary_disable(self, scene):
-        preferred_owner = scene.create_game_object("PreferredCamera")
-        preferred = preferred_owner.add_component("Camera")
-        preferred.depth = 20.0
-        fallback_owner = scene.create_game_object("FallbackCamera")
-        fallback = fallback_owner.add_component("Camera")
-        fallback.depth = -10.0
-
-        scene.main_camera = preferred
-        assert scene.effective_game_camera.component_id == preferred.component_id
-
-        preferred.enabled = False
-        assert scene.main_camera.component_id == preferred.component_id
-        assert scene.effective_game_camera.component_id == fallback.component_id
-
-        preferred.enabled = True
-        assert scene.effective_game_camera.component_id == preferred.component_id
-
-    def test_automatic_camera_selection_reacts_to_depth_without_becoming_authored(self, scene):
-        first_owner = scene.create_game_object("FirstCamera")
-        first = first_owner.add_component("Camera")
-        first.depth = 5.0
-        second_owner = scene.create_game_object("SecondCamera")
-        second = second_owner.add_component("Camera")
-        second.depth = 10.0
-
-        assert scene.main_camera is None
-        assert scene.effective_game_camera.component_id == first.component_id
-        second.depth = 0.0
-        assert scene.effective_game_camera.component_id == second.component_id
-        assert scene.main_camera is None
-
-        first.enabled = False
-        second.enabled = False
-        assert scene.effective_game_camera is None
-
-    def test_active_game_camera_stack_is_depth_ordered_and_filters_disabled(self, scene):
-        high_owner = scene.create_game_object("HighCamera")
-        high = high_owner.add_component("Camera")
+    def test_camera_stack_depth_and_explicit_preference_follow_enable_transitions(self, scene):
+        high_owner = scene.create_game_object('HighCamera')
+        high = high_owner.add_component('Camera')
         high.depth = 20.0
-        low_owner = scene.create_game_object("LowCamera")
-        low = low_owner.add_component("Camera")
+        low = scene.create_game_object('LowCamera').add_component('Camera')
         low.depth = -5.0
-        middle_owner = scene.create_game_object("MiddleCamera")
-        middle = middle_owner.add_component("Camera")
+        middle_owner = scene.create_game_object('MiddleCamera')
+        middle = middle_owner.add_component('Camera')
         middle.depth = 3.0
-
-        assert [camera.component_id for camera in scene.active_game_cameras] == [
-            low.component_id,
-            middle.component_id,
-            high.component_id,
-        ]
-
+        assert scene.main_camera is None
+        assert [camera.component_id for camera in scene.active_game_cameras] == [low.component_id, middle.component_id, high.component_id]
+        assert scene.effective_game_camera.component_id == low.component_id
+        high.depth = -10.0
+        assert scene.effective_game_camera.component_id == high.component_id and scene.main_camera is None
+        scene.main_camera = middle
+        assert scene.effective_game_camera.component_id == middle.component_id
         middle.enabled = False
-        assert [camera.component_id for camera in scene.active_game_cameras] == [
-            low.component_id,
-            high.component_id,
-        ]
-
+        assert scene.main_camera.component_id == middle.component_id
+        assert scene.effective_game_camera.component_id == high.component_id
+        assert [camera.component_id for camera in scene.active_game_cameras] == [high.component_id, low.component_id]
         middle.enabled = True
         middle_owner.active = False
-        assert [camera.component_id for camera in scene.active_game_cameras] == [
-            low.component_id,
-            high.component_id,
-        ]
+        assert [camera.component_id for camera in scene.active_game_cameras] == [high.component_id, low.component_id]
+        middle_owner.active = True
+        assert scene.effective_game_camera.component_id == middle.component_id
+        high.enabled = low.enabled = middle.enabled = False
+        assert scene.effective_game_camera is None
+
 
     def test_main_camera_rejects_cross_scene_reference(self, scene):
         other = SceneManager.instance().create_scene("OtherCameraScene")

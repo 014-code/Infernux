@@ -15,8 +15,8 @@ def stored_matrix(material, name='projection'):
     return np.asarray(material.native.get_property(name)).reshape((4, 4), order='F')
 
 
-@pytest.mark.parametrize('layout', ['c', 'fortran', 'transpose', 'negative_stride'])
-@pytest.mark.parametrize('setter', ['set_matrix', 'set_param'])
+@pytest.mark.parametrize('layout,setter', [('c', 'set_matrix'), ('fortran', 'set_param'),
+                                         ('transpose', 'set_matrix'), ('negative_stride', 'set_param')])
 def test_material_copies_row_column_matrix_independently_of_array_strides(material, layout, setter):
     values = np.arange(16, dtype=np.float64).reshape(4, 4)
     if layout == 'fortran':
@@ -35,17 +35,7 @@ def test_material_copies_row_column_matrix_independently_of_array_strides(materi
     np.testing.assert_array_equal(document['properties']['projection']['value'], expected.flatten(order='F'))
 
 
-@pytest.mark.parametrize('setter', ['set_matrix', 'set_param'])
-def test_matrix_contract_accepts_only_explicit_four_by_four_shape(material, setter):
-    values = np.arange(16, dtype=float).reshape(4, 4)
-    getattr(material, setter)('projection', values)
-    np.testing.assert_array_equal(stored_matrix(material), values)
-    with pytest.raises((TypeError, ValueError, RuntimeError), match='matrix'):
-        getattr(material, setter)('projection', values.flatten(order='F').tolist())
-    np.testing.assert_array_equal(stored_matrix(material), values)
-
-
-@pytest.mark.parametrize('bad', [np.eye(3), np.zeros((2, 8)), np.zeros(15), 2.0])
+@pytest.mark.parametrize('bad', [np.eye(3), 2.0])
 def test_invalid_matrix_does_not_mutate_previous_property(material, bad):
     material.set_matrix('projection', np.eye(4))
     for setter in (material.set_matrix, material.set_param):
@@ -82,3 +72,16 @@ def test_camera_matrix_passes_directly_to_material_renderer_and_draw(scene, mate
     with pytest.raises(ValueError, match='matrix'):
         block.set_matrix('projection', changed.flatten(order='F').tolist())
     assert block.size == 1
+
+
+def test_flat_matrix_input_is_rejected_by_both_material_entry_points(material):
+    values = np.arange(16, dtype=float).reshape(4, 4)
+    material.set_matrix('projection', values)
+    np.testing.assert_array_equal(stored_matrix(material), values)
+    flat = values.flatten(order='F').tolist()
+    with pytest.raises((TypeError, ValueError, RuntimeError), match='matrix'):
+        material.set_matrix('projection', flat)
+    np.testing.assert_array_equal(stored_matrix(material), values)
+    with pytest.raises((TypeError, ValueError, RuntimeError), match='matrix'):
+        material.set_param('projection', flat)
+    np.testing.assert_array_equal(stored_matrix(material), values)

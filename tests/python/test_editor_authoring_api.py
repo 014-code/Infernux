@@ -54,22 +54,21 @@ def authoring(scene, monkeypatch):
         core.shutdown()
 
 
-def test_public_create_group_undo_redo_preserves_configuration(authoring, scene):
-    with editor.edit_scene("Create obstacle"):
-        root = editor.create_game_object("机关")
-        child = editor.create_game_object(
-            "碰撞体", parent=root,
-            configure=lambda obj: setattr(obj.transform, "local_position", Vector3(1, 2, 3)),
-        )
+def test_public_obstacle_authoring_groups_parent_transform_and_component_configuration(authoring, scene):
+    with editor.edit_scene('Create obstacle'):
+        root = editor.create_game_object('机关')
+        child = editor.create_game_object('碰撞体', parent=root,
+            configure=lambda obj: setattr(obj.transform, 'local_position', Vector3(1, 2, 3)))
+        editor.add_component(child, 'BoxCollider', configure=lambda item: setattr(item, 'size', Vector3(2, 3, 4)))
     root_id, child_id = root.id, child.id
-    assert UndoManager.instance().undo_description == "Create obstacle"
-    assert child.get_parent().id == root_id
+    assert UndoManager.instance().undo_description == 'Create obstacle'
+    assert child.get_parent().id == root_id and child.get_component(BoxCollider).size.y == 3
     editor.undo(defer=False)
-    assert scene.find_by_id(root_id) is None
-    assert scene.find_by_id(child_id) is None
+    assert scene.find_by_id(root_id) is None and scene.find_by_id(child_id) is None
     editor.redo(defer=False)
-    assert scene.find_by_id(child_id).get_parent().id == root_id
-    assert scene.find_by_id(child_id).transform.local_position.x == 1
+    child = scene.find_by_id(child_id)
+    assert child.get_parent().id == root_id and child.transform.local_position.x == 1
+    assert child.get_component(BoxCollider).size.y == 3
 
 
 def test_public_defer_uses_single_editor_task_and_preserves_authoring_history(authoring, scene, monkeypatch):
@@ -107,18 +106,6 @@ def test_public_create_failed_initializer_leaves_no_object_or_history(authoring,
         editor.create_game_object("Rejected", configure=fail)
     assert [obj.id for obj in scene.get_all_objects()] == before
     assert not UndoManager.instance().can_undo
-
-
-def test_public_add_component_records_initializer_and_undo(authoring, scene):
-    obj = editor.create_game_object("Collider owner")
-    collider = editor.add_component(
-        obj, "BoxCollider", configure=lambda item: setattr(item, "size", Vector3(2, 3, 4)),
-    )
-    assert collider.size.y == 3
-    editor.undo(defer=False)
-    assert obj.get_component(BoxCollider) is None
-    editor.redo(defer=False)
-    assert obj.get_component(BoxCollider).size.y == 3
 
 
 def test_authoring_without_editor_does_not_create_a_session(monkeypatch):
@@ -169,30 +156,45 @@ def asset_authoring(authoring, engine, monkeypatch):
     return database
 
 
-def test_public_data_asset_and_folder_share_grouped_undo(asset_authoring):
+def test_public_level_data_create_edit_save_and_history_keep_guid_bytes_and_shared_document(asset_authoring):
     from pathlib import Path
-    source = AuthoringLevelData(title="压力板", difficulty=7)
-    folder = Path(asset_authoring.assets_root) / "AuthoringDataContract"
-    with editor.edit_scene("创建关卡数据"):
+    from infernux.engine.interaction import DocumentKind, ensure_editable_resource_document
+    import json
+    source = AuthoringLevelData(title='压力板', difficulty=7)
+    folder = Path(asset_authoring.assets_root) / 'AuthoringDataContract'
+    with editor.edit_scene('创建关卡数据'):
         assert Path(editor.create_folder(folder)).samefile(folder)
-        target = Path(editor.create_data_asset(source, folder / "Level.inxdata"))
+        target = Path(editor.create_data_asset(source, folder / 'Level.inxdata'))
     assert not source.is_persistent
-    loaded = DataAsset.load(str(target))
-    assert loaded is not source
-    assert (loaded.title, loaded.difficulty) == ("压力板", 7)
-    guid = loaded.guid
+    asset = DataAsset.load(str(target))
+    assert asset is not source and (asset.title, asset.difficulty) == ('压力板', 7)
+    guid = asset.guid
     assert guid
-    content, metadata = target.read_bytes(), Path(str(target) + ".meta").read_bytes()
-    assert UndoManager.instance().undo_description == "创建关卡数据"
+    content, metadata = target.read_bytes(), Path(str(target) + '.meta').read_bytes()
+    assert UndoManager.instance().undo_description == '创建关卡数据'
     editor.undo(defer=False)
     assert not folder.exists()
     editor.redo(defer=False)
-    assert target.read_bytes() == content
-    assert Path(str(target) + ".meta").read_bytes() == metadata
+    assert target.read_bytes() == content and Path(str(target) + '.meta').read_bytes() == metadata
     AssetManager.invalidate(guid)
-    assert DataAsset.load(str(target)).guid == guid
+    asset = DataAsset.load(str(target))
+    assert asset.guid == guid
+    controller = ensure_editable_resource_document(category='data_asset', document_kind=DocumentKind.DATA_ASSET,
+        file_path=str(target), resource=asset, guid=guid, view_id='inspector.test')
+    before_actions = len(UndoManager.instance().action_journal.applied_entries())
+    assert editor.set_data_asset_fields(asset, title='第一关', difficulty=5)
+    assert editor.load_data_asset(str(target)) is asset and controller.resource is asset
+    assert (asset.title, asset.difficulty) == ('第一关', 5)
+    assert not editor.set_data_asset_fields(asset, title='第一关', difficulty=5)
+    assert len(UndoManager.instance().action_journal.applied_entries()) == before_actions + 1
     editor.undo(defer=False)
-    assert not folder.exists()
+    assert (asset.title, asset.difficulty) == ('压力板', 7)
+    assert editor.load_data_asset(str(target)).difficulty == 7
+    assert len(UndoManager.instance().action_journal.applied_entries()) == before_actions
+    editor.redo(defer=False)
+    assert (asset.title, asset.difficulty) == ('第一关', 5)
+    assert editor.save_data_asset(asset).status in (editor.DocumentActionStatus.APPLIED, editor.DocumentActionStatus.NO_OP)
+    assert json.loads(target.read_text(encoding='utf-8'))['fields']['difficulty'] == 5
 
 
 def test_public_data_asset_uses_published_type_after_script_refresh(asset_authoring):
@@ -237,36 +239,6 @@ def test_public_data_asset_never_overwrites_or_mutates_input(asset_authoring):
     editor.undo(defer=False)
     assert not target.exists()
     assert not UndoManager.instance().can_undo
-
-
-def test_public_data_asset_edit_uses_shared_document_and_one_undo(asset_authoring):
-    from pathlib import Path
-    from infernux.engine.interaction import DocumentKind, ensure_editable_resource_document
-
-    path = editor.create_data_asset(AuthoringLevelData(), "Assets/EditData.inxdata")
-    asset = DataAsset.load(path)
-    controller = ensure_editable_resource_document(
-        category="data_asset", document_kind=DocumentKind.DATA_ASSET,
-        file_path=path, resource=asset, guid=asset.guid, view_id="inspector.test",
-    )
-    UndoManager.instance().clear()
-    assert editor.set_data_asset_fields(asset, title="第一关", difficulty=5)
-    assert editor.load_data_asset(path) is asset
-    assert editor.load_data_asset(path).title == "第一关"
-    assert controller.resource is asset
-    assert (asset.title, asset.difficulty) == ("第一关", 5)
-    assert not editor.set_data_asset_fields(asset, title="第一关", difficulty=5)
-    editor.undo(defer=False)
-    assert (asset.title, asset.difficulty) == ("新关卡", 1)
-    assert editor.load_data_asset(path).difficulty == 1
-    assert not UndoManager.instance().can_undo
-    editor.redo(defer=False)
-    assert (asset.title, asset.difficulty) == ("第一关", 5)
-    assert editor.save_data_asset(asset).status in (
-        editor.DocumentActionStatus.APPLIED, editor.DocumentActionStatus.NO_OP,
-    )
-    import json
-    assert json.loads(Path(path).read_text(encoding="utf-8"))["fields"]["difficulty"] == 5
 
 
 def test_public_data_asset_edit_rejects_entire_invalid_batch(asset_authoring):
@@ -423,85 +395,81 @@ def property_prefab(asset_authoring, scene):
     return path, instance
 
 
-def test_revert_one_python_property_retains_other_fields_and_identity(property_prefab, scene):
+def test_prefab_scalar_queries_and_reverts_preserve_sibling_fields_identity_and_read_only_snapshots(property_prefab):
+    from pathlib import Path
     path, root = property_prefab
     first, second = root.get_components(PropertyRevertProbe)
-    first.amount = 20.0
-    second.amount = 50.0
-    second.label = "Keep instance label"
-    component_id = second.component_id
-    child_id = root.get_child(0).id
+    assert not editor.is_property_override(first, 'amount')
+    second.amount, second.label = 50, 'Keep instance label'
+    component_id, child_id = second.component_id, root.get_child(0).id
     root.transform.local_position = Vector3(10, 11, 12)
-    assert editor.revert_property_override(second, "amount")
+    collider = root.get_child(0).get_component(BoxCollider)
+    collider.size, collider.center = Vector3(4, 5, 6), Vector3(1, 2, 3)
+    before, source_bytes = root.serialize_document(), Path(path).read_bytes()
+    assert editor.is_property_override(second, 'amount')
+    assert not editor.is_property_override(second, 'target')
+    assert not editor.is_property_override(second, 'collider')
+    assert not editor.is_property_override(second, 'locked')
+    changes = editor.get_property_modifications(root)
+    fields = [item for item in changes if item.component_id == second.component_id]
+    assert [(item.property_path, item.source_value, item.instance_value) for item in fields] == [
+        ('data.amount', 5.0, 50.0), ('data.label', 'Source', 'Keep instance label')]
+    assert all(item.source_component_id > 0 and item.object_id == root.id for item in fields)
+    assert root.serialize_document() == before and Path(path).read_bytes() == source_bytes
+    assert not UndoManager.instance().can_undo
+    position = next(item for item in changes if item.component_id == root.transform.component_id)
+    size = next(item for item in changes if item.component_id == collider.component_id and item.property_path == 'data.size')
+    assert position.property_path == 'position' and position.is_default_override
+    assert not size.is_default_override
+    size.instance_value.clear()
+    assert collider.size.x == 4 and editor.get_property_modifications(root) != changes
+    first.amount = 20
+    assert editor.revert_property_override(second, 'amount')
     first, second = root.get_components(PropertyRevertProbe)
-    assert (first.amount, second.amount, second.label) == (20.0, 5.0, "Keep instance label")
-    assert second.component_id == component_id
-    assert root.get_child(0).id == child_id
+    assert (first.amount, second.amount, second.label) == (20.0, 5.0, 'Keep instance label')
+    assert second.component_id == component_id and root.get_child(0).id == child_id
     assert root.transform.local_position.x == 10
     editor.undo(defer=False)
     assert root.get_components(PropertyRevertProbe)[1].amount == 50
     editor.redo(defer=False)
-    second = root.get_components(PropertyRevertProbe)[1]
-    assert second.amount == 5
-    assert not editor.revert_property_override(second, "amount")
-
-
-def test_property_queries_are_field_exact_detached_and_read_only(property_prefab):
-    from pathlib import Path
-    path, root = property_prefab
-    first, second = root.get_components(PropertyRevertProbe)
-    second.amount = 50
-    second.label = "Instance"
-    source_bytes = Path(path).read_bytes()
-    before = root.serialize_document()
-    assert not editor.is_property_override(first, "amount")
-    assert editor.is_property_override(second, "amount")
-    assert not editor.is_property_override(second, "target")
-    assert not editor.is_property_override(second, "collider")
-    assert not editor.is_property_override(second, "locked")
-    changes = editor.get_property_modifications(root)
-    fields = [item for item in changes if item.component_id == second.component_id]
-    assert [(item.property_path, item.source_value, item.instance_value) for item in fields] == [
-        ("data.amount", 5.0, 50.0), ("data.label", "Source", "Instance"),
-    ]
-    assert all(item.source_component_id > 0 and item.object_id == root.id for item in fields)
-    assert root.serialize_document() == before
-    assert Path(path).read_bytes() == source_bytes
-    assert not UndoManager.instance().can_undo
-
-
-def test_property_query_native_transform_defaults_and_snapshot(property_prefab):
-    _, root = property_prefab
-    root.transform.local_position = Vector3(10, 11, 12)
+    assert root.get_components(PropertyRevertProbe)[1].amount == 5
+    assert not editor.revert_property_override(root.get_components(PropertyRevertProbe)[1], 'amount')
     collider = root.get_child(0).get_component(BoxCollider)
-    collider.size = Vector3(4, 5, 6)
-    assert editor.is_property_override(root.transform, "local_position")
-    assert editor.is_property_override(collider, "size")
-    changes = editor.get_property_modifications(root)
-    position = next(item for item in changes if item.component_id == root.transform.component_id)
-    assert position.property_path == "position"
-    assert position.is_default_override
-    size = next(item for item in changes if item.component_id == collider.component_id)
-    assert size.property_path == "data.size"
-    assert not size.is_default_override
-    size.instance_value.clear()
-    assert collider.size.x == 4
-    assert editor.get_property_modifications(root) != changes
-
-
-def test_property_query_tracks_revert_undo_and_exact_component_refs(property_prefab):
-    _, root = property_prefab
-    component = root.get_components(PropertyRevertProbe)[1]
-    component.target = None
-    component.collider = None
-    assert editor.is_property_override(component, "target")
-    assert editor.is_property_override(component, "collider")
-    assert editor.revert_property_override(component, "collider")
-    component = root.get_components(PropertyRevertProbe)[1]
-    assert not editor.is_property_override(component, "collider")
-    assert editor.is_property_override(component, "target")
+    assert editor.revert_property_override(collider, 'size')
+    collider = root.get_child(0).get_component(BoxCollider)
+    assert collider.size.x == 1 and collider.center.x == 1
+    assert editor.revert_property_override(root.transform, 'local_position')
+    assert root.transform.local_position.x == 2
     editor.undo(defer=False)
-    assert editor.is_property_override(root.get_components(PropertyRevertProbe)[1], "collider")
+    assert root.transform.local_position.x == 10
+    assert Path(path).read_bytes() == source_bytes
+
+
+def test_prefab_reference_query_revert_and_undo_target_exact_instance_members(property_prefab):
+    _, root = property_prefab
+    first, component = root.get_components(PropertyRevertProbe)
+    first_document = first._serialize_fields_document()
+    component.target, component.collider = None, None
+    assert editor.is_property_override(component, 'target') and editor.is_property_override(component, 'collider')
+    assert editor.revert_property_override(component, 'target')
+    component = root.get_components(PropertyRevertProbe)[1]
+    assert component.target.id == root.get_child(0).id and component.collider is None
+    assert first._serialize_fields_document() == first_document
+    assert not editor.is_property_override(component, 'target') and editor.is_property_override(component, 'collider')
+    assert editor.revert_property_override(component, 'collider')
+    component = root.get_components(PropertyRevertProbe)[1]
+    assert component.collider.component_id == root.get_child(0).get_component('BoxCollider').component_id
+    assert first._serialize_fields_document() == first_document
+    assert not editor.is_property_override(component, 'collider')
+    editor.undo(defer=False)
+    component = root.get_components(PropertyRevertProbe)[1]
+    assert component.collider is None and component.target.id == root.get_child(0).id
+    assert first._serialize_fields_document() == first_document
+    assert editor.is_property_override(component, 'collider')
+    editor.undo(defer=False)
+    component = root.get_components(PropertyRevertProbe)[1]
+    assert component.target is None and component.collider is None
+    assert first._serialize_fields_document() == first_document
 
 
 def test_property_query_added_members_and_plain_objects_are_not_source_fields(property_prefab, scene):
@@ -526,38 +494,6 @@ def test_property_query_deleted_reference_does_not_require_remapping_missing_tar
     component.target = None
     assert editor.is_property_override(component, "target")
     assert not UndoManager.instance().can_undo
-
-
-@pytest.mark.parametrize("field", ["target", "collider"])
-def test_revert_reference_uses_instance_object_and_exact_component(property_prefab, field):
-    path, root = property_prefab
-    component = root.get_components(PropertyRevertProbe)[0]
-    setattr(component, field, None)
-    assert editor.revert_property_override(component, field)
-    component = root.get_components(PropertyRevertProbe)[0]
-    target = getattr(component, field)
-    if field == "target":
-        assert target.id == root.get_child(0).id
-    else:
-        assert target.component_id == root.get_child(0).get_component("BoxCollider").component_id
-    editor.undo(defer=False)
-    assert getattr(root.get_components(PropertyRevertProbe)[0], field) is None
-
-
-def test_revert_native_and_explicit_root_transform_properties(property_prefab):
-    path, root = property_prefab
-    collider = root.get_child(0).get_component(BoxCollider)
-    collider.size = Vector3(4, 5, 6)
-    collider.center = Vector3(1, 2, 3)
-    assert editor.revert_property_override(collider, "size")
-    collider = root.get_child(0).get_component(BoxCollider)
-    assert collider.size.x == 1
-    assert collider.center.x == 1
-    root.transform.local_position = Vector3(10, 11, 12)
-    assert editor.revert_property_override(root.transform, "local_position")
-    assert root.transform.local_position.x == 2
-    editor.undo(defer=False)
-    assert root.transform.local_position.x == 10
 
 
 def test_rect_gizmo_override_revert_apply_and_undo_share_one_authoring_history(

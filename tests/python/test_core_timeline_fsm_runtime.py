@@ -92,71 +92,8 @@ def _fsm(states, default=None):
 
 # ── setup / parameters ──────────────────────────────────────────────────────
 
-def test_runtime_no_fsm_play_false():
-    rt = TimelineFSMRuntime()
-    assert rt.play() is False
-
-
-def test_runtime_set_fsm_none_resets():
-    rt = TimelineFSMRuntime()
-    rt.set_fsm(None)
-    assert rt.fsm is None
-    assert rt.is_playing is False
-    assert rt.current_state == ""
-
-
-def test_runtime_initializes_parameter_defaults(tmp_path):
-    fsm = _fsm([_state(tmp_path, "A")])
-    from infernux.core.anim_state_machine import AnimParameter
-    fsm.parameters = [
-        AnimParameter(name="spd", value_type=TypeRef(ValueType.F32), default=2.0),
-        AnimParameter(name="flag", value_type=TypeRef(ValueType.BOOL), default=True),
-        AnimParameter(name="cnt", value_type=TypeRef(ValueType.I32), default=3),
-    ]
-    rt = TimelineFSMRuntime()
-    rt.set_fsm(fsm)
-    assert rt.get_float("spd") == 2.0
-    assert rt.get_bool("flag") is True
-    assert rt.get_int("cnt") == 3
-
-
-def test_runtime_parameter_setters(tmp_path):
-    rt = TimelineFSMRuntime()
-    rt.set_fsm(_fsm([_state(tmp_path, "A")]))
-    rt.set_float("x", 1.5)
-    rt.set_int("y", 4)
-    rt.set_bool("z", True)
-    assert rt.get_float("x") == 1.5
-    assert rt.get_int("y") == 4
-    assert rt.get_bool("z") is True
-
-
-def test_runtime_get_parameter_default():
-    rt = TimelineFSMRuntime()
-    assert rt.get_parameter("missing", "fallback") == "fallback"
-
-
-def test_runtime_set_trigger():
-    rt = TimelineFSMRuntime()
-    rt.set_trigger("fire")
-    assert rt.get_bool("fire") is True
-
 
 # ── play / state entry ──────────────────────────────────────────────────────
-
-def test_runtime_play_default_state(tmp_path):
-    rt = TimelineFSMRuntime()
-    rt.set_fsm(_fsm([_state(tmp_path, "A"), _state(tmp_path, "B")]))
-    assert rt.play() is True
-    assert rt.current_state == "A"
-    assert rt.is_playing is True
-
-
-def test_runtime_play_named_state(tmp_path):
-    rt = TimelineFSMRuntime()
-    rt.set_fsm(_fsm([_state(tmp_path, "A"), _state(tmp_path, "B")]))
-    assert rt.play("B") is True
-    assert rt.current_state == "B"
 
 
 def test_runtime_play_unknown_state_false(tmp_path):
@@ -193,71 +130,7 @@ def test_runtime_play_no_default_false(tmp_path):
     assert rt.play() is False
 
 
-def test_runtime_stop(tmp_path):
-    rt = TimelineFSMRuntime()
-    rt.set_fsm(_fsm([_state(tmp_path, "A")]))
-    rt.play()
-    rt.stop()
-    assert rt.is_playing is False
-
-
 # ── playback advance ────────────────────────────────────────────────────────
-
-def test_runtime_normalized_time_starts_zero(tmp_path):
-    rt = TimelineFSMRuntime()
-    rt.set_fsm(_fsm([_state(tmp_path, "A", dur=2.0)]))
-    rt.play()
-    assert rt.normalized_time == pytest.approx(0.0)
-
-
-def test_runtime_advance_increases_normalized_time(tmp_path):
-    rt = TimelineFSMRuntime()
-    rt.set_fsm(_fsm([_state(tmp_path, "A", dur=2.0)]))
-    rt.play()
-    rt.update(1.0, transform=None)
-    assert rt.normalized_time == pytest.approx(0.5)
-
-
-def test_runtime_loop_wraps(tmp_path):
-    rt = TimelineFSMRuntime()
-    rt.set_fsm(_fsm([_state(tmp_path, "A", loop=True, dur=1.0)]))
-    rt.play()
-    rt.update(1.5, transform=None)
-    assert rt.is_playing is True
-    assert rt.normalized_time == pytest.approx(0.5, abs=1e-6)
-
-
-def test_runtime_non_loop_stops_at_end(tmp_path):
-    rt = TimelineFSMRuntime()
-    rt.set_fsm(_fsm([_state(tmp_path, "A", loop=False, dur=1.0)]))
-    rt.play()
-    rt.update(1.5, transform=None)
-    assert rt.is_playing is False
-    assert rt.normalized_time == pytest.approx(1.0)
-
-
-def test_runtime_non_loop_clamps_normalized(tmp_path):
-    rt = TimelineFSMRuntime()
-    rt.set_fsm(_fsm([_state(tmp_path, "A", loop=False, dur=1.0)]))
-    rt.play()
-    rt.update(5.0, transform=None)
-    assert rt.normalized_time <= 1.0
-
-
-def test_runtime_playback_speed(tmp_path):
-    rt = TimelineFSMRuntime()
-    rt.set_fsm(_fsm([_state(tmp_path, "A", dur=2.0)]))
-    rt.play()
-    rt.playback_speed = 2.0
-    rt.update(0.5, transform=None)
-    assert rt.normalized_time == pytest.approx(0.5)  # 0.5s * 2x / 2.0s dur
-
-
-def test_runtime_update_no_transform_safe(tmp_path):
-    rt = TimelineFSMRuntime()
-    rt.set_fsm(_fsm([_state(tmp_path, "A")]))
-    rt.play()
-    rt.update(0.1, transform=None)  # must not raise
 
 
 def test_first_native_handle_does_not_compare_against_none(tmp_path):
@@ -299,35 +172,7 @@ def test_transform_contract_failure_propagates(tmp_path):
         rt.play(transform=InvalidTransform())
 
 
-def test_runtime_update_without_play_is_noop(tmp_path):
-    rt = TimelineFSMRuntime()
-    rt.set_fsm(_fsm([_state(tmp_path, "A")]))
-    rt.update(1.0, transform=None)
-    assert rt.current_state == ""
-
-
 # ── transitions ─────────────────────────────────────────────────────────────
-
-def test_runtime_condition_transition_fires(tmp_path):
-    a = _state(tmp_path, "A", loop=True, exit_time=0.0, trans=[("B", "go")])
-    b = _state(tmp_path, "B")
-    rt = TimelineFSMRuntime()
-    rt.set_fsm(_fsm([a, b]))
-    rt.play()
-    rt.set_bool("go", True)
-    rt.update(0.1, transform=None)
-    assert rt.current_state == "B"
-
-
-def test_runtime_condition_blocked_until_exit_time(tmp_path):
-    a = _state(tmp_path, "A", loop=True, exit_time=1.0, dur=1.0, trans=[("B", "go")])
-    b = _state(tmp_path, "B")
-    rt = TimelineFSMRuntime()
-    rt.set_fsm(_fsm([a, b]))
-    rt.play()
-    rt.set_bool("go", True)
-    rt.update(0.2, transform=None)  # progress 0.2 < exit 1.0
-    assert rt.current_state == "A"
 
 
 def test_runtime_trigger_consumed_after_transition(tmp_path):
@@ -353,16 +198,6 @@ def test_runtime_timeline_end_auto_advance(tmp_path):
     assert rt.current_state == "B"
 
 
-def test_runtime_no_transition_when_condition_false(tmp_path):
-    a = _state(tmp_path, "A", loop=True, exit_time=0.0, trans=[("B", "go")])
-    b = _state(tmp_path, "B")
-    rt = TimelineFSMRuntime()
-    rt.set_fsm(_fsm([a, b]))
-    rt.play()
-    rt.update(0.1, transform=None)  # go stays default 0/False
-    assert rt.current_state == "A"
-
-
 def test_runtime_float_condition_transition(tmp_path):
     a = _state(tmp_path, "A", loop=True, exit_time=0.0, trans=[("B", "speed > 0.5")])
     b = _state(tmp_path, "B")
@@ -374,11 +209,63 @@ def test_runtime_float_condition_transition(tmp_path):
     assert rt.current_state == "B"
 
 
-def test_runtime_re_enter_same_state_is_noop(tmp_path):
-    rt = TimelineFSMRuntime()
-    rt.set_fsm(_fsm([_state(tmp_path, "A")]))
-    rt.play("A")
-    rt.update(0.3, transform=None)
-    elapsed_before = rt.normalized_time
-    rt.play("A")  # restart_same_clip defaults False → no-op
-    assert rt.normalized_time == pytest.approx(elapsed_before, abs=1e-6)
+def test_timeline_player_configures_plays_loops_and_resets(tmp_path):
+    runtime = TimelineFSMRuntime()
+    assert not runtime.play()
+    assert runtime.get_parameter("missing", "fallback") == "fallback"
+    fsm = _fsm([_state(tmp_path, "A", dur=2.0), _state(tmp_path, "B")])
+    fsm.parameters = [
+        AnimParameter(name="speed", value_type=TypeRef(ValueType.F32), default=2.0),
+        AnimParameter(name="ready", value_type=TypeRef(ValueType.BOOL), default=True),
+        AnimParameter(name="count", value_type=TypeRef(ValueType.I32), default=3),
+    ]
+    runtime.set_fsm(fsm)
+    assert (runtime.get_float("speed"), runtime.get_bool("ready"), runtime.get_int("count")) == (2.0, True, 3)
+    runtime.set_float("speed", 1.5)
+    runtime.set_bool("ready", False)
+    runtime.set_int("count", 4)
+    runtime.set_trigger("fire")
+    assert (runtime.get_float("speed"), runtime.get_bool("ready"), runtime.get_int("count")) == (1.5, False, 4)
+    assert runtime.get_bool("fire")
+    runtime.update(1.0, transform=None)
+    assert runtime.current_state == ""
+    assert runtime.play() and runtime.current_state == "A" and runtime.is_playing
+    assert runtime.normalized_time == 0.0
+    runtime.update(.5, transform=None)
+    assert runtime.normalized_time == pytest.approx(.25)
+    runtime.play("A")
+    assert runtime.normalized_time == pytest.approx(.25)
+    runtime.playback_speed = 2.0
+    runtime.update(1.25, transform=None)
+    assert runtime.is_playing and runtime.normalized_time == pytest.approx(.5)
+    assert runtime.play("B") and runtime.current_state == "B"
+    assert runtime.normalized_time == 0.0
+    runtime.stop()
+    runtime.update(1.0, transform=None)
+    assert not runtime.is_playing and runtime.normalized_time == 0.0
+    runtime.set_fsm(None)
+    assert runtime.fsm is None and not runtime.is_playing and runtime.current_state == ""
+
+
+def test_non_looping_timeline_stops_at_its_clamped_end(tmp_path):
+    runtime = TimelineFSMRuntime()
+    runtime.set_fsm(_fsm([_state(tmp_path, "A", loop=False)]))
+    runtime.play()
+    runtime.update(1.5, transform=None)
+    assert not runtime.is_playing and runtime.normalized_time == 1.0
+    runtime.update(5.0, transform=None)
+    assert not runtime.is_playing and runtime.normalized_time == 1.0
+
+
+def test_condition_transition_waits_for_parameter_and_exit_time(tmp_path):
+    a = _state(tmp_path, "A", exit_time=.6, trans=[("B", "go")])
+    runtime = TimelineFSMRuntime()
+    runtime.set_fsm(_fsm([a, _state(tmp_path, "B")]))
+    runtime.play()
+    runtime.update(.2, transform=None)
+    assert runtime.current_state == "A"
+    runtime.set_bool("go", True)
+    runtime.update(.2, transform=None)
+    assert runtime.current_state == "A"
+    runtime.update(.3, transform=None)
+    assert runtime.current_state == "B"

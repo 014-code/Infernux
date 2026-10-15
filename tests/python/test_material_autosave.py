@@ -6,19 +6,6 @@ import infernux.lib as native_lib
 from infernux.core.material import Material
 
 
-def test_new_material_template_uses_native_color_semantics():
-    from infernux.engine.ui.project_file_ops import _new_material_document
-
-    native = native_lib.InxMaterial('Authored', 'Unlit')
-    native.set_color('baseColor', (1., .55, .12, 1.))
-    expected = native.serialize_document()['properties']['baseColor']['type']
-    document = _new_material_document('Created')
-    assert "path_hint" not in document["shaders"]["vertex"]
-    assert "path_hint" not in document["shaders"]["fragment"]
-    assert document['properties']['baseColor']['type'] == expected
-    assert native.deserialize_document(document)
-
-
 def test_builtin_unlit_material_does_not_persist_shader_paths():
     import json
     from pathlib import Path
@@ -121,65 +108,41 @@ def test_material_registry_failures_are_not_suppressed(
         getattr(Material, method)(argument)
 
 
-def test_material_to_dict_preserves_the_canonical_native_document():
-    material = Material(_NativeMaterial())
+def test_material_template_roundtrip_uses_canonical_native_color_and_document_semantics():
+    from infernux.engine.ui.project_file_ops import _new_material_document
 
-    document = material.to_dict()
-
-    assert document == material.serialize_document()
-    assert "shaders" in document
-    assert "renderState" in document
-    assert "properties" in document
-
-
-def test_flush_drops_deleted_material_without_saving():
-    native = _NativeMaterial(deleted=True)
+    native = native_lib.InxMaterial('Authored', 'Unlit')
+    native.set_color('baseColor', (1., .55, .12, 1.))
+    expected = native.serialize_document()['properties']['baseColor']['type']
+    document = _new_material_document('Created')
+    assert "path_hint" not in document["shaders"]["vertex"] and "path_hint" not in document["shaders"]["fragment"]
+    assert document['properties']['baseColor']['type'] == expected
+    assert native.deserialize_document(document)
     material = Material(native)
-    material._save_pending = True
-    Material._pending_saves[id(material)] = material
-
-    material._flush_save()
-
-    assert native.save_count == 0
-    assert material._save_pending is False
-    assert id(material) not in Material._pending_saves
+    assert material.to_dict() == material.serialize_document() == native.serialize_document()
+    assert {'shaders', 'renderState', 'properties'} <= material.to_dict().keys()
 
 
-def test_dispose_removes_material_from_pending_save_queue():
-    native = _NativeMaterial()
-    material = Material(native)
-    material._save_pending = True
-    Material._pending_saves[id(material)] = material
-
-    material.dispose()
-
-    assert material._save_pending is False
-    assert id(material) not in Material._pending_saves
-
-
-def test_pending_save_queue_keeps_distinct_wrappers_for_same_guid():
-    first = Material(_NativeMaterial())
-    second = Material(_NativeMaterial())
-
-    first._auto_save()
-    second._auto_save()
-
-    assert Material._pending_saves == {}
-    first._last_save_time = second._last_save_time = float("inf")
-    first._auto_save()
-    second._auto_save()
-
-    assert set(Material._pending_saves) == {id(first), id(second)}
-    Material._pending_saves.clear()
-
-
-def test_failed_material_save_remains_pending_for_retry():
-    native = _NativeMaterial(save_result=False)
-    material = Material(native)
-
-    material._flush_save()
-
-    assert native.save_count == 1
-    assert material._save_pending is True
-    assert Material._pending_saves[id(material)] is material
-    Material._pending_saves.clear()
+def test_pending_material_owners_keep_independent_save_failure_and_retirement_state():
+    first_native, second_native = _NativeMaterial(), _NativeMaterial()
+    first, second = Material(first_native), Material(second_native)
+    try:
+        first._auto_save()
+        second._auto_save()
+        assert not Material._pending_saves
+        first._last_save_time = second._last_save_time = float('inf')
+        first._auto_save()
+        second._auto_save()
+        assert set(Material._pending_saves) == {id(first), id(second)}
+        first_native.save_result = False
+        first._flush_save()
+        assert first_native.save_count == 2 and first._save_pending
+        assert Material._pending_saves[id(first)] is first
+        first_native.deleted = True
+        first._flush_save()
+        assert first_native.save_count == 2 and not first._save_pending
+        assert set(Material._pending_saves) == {id(second)}
+        second.dispose()
+        assert not second._save_pending and not Material._pending_saves
+    finally:
+        Material._pending_saves.clear()

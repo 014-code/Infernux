@@ -128,7 +128,6 @@ def test_unbound_component_identity_probe_falls_back_to_own_id():
 # ══════════════════════════════════════════════════════════════════════
 
 
-
 # ══════════════════════════════════════════════════════════════════════
 # SetPropertyCommand
 # ══════════════════════════════════════════════════════════════════════
@@ -136,20 +135,19 @@ def test_unbound_component_identity_probe_falls_back_to_own_id():
 class TestSetPropertyCommand:
 
 
-
-    def test_merge_within_window(self):
-        obj = _Obj()
-        cmd1 = SetPropertyCommand(obj, "x", 0, 1)
-        cmd2 = SetPropertyCommand(obj, "x", 1, 2)
-        cmd2.timestamp = cmd1.timestamp + 0.1
-        assert cmd1.can_merge(cmd2)
-        cmd1.merge(cmd2)
-        # After merge, new value is from cmd2
-        cmd1.execute()
-        assert obj.x == 2
-        # Undo goes to original old value
-        cmd1.undo()
-        assert obj.x == 0
+    def test_automatic_history_merge_keeps_first_snapshot_and_last_authored_value(self, _reset_undo_manager):
+        manager, target = _reset_undo_manager, _Obj()
+        first = SetPropertyCommand(target, 'x', 0, 1)
+        assert manager.execute(first)
+        second = SetPropertyCommand(target, 'x', 1, 5)
+        second.timestamp = first.timestamp + .1
+        assert first.can_merge(second)
+        assert manager.execute(second)
+        assert target.x == 5 and len(manager.action_journal.applied_entries()) == 1
+        manager.undo()
+        assert target.x == 0
+        manager.redo()
+        assert target.x == 5
 
     def test_merge_rejected_outside_window(self):
         obj = _Obj()
@@ -164,7 +162,6 @@ class TestSetPropertyCommand:
         cmd2 = SetPropertyCommand(obj, "y", 0, 2)
         cmd2.timestamp = cmd1.timestamp + 0.1
         assert not cmd1.can_merge(cmd2)
-
 
 
     def test_native_backed_undo_fails_closed_when_target_missing(self, monkeypatch):
@@ -363,7 +360,6 @@ class TestMaterialDocumentCommand:
 class TestCompoundCommand:
 
 
-
     def test_only_explicit_selection_context_propagates(self):
         before = SelectionSnapshot.create(
             (SelectionTarget.scene_object(7),),
@@ -509,11 +505,9 @@ class TestCompoundCommand:
 # ══════════════════════════════════════════════════════════════════════
 
 
-
 # ══════════════════════════════════════════════════════════════════════
 # GlobalSelectionCommand
 # ══════════════════════════════════════════════════════════════════════
-
 
 
 class TestPrefabUnpackCommand:
@@ -729,10 +723,6 @@ class TestUndoManager:
         assert restored
 
 
-
-
-
-
     def test_record_pushes_without_executing(self, _reset_undo_manager):
         mgr = _reset_undo_manager
         executed = []
@@ -747,39 +737,6 @@ class TestUndoManager:
         mgr.record(cmd)
         assert len(executed) == 0
         assert mgr.can_undo
-
-    def test_merge_auto(self, _reset_undo_manager):
-        mgr = _reset_undo_manager
-        obj = _Obj()
-        cmd1 = SetPropertyCommand(obj, "x", 0, 1)
-        mgr.execute(cmd1)
-        cmd2 = SetPropertyCommand(obj, "x", 1, 5)
-        cmd2.timestamp = cmd1.timestamp + 0.1
-        mgr.execute(cmd2)
-        # Should have merged → only 1 entry on the stack
-        assert len(mgr.action_journal.applied_entries()) == 1
-        mgr.undo()
-        assert obj.x == 0
-
-
-    def test_is_executing_during_undo_redo(self, _reset_undo_manager):
-        mgr = _reset_undo_manager
-        seen_exec = []
-
-        class SpyCmd(UndoCommand):
-            def execute(self):
-                seen_exec.append(mgr.is_executing)
-            def undo(self):
-                seen_exec.append(mgr.is_executing)
-            def redo(self):
-                seen_exec.append(mgr.is_executing)
-
-        mgr.execute(SpyCmd("test"))
-        assert seen_exec == [True]
-        mgr.undo()
-        assert seen_exec == [True, True]
-        mgr.redo()
-        assert seen_exec == [True, True, True]
 
 
     def test_execute_reports_failure_without_recording(self, _reset_undo_manager):
@@ -798,27 +755,20 @@ class TestUndoManager:
             assert mgr.is_executing
         assert not mgr.is_executing
 
-    def test_suppress_property_recording(self, _reset_undo_manager):
-        mgr = _reset_undo_manager
-        obj = _Obj()
-        with mgr.suppress_property_recording():
-            mgr.execute(SetPropertyCommand(obj, "x", 0, 99))
-        # Value was set but command not recorded
-        assert obj.x == 99
-        assert not mgr.can_undo
-
-    def test_suppress_property_recording_allows_structural(self, _reset_undo_manager):
-        mgr = _reset_undo_manager
-
-        class StructuralCmd(UndoCommand):
+    def test_property_recording_suppression_keeps_structural_actions_replayable(self, _reset_undo_manager):
+        manager, target = _reset_undo_manager, _Obj()
+        class StructuralCommand(UndoCommand):
             _is_property_edit = False
-            def execute(self): pass
-            def undo(self): pass
+            def execute(self): target.y = 42
+            def undo(self): target.y = 0
+        with manager.suppress_property_recording():
+            assert manager.execute(SetPropertyCommand(target, 'x', 0, 99))
+            assert target.x == 99 and not manager.can_undo
+            assert manager.execute(StructuralCommand('Create object'))
+            assert target.y == 42 and manager.can_undo
+        manager.undo()
+        assert target.y == 0 and target.x == 99
 
-        with mgr.suppress_property_recording():
-            mgr.execute(StructuralCmd("create object"))
-        # Structural commands are recorded even under suppression
-        assert mgr.can_undo
 
     def test_depth_limit(self, _reset_undo_manager):
         mgr = _reset_undo_manager
@@ -847,18 +797,14 @@ class TestUndoManager:
         assert not mgr.can_undo
 
 
-
-
 # ══════════════════════════════════════════════════════════════════════
 # UndoManager — save points belong to DocumentRegistry
 # ══════════════════════════════════════════════════════════════════════
 
 
-
 # ══════════════════════════════════════════════════════════════════════
 # Typed scene-object selection operations
 # ══════════════════════════════════════════════════════════════════════
-
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -1402,6 +1348,7 @@ def test_property_snapshot_is_owned_across_execute_undo_redo():
     before = {"items": [[1]], "label": "before", "optional": None}
     after = {"items": [[2]], "label": "after", "optional": None}
     command = SetPropertyCommand(obj, "x", before, after)
+    assert command.marks_dirty and "x" in command.description
     before["items"][0].append(99)
     after["items"][0].append(99)
     command.execute()
@@ -1411,18 +1358,6 @@ def test_property_snapshot_is_owned_across_execute_undo_redo():
     assert obj.x == {"items": [[1]], "label": "before", "optional": None}
     command.redo()
     assert obj.x == {"items": [[2]], "label": "after", "optional": None}
-
-
-def test_property_command_edit_undo_redo_and_metadata():
-    obj = _Obj()
-    command = SetPropertyCommand(obj, "x", 0, 42)
-    assert command.marks_dirty and "x" in command.description
-    command.execute()
-    assert obj.x == 42
-    command.undo()
-    assert obj.x == 0
-    command.redo()
-    assert obj.x == 42
 
 
 def test_generic_component_document_restore_owns_its_snapshots():
@@ -1484,23 +1419,24 @@ def test_compound_property_edit_replays_in_forward_and_reverse_order():
     assert (first.x, second.x) == (10, 20)
 
 
-def test_custom_undo_command_defaults_and_redo_dispatch():
+def test_custom_command_default_redo_dispatch_stays_inside_history_execution_scope():
     calls = []
-
     class CustomCommand(UndoCommand):
-        def execute(self):
-            calls.append("execute")
-
-        def undo(self):
-            calls.append("undo")
-
-    command = CustomCommand("Custom edit")
-    assert command.supports_redo and command.marks_dirty
-    assert isinstance(command.timestamp, float) and not command.can_merge(command)
-    command.execute()
-    command.undo()
-    command.redo()
-    assert calls == ["execute", "undo", "execute"]
+        def execute(self): calls.append(('execute', manager.is_executing))
+        def undo(self): calls.append(('undo', manager.is_executing))
+    previous = UndoManager._instance
+    manager = UndoManager()
+    try:
+        command = CustomCommand('Custom edit')
+        assert command.supports_redo and command.marks_dirty
+        assert isinstance(command.timestamp, float) and not command.can_merge(command)
+        assert manager.execute(command)
+        manager.undo()
+        manager.redo()
+        assert calls == [('execute', True), ('undo', True), ('execute', True)]
+    finally:
+        manager.clear()
+        UndoManager._instance = previous
 
 
 def test_selection_command_only_holds_context_for_the_action_journal():
@@ -1544,41 +1480,34 @@ def test_renderstack_continuous_edit_merges_and_republishes_each_replay():
     assert target.x == 5 and stack.invalidated == 4
 
 
-def test_history_branching_reports_state_and_clears_redo(_reset_undo_manager):
-    manager = _reset_undo_manager
-    target = _Obj()
+def test_history_walks_distinct_edits_then_discards_a_redo_branch(_reset_undo_manager):
+    manager, target = _reset_undo_manager, _Obj()
     changed = []
     manager.set_on_state_changed(lambda: changed.append(True))
     assert not manager.can_undo and not manager.can_redo
-    manager.execute(SetPropertyCommand(target, "x", 0, 10, "Move X"))
-    assert target.x == 10 and manager.undo_description == "Move X"
-    assert manager.can_undo and not manager.can_redo and len(changed) == 1
+    first = SetPropertyCommand(target, 'x', 0, 10, 'First')
+    first.timestamp = 10
+    assert manager.execute(first)
+    assert target.x == 10 and manager.undo_description == 'First' and len(changed) == 1
+    second = SetPropertyCommand(target, 'x', 10, 20, 'Second')
+    second.timestamp = 20
+    assert manager.execute(second)
+    third = SetPropertyCommand(target, 'x', 20, 30, 'Third')
+    third.timestamp = 30
+    assert manager.execute(third)
+    assert target.x == 30 and len(changed) == 3
     manager.undo()
-    assert target.x == 0 and manager.can_redo and len(changed) == 2
-    manager.redo()
+    assert target.x == 20 and manager.can_redo and len(changed) == 4
+    manager.undo()
     assert target.x == 10
+    manager.redo()
+    assert target.x == 20
     manager.undo()
-    manager.execute(SetPropertyCommand(target, "y", 0, 20, "Move Y"))
-    assert target.y == 20 and target.x == 0
-    assert not manager.can_redo and manager.undo_description == "Move Y"
+    assert manager.execute(SetPropertyCommand(target, 'y', 0, 20, 'Move Y'))
+    assert target.x == 10 and target.y == 20
+    assert not manager.can_redo and manager.undo_description == 'Move Y'
     manager.clear()
     assert not manager.can_undo and not manager.can_redo
-
-
-def test_history_walks_multiple_distinct_edits(_reset_undo_manager):
-    manager = _reset_undo_manager
-    target = _Obj()
-    for value in range(3):
-        command = SetPropertyCommand(target, "x", value, value + 1)
-        command.timestamp = value * 10.0
-        manager.execute(command)
-    assert target.x == 3
-    manager.undo()
-    assert target.x == 2
-    manager.undo()
-    assert target.x == 1
-    manager.redo()
-    assert target.x == 2
 
 
 def test_scene_object_selection_replacement_toggle_notification_and_clear():

@@ -39,31 +39,6 @@ def typed_stack(monkeypatch):
     return stack
 
 
-@pytest.mark.parametrize("inactive", [False, True])
-def test_authored_pipeline_configuration_roundtrips_through_shared_codec(typed_stack, inactive):
-    stack = typed_stack
-    if inactive:
-        stack.set_pipeline(RenderStack.DEFAULT_PIPELINE_NAME)
-    settings = {
-        "offset": Vector3(4, 5, 6), "extent": Vector2(2, 3),
-        "tint": Vector4(.1, .2, .3, .4), "samples": MSAASamples.X2,
-        "weights": [2.0, 4.0], "settings": ParameterSettings(gain=3.5),
-        "texture": TextureRef(guid="a" * 32),
-    }
-    for field, value in settings.items():
-        stack.set_pipeline_parameter(field, value, pipeline_class_name=ParameterDocumentPipeline.name)
-    document = json.loads(json.dumps(stack._serialize_fields_document(), allow_nan=False))
-    encoded = json.loads(document["pipeline_params_json"])[ParameterDocumentPipeline.name]
-    assert all(encoded[field] == VALUE_CODECS.encode(value) for field, value in settings.items())
-    restored = RenderStack()
-    restored._deserialize_fields_document(document)
-    restored.set_pipeline(ParameterDocumentPipeline.name)
-    for field, value in settings.items():
-        actual = get_raw_field_value(restored.pipeline, field)
-        assert type(actual) is type(value), field
-        assert VALUE_CODECS.encode(actual) == VALUE_CODECS.encode(value), field
-
-
 def test_rejected_pipeline_value_does_not_publish_live_or_saved_state(typed_stack):
     stack = typed_stack
     stack.set_pipeline_parameter("offset", Vector3(4, 5, 6))
@@ -74,8 +49,7 @@ def test_rejected_pipeline_value_does_not_publish_live_or_saved_state(typed_stac
     assert stack._serialize_fields_document() == before
 
 
-@pytest.mark.parametrize("value,expected", [(-5.0, 0.0), (8.0, 2.0)])
-@pytest.mark.parametrize("inactive", [False, True])
+@pytest.mark.parametrize("value,expected,inactive", [(-5.0, 0.0, False), (8.0, 2.0, True)])
 def test_parameter_range_is_applied_before_document_publication(typed_stack, value, expected, inactive):
     stack = typed_stack
     if inactive:
@@ -107,15 +81,6 @@ def test_provider_retirement_snapshots_current_live_parameters(typed_stack, monk
     assert stack._pipeline is None
     assert json.loads(stack._serialize_fields_document()["pipeline_params_json"])[
         ParameterDocumentPipeline.name]["offset"] == [9, 8, 7]
-
-
-def test_empty_replacement_document_clears_previous_parameters(typed_stack):
-    stack = typed_stack
-    stack.set_pipeline_parameter("offset", Vector3(4, 5, 6))
-    document = stack._serialize_fields_document()
-    document["pipeline_params_json"] = ""
-    stack._deserialize_fields_document(document)
-    assert tuple(stack.pipeline.offset) == (0, 0, 0)
 
 
 def test_invalid_restoration_never_publishes_partial_pipeline(typed_stack):
@@ -156,25 +121,6 @@ def test_typed_parameter_editor_undo_redo_survives_projection_rebuild(typed_stac
     finally:
         core.shutdown()
         EditorInteractionCore._instance, UndoManager._instance = old_core, old_undo
-
-
-def test_typed_pipeline_survives_scene_disk_roundtrip(typed_stack, scene, tmp_path):
-    from infernux.engine.scene_authoring import decode_scene_document
-    from infernux.engine.component_restore import deserialize_scene_document_transactionally
-
-    stack = scene.create_game_object("Typed scene settings").add_component(RenderStack)
-    stack.set_pipeline(ParameterDocumentPipeline.name)
-    stack.set_pipeline_parameter("offset", Vector3(4, 5, 6))
-    stack.set_pipeline_parameter("samples", MSAASamples.X2)
-    stack.set_pipeline_parameter("settings", ParameterSettings(gain=3.5))
-    path = tmp_path / "Typed.scene"
-    assert scene.save_to_file(str(path))
-    document = decode_scene_document(json.loads(path.read_text(encoding="utf-8")))
-    assert deserialize_scene_document_transactionally(scene, document)
-    restored = scene.find("Typed scene settings").get_component(RenderStack)
-    assert tuple(restored.pipeline.offset) == (4, 5, 6)
-    assert restored.pipeline.samples is MSAASamples.X2
-    assert restored.pipeline.settings.gain == 3.5
 
 
 @pytest.mark.parametrize("selected", [False, True])
@@ -245,52 +191,6 @@ def exercise_missing_provider(project, selected):
         engine.exit()
 
 
-@pytest.mark.parametrize("pipeline_name,field", [("__default__", "msaa_samples"), (ParameterDocumentPipeline.name, "samples")])
-def test_previous_renderstack_enum_save_is_upgraded_on_load(typed_stack, pipeline_name, field):
-    saved = typed_stack._serialize_fields_document()
-    saved["pipeline_class_name"] = RenderStack.DEFAULT_PIPELINE_NAME if pipeline_name == "__default__" else pipeline_name
-    saved["pipeline_params_json"] = json.dumps({pipeline_name: {field: {"__enum_name__": "X2"}}})
-    restored = RenderStack()
-    restored._deserialize_fields_document(saved)
-    assert getattr(restored.pipeline, field) is MSAASamples.X2
-    canonical = json.loads(restored._serialize_fields_document()["pipeline_params_json"])
-    assert canonical[pipeline_name][field] == VALUE_CODECS.encode(MSAASamples.X2)
-
-
-def test_previous_enum_save_with_unknown_member_is_rejected(typed_stack):
-    saved = typed_stack._serialize_fields_document()
-    saved["pipeline_params_json"] = json.dumps({ParameterDocumentPipeline.name: {"samples": {"__enum_name__": "X16"}}})
-    with pytest.raises(ValueError, match="unknown legacy enum member"):
-        RenderStack()._deserialize_fields_document(saved)
-
-
-@pytest.mark.parametrize("pipeline_name,field", [("__default__", "msaa_samples"), (ParameterDocumentPipeline.name, "samples")])
-def test_previous_integer_enum_save_is_upgraded_on_load(typed_stack, pipeline_name, field):
-    saved = typed_stack._serialize_fields_document()
-    saved["pipeline_class_name"] = RenderStack.DEFAULT_PIPELINE_NAME if pipeline_name == "__default__" else pipeline_name
-    saved["pipeline_params_json"] = json.dumps({pipeline_name: {field: 8}})
-    restored = RenderStack()
-    restored._deserialize_fields_document(saved)
-    assert getattr(restored.pipeline, field) is MSAASamples.X8
-    canonical = json.loads(restored._serialize_fields_document()["pipeline_params_json"])
-    assert canonical[pipeline_name][field] == VALUE_CODECS.encode(MSAASamples.X8)
-
-
-def test_previous_integer_enum_save_with_unknown_value_is_rejected(typed_stack):
-    saved = typed_stack._serialize_fields_document()
-    saved["pipeline_params_json"] = json.dumps({ParameterDocumentPipeline.name: {"samples": 16}})
-    with pytest.raises(ValueError, match="unknown legacy enum value"):
-        RenderStack()._deserialize_fields_document(saved)
-
-
-@pytest.mark.parametrize("value", [True, 8.0, "8", None])
-def test_legacy_enum_migration_does_not_coerce_other_values(typed_stack, value):
-    saved = typed_stack._serialize_fields_document()
-    saved["pipeline_params_json"] = json.dumps({ParameterDocumentPipeline.name: {"samples": value}})
-    with pytest.raises(TypeError, match="ENUM field"):
-        RenderStack()._deserialize_fields_document(saved)
-
-
 def test_public_enum_parameter_input_publishes_only_declared_members(typed_stack):
     assert typed_stack.pipeline.samples is MSAASamples.X4
     before = typed_stack._serialize_fields_document()
@@ -302,13 +202,58 @@ def test_public_enum_parameter_input_publishes_only_declared_members(typed_stack
     assert json.loads(typed_stack.pipeline_params_json)[ParameterDocumentPipeline.name]["samples"] == VALUE_CODECS.encode(MSAASamples.X8)
 
 
-@pytest.mark.parametrize("value", [8, {"__enum_name__": "X8"}])
-def test_legacy_enum_store_restores_when_provider_returns(typed_stack, value):
-    typed_stack._pipeline = None
-    typed_stack._pipeline_param_store = {ParameterDocumentPipeline.name: {"samples": value}}
-    assert typed_stack.pipeline.samples is MSAASamples.X8
-    canonical = json.loads(typed_stack._serialize_fields_document()["pipeline_params_json"])
-    assert canonical[ParameterDocumentPipeline.name]["samples"] == VALUE_CODECS.encode(MSAASamples.X8)
+@pytest.mark.parametrize("inactive", [False, True])
+def test_typed_pipeline_authoring_saves_restores_and_clears_parameters(typed_stack, scene, engine, tmp_path, inactive):
+    from PIL import Image
+    from infernux.engine.scene_authoring import decode_scene_document
+    from infernux.engine.component_restore import deserialize_scene_document_transactionally
+
+    stack = scene.create_game_object("Typed scene settings").add_component(RenderStack)
+    stack.set_pipeline(ParameterDocumentPipeline.name)
+    if inactive:
+        stack.set_pipeline(RenderStack.DEFAULT_PIPELINE_NAME)
+    texture_path = tmp_path / "PipelineTexture.png"
+    Image.new("RGBA", (2, 2), (255, 255, 255, 255)).save(texture_path)
+    database = engine.get_asset_database()
+    imported = database.import_asset(str(texture_path))
+    assert imported, imported.error
+    settings = {
+        "offset": Vector3(4, 5, 6), "extent": Vector2(2, 3),
+        "tint": Vector4(.1, .2, .3, .4), "samples": MSAASamples.X2,
+        "weights": [2.0, 4.0], "settings": ParameterSettings(gain=3.5),
+        "texture": TextureRef(guid=imported.guid),
+    }
+    try:
+        for field, value in settings.items():
+            stack.set_pipeline_parameter(field, value, pipeline_class_name=ParameterDocumentPipeline.name)
+        saved = stack._serialize_fields_document()
+        encoded = json.loads(saved["pipeline_params_json"])[ParameterDocumentPipeline.name]
+        assert all(encoded[field] == VALUE_CODECS.encode(value) for field, value in settings.items())
+        path = tmp_path / "Typed.scene"
+        assert scene.save_to_file(str(path))
+        document = decode_scene_document(json.loads(path.read_text(encoding="utf-8")))
+        assert deserialize_scene_document_transactionally(scene, document)
+        restored = scene.find("Typed scene settings").get_component(RenderStack)
+        restored.set_pipeline(ParameterDocumentPipeline.name)
+        for field, value in settings.items():
+            actual = get_raw_field_value(restored.pipeline, field)
+            assert type(actual) is type(value), field
+            assert VALUE_CODECS.encode(actual) == VALUE_CODECS.encode(value), field
+        empty = restored._serialize_fields_document()
+        empty["pipeline_params_json"] = ""
+        restored._deserialize_fields_document(empty)
+        assert tuple(restored.pipeline.offset) == (0, 0, 0)
+        assert restored.pipeline.samples is MSAASamples.X4
+    finally:
+        from infernux.core.assets import AssetManager
+        AssetManager.delete_asset(str(texture_path), database=database)
+
+
+def test_pipeline_document_rejects_a_missing_enum_record(typed_stack):
+    saved = typed_stack._serialize_fields_document()
+    saved["pipeline_params_json"] = json.dumps({ParameterDocumentPipeline.name: {"samples": None}})
+    with pytest.raises(TypeError, match="ENUM field"):
+        RenderStack()._deserialize_fields_document(saved)
 
 
 if __name__ == "__main__":

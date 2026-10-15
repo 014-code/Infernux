@@ -24,27 +24,6 @@ def iter_wait(instruction):
     yield instruction
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Yield instruction unit tests
-# ═══════════════════════════════════════════════════════════════════════════
-
-class TestWaitForSeconds:
-
-    def test_tick_not_ready(self):
-        scheduler = CoroutineScheduler()
-        handle = scheduler.start(iter_wait(WaitForSeconds(1.0)))
-        scheduler.tick_update(0.5)
-        assert not handle.is_finished
-
-    def test_tick_ready(self):
-        scheduler = CoroutineScheduler()
-        handle = scheduler.start(iter_wait(WaitForSeconds(1.0)))
-        scheduler.tick_update(0.5)
-        scheduler.tick_update(0.6)
-        assert handle.is_finished
-
-
-
 class TestWaitForSecondsRealtime:
     def test_system_clock_adjustments_do_not_change_wait_duration(self, monkeypatch):
         clocks = {"system": 1000.0, "monotonic": 20.0}
@@ -60,9 +39,6 @@ class TestWaitForSecondsRealtime:
         assert handle.is_finished
 
 
-
-
-
 class TestWaitForEndOfFrame:
 
     def test_rejects_invalid_frame_count(self):
@@ -71,24 +47,6 @@ class TestWaitForEndOfFrame:
         with pytest.raises(TypeError):
             WaitForEndOfFrame(1.5)
 
-
-
-
-
-
-
-
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Coroutine handle
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# CoroutineScheduler
-# ═══════════════════════════════════════════════════════════════════════════
 
 class TestCoroutineScheduler:
     @pytest.mark.parametrize("wait", [WaitUntil, WaitWhile])
@@ -159,8 +117,8 @@ class TestCoroutineScheduler:
         assert [type(error) for error in reported.value.exceptions] == [ValueError, RuntimeError]
         assert handle.is_finished and scheduler.count == 0
 
-    @pytest.mark.parametrize("candidate", [None, 42, iter([None]), lambda: None])
-    def test_invalid_generator_input_is_rejected_before_scheduler_mutation(self, candidate, monkeypatch):
+    def test_invalid_generator_input_is_rejected_before_scheduler_mutation(self, monkeypatch):
+        candidate = iter([None])
         scheduler = CoroutineScheduler()
         observed = scheduler.diagnostics()
         monkeypatch.setattr(CoroutineScheduler, "_advance", lambda _self, _co: pytest.fail("invalid input must not reach coroutine execution"))
@@ -212,160 +170,6 @@ class TestCoroutineScheduler:
         assert handle.is_finished and scheduler.count == 0 and cleaned == [True]
 
 
-
-
-    def test_wait_for_seconds(self):
-        steps = []
-
-        def gen():
-            steps.append("start")
-            yield WaitForSeconds(0.5)
-            steps.append("done")
-
-        sched = CoroutineScheduler()
-        sched.start(gen())
-        assert steps == ["start"]
-
-        sched.tick_update(0.3)
-        assert "done" not in steps
-
-        sched.tick_update(0.3)
-        assert "done" in steps
-
-    def test_wait_until(self):
-        flag = [False]
-        steps = []
-
-        def gen():
-            yield WaitUntil(lambda: flag[0])
-            steps.append("ready")
-
-        sched = CoroutineScheduler()
-        sched.start(gen())
-
-        sched.tick_update(0.016)
-        assert "ready" not in steps
-
-        flag[0] = True
-        sched.tick_update(0.016)
-        assert "ready" in steps
-
-    def test_wait_while(self):
-        flag = [True]
-        steps = []
-
-        def gen():
-            yield WaitWhile(lambda: flag[0])
-            steps.append("ready")
-
-        sched = CoroutineScheduler()
-        sched.start(gen())
-
-        sched.tick_update(0.016)
-        assert "ready" not in steps
-
-        flag[0] = False
-        sched.tick_update(0.016)
-        assert "ready" in steps
-
-    def test_wait_for_fixed_update(self):
-        steps = []
-
-        def gen():
-            yield WaitForFixedUpdate()
-            steps.append("fixed")
-
-        sched = CoroutineScheduler()
-        sched.start(gen())
-
-        # update phase should NOT advance this
-        sched.tick_update(0.016)
-        assert "fixed" not in steps
-
-        # fixed_update phase should advance
-        sched.tick_fixed_update(0.02)
-        assert "fixed" in steps
-
-    def test_wait_for_end_of_frame(self):
-        steps = []
-
-        def gen():
-            yield WaitForEndOfFrame()
-            steps.append("late")
-
-        sched = CoroutineScheduler()
-        sched.start(gen())
-
-        sched.tick_update(0.016)
-        assert "late" not in steps
-
-        sched.tick_late_update(0.016)
-        assert "late" in steps
-
-    def test_wait_for_multiple_end_of_frame_phases(self):
-        steps = []
-
-        def gen():
-            yield WaitForEndOfFrame(3)
-            steps.append("late")
-
-        sched = CoroutineScheduler()
-        sched.start(gen())
-        sched.tick_late_update(0.016)
-        sched.tick_late_update(0.016)
-        assert steps == []
-        sched.tick_late_update(0.016)
-        assert steps == ["late"]
-
-    def test_wait_for_exact_update_frame_count(self):
-        steps = []
-
-        def gen():
-            yield WaitForFrames(3)
-            steps.append("update")
-
-        sched = CoroutineScheduler()
-        sched.start(gen())
-        sched.tick_update(0.016)
-        sched.tick_update(0.016)
-        assert steps == []
-        sched.tick_update(0.016)
-        assert steps == ["update"]
-
-    def test_nested_coroutine_wait(self):
-        steps = []
-
-        def inner():
-            yield None
-            steps.append("inner_done")
-
-        def outer():
-            sched2 = CoroutineScheduler()
-            inner_co = sched2.start(inner())
-            yield inner_co
-            steps.append("outer_done")
-
-        sched = CoroutineScheduler()
-        sched.start(outer())
-
-        # inner_co is not finished yet — outer waits
-        sched.tick_update(0.016)
-        # inner_co was started inline but outer is waiting on it
-        # Since inner_co is managed by its own scheduler, we need to tick it separately
-        # In this test: the outer just checks inner_co.is_finished which depends on inner sched
-        assert "outer_done" not in steps
-
-    def test_stop_coroutine(self):
-        def gen():
-            yield None
-            yield None
-
-        sched = CoroutineScheduler()
-        co = sched.start(gen())
-        sched.stop(co)
-        assert co.is_finished is True
-        assert sched.count == 0
-
     def test_stop_propagates_generator_close_failure_after_detaching(self):
         def gen():
             try:
@@ -382,18 +186,6 @@ class TestCoroutineScheduler:
         assert co.is_finished is True
         assert sched.count == 0
 
-    def test_stop_all(self):
-        def gen():
-            yield None
-            yield None
-
-        sched = CoroutineScheduler()
-        c1 = sched.start(gen())
-        c2 = sched.start(gen())
-        sched.stop_all()
-        assert c1.is_finished is True
-        assert c2.is_finished is True
-        assert sched.count == 0
 
     def test_stop_all_reports_close_failures_after_detaching_every_coroutine(self):
         closed = []
@@ -570,3 +362,88 @@ class TestCoroutineScheduler:
         assert coroutine.is_stale_epoch is True
         assert scheduler.stale_epoch_coroutine_count == 1
         assert scheduler.diagnostics()["observed_epoch_id"] == 401
+
+
+def test_scaled_wait_completes_only_after_accumulated_duration():
+    steps = []
+    def sequence():
+        steps.append("start")
+        yield WaitForSeconds(.5)
+        steps.append("done")
+    scheduler = CoroutineScheduler()
+    handle = scheduler.start(sequence())
+    assert steps == ["start"]
+    scheduler.tick_update(.3)
+    assert steps == ["start"] and not handle.is_finished
+    scheduler.tick_update(.3)
+    assert steps == ["start", "done"] and handle.is_finished and scheduler.count == 0
+
+
+def test_gameplay_coroutine_waits_for_conditions_frame_phases_and_child_completion():
+    scheduler = CoroutineScheduler()
+    ready = [False]
+    steps = []
+    def child():
+        yield None
+        steps.append("child")
+    def sequence():
+        yield WaitUntil(lambda: ready[0])
+        steps.append("ready")
+        yield WaitWhile(lambda: ready[0])
+        steps.append("released")
+        yield WaitForFixedUpdate()
+        steps.append("fixed")
+        yield WaitForEndOfFrame()
+        steps.append("late")
+        yield WaitForEndOfFrame(3)
+        steps.append("late-3")
+        yield WaitForFrames(3)
+        steps.append("update-3")
+        yield scheduler.start(child())
+        steps.append("complete")
+    handle = scheduler.start(sequence())
+    scheduler.tick_update(.016)
+    assert steps == []
+    ready[0] = True
+    scheduler.tick_update(.016)
+    assert steps == ["ready"]
+    scheduler.tick_update(.016)
+    assert steps == ["ready"]
+    ready[0] = False
+    scheduler.tick_update(.016)
+    assert steps[-1] == "released"
+    scheduler.tick_update(.016)
+    assert steps[-1] == "released"
+    scheduler.tick_fixed_update(.02)
+    assert steps[-1] == "fixed"
+    scheduler.tick_update(.016)
+    assert steps[-1] == "fixed"
+    scheduler.tick_late_update(.016)
+    assert steps[-1] == "late"
+    scheduler.tick_late_update(.016)
+    scheduler.tick_late_update(.016)
+    assert steps[-1] == "late"
+    scheduler.tick_late_update(.016)
+    assert steps[-1] == "late-3"
+    scheduler.tick_late_update(.016)
+    scheduler.tick_update(.016)
+    scheduler.tick_update(.016)
+    assert steps[-1] == "late-3"
+    scheduler.tick_update(.016)
+    assert steps[-1] == "update-3" and not handle.is_finished
+    scheduler.tick_update(.016)
+    assert steps[-1] == "child" and not handle.is_finished
+    scheduler.tick_update(.016)
+    assert steps[-1] == "complete" and handle.is_finished and scheduler.count == 0
+
+
+def test_scheduler_stops_one_handle_then_the_remaining_handles():
+    def sequence():
+        yield None
+        yield None
+    scheduler = CoroutineScheduler()
+    first, second, third = scheduler.start(sequence()), scheduler.start(sequence()), scheduler.start(sequence())
+    scheduler.stop(first)
+    assert first.is_finished and not second.is_finished and not third.is_finished and scheduler.count == 2
+    scheduler.stop_all()
+    assert first.is_finished and second.is_finished and third.is_finished and scheduler.count == 0

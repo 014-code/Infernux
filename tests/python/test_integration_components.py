@@ -479,7 +479,6 @@ class TestComponentLifecycle:
         assert scene.has_pending_py_components() is False
 
 
-
     def test_python_component_constraints_are_enforced_from_registry(self, scene):
         from infernux.components.decorators import disallow_multiple, require_component
 
@@ -666,9 +665,6 @@ class TestComponentLifecycle:
 
         assert component is not None
         assert observed == [(go, component._cpp_component)]
-
-
-
 
 
     def test_game_object_document_restore_recreates_python_components(self, scene):
@@ -913,47 +909,28 @@ class TestComponentLifecycle:
         assert "requires a MeshRenderer" in mesh.shape_error
 
 
-
-    def test_python_component_receives_disable_when_game_object_deactivates(self, scene):
+    def test_inactive_component_awakens_once_and_orders_enable_disable_and_destruction(self, scene):
         events = []
+        class Probe(InxComponent):
+            def awake(self): events.append('awake')
+            def on_enable(self): events.append('enable')
+            def on_disable(self): events.append('disable')
+            def on_destroy(self): events.append('destroy')
 
-        class ProbeComponent(InxComponent):
-            def awake(self):
-                events.append("awake")
-
-            def on_enable(self):
-                events.append("on_enable")
-
-            def on_disable(self):
-                events.append("on_disable")
-
-        go = scene.create_game_object("LifecycleGO")
-        go.add_component(ProbeComponent)
-
-        go.active = False
-        go.active = True
-
-        assert events == ["awake", "on_enable", "on_disable", "on_enable"]
-
-    def test_adding_component_to_inactive_game_object_defers_awake_until_activation(self, scene):
-        events = []
-
-        class ProbeComponent(InxComponent):
-            def awake(self):
-                events.append("awake")
-
-            def on_enable(self):
-                events.append("on_enable")
-
-        go = scene.create_game_object("InactiveLifecycleGO")
-        go.active = False
-        go.add_component(ProbeComponent)
-
+        owner = scene.create_game_object('Lifecycle')
+        owner.active = False
+        owner.add_component(Probe)
         assert events == []
+        owner.active = True
+        assert events == ['awake', 'enable']
+        owner.active = False
+        owner.active = True
+        assert events == ['awake', 'enable', 'disable', 'enable']
+        events.clear()
+        scene.destroy_game_object(owner)
+        scene.process_pending_destroys()
+        assert events == ['disable', 'destroy']
 
-        go.active = True
-
-        assert events == ["awake", "on_enable"]
 
     def test_component_added_during_update_joins_next_frame_snapshot(self, scene):
         sm = SceneManager.instance()
@@ -1030,60 +1007,32 @@ class TestComponentLifecycle:
         assert counters["phase_dispatches"] == 1
         assert component.last_delta_time == pytest.approx(1.0 / 60.0)
 
-    def test_disabling_component_does_not_stop_coroutines(self, scene):
-        sm = SceneManager.instance()
+    def test_disabled_component_coroutine_continues_until_its_game_object_deactivates(self, scene):
         events = []
-
-        class ProbeComponent(InxComponent):
-            def awake(self):
-                self.start_coroutine(self._runner())
-
-            def _runner(self):
-                events.append("coroutine_started")
+        class Probe(InxComponent):
+            def awake(self): self.start_coroutine(self.run())
+            def run(self):
+                events.append('started')
                 yield None
-                events.append("coroutine_resumed")
-
-            def update(self, delta_time: float):
-                events.append("update")
-
-        sm.play()
-        sm.pause()
-
-        go = scene.create_game_object("DisabledCoroutineGO")
-        comp = go.add_component(ProbeComponent)
-        comp.enabled = False
-        events.clear()
-
-        sm.step(1.0 / 60.0)
-
-        assert events == ["coroutine_resumed"]
-
-    def test_game_object_deactivation_stops_coroutines_even_when_component_is_disabled(self, scene):
-        sm = SceneManager.instance()
-        events = []
-
-        class ProbeComponent(InxComponent):
-            def awake(self):
-                self.start_coroutine(self._runner())
-
-            def _runner(self):
-                events.append("coroutine_started")
+                events.append('continued')
                 yield None
-                events.append("coroutine_resumed")
+                events.append('must-not-resume')
+            def update(self, delta_time): events.append('update')
 
-        sm.play()
-        sm.pause()
-
-        go = scene.create_game_object("DeactivatedCoroutineGO")
-        comp = go.add_component(ProbeComponent)
-        comp.enabled = False
+        manager = SceneManager.instance()
+        manager.play()
+        manager.pause()
+        owner = scene.create_game_object('CoroutineOwner')
+        component = owner.add_component(Probe)
+        component.enabled = False
         events.clear()
+        manager.step(1.0 / 60.0)
+        assert events == ['continued']
+        owner.active = False
+        owner.active = True
+        manager.step(1.0 / 60.0)
+        assert events == ['continued']
 
-        go.active = False
-        go.active = True
-        sm.step(1.0 / 60.0)
-
-        assert events == []
 
     def test_awake_exception_disables_component(self, scene):
         events = []
@@ -1118,76 +1067,24 @@ class TestComponentLifecycle:
 
         assert events == []
 
-    def test_destroy_active_python_component_calls_disable_before_destroy(self, scene):
-        events = []
 
-        class ProbeComponent(InxComponent):
-            def awake(self):
-                events.append("awake")
-
-            def on_enable(self):
-                events.append("on_enable")
-
-            def on_disable(self):
-                events.append("on_disable")
-
-            def on_destroy(self):
-                events.append("on_destroy")
-
-        go = scene.create_game_object("ActiveDestroyGO")
-        go.add_component(ProbeComponent)
-        events.clear()
-
-        scene.destroy_game_object(go)
-        scene.process_pending_destroys()
-
-        assert events == ["on_disable", "on_destroy"]
-
-    def test_renderstack_clears_active_instance_when_host_game_object_deactivates(self, scene):
-        go = scene.create_game_object("RenderStackGO")
-        stack = go.add_component(RenderStack)
-
-        assert RenderStack.instance() is stack
-
-        go.active = False
-
-        assert RenderStack.instance() is None
-
-    def test_renderstack_pipeline_ignores_inactive_game_objects(self, scene):
-        go = scene.create_game_object("InactiveRenderStackGO")
-        go.add_component(RenderStack)
-        go.active = False
-
-        RenderStack.clear_active_instance(scene)
-
-
-        class _Context:
-            pass
-
-        ctx = _Context()
-        ctx.scene = scene
-
-        pipeline = RenderStackPipeline()
-        assert pipeline._find_render_stack(ctx) is None
-
-    def test_renderstack_pipeline_restores_singleton_from_scene_cache(self, scene):
-        owner = scene.create_game_object("CachedRenderStackGO")
+    def test_renderstack_activation_and_cached_pipeline_lookup_follow_the_same_owner(self, scene):
+        from types import SimpleNamespace
+        owner = scene.create_game_object('RenderStackOwner')
         stack = owner.add_component(RenderStack)
-
-        class _Context:
-            pass
-
-        ctx = _Context()
-        ctx.scene = scene
         pipeline = RenderStackPipeline()
-
-        RenderStack.clear_active_instance(scene)
-        assert pipeline._find_render_stack(ctx) is stack
+        context = SimpleNamespace(scene=scene)
         assert RenderStack.instance() is stack
-
         RenderStack.clear_active_instance(scene)
-        assert pipeline._find_render_stack(ctx) is stack
+        assert pipeline._find_render_stack(context) is stack
         assert RenderStack.instance() is stack
+        RenderStack.clear_active_instance(scene)
+        assert pipeline._find_render_stack(context) is stack
+        owner.active = False
+        assert RenderStack.instance() is None
+        RenderStack.clear_active_instance(scene)
+        assert pipeline._find_render_stack(context) is None
+
 
     def test_renderstack_pipeline_rejects_live_stack_owned_by_previous_scene(self, scene):
         previous_owner = scene.create_game_object("PreviousSceneRenderStack")
@@ -1238,56 +1135,36 @@ class TestComponentLifecycle:
         finally:
             manager.unload_scene(second_scene)
 
-    def test_renderstack_active_instance_survives_play_mode_document_rebuild(self, scene):
+    def test_renderstack_effect_authoring_survives_component_restore_and_play_rebuild(self, scene):
         from infernux.engine.play_mode import PlayModeManager
-
-        owner = scene.create_game_object("PlayModeRenderStack")
-        original = owner.add_component(RenderStack)
+        owner = scene.create_game_object('PlayModeRenderStack')
+        stack = owner.add_component(RenderStack)
+        slots = (EffectSlot(slot_id='empty-slot', stage_id='final'),
+                 EffectSlot(slot_id='effect-slot', stage_id='final', effect=RenderEffectRef(
+                     guid='missing-effect-guid', path_hint='Assets/RenderEffects/Missing.effect')))
+        stack.set_effect_stage_slots('final', slots)
+        fields = stack._serialize_fields_document()
+        stack.effect_slots = []
+        stack._deserialize_fields_document(fields)
+        restored_slots = stack.get_effect_stage_slots('final')
+        assert [slot.slot_id for slot in restored_slots] == ['empty-slot', 'effect-slot']
+        assert restored_slots[1].effect_ref.guid == 'missing-effect-guid'
+        assert not hasattr(stack, 'effect_stage_bindings_json')
         snapshot = scene.serialize_document()
-
-        previous_manager = PlayModeManager.instance()
+        previous = PlayModeManager.instance()
         manager = PlayModeManager()
         manager.set_asset_database(AssetRegistry.instance().get_asset_database())
         try:
-            assert RenderStack.instance() is original
+            assert RenderStack.instance() is stack
             assert manager._rebuild_active_scene(snapshot, for_play=True)
-
-            rebuilt_owner = SceneManager.instance().get_active_scene().find("PlayModeRenderStack")
-            rebuilt = next(
-                component
-                for component in rebuilt_owner.get_py_components()
-                if isinstance(component, RenderStack)
-            )
-            assert rebuilt is not original
-            assert RenderStack.instance() is rebuilt
+            rebuilt = SceneManager.instance().get_active_scene().find('PlayModeRenderStack').get_component(RenderStack)
+            assert rebuilt is not stack and RenderStack.instance() is rebuilt
+            slots = rebuilt.get_effect_stage_slots('final')
+            assert [slot.slot_id for slot in slots] == ['empty-slot', 'effect-slot']
+            assert slots[1].effect_ref.guid == 'missing-effect-guid'
         finally:
-            PlayModeManager._instance = previous_manager
+            PlayModeManager._instance = previous
 
-    def test_renderstack_effect_slots_survive_component_serialization_hooks(self, scene):
-        stack = scene.create_game_object("EffectBindingRenderStack").add_component(RenderStack)
-        slots = (
-            EffectSlot(slot_id="empty-slot", stage_id="final"),
-            EffectSlot(
-                slot_id="effect-slot",
-                stage_id="final",
-                effect=RenderEffectRef(
-                    guid="missing-effect-guid",
-                    path_hint="Assets/RenderEffects/Missing.effect",
-                ),
-            ),
-        )
-        stack.set_effect_stage_slots("final", slots)
-
-        persisted = stack._serialize_fields_document()
-        stack.effect_slots = []
-        stack._deserialize_fields_document(persisted)
-
-        restored = stack.get_effect_stage_slots("final")
-        assert len(restored) == 2
-        assert restored[0].slot_id == "empty-slot"
-        assert restored[1].slot_id == "effect-slot"
-        assert restored[1].effect_ref.guid == "missing-effect-guid"
-        assert not hasattr(stack, "effect_stage_bindings_json")
 
     def test_renderstack_ignores_obsolete_binding_source(self, scene):
         stack = scene.create_game_object("InvalidEffectBindingRenderStack").add_component(RenderStack)
@@ -1303,20 +1180,25 @@ class TestComponentLifecycle:
 class TestColliders:
 
 
-
-
-
-    def test_collider_material_combine_round_trip(self, scene):
-        material = InxPhysicMaterial()
-        material.friction_combine = 2
-        material.bounce_combine = 3
-
-        assert material.friction_combine == 2
-        assert material.bounce_combine == 3
-
-        document = material.serialize_document()
-        assert document["friction_combine"] == 2
-        assert document["bounce_combine"] == 3
+    def test_typed_collider_material_assign_restore_and_clear_preserve_combine_modes(self, scene):
+        from infernux.core.asset_ref import PhysicMaterialRef
+        from infernux.core.physic_material import PhysicMaterial
+        native = InxPhysicMaterial()
+        native.friction_combine, native.bounce_combine = 2, 3
+        document = native.serialize_document()
+        assert document['friction_combine'] == 2 and document['bounce_combine'] == 3
+        assert native.friction_combine == 2 and native.bounce_combine == 3
+        material = PhysicMaterial()
+        material.friction_combine = PhysicsMaterialCombine.Multiply
+        material.bounce_combine = PhysicsMaterialCombine.Maximum
+        collider = scene.create_game_object('TypedSurface').add_component(BoxColliderComponent)
+        collider.physic_material = material
+        resolved = collider.physic_material.resolve()
+        assert resolved is not None
+        assert resolved.friction_combine == PhysicsMaterialCombine.Multiply
+        assert resolved.bounce_combine == PhysicsMaterialCombine.Maximum
+        collider.physic_material = PhysicMaterialRef()
+        assert collider.physic_material.resolve() is None
 
     def test_physic_material_inspector_edit_is_undoable_and_republishes(self):
         from types import SimpleNamespace
@@ -1383,32 +1265,6 @@ class TestColliders:
         with pytest.raises(ValueError):
             material.bounce_combine = -1
 
-    def test_builtin_collider_exposes_typed_material_combine(self, scene):
-        from infernux.core.physic_material import PhysicMaterial
-
-        collider = scene.create_game_object("TypedMaterial").add_component(BoxColliderComponent)
-        material = PhysicMaterial()
-        material.friction_combine = PhysicsMaterialCombine.Multiply
-        material.bounce_combine = PhysicsMaterialCombine.Maximum
-        collider.physic_material = material
-
-        resolved = collider.physic_material.resolve()
-        assert resolved is not None
-        assert resolved.friction_combine == PhysicsMaterialCombine.Multiply
-        assert resolved.bounce_combine == PhysicsMaterialCombine.Maximum
-
-    def test_builtin_collider_accepts_empty_physic_material_reference(self, scene):
-        from infernux.core.asset_ref import PhysicMaterialRef
-        from infernux.core.physic_material import PhysicMaterial
-
-        collider = scene.create_game_object("ClearMaterial").add_component(
-            BoxColliderComponent
-        )
-        collider.physic_material = PhysicMaterial()
-        assert collider.physic_material.resolve() is not None
-
-        collider.physic_material = PhysicMaterialRef()
-        assert collider.physic_material.resolve() is None
 
     @pytest.mark.parametrize(
         "component_type,attribute,value",
@@ -1547,8 +1403,6 @@ class TestColliders:
 class TestCamera:
 
 
-
-
     def test_camera_ray_accepts_one_authoritative_viewport_size(self, scene):
         go = scene.create_game_object("Ray Camera")
         cam = go.add_component("Camera")
@@ -1566,8 +1420,6 @@ class TestCamera:
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TestLight:
-
-
 
 
     def test_light_color_modes_and_kelvin_round_trip(self, scene):
@@ -1599,12 +1451,9 @@ class TestLight:
         assert native.deserialize_document(invalid) is False
 
 
-
 # ═══════════════════════════════════════════════════════════════════════════
 # MeshRenderer
 # ═══════════════════════════════════════════════════════════════════════════
-
-
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1624,40 +1473,41 @@ class TestTextureCreation:
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TestMaterial:
-    def test_python_material_wrapper_saves_through_current_native_api(self, engine, tmp_path):
-        material = Material.create_lit("WrapperSave")
-        path = tmp_path / "wrapper-save.mat"
-
-        assert material.save(str(path)) is True
-        document = json.loads(path.read_text(encoding="utf-8"))
-        assert document["name"] == "WrapperSave"
-
-    def test_texture_assignment_is_guid_only(self, engine):
+    def test_material_texture_authoring_saves_atomically_and_survives_an_embedded_scene_roundtrip(self, engine, scene, tmp_path):
+        wrapper = Material.create_lit('WrapperSave')
+        wrapper_path = tmp_path / 'wrapper-save.mat'
+        assert wrapper.save(str(wrapper_path))
+        assert json.loads(wrapper_path.read_text(encoding='utf-8'))['name'] == 'WrapperSave'
         material = InxMaterial.create_default_unlit()
-
-        material.set_texture("texSampler", "white")
-        assert material.get_texture("texSampler") == "white"
-
-        with pytest.raises(ValueError, match="texture GUID does not exist"):
-            material.set_texture("texSampler", "Assets/Textures/legacy-path.png")
-        with pytest.raises(ValueError, match="texture GUID does not exist"):
-            material.set_texture("texSampler", "missing-texture-guid")
-        assert material.get_texture("texSampler") == "white"
-
-    def test_material_deserialization_preserves_a_deleted_texture_reference(self, engine):
-        material = InxMaterial.create_default_unlit()
-        material.set_texture("texSampler", "white")
+        material.name = 'InlineRuntimeMaterial'
+        material.set_texture('texSampler', 'white')
+        assert material.get_texture('texSampler') == 'white'
+        with pytest.raises(ValueError, match='texture GUID does not exist'):
+            material.set_texture('texSampler', 'Assets/Textures/legacy-path.png')
+        with pytest.raises(ValueError, match='texture GUID does not exist'):
+            material.set_texture('texSampler', 'missing-texture-guid')
+        assert material.get_texture('texSampler') == 'white'
         document = json.loads(material.serialize())
-        missing_guid = "52f6a608180f248634255ab26ccbd0a3"
-        document["properties"]["texSampler"]["guid"] = missing_guid
-
-        assert material.deserialize(json.dumps(document)) is True
-        assert material.get_texture("texSampler") == missing_guid
-        assert (
-            json.loads(material.serialize())["properties"]["texSampler"]["guid"]
-            == missing_guid
-        )
-
+        missing_guid = '52f6a608180f248634255ab26ccbd0a3'
+        document['properties']['texSampler']['guid'] = missing_guid
+        assert material.deserialize(json.dumps(document))
+        assert material.get_texture('texSampler') == missing_guid
+        assert json.loads(material.serialize())['properties']['texSampler']['guid'] == missing_guid
+        path = tmp_path / 'atomic.mat'
+        assert material.save_to(str(path))
+        assert 'material_version' not in json.loads(path.read_text(encoding='utf-8'))
+        assert list(tmp_path.glob('atomic.mat.tmp.*')) == []
+        renderer = scene.create_primitive(PrimitiveType.Cube, 'InlineMaterialCube').get_component('MeshRenderer')
+        renderer.material = material
+        slot = json.loads(renderer.serialize())['materials'][0]
+        assert isinstance(slot['material'], dict)
+        assert 'material_version' not in slot['material'] and 'material_json' not in slot
+        saved = scene.serialize_document()
+        assert scene._commit_document(saved)
+        restored = scene.find('InlineMaterialCube').get_component('MeshRenderer')
+        restored_slot = json.loads(restored.serialize())['materials'][0]
+        assert restored_slot['material']['name'] == 'InlineRuntimeMaterial'
+        assert restored_slot['material']['properties']['texSampler']['guid'] == missing_guid
 
 
     def test_material_document_is_strict_and_transactional(self, engine):
@@ -1746,35 +1596,6 @@ class TestMaterial:
         assert mat.get_float("testValue", 0.0) == pytest.approx(0.25)
         assert "unexpected" not in json.loads(mat.serialize())["properties"]["testValue"]
 
-    def test_material_save_is_atomic(self, engine, tmp_path):
-        mat = InxMaterial.create_default_unlit()
-        path = tmp_path / "atomic.mat"
-
-        assert mat.save_to(str(path)) is True
-        assert "material_version" not in json.loads(path.read_text(encoding="utf-8"))
-        assert list(tmp_path.glob("atomic.mat.tmp.*")) == []
-
-    def test_renderer_embeds_typed_material_document(self, scene):
-        cube = scene.create_primitive(PrimitiveType.Cube, "InlineMaterialCube")
-        renderer = cube.get_component("MeshRenderer")
-        material = InxMaterial.create_default_unlit()
-        material.name = "InlineRuntimeMaterial"
-        renderer.material = material
-
-        document = json.loads(renderer.serialize())
-        slot = document["materials"][0]
-        assert isinstance(slot["material"], dict)
-        assert "material_version" not in slot["material"]
-        assert "material_json" not in slot
-
-        serialized_scene = scene.serialize()
-        scene_manager = SceneManager.instance()
-        restored_scene = scene_manager.create_scene("material_round_trip")
-        scene_manager.set_active_scene(restored_scene)
-        assert restored_scene._commit_document(json.loads(serialized_scene)) is True
-        restored = restored_scene.find("InlineMaterialCube").get_component("MeshRenderer")
-        restored_slot = json.loads(restored.serialize())["materials"][0]
-        assert restored_slot["material"]["name"] == "InlineRuntimeMaterial"
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Component serialization
@@ -2005,7 +1826,6 @@ class TestComponentSerialization:
         )
 
 
-
     def test_component_documents_are_strict(self, scene):
         cube = scene.create_primitive(PrimitiveType.Cube, "CurrentFormatCube")
         renderer = cube.get_component("MeshRenderer")
@@ -2052,119 +1872,82 @@ class TestComponentSerialization:
         assert rigidbody.serialize_document() == original
 
 
-    def test_round_trip_via_scene(self, scene):
-        go = scene.create_game_object("Persist")
-        go.transform.position = Vector3(1, 2, 3)
-        rb = go.add_component("Rigidbody")
-        rb.mass = 7.77
-        go.add_component("SphereCollider").radius = 2.0
+def test_puzzle_level_components_configure_save_and_reopen_with_authored_state(scene, tmp_path):
+    from infernux.engine.component_restore import deserialize_scene_document_transactionally
+    from infernux.engine.scene_authoring import decode_scene_document, encode_scene_document
 
-        json_str = scene.serialize()
-
-        sm = SceneManager.instance()
-        scene2 = sm.create_scene("reload")
-        sm.set_active_scene(scene2)
-        from infernux.engine.component_restore import deserialize_scene_document_transactionally
-        assert deserialize_scene_document_transactionally(scene2, json.loads(json_str)) is True
-
-        found = scene2.find("Persist")
-        assert found is not None
-        assert found.transform.position.x == pytest.approx(1)
-        rb2 = found.get_component("Rigidbody")
-        assert rb2.mass == pytest.approx(7.77)
-        sc2 = found.get_component("SphereCollider")
-        assert sc2.radius == pytest.approx(2.0)
-
-
-def test_mixed_python_and_native_component_authoring_lifecycle(scene):
-    class AuthoringProbe(InxComponent):
+    class LevelProbe(InxComponent):
         value: int = 7
 
-    owner = scene.create_game_object("MixedComponents")
-    transform = owner.get_component("Transform")
-    assert transform is owner.transform and not owner.remove_component(transform)
-    probe = owner.add_component(AuthoringProbe)
-    camera = owner.add_component(CameraComponent)
-    rigidbody = owner.add_component("Rigidbody")
-    assert owner.get_component(AuthoringProbe) is probe
-    assert owner.get_component("AuthoringProbe") is probe
-    assert owner.get_components(AuthoringProbe) == [probe]
-    assert owner.get_component(CameraComponent) is camera
-    assert owner.get_component("Rigidbody") is rigidbody
-    components = owner.get_components()
-    assert probe in components and all(type(item).__name__ != "PyComponentProxy" for item in components)
-    assert {"Transform", "Camera", "Rigidbody"} <= {item.type_name for item in components}
-    assert owner.remove_component(camera) and owner.get_component(CameraComponent) is None
-    assert owner.remove_component(rigidbody) and owner.get_component("Rigidbody") is None
-    assert owner.get_component(AuthoringProbe) is probe
-
-
-def test_collider_palette_configuration_survives_native_document_restore(scene):
-    floor = scene.create_game_object("Floor").add_component("BoxCollider")
-    floor.size = Vector3(2, 3, 4)
-    floor.is_trigger = True
-    sphere = scene.create_game_object("Ball").add_component("SphereCollider")
+    actor = scene.create_game_object('PuzzleActor')
+    actor.transform.position = Vector3(1, 2, 3)
+    transform = actor.get_component('Transform')
+    assert transform is actor.transform and not actor.remove_component(transform)
+    probe = actor.add_component(LevelProbe)
+    temporary = actor.add_component(CameraComponent)
+    assert actor.get_component(LevelProbe) is actor.get_component('LevelProbe') is probe
+    assert actor.get_components(LevelProbe) == [probe]
+    assert actor.get_component(CameraComponent) is temporary
+    assert actor.remove_component(temporary) and actor.get_component(CameraComponent) is None
+    transient_body = actor.add_component('Rigidbody')
+    assert actor.get_component('Rigidbody') is transient_body
+    assert actor.remove_component(transient_body) and actor.get_component('Rigidbody') is None
+    body = actor.add_component('Rigidbody')
+    body.mass = 7.77
+    sphere = actor.add_component('SphereCollider')
     sphere.radius = 2.5
-    capsule = scene.create_game_object("Actor").add_component("CapsuleCollider")
+    assert probe in actor.get_components()
+    assert all(type(item).__name__ != 'PyComponentProxy' for item in actor.get_components())
+
+    floor = scene.create_game_object('Floor').add_component('BoxCollider')
+    floor.size, floor.is_trigger = Vector3(2, 3, 4), True
+    capsule = scene.create_game_object('ActorShape').add_component('CapsuleCollider')
     capsule.height, capsule.radius = 3.0, 1.0
-    cylinder = scene.create_game_object("Post").add_component("CylinderCollider")
+    cylinder = scene.create_game_object('Post').add_component('CylinderCollider')
     cylinder.radius, cylinder.height, cylinder.direction = 1.25, 4.0, 2
-    documents = [component.serialize_document() for component in (floor, sphere, capsule, cylinder)]
-    assert tuple(floor.size) == pytest.approx((2, 3, 4))
-    assert floor.is_trigger and sphere.radius == pytest.approx(2.5)
-    assert (capsule.radius, capsule.height) == pytest.approx((1, 3))
-    assert (cylinder.radius, cylinder.height, cylinder.direction) == pytest.approx((1.25, 4, 2))
-    for component, document in zip((floor, sphere, capsule, cylinder), documents):
-        assert component.deserialize_document(document)
-        assert component.serialize_document() == document
-    floor.is_trigger = False
-    assert not floor.is_trigger
-
-
-def test_camera_authored_projection_and_output_survive_document_restore(scene):
-    camera = scene.create_game_object("AuthorCamera").add_component("Camera")
+    camera = scene.create_game_object('AuthorCamera').add_component('Camera')
     assert camera.field_of_view == pytest.approx(60)
-    assert 0 < camera.near_clip < camera.far_clip
-    assert not camera.dithering and not camera.stop_nans
+    assert 0 < camera.near_clip < camera.far_clip and not camera.dithering and not camera.stop_nans
     camera.field_of_view, camera.depth = 90, 5
     camera.dithering = camera.stop_nans = True
-    document = camera.serialize_document()
-    camera.field_of_view, camera.depth = 45, 0
-    assert camera.deserialize_document(document)
-    assert camera.field_of_view == pytest.approx(90) and camera.depth == pytest.approx(5)
-    assert camera.dithering and camera.stop_nans
-
-
-def test_light_authored_type_color_shadow_and_domains_survive_document_restore(scene):
-    light = scene.create_game_object("AuthorLight").add_component("Light")
+    light = scene.create_game_object('AuthorLight').add_component('Light')
     assert light.light_type == LightType.Directional and light.intensity == pytest.approx(1)
     assert (light.shadow_bias, light.shadow_normal_bias) == pytest.approx((1, 1))
     assert light.affect_geometry and light.affect_particles
-    light.light_type = LightType.Point
-    light.intensity = 2.5
-    light.color = Vector3(1, 0, 0)
-    light.shadows = LightShadows.Hard
+    light.light_type, light.shadows = LightType.Point, LightShadows.Hard
+    light.intensity, light.color = 2.5, Vector3(1, 0, 0)
     light.affect_geometry, light.affect_particles = False, True
-    document = light.serialize_document()
-    assert document["influenceDomains"] == 2
-    light.intensity = 0.5
-    assert light.deserialize_document(document)
-    assert light.light_type == LightType.Point and light.shadows == LightShadows.Hard
-    assert light.intensity == pytest.approx(2.5)
-    assert tuple(light.color) == pytest.approx((1, 0, 0, 1))
-    assert not light.affect_geometry and light.affect_particles
-
-
-def test_mesh_and_material_authoring_sets_geometry_and_shadow_state(scene):
-    owner = scene.create_primitive(PrimitiveType.Cube, "AuthoredMesh")
-    renderer = owner.get_component("MeshRenderer")
-    assert len(renderer.get_positions()) > 0
-    assert len(renderer.get_normals()) > 0 and len(renderer.get_indices()) > 0
+    renderer = scene.create_primitive(PrimitiveType.Cube, 'AuthoredMesh').get_component('MeshRenderer')
+    assert len(renderer.get_positions()) and len(renderer.get_normals()) and len(renderer.get_indices())
     renderer.material = InxMaterial.create_default_lit()
     assert renderer.get_material(0) is not None
     renderer.casts_shadows = False
-    assert not renderer.casts_shadows
-    document = renderer.serialize_document()
-    renderer.casts_shadows = True
-    assert renderer.deserialize_document(document)
-    assert not renderer.casts_shadows
+    assert light.serialize_document()['influenceDomains'] == 2
+    path = tmp_path / 'puzzle-components.scene'
+    assert scene.save_to_file(str(path))
+    authored = json.loads(path.read_text(encoding='utf-8'))
+    saved = decode_scene_document(authored)
+    assert deserialize_scene_document_transactionally(scene, saved)
+    actor = scene.find('PuzzleActor')
+    assert tuple(actor.transform.position) == pytest.approx((1, 2, 3))
+    assert actor.get_component('Rigidbody').mass == pytest.approx(7.77)
+    assert actor.get_component(LevelProbe).value == 7
+    floor = scene.find('Floor').get_component('BoxCollider')
+    sphere = actor.get_component('SphereCollider')
+    capsule = scene.find('ActorShape').get_component('CapsuleCollider')
+    cylinder = scene.find('Post').get_component('CylinderCollider')
+    camera = scene.find('AuthorCamera').get_component('Camera')
+    light = scene.find('AuthorLight').get_component('Light')
+    renderer = scene.find('AuthoredMesh').get_component('MeshRenderer')
+    assert tuple(floor.size) == pytest.approx((2, 3, 4)) and floor.is_trigger
+    assert sphere.radius == pytest.approx(2.5)
+    assert (capsule.radius, capsule.height) == pytest.approx((1, 3))
+    assert (cylinder.radius, cylinder.height, cylinder.direction) == pytest.approx((1.25, 4, 2))
+    assert (camera.field_of_view, camera.depth) == pytest.approx((90, 5))
+    assert camera.dithering and camera.stop_nans
+    assert light.light_type == LightType.Point and light.shadows == LightShadows.Hard
+    assert light.intensity == pytest.approx(2.5) and tuple(light.color) == pytest.approx((1, 0, 0, 1))
+    assert not light.affect_geometry and light.affect_particles and not renderer.casts_shadows
+    assert encode_scene_document(scene.serialize_document()) == authored
+    floor.is_trigger = False
+    assert not floor.is_trigger

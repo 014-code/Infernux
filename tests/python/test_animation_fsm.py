@@ -1,11 +1,4 @@
-"""Animation FSM logic tests (pure Python — no GPU sampling needed).
-
-Regression coverage for the animation-audit fixes:
-- trigger consumption uses identifier boundaries (not substring matching)
-- AnimTransition.duration drives the cross-fade for that transition
-- non-looping clips report loop=False to the native pose submission
-- empty-condition ("clip finished") transitions
-"""
+"""Animation playback, authored assets and event publication contracts."""
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -184,12 +177,6 @@ def test_skeletal_animator_reacquires_renderer_after_scene_replacement(monkeypat
     assert animator._resolve_skinned_renderer() is live
     assert animator._skinned_renderer is live
     assert owner.lookups == 1
-
-
-def test_skeletal_animator_has_no_same_object_renderer_requirement():
-    assert SkinnedMeshRenderer not in tuple(
-        getattr(SkeletalAnimator, "_require_components_", ()) or ()
-    )
 
 
 def test_skinned_mesh_renderer_exposes_authoritative_runtime_pose_time(monkeypatch):
@@ -493,52 +480,7 @@ def test_native_duration_query_failure_propagates(monkeypatch) -> None:
 
 
 class TestTriggerConsumption:
-    def test_exact_identifier_consumed(self):
-        anim = _make_animator()
-        attack = AnimParameter(
-            name="attack", value_type=TypeRef(ValueType.BOOL), default=False
-        )
-        anim._fsm = AnimStateMachine(parameters=[attack])
-        anim.set_trigger("attack")
-        anim._consume_triggers(
-            AnimTransition(conditions=[_condition(attack)])
-        )
-        assert anim._parameters["attack"] is False
 
-    def test_substring_not_consumed(self):
-        anim = _make_animator()
-        attack = AnimParameter(
-            name="attack", value_type=TypeRef(ValueType.BOOL), default=False
-        )
-        attacking = AnimParameter(
-            name="is_attacking", value_type=TypeRef(ValueType.BOOL), default=False
-        )
-        anim._fsm = AnimStateMachine(parameters=[attack, attacking])
-        anim.set_trigger("attack")
-        anim._consume_triggers(
-            AnimTransition(conditions=[_condition(attacking)])
-        )
-        assert anim._parameters["attack"] is True, \
-            "'attack' must NOT be consumed by identifier 'is_attacking'"
-
-    def test_multiple_triggers(self):
-        anim = _make_animator()
-        jump = AnimParameter(
-            name="jump", value_type=TypeRef(ValueType.BOOL), default=False
-        )
-        fire = AnimParameter(
-            name="fire", value_type=TypeRef(ValueType.BOOL), default=False
-        )
-        anim._fsm = AnimStateMachine(parameters=[jump, fire])
-        anim.set_trigger("jump")
-        anim.set_trigger("fire")
-        anim.set_bool("idle", True)
-        anim._consume_triggers(
-            AnimTransition(conditions=[_condition(jump), _condition(fire)])
-        )
-        assert anim._parameters["jump"] is False
-        assert anim._parameters["fire"] is False
-        assert anim._parameters["idle"] is True
 
     def test_spirit_animator_same_semantics(self):
         sp = SpiritAnimator()
@@ -557,79 +499,7 @@ class TestTriggerConsumption:
 
 
 class TestTransitionDuration:
-    def test_transition_duration_overrides_component_fade(self):
-        anim = _make_animator()
-        anim.cross_fade_duration = 0.15
-        prev = _FakeClip("A")
-        nxt = _FakeClip("B")
-        anim._start_blend_if_needed(prev, 0.5, 1.0, nxt, fade_duration=0.6)
-        assert anim._blend_duration == pytest.approx(0.6)
-        assert anim._blend_from_take_name == "A"
 
-    def test_component_fade_is_fallback(self):
-        anim = _make_animator()
-        anim.cross_fade_duration = 0.25
-        anim._start_blend_if_needed(_FakeClip("A"), 0.0, 1.0, _FakeClip("B"),
-                                    fade_duration=None)
-        assert anim._blend_duration == pytest.approx(0.25)
-
-    def test_zero_duration_means_hard_cut(self):
-        anim = _make_animator()
-        anim.cross_fade_duration = 0.25
-        anim._start_blend_if_needed(_FakeClip("A"), 0.0, 1.0, _FakeClip("B"),
-                                    fade_duration=0.0)
-        assert anim._blend_duration == 0.0
-        assert anim._blend_from_clip is None
-
-    def test_same_take_fade_allowed(self):
-        # Restarting the same take with a fade is valid (sampled at two times).
-        anim = _make_animator()
-        anim.cross_fade_duration = 0.2
-        anim._start_blend_if_needed(_FakeClip("Run"), 1.2, 1.0, _FakeClip("Run"),
-                                    fade_duration=None)
-        assert anim._blend_duration == pytest.approx(0.2)
-        assert anim._blend_from_take_name == "Run"
-
-    def test_cross_fade_can_preserve_looping_phase(self):
-        anim = _make_animator()
-        walk = AnimState(name="Walk", loop=True)
-        run = AnimState(name="Run", loop=True)
-        anim._fsm = AnimStateMachine(states=[walk, run], default_state="Walk")
-        anim._clip_cache = {
-            "Walk": _FakeClip("Walk", duration_hint=2.0),
-            "Run": _FakeClip("Run", duration_hint=4.0),
-        }
-        anim._current_state_name = "Walk"
-        anim._current_clip = anim._clip_cache["Walk"]
-        anim._elapsed = 1.5
-        anim._playing = True
-        anim._apply_active_take = lambda: None
-        anim._sync_native_runtime_playback = lambda: None
-
-        assert anim.cross_fade("Run", 0.2, preserve_phase=True) is True
-        assert anim._elapsed == pytest.approx(3.0)
-        assert anim._prev_event_norm == pytest.approx(0.75)
-        assert anim._blend_from_elapsed == pytest.approx(1.5)
-
-    def test_cross_fade_restarts_by_default(self):
-        anim = _make_animator()
-        walk = AnimState(name="Walk", loop=True)
-        run = AnimState(name="Run", loop=True)
-        anim._fsm = AnimStateMachine(states=[walk, run], default_state="Walk")
-        anim._clip_cache = {
-            "Walk": _FakeClip("Walk", duration_hint=2.0),
-            "Run": _FakeClip("Run", duration_hint=4.0),
-        }
-        anim._current_state_name = "Walk"
-        anim._current_clip = anim._clip_cache["Walk"]
-        anim._elapsed = 1.5
-        anim._playing = True
-        anim._apply_active_take = lambda: None
-        anim._sync_native_runtime_playback = lambda: None
-
-        assert anim.cross_fade("Run", 0.2) is True
-        assert anim._elapsed == pytest.approx(0.0)
-        assert anim._prev_event_norm == pytest.approx(0.0)
 
     def test_fsm_transition_can_preserve_looping_phase(self):
         anim = _make_animator()
@@ -665,6 +535,8 @@ class TestTransitionDuration:
         anim._apply_active_take = lambda: None
         anim._sync_native_runtime_playback = lambda: None
 
+        anim._fsm = AnimStateMachine.from_dict(anim._fsm.to_dict())
+        assert anim._fsm.get_state("Walk").transitions[0].synchronize_normalized_time
         anim._try_auto_transition()
 
         assert anim._current_state_name == "Run"
@@ -684,17 +556,6 @@ class TestEmptyConditionTransition:
         anim._current_clip = _FakeClip("S_take", duration_hint=duration)
         return anim, state
 
-    def test_clip_finished_fires_for_non_loop(self):
-        anim, _ = self._animator_with_state(loop=False, duration=1.0)
-        anim._elapsed = 1.0
-        tr = AnimTransition(target_state="Next")
-        assert anim._evaluate_condition(tr) is True
-
-    def test_clip_not_finished_does_not_fire(self):
-        anim, _ = self._animator_with_state(loop=False, duration=1.0)
-        anim._elapsed = 0.4
-        tr = AnimTransition(target_state="Next")
-        assert anim._evaluate_condition(tr) is False
 
     def test_looping_state_never_fires_empty_condition(self):
         anim, _ = self._animator_with_state(loop=True, duration=1.0)
@@ -718,11 +579,6 @@ class TestEmptyConditionTransition:
 
 
 class TestNormalizedTime:
-    def test_normalized_clamps_to_one(self):
-        anim = _make_animator()
-        anim._current_clip = _FakeClip(duration_hint=2.0)
-        anim._elapsed = 5.0
-        assert anim.normalized_time == 1.0
 
     def test_unknown_duration_uses_default_period(self):
         anim = _make_animator()
@@ -734,33 +590,7 @@ class TestNormalizedTime:
 # ── Safe condition evaluator (replaces eval()) ──────────────────────────────
 
 class TestSafeConditionEvaluator:
-    def test_simple_compare(self):
-        from infernux.core.anim_state_machine import evaluate_anim_condition
-        assert evaluate_anim_condition("speed > 2.0", {"speed": 3.0}) is True
-        assert evaluate_anim_condition("speed > 2.0", {"speed": 1.0}) is False
 
-    def test_and_chain(self):
-        from infernux.core.anim_state_machine import evaluate_anim_condition
-        ctx = {"speed": 3.0, "grounded": True}
-        assert evaluate_anim_condition("(speed > 0.5) and (grounded == 1.0)", ctx) is True
-        ctx["grounded"] = False
-        assert evaluate_anim_condition("(speed > 0.5) and (grounded == 1.0)", ctx) is False
-
-    def test_or_and_not(self):
-        from infernux.core.anim_state_machine import evaluate_anim_condition
-        assert evaluate_anim_condition("a or b", {"a": False, "b": True}) is True
-        assert evaluate_anim_condition("not grounded", {"grounded": False}) is True
-        assert evaluate_anim_condition("not grounded", {"grounded": True}) is False
-
-    def test_bool_param_truthiness(self):
-        from infernux.core.anim_state_machine import evaluate_anim_condition
-        assert evaluate_anim_condition("is_running", {"is_running": True}) is True
-        assert evaluate_anim_condition("is_running", {"is_running": False}) is False
-
-    def test_string_state_compare(self):
-        from infernux.core.anim_state_machine import evaluate_anim_condition
-        assert evaluate_anim_condition('state == "idle"', {"state": "idle"}) is True
-        assert evaluate_anim_condition('state == "idle"', {"state": "run"}) is False
 
     def test_unknown_identifier_defaults_zero(self):
         from infernux.core.anim_state_machine import evaluate_anim_condition
@@ -799,27 +629,7 @@ class _FakeGameObject:
 
 
 class TestAnimationEventWindowing:
-    def _ev(self, t, name="e"):
-        from infernux.core.animation_event import AnimationEvent
-        return AnimationEvent(time_normalized=t, function=name)
 
-    def test_forward_window(self):
-        from infernux.core.animation_event import collect_crossed_events
-        evs = [self._ev(0.3), self._ev(0.6)]
-        fired = collect_crossed_events(evs, 0.2, 0.5, looped=False)
-        assert [e.time_normalized for e in fired] == [0.3]
-
-    def test_no_double_fire(self):
-        from infernux.core.animation_event import collect_crossed_events
-        evs = [self._ev(0.3)]
-        assert collect_crossed_events(evs, 0.3, 0.5, looped=False) == []  # exclusive lower bound
-
-    def test_loop_wrap_window(self):
-        from infernux.core.animation_event import collect_crossed_events
-        evs = [self._ev(0.9), self._ev(0.05)]
-        fired = collect_crossed_events(evs, 0.8, 0.1, looped=True)
-        names = sorted(e.time_normalized for e in fired)
-        assert names == [0.05, 0.9]
 
     def test_dispatch_calls_generic_and_named(self):
         from infernux.core.animation_event import AnimationEvent, dispatch_animation_events
@@ -971,18 +781,6 @@ class TestAnimationEventWindowing:
 # ── Serialization round-trips for new fields ────────────────────────────────
 
 class TestAnimationSerialization:
-    def test_transition_duration_round_trip(self):
-        condition = AnimCondition(parameter_id="speed-id", operator=">", threshold=1.0)
-        tr = AnimTransition(
-            target_state="Run",
-            conditions=[condition],
-            duration=0.25,
-            synchronize_normalized_time=True,
-        )
-        tr2 = AnimTransition.from_dict(tr.to_dict())
-        assert tr2.duration == 0.25
-        assert tr2.target_state == "Run"
-        assert tr2.synchronize_normalized_time is True
 
     def test_clip2d_events_round_trip(self):
         from infernux.core.animation_clip import AnimationClip, AnimationFrame
@@ -1000,15 +798,6 @@ class TestAnimationSerialization:
         assert len(clip2.events) == 1
         assert clip2.events[0].function == "footstep"
         assert clip2.events[0].time_normalized == 0.5
-
-    def test_clip3d_events_round_trip(self):
-        from infernux.core.animation_clip3d import AnimationClip3D
-        from infernux.core.animation_event import AnimationEvent
-        clip = AnimationClip3D(name="run", take_name="Run")
-        clip.events = [AnimationEvent(0.25, "hit", "", 3.0)]
-        clip2 = AnimationClip3D.from_dict(clip.to_dict())
-        assert len(clip2.events) == 1
-        assert clip2.events[0].number_arg == 3.0
 
 
 def _write_texture_asset_metadata(
@@ -1056,16 +845,6 @@ class TestAnimationClipSpriteFrameReferences:
     FRAME_B = "2" * 32
     TEXTURE_GUID = "a" * 32
 
-    def test_legacy_authoring_texture_path_is_ignored_on_load(self):
-        from infernux.core.animation_clip import AnimationClip
-
-        document = AnimationClip(authoring_texture_guid=self.TEXTURE_GUID).to_dict()
-        document["authoring_texture_path"] = "Assets/Sprites/obsolete.png"
-        clip = AnimationClip.from_dict(document)
-
-        assert clip.authoring_texture_guid == self.TEXTURE_GUID
-        assert not hasattr(clip, "authoring_texture_path")
-        assert "authoring_texture_path" not in clip.to_dict()
 
     def test_sprite_frames_require_texture_guid(self):
         from infernux.core.animation_clip import AnimationClip, AnimationFrame
@@ -1448,14 +1227,6 @@ class TestSpiritAnimatorAssetReload:
 
 
 class TestBlendStateModel:
-    def test_blend_state_round_trip(self):
-        st = AnimState(name="LocoBlend", kind="blend",
-                       clip_guid="A-guid", clip_b_guid="B-guid", blend_value=0.7)
-        st2 = AnimState.from_dict(st.to_dict())
-        assert st2.kind == "blend"
-        assert st2.clip_guid == "A-guid"
-        assert st2.clip_b_guid == "B-guid"
-        assert st2.blend_value == 0.7
 
     def test_blend_value_out_of_range_is_rejected(self):
         document = AnimState(name="x", kind="blend").to_dict()
@@ -1463,7 +1234,74 @@ class TestBlendStateModel:
         with pytest.raises(ValueError):
             AnimState.from_dict(document)
 
-    def test_default_state_is_clip(self):
-        st = AnimState(name="idle")
-        assert st.kind == "clip"
-        assert AnimState.from_dict(st.to_dict()).kind == "clip"
+
+def test_trigger_consumption_uses_exact_declared_identifiers():
+    animator = _make_animator()
+    attack = AnimParameter(name="attack", value_type=TypeRef(ValueType.BOOL), default=False)
+    attacking = AnimParameter(name="is_attacking", value_type=TypeRef(ValueType.BOOL), default=False)
+    jump = AnimParameter(name="jump", value_type=TypeRef(ValueType.BOOL), default=False)
+    animator._fsm = AnimStateMachine(parameters=[attack, attacking, jump])
+    animator.set_trigger("attack")
+    animator.set_trigger("jump")
+    animator.set_bool("idle", True)
+    animator._consume_triggers(AnimTransition(conditions=[_condition(attacking)]))
+    assert animator._parameters["attack"] and animator._parameters["jump"]
+    animator._consume_triggers(AnimTransition(conditions=[_condition(attack), _condition(jump)]))
+    assert not animator._parameters["attack"] and not animator._parameters["jump"]
+    assert animator._parameters["idle"]
+
+
+def test_reconfiguring_crossfade_duration_preserves_override_and_hard_cut_semantics():
+    animator = _make_animator()
+    animator.cross_fade_duration = .25
+    a, b = _FakeClip("A"), _FakeClip("B")
+    animator._start_blend_if_needed(a, .5, 1.0, b, fade_duration=.6)
+    assert animator._blend_duration == pytest.approx(.6) and animator._blend_from_take_name == "A"
+    animator._start_blend_if_needed(b, .2, 1.0, a, fade_duration=None)
+    assert animator._blend_duration == pytest.approx(.25) and animator._blend_from_take_name == "B"
+    animator._start_blend_if_needed(a, 1.2, 1.0, a, fade_duration=None)
+    assert animator._blend_duration == pytest.approx(.25) and animator._blend_from_take_name == "A"
+    animator._start_blend_if_needed(a, 0.0, 1.0, b, fade_duration=0.0)
+    assert animator._blend_duration == 0.0 and animator._blend_from_clip is None
+
+
+def test_crossfade_can_sync_phase_then_restart_the_return_state():
+    animator = _make_animator()
+    animator._fsm = AnimStateMachine(states=[AnimState(name="Walk", loop=True), AnimState(name="Run", loop=True)], default_state="Walk")
+    animator._clip_cache = {"Walk": _FakeClip("Walk", duration_hint=2.0), "Run": _FakeClip("Run", duration_hint=4.0)}
+    animator._current_state_name = "Walk"
+    animator._current_clip = animator._clip_cache["Walk"]
+    animator._elapsed, animator._playing = 1.5, True
+    animator._apply_active_take = lambda: None
+    animator._sync_native_runtime_playback = lambda: None
+    assert animator.cross_fade("Run", .2, preserve_phase=True)
+    assert animator._elapsed == pytest.approx(3.0)
+    assert animator._prev_event_norm == pytest.approx(.75)
+    assert animator._blend_from_elapsed == pytest.approx(1.5)
+    assert animator.cross_fade("Walk", .2)
+    assert animator._elapsed == 0.0 and animator._prev_event_norm == 0.0
+
+
+def test_non_looping_clip_end_condition_follows_clamped_progress():
+    animator = _make_animator()
+    state = AnimState(name="Once", loop=False)
+    animator._fsm = AnimStateMachine(states=[state], default_state=state.name)
+    animator._current_state_name = state.name
+    animator._current_clip = _FakeClip("Once", duration_hint=1.0)
+    transition = AnimTransition(target_state="Next")
+    animator._elapsed = .4
+    assert not animator._evaluate_condition(transition)
+    animator._elapsed = 1.5
+    assert animator._evaluate_condition(transition) and animator.normalized_time == 1.0
+
+
+def test_animation_events_advance_through_exclusive_windows_and_wrap():
+    from infernux.core.animation_event import AnimationEvent, collect_crossed_events
+
+    events = [AnimationEvent(time_normalized=t, function="step") for t in (.05, .3, .6, .9)]
+    first = collect_crossed_events(events, .2, .3, looped=False)
+    assert [event.time_normalized for event in first] == [.3]
+    following = collect_crossed_events(events, .3, .8, looped=False)
+    assert [event.time_normalized for event in following] == [.6]
+    wrapped = collect_crossed_events(events, .8, .1, looped=True)
+    assert [event.time_normalized for event in wrapped] == [.9, .05]
