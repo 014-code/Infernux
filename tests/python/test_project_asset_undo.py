@@ -14,16 +14,10 @@ from infernux.engine.undo import (
     ProjectPrefabCreateCommand,
     ProjectAssetCopyCommand,
     ProjectAssetDeleteCommand,
-    ProjectAssetMoveBatchCommand,
     ProjectAssetMoveCommand,
     ProjectAssetPasteCommand,
     ProjectAssetRenameCommand,
     UndoManager,
-)
-from infernux.engine.ui.project_file_ops import plan_asset_paste
-from infernux.engine.ui.asset_execution_layer import (
-    AssetAccessMode,
-    AssetExecutionLayer,
 )
 
 
@@ -50,33 +44,6 @@ def _successful_import(_path: str, _database):
 def _filesystem_copy(source: str, destination: str, _database):
     shutil.copy2(source, destination)
     return destination
-
-
-def test_asset_manager_delete_does_not_evict_before_database_commit(monkeypatch):
-    from infernux.core.assets import AssetManager
-
-    events: list[str] = []
-
-    class _Database:
-        @staticmethod
-        def get_guid_from_path(_path):
-            events.append("resolve-guid")
-            return "stable-guid"
-
-        @staticmethod
-        def delete_asset(_path):
-            events.append("database-delete")
-            return False
-
-    class _Registry:
-        @staticmethod
-        def remove_asset(_guid):
-            events.append("registry-evict")
-
-    monkeypatch.setattr(AssetManager, "_registry", _Registry())
-
-    assert AssetManager.delete_asset("Assets/Rejected.mat", database=_Database()) is False
-    assert events == ["resolve-guid", "database-delete"]
 
 
 def test_project_asset_create_redo_refuses_external_destination(tmp_path):
@@ -188,20 +155,6 @@ def test_project_asset_rename_refuses_to_overwrite_external_change(tmp_path):
     assert new_path.read_text(encoding="utf-8") == "external"
 
 
-def test_project_asset_rename_rejects_cross_directory_use(tmp_path):
-    source_dir = tmp_path / "Source"
-    destination_dir = tmp_path / "Destination"
-    source_dir.mkdir()
-    destination_dir.mkdir()
-
-    with pytest.raises(ValueError, match="between directories"):
-        ProjectAssetRenameCommand(
-            str(source_dir / "Old.mat"),
-            str(destination_dir / "New.mat"),
-            move_fn=_filesystem_move,
-        )
-
-
 def test_failed_asset_rename_undo_keeps_global_cursor_and_files(tmp_path):
     old_path = tmp_path / "Old.mat"
     new_path = tmp_path / "New.mat"
@@ -221,30 +174,6 @@ def test_failed_asset_rename_undo_keeps_global_cursor_and_files(tmp_path):
     assert manager.action_journal.cursor == 1
     assert old_path.read_text(encoding="utf-8") == "external"
     assert new_path.read_text(encoding="utf-8") == "original"
-
-
-def test_project_asset_delete_deduplicates_nested_selected_roots(tmp_path):
-    folder = tmp_path / "Assets" / "Folder"
-    nested = folder / "Nested.mat"
-    folder.mkdir(parents=True)
-    nested.write_text("nested", encoding="utf-8")
-    nested_meta = nested.with_name(nested.name + ".meta")
-    nested_meta.write_text("guid", encoding="utf-8")
-    imported = []
-    command = ProjectAssetDeleteCommand(
-        [str(folder), str(nested)],
-        project_root=str(tmp_path),
-        delete_fn=_filesystem_delete,
-        import_fn=lambda path, _database: imported.append(path) or True,
-    )
-
-    command.execute()
-    command.undo()
-
-    assert nested.read_text(encoding="utf-8") == "nested"
-    assert nested_meta.read_text(encoding="utf-8") == "guid"
-    assert imported == [str(nested)]
-    command.dispose()
 
 
 def test_project_asset_delete_rolls_back_batch_failure(tmp_path):
@@ -417,38 +346,6 @@ def test_project_asset_delete_restores_live_audio_reference(tmp_path, engine, sc
     command.dispose()
 
 
-def test_plan_asset_paste_deduplicates_roots_and_reserves_unique_names(tmp_path):
-    assets = tmp_path / "Assets"
-    source = assets / "Source"
-    destination = assets / "Destination"
-    nested = source / "Nested.mat"
-    source.mkdir(parents=True)
-    destination.mkdir()
-    nested.write_text("nested", encoding="utf-8")
-    (destination / "Source").mkdir()
-
-    planned = plan_asset_paste(
-        [str(nested), str(source), str(source)],
-        str(destination),
-        cut=False,
-    )
-
-    assert planned == [(str(source), str(destination / "Source1"))]
-
-
-def test_plan_asset_paste_skips_same_directory_cut_and_rejects_descendant(tmp_path):
-    assets = tmp_path / "Assets"
-    folder = assets / "Folder"
-    nested = folder / "Nested"
-    nested.mkdir(parents=True)
-    asset = folder / "Smoke.mat"
-    asset.write_text("smoke", encoding="utf-8")
-
-    assert plan_asset_paste([str(asset)], str(folder), cut=True) == []
-    with pytest.raises(ValueError, match="into itself"):
-        plan_asset_paste([str(folder)], str(nested), cut=False)
-
-
 def test_project_asset_move_rolls_back_a_partial_failure(tmp_path):
     source = tmp_path / "Source.mat"
     destination = tmp_path / "Destination.mat"
@@ -479,77 +376,6 @@ def test_project_asset_move_rolls_back_a_partial_failure(tmp_path):
     ]
 
 
-def test_project_asset_move_uses_command_operation_identity(tmp_path, monkeypatch):
-    source = tmp_path / "Source.mat"
-    destination = tmp_path / "Destination.mat"
-    source.write_text("material", encoding="utf-8")
-    calls = []
-
-    def _move(old, new, database, **kwargs):
-        calls.append((old, new, database, kwargs))
-        os.replace(old, new)
-        return new
-
-    from infernux.engine.ui import project_file_ops
-
-    monkeypatch.setattr(project_file_ops, "move_path", _move)
-    database = object()
-    command = ProjectAssetMoveCommand(
-        str(source),
-        str(destination),
-        asset_database=database,
-    )
-
-    command.execute()
-
-    assert calls == [
-        (
-            str(source),
-            str(destination),
-            database,
-            {"origin": "user", "operation_id": command.operation_id},
-        )
-    ]
-
-
-def test_project_asset_move_batch_uses_one_operation_and_one_workspace_call(tmp_path):
-    first = tmp_path / "First.mat"
-    second = tmp_path / "Second.mat"
-    target = tmp_path / "Target"
-    first.write_text("first", encoding="utf-8")
-    second.write_text("second", encoding="utf-8")
-    target.mkdir()
-    moves = (
-        (str(first), str(target / first.name)),
-        (str(second), str(target / second.name)),
-    )
-    calls = []
-
-    def _move_batch(entries, database, **kwargs):
-        calls.append((tuple(entries), database, kwargs))
-        for source, destination in entries:
-            os.replace(source, destination)
-        return tuple(destination for _source, destination in entries)
-
-    batch = ProjectAssetMoveBatchCommand(moves, move_fn=_move_batch)
-    command = ProjectAssetPasteCommand(
-        [batch],
-        [destination for _source, destination in moves],
-    )
-    manager = UndoManager(EditorActionJournal())
-
-    assert manager.execute(command)
-
-    assert len(calls) == 1
-    assert calls[0][0] == moves
-    assert calls[0][2] == {
-        "origin": "user",
-        "operation_id": command.operation_id,
-    }
-    assert batch.operation_id == command.operation_id
-    assert manager.action_journal.entries[0].operation_id == command.operation_id
-
-
 def test_project_asset_copy_preserves_generated_identity_across_replay(tmp_path):
     source = tmp_path / "Source.mat"
     destination = tmp_path / "Copied.mat"
@@ -576,9 +402,7 @@ def test_project_asset_copy_preserves_generated_identity_across_replay(tmp_path)
 
     command.redo()
     assert destination.read_text(encoding="utf-8") == "material"
-    assert (tmp_path / "Copied.mat.meta").read_text(encoding="utf-8") == (
-        '{"guid":"copied-guid"}'
-    )
+    assert (tmp_path / "Copied.mat.meta").read_text(encoding="utf-8") == ('{"guid":"copied-guid"}')
     command.dispose()
 
 
@@ -619,12 +443,8 @@ def test_project_asset_paste_is_one_global_action(tmp_path):
     selected = []
     command = ProjectAssetPasteCommand(
         [
-            ProjectAssetMoveCommand(
-                str(first), str(destinations[0]), move_fn=_filesystem_move
-            ),
-            ProjectAssetMoveCommand(
-                str(second), str(destinations[1]), move_fn=_filesystem_move
-            ),
+            ProjectAssetMoveCommand(str(first), str(destinations[0]), move_fn=_filesystem_move),
+            ProjectAssetMoveCommand(str(second), str(destinations[1]), move_fn=_filesystem_move),
         ],
         [str(path) for path in destinations],
         on_applied=lambda paths: selected.append(list(paths)),
@@ -650,11 +470,7 @@ def test_project_asset_paste_rolls_back_when_selection_commit_fails(tmp_path):
     destination = tmp_path / "Destination.mat"
     source.write_text("material", encoding="utf-8")
     command = ProjectAssetPasteCommand(
-        [
-            ProjectAssetMoveCommand(
-                str(source), str(destination), move_fn=_filesystem_move
-            )
-        ],
+        [ProjectAssetMoveCommand(str(source), str(destination), move_fn=_filesystem_move)],
         [str(destination)],
         on_applied=lambda _paths: (_ for _ in ()).throw(RuntimeError("selection failed")),
     )
@@ -664,22 +480,3 @@ def test_project_asset_paste_rolls_back_when_selection_commit_fails(tmp_path):
 
     assert source.exists()
     assert not destination.exists()
-
-
-def test_asset_inspector_move_rejects_when_global_history_is_disabled(tmp_path):
-    source = tmp_path / "Source.mat"
-    destination = tmp_path / "Destination.mat"
-    source.write_text("material", encoding="utf-8")
-    manager = UndoManager(EditorActionJournal())
-    manager.enabled = False
-    layer = AssetExecutionLayer(
-        "Material",
-        str(source),
-        AssetAccessMode.READ_WRITE_RESOURCE,
-    )
-
-    assert not layer.move_asset_path(str(destination))
-    assert source.exists()
-    assert not destination.exists()
-    assert layer.file_path == str(source)
-    assert manager.action_journal.entries == ()

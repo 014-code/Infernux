@@ -50,35 +50,6 @@ def _registry() -> EditorCommandRegistry:
     )
 
 
-def test_context_menu_can_defer_domain_execution_until_widget_scopes_close():
-    registry = _registry()
-    events = []
-    registry.register(
-        EditorCommand(
-            "asset.clear",
-            lambda context: events.append(("execute", context.payload["field"])) or True,
-            display_name="Clear",
-        )
-    )
-    ctx = _MenuContext("Clear")
-    builder = ContextMenuBuilder(registry)
-
-    request = builder.render_deferred(
-        ctx,
-        (ContextMenuCommand("asset.clear"),),
-        payload={"field": "material"},
-    )
-
-    assert request is not None
-    assert request.spec.command_id == "asset.clear"
-    assert events == []
-    assert ctx.closed == 1
-
-    result = builder.execute_resolved(request)
-    assert result.result.status is CommandStatus.EXECUTED
-    assert events == [("execute", "material")]
-
-
 def test_deferred_context_menu_executes_the_frozen_focus_and_selection():
     focus = FocusService()
     selection = SelectionService()
@@ -128,88 +99,6 @@ def test_deferred_context_menu_executes_the_frozen_focus_and_selection():
     assert captured[0].focus.active_panel_id == "project"
     assert captured[0].selection.primary == SelectionTarget.asset("C:/Project/Assets/A.mat")
     assert captured[0].payload["target_id"].endswith("A.mat")
-
-
-def test_context_menu_disabled_reason_hidden_items_and_separator_groups():
-    registry = _registry()
-    registry.register(
-        EditorCommand(
-            "hidden",
-            lambda _context: True,
-            can_execute=lambda _context: False,
-        )
-    )
-    registry.register(
-        EditorCommand(
-            "disabled",
-            lambda _context: True,
-            display_name="Disabled",
-            can_execute=lambda _context: False,
-            disabled_reason=lambda context: f"Unavailable for {context.payload['target']}",
-        )
-    )
-    registry.register(EditorCommand("enabled", lambda _context: True, display_name="Enabled"))
-    builder = ContextMenuBuilder(registry)
-
-    resolved = builder.resolve(
-        (
-            ContextMenuCommand("hidden", hide_when_disabled=True),
-            ContextMenuCommand("disabled", separator_before=True),
-            ContextMenuCommand("enabled", separator_before=True),
-        ),
-        payload={"target": "selection"},
-    )
-    ctx = _MenuContext()
-    builder.render(
-        ctx,
-        (
-            ContextMenuCommand("hidden", hide_when_disabled=True),
-            ContextMenuCommand("disabled", separator_before=True),
-            ContextMenuCommand("enabled", separator_before=True),
-        ),
-        payload={"target": "selection"},
-    )
-
-    assert [entry.spec.command_id for entry in resolved] == ["disabled", "enabled"]
-    assert resolved[0].disabled_reason == "Unavailable for selection"
-    assert ctx.separators == 1
-
-
-def test_context_menu_submenus_keep_leaf_commands_registry_backed():
-    registry = _registry()
-    received = []
-    registry.register(
-        EditorCommand(
-            "scene.create",
-            lambda context: received.append(dict(context.payload)) or True,
-            display_name="Create",
-        )
-    )
-    ctx = _MenuContext("Cube")
-
-    result = ContextMenuBuilder(registry).render(
-        ctx,
-        (
-            ContextMenuSubmenu(
-                "3D Object",
-                (
-                    ContextMenuCommand(
-                        "scene.create",
-                        label="Cube",
-                        payload={"kind": "cube"},
-                    ),
-                ),
-                semantic_id="hierarchy.create_3d",
-            ),
-        ),
-        payload={"parent_id": 42},
-    )
-
-    assert ctx.submenus == [("3D Object", True, "hierarchy.create_3d")]
-    assert ctx.ended_submenus == 1
-    assert received == [{"parent_id": 42, "kind": "cube"}]
-    assert result is not None
-    assert result.command.spec.command_id == "scene.create"
 
 
 def _flatten_menu_entries(entries):

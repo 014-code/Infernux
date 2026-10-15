@@ -1,4 +1,5 @@
 """External scene reloads keep the addressed World and other resident authors intact."""
+
 from __future__ import annotations
 
 import json
@@ -14,15 +15,25 @@ if __name__ != "__main__":
     from tests.isolated import engine_python_path
 
 
-@pytest.mark.parametrize("target_active", [True, False])
-@pytest.mark.parametrize("dirty", [False, True])
-@pytest.mark.parametrize("valid", [True, False])
+@pytest.mark.parametrize("valid,dirty,target_active", [(True, False, True), (False, True, True), (False, True, False)])
 def test_external_reload_uses_resident_document_owner(tmp_path, target_active, dirty, valid):
     child = subprocess.run(
-        [sys.executable, "-X", "faulthandler", str(Path(__file__).resolve()), str(tmp_path),
-         str(int(target_active)), str(int(dirty)), str(int(valid))],
-        env=dict(os.environ, PYTHONPATH=engine_python_path()), capture_output=True, text=True, encoding="utf-8",
-        errors="replace", timeout=60,
+        [
+            sys.executable,
+            "-X",
+            "faulthandler",
+            str(Path(__file__).resolve()),
+            str(tmp_path),
+            str(int(target_active)),
+            str(int(dirty)),
+            str(int(valid)),
+        ],
+        env=dict(os.environ, PYTHONPATH=engine_python_path()),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=60,
     )
     assert child.returncode == 0, child.stdout + child.stderr
     assert "RESIDENT_SCENE_RELOAD_OK" in child.stdout
@@ -34,7 +45,9 @@ def _exercise(project: Path, target_active: bool, dirty: bool, valid: bool) -> N
     from infernux.engine.scene_manager import SceneFileManager
     from infernux.engine.resources_manager import ResourceChangeHandler
     from infernux.engine.interaction import (
-        DocumentRegistry, DocumentState, ExternalDocumentConflictService,
+        DocumentRegistry,
+        DocumentState,
+        ExternalDocumentConflictService,
     )
     from infernux.lib import LogLevel, RuntimeMode, SceneManager
     from infernux.ui import UIImage

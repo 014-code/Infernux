@@ -1,4 +1,5 @@
 """Import-sidecar edits must not retire live editor plugin services."""
+
 import json
 import os
 from pathlib import Path
@@ -16,7 +17,11 @@ def test_editor_script_metadata_publication_keeps_service_source_generation(tmp_
     result = subprocess.run(
         [sys.executable, str(Path(__file__).resolve()), str(tmp_path)],
         env=dict(os.environ, PYTHONPATH=engine_python_path()),
-        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=60,
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "EDITOR_METADATA_LIFECYCLE_OK" in result.stdout

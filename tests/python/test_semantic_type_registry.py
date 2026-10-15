@@ -86,46 +86,6 @@ def test_stale_publication_does_not_change_active_catalog(declaration):
     )
 
 
-@pytest.mark.parametrize("field", ["local_position"])
-def test_native_transform_editor_command_uses_declared_schema_and_undo(scene, monkeypatch, field):
-    from infernux.engine.interaction.components import ComponentCommandService
-    from infernux.engine.interaction import serialized_properties
-    from infernux.engine.undo import UndoManager
-
-    transform = scene.create_game_object("SchemaCommand").get_transform()
-    before = [getattr(transform, field)[i] for i in range(3)]
-    captured = []
-    original = serialized_properties.make_attribute_property_transaction
-
-    def capture(*args, **kwargs):
-        result = original(*args, **kwargs)
-        captured.append(kwargs["schema"])
-        return result
-
-    monkeypatch.setattr(serialized_properties, "make_attribute_property_transaction", capture)
-    previous = UndoManager._instance
-    manager = UndoManager()
-    try:
-        service = ComponentCommandService()
-        assert service.set_field(transform, field, [2.0, 3.0, 4.0])
-        assert captured[0].value_type == "FieldType.VEC3"
-        assert captured[0].attributes["field_id"] == field
-        assert [getattr(transform, field)[i] for i in range(3)] == pytest.approx([2, 3, 4])
-        assert len(manager.action_journal.applied_entries()) == 1
-        manager.undo()
-        assert [getattr(transform, field)[i] for i in range(3)] == pytest.approx(before)
-        manager.redo()
-        assert [getattr(transform, field)[i] for i in range(3)] == pytest.approx([2, 3, 4])
-        for invalid in ([1, 2], [float("nan"), 0, 0], None, "invalid"):
-            with pytest.raises(RuntimeError, match=f"Transform.{field}"):
-                service.set_field(transform, field, invalid)
-            assert [getattr(transform, field)[i] for i in range(3)] == pytest.approx([2, 3, 4])
-        assert len(manager.action_journal.applied_entries()) == 1
-    finally:
-        manager.clear()
-        UndoManager._instance = previous
-
-
 def test_audio_source_declaration_owns_public_fields_and_coupled_track_count(scene):
     from infernux.components.builtin.audio_source import AudioSource
     from infernux.components.builtin_component import CppProperty

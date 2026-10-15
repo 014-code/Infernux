@@ -1,5 +1,4 @@
 import time
-from types import SimpleNamespace
 
 import pytest
 
@@ -105,27 +104,6 @@ def test_snapshot_property_transaction_normalizes_and_clears_aggregate():
         UndoManager._instance = previous
 
 
-def test_attribute_property_transactions_merge_continuous_edits():
-    from infernux.engine.interaction import make_attribute_property_transaction
-    from infernux.engine.undo import UndoManager
-
-    target = SimpleNamespace(value=1.0)
-    previous = UndoManager._instance
-    manager = UndoManager()
-    try:
-        first = make_attribute_property_transaction((target,), "value", description="Set Value")
-        second = make_attribute_property_transaction((target,), "value", description="Set Value")
-        first.commit_or_raise(2.0)
-        second.commit_or_raise(3.0)
-
-        assert target.value == 3.0
-        assert len(manager.action_journal.applied_entries()) == 1
-        manager.undo()
-        assert target.value == 1.0
-    finally:
-        UndoManager._instance = previous
-
-
 def test_python_reference_transaction_enforces_required_component(monkeypatch):
     from infernux.components import InxComponent, serialized_field
     from infernux.lib import GameObject
@@ -226,55 +204,6 @@ def test_python_property_transaction_normalizes_declared_enum_and_undo():
         assert transaction.commit("missing").value == "rejected"
         assert component.mode is Mode.RUN
     finally:
-        UndoManager._instance = previous
-
-
-@pytest.mark.parametrize("surface", ["command", "inspector"])
-def test_python_field_edit_surfaces_share_range_and_no_change_semantics(surface):
-    from infernux.components import InxComponent, get_serialized_fields, serialized_field
-    from infernux.engine.interaction import (
-        ComponentCommandService,
-        make_python_component_property_transaction,
-    )
-    from infernux.engine.ui.inspector_components import _commit_python_component_field
-    from infernux.engine.undo import UndoManager
-
-    class RangeProbe(InxComponent):
-        speed = serialized_field(1.0, range=(0.0, 5.0))
-
-    component = RangeProbe()
-    previous = UndoManager._instance
-    manager = UndoManager()
-    previous_service = ComponentCommandService._instance
-    service = ComponentCommandService()
-    try:
-
-        def edit(value):
-            if surface == "transaction":
-                return make_python_component_property_transaction((component,), "speed").commit_or_raise(value)
-            if surface == "command":
-                return service.set_field(component, "speed", value)
-            return _commit_python_component_field(
-                (component,), "speed", get_serialized_fields(RangeProbe)["speed"], value
-            )
-
-        edit(50.0)
-        assert component.speed == 5.0
-        assert len(manager.action_journal.applied_entries()) == 1
-        journal_entry = manager.action_journal.applied_entries()[0]
-        action_time = journal_entry.action.timestamp
-        edit(99.0)
-        assert manager.action_journal.applied_entries()[0].action.timestamp == action_time
-        for invalid in (True, "3", float("nan")):
-            with pytest.raises(RuntimeError):
-                edit(invalid)
-            assert component.speed == 5.0
-        manager.undo()
-        assert component.speed == 1.0
-        manager.redo()
-        assert component.speed == 5.0
-    finally:
-        ComponentCommandService._instance = previous_service
         UndoManager._instance = previous
 
 

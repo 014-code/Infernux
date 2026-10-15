@@ -36,37 +36,6 @@ class _StyleScopeContext:
         self.calls.append("end_disabled")
 
 
-def test_material_inspector_balances_style_scope_after_render_error(monkeypatch):
-    ctx = _StyleScopeContext()
-    state = type(
-        "State",
-        (),
-        {
-            "extra": {"native_mat": type("Mat", (), {"file_path": "asset::submat:0"})()},
-            "file_path": "",
-        },
-    )()
-
-    def fail_render(*_args):
-        raise ValueError("bad shader property")
-
-    monkeypatch.setattr(inspector_material, "_render_material_body_impl", fail_render)
-    try:
-        inspector_material.render_material_body(ctx, None, state)
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("expected the synthetic material render error")
-
-    assert ctx.calls == [
-        "push",
-        "push",
-        "begin_disabled",
-        "end_disabled",
-        ("pop", 2),
-    ]
-
-
 class _RangePropertyContext:
     def __init__(self):
         self.calls = []

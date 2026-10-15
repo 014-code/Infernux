@@ -1,4 +1,5 @@
 """Animation events survive the editor's real authoring and save transactions."""
+
 from __future__ import annotations
 
 import os
@@ -18,8 +19,12 @@ def test_clip_edit_undo_save_reopen_preserves_events(tmp_path, with_events):
     # the suite's Graphical engine retains its own document/asset singletons.
     result = subprocess.run(
         [sys.executable, str(Path(__file__).resolve()), str(tmp_path), str(int(with_events))],
-        env=dict(os.environ, PYTHONPATH=engine_python_path()), capture_output=True, text=True, encoding="utf-8",
-        errors="replace", timeout=60,
+        env=dict(os.environ, PYTHONPATH=engine_python_path()),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=60,
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "ANIMATION_EVENT_AUTHORING_OK" in result.stdout
@@ -30,8 +35,11 @@ def _exercise(project: Path, with_events: bool) -> None:
     from infernux.core.animation_clip import AnimationClip, AnimationFrame
     from infernux.core.animation_event import AnimationEvent
     from infernux.core.asset_types import (
-        SpriteFrame, TextureType, TextureImportSettings,
-        TextureCompression, write_texture_import_settings,
+        SpriteFrame,
+        TextureType,
+        TextureImportSettings,
+        TextureCompression,
+        write_texture_import_settings,
     )
     from infernux.core.document_store import DocumentStore
     from infernux.engine.bootstrap import EditorBootstrap
@@ -62,16 +70,23 @@ def _exercise(project: Path, with_events: bool) -> None:
         assert database.import_asset(str(texture)).succeeded
         frame = SpriteFrame(name="Puzzle", x=0, y=0, w=4, h=4)
         settings = TextureImportSettings(
-            texture_type=TextureType.SPRITE, compression=TextureCompression.NONE,
-            generate_mipmaps=False, sprite_frames=[frame],
+            texture_type=TextureType.SPRITE,
+            compression=TextureCompression.NONE,
+            generate_mipmaps=False,
+            sprite_frames=[frame],
         )
         assert write_texture_import_settings(str(texture), settings)
         assert database.reimport_asset(str(texture)).succeeded
-        events = [AnimationEvent(0.5, "Unlock", "DoorA", 7.0),
-                  AnimationEvent(1.0, "Finish", "DoorB", 9.0)] if with_events else []
+        events = (
+            [AnimationEvent(0.5, "Unlock", "DoorA", 7.0), AnimationEvent(1.0, "Finish", "DoorB", 9.0)]
+            if with_events
+            else []
+        )
         clip = AnimationClip(
-            name="Puzzle", authoring_texture_guid=database.get_guid_from_path(str(texture)),
-            frames=[AnimationFrame(sprite_frame_id=frame.stable_id)], events=events,
+            name="Puzzle",
+            authoring_texture_guid=database.get_guid_from_path(str(texture)),
+            frames=[AnimationFrame(sprite_frame_id=frame.stable_id)],
+            events=events,
         )
         path = project / "Assets" / "Puzzle.animclip2d"
         assert clip.save(str(path))
@@ -80,7 +95,8 @@ def _exercise(project: Path, with_events: bool) -> None:
         assert panel.open_document_resource_immediate(str(path))
         assert panel._active_clip.events == events
         assert panel._apply_authoring_mutation(
-            "Change frame rate", lambda: setattr(panel._active_clip, "fps", 24.0),
+            "Change frame rate",
+            lambda: setattr(panel._active_clip, "fps", 24.0),
         )
         manager = UndoManager.instance()
         manager.undo()

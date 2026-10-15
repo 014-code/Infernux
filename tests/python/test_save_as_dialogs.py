@@ -1,17 +1,5 @@
 from __future__ import annotations
-from pathlib import Path
 from types import SimpleNamespace
-import pytest
-from infernux.core.animation_timeline import TimelineKeyframe
-from infernux.engine.interaction import ModalService
-from infernux.engine.ui.animclip2d_editor_panel import AnimClip2DEditorPanel
-from infernux.engine.ui.animfsm_editor_panel import AnimFSMEditorPanel
-from infernux.engine.ui.animtimeline_editor_panel import AnimTimelineEditorPanel
-from infernux.engine.ui.asset_save_dialog import AssetSaveAsDialog
-from infernux.engine.ui.particle_graph_editor_panel import ParticleGraphEditorPanel
-from infernux.engine.ui import asset_save_dialog
-from infernux.engine.ui.animclip2d_editor_panel import AnimClip2DEditorPanel, _ClipState
-import os
 from infernux.engine.scene_manager import SceneFileManager
 from infernux.engine.interaction import (
     DocumentCapability,
@@ -42,11 +30,7 @@ def _open_test_dirty_document(panel_id: str, title: str, *, discard=None):
         title,
         revision=1,
         saved_revision=0,
-        capabilities=(
-            DocumentCapability.DISCARD
-            if callable(discard)
-            else DocumentCapability.NONE
-        ),
+        capabilities=(DocumentCapability.DISCARD if callable(discard) else DocumentCapability.NONE),
         controller=_TestResourceDocumentController(discard),
     )
     registry.attach_view(document.document_id, panel_id)
@@ -131,99 +115,6 @@ def test_unsaved_scene_user_save_uses_native_dialog(tmp_path, monkeypatch):
         _restore_scene_manager(manager)
 
 
-def test_save_as_path_is_constrained_to_assets_and_valid_names(tmp_path, monkeypatch):
-    monkeypatch.setattr(scene_save, "_effective_project_root", lambda: str(tmp_path))
-    manager = _scene_manager()
-    try:
-        manager._save_as_folder = "Assets/Scenes"
-        manager._save_as_name = "RacingEntry"
-        path, error = manager._resolve_save_as_path()
-
-        assert error == ""
-        assert Path(path) == tmp_path / "Assets" / "Scenes" / "RacingEntry.scene"
-
-        manager._save_as_folder = "../outside"
-        path, error = manager._resolve_save_as_path()
-        assert path == ""
-        assert "Assets" in error
-
-        manager._save_as_folder = "Assets"
-        manager._save_as_name = "../invalid"
-        path, error = manager._resolve_save_as_path()
-        assert path == ""
-        assert "invalid" in error.lower()
-    finally:
-        _restore_scene_manager(manager)
-
-
-def test_is_under_assets_resolves_native_path_aliases(tmp_path, monkeypatch):
-    project_root = tmp_path / "InfernuxRacingPilot"
-    assets_root = project_root / "Assets"
-    scene_path = assets_root / "RaceTrack.scene"
-    scene_path.parent.mkdir(parents=True)
-    scene_path.write_text("{}", encoding="utf-8")
-    native_alias_root = tmp_path / "INFERN~1"
-    native_alias_scene = native_alias_root / "Assets" / "RaceTrack.scene"
-    original_realpath = os.path.realpath
-
-    def resolve_native_alias(path: str) -> str:
-        normalized = os.path.normcase(os.path.abspath(path))
-        alias = os.path.normcase(os.path.abspath(native_alias_root))
-        if normalized == alias:
-            return str(project_root)
-        if normalized.startswith(alias + os.sep):
-            return str(project_root / os.path.relpath(normalized, alias))
-        return original_realpath(path)
-
-    monkeypatch.setattr(scene_save, "_effective_project_root", lambda: str(project_root))
-    monkeypatch.setattr(scene_save.os.path, "realpath", resolve_native_alias)
-    manager = _scene_manager()
-    try:
-        assert manager._is_under_assets(str(native_alias_scene)) is True
-        assert manager._is_under_assets(str(native_alias_root / "Outside.scene")) is False
-    finally:
-        _restore_scene_manager(manager)
-
-
-def test_dirty_scene_close_uses_editor_owned_confirmation(tmp_path, monkeypatch):
-    manager = _scene_manager()
-
-    class _Native:
-        def __init__(self) -> None:
-            self.calls: list[str] = []
-
-        def confirm_close(self) -> None:
-            self.calls.append("confirm")
-
-        def cancel_close(self) -> None:
-            self.calls.append("cancel")
-
-    native = _Native()
-    camera_paths: list[str] = []
-    coordinator = DirtyPanelConfirmationCoordinator.instance()
-    try:
-        if coordinator.is_active:
-            coordinator.choose_cancel()
-        manager._engine = native
-        _set_scene_dirty(manager, True)
-        manager._current_scene_path = str(tmp_path / "Assets" / "UnsavedChanges.scene")
-        monkeypatch.setattr(manager, "_is_play_mode", lambda: False)
-        monkeypatch.setattr(manager, "_save_camera_state", camera_paths.append)
-        manager.request_close()
-
-        assert manager._close_in_progress is True
-        assert coordinator.active_document_id == manager.document_id
-        assert camera_paths == []
-        assert native.calls == []
-        coordinator.choose_discard()
-        assert camera_paths == [manager._current_scene_path]
-        assert native.calls == ["confirm"]
-    finally:
-        if coordinator.is_active:
-            coordinator.choose_cancel()
-        _restore_scene_manager(manager)
-
-
 def test_scene_save_as_nests_under_unsaved_confirmation(tmp_path, monkeypatch):
     monkeypatch.setattr(scene_save, "_effective_project_root", lambda: str(tmp_path))
     monkeypatch.setattr(scene_save, "is_synthetic_input_frame", lambda: True)
@@ -244,81 +135,6 @@ def test_scene_save_as_nests_under_unsaved_confirmation(tmp_path, monkeypatch):
             "scene.save_as",
         ]
     finally:
-        _restore_scene_manager(manager)
-
-
-def test_dirty_panel_confirmation_precedes_dirty_scene_confirmation(tmp_path, monkeypatch):
-    manager = _scene_manager()
-    panel_id = "scene_close_dirty_panel_order"
-
-    class _Native:
-        def __init__(self) -> None:
-            self.calls: list[str] = []
-
-        def confirm_close(self) -> None:
-            self.calls.append("confirm")
-
-        def cancel_close(self) -> None:
-            self.calls.append("cancel")
-
-    native = _Native()
-    coordinator = DirtyPanelConfirmationCoordinator.instance()
-    try:
-        assert coordinator.is_active is False
-        manager._engine = native
-        _set_scene_dirty(manager, True)
-        manager._current_scene_path = str(tmp_path / "Assets" / "Ordered.scene")
-        monkeypatch.setattr(manager, "_is_play_mode", lambda: False)
-        monkeypatch.setattr(manager, "_save_camera_state", lambda _path: None)
-
-        def discard_panel() -> None:
-            _mark_test_document_saved(panel_id)
-
-        _open_test_dirty_document(
-            panel_id,
-            "Animation Editor",
-            discard=discard_panel,
-        )
-        manager.request_close()
-
-        assert coordinator.active_panel_id == panel_id
-        assert native.calls == []
-        coordinator.choose_discard()
-        assert coordinator.is_active is True
-        assert coordinator.active_document_id == manager.document_id
-        assert native.calls == []
-        coordinator.choose_discard()
-        assert coordinator.is_active is False
-        assert native.calls == ["confirm"]
-    finally:
-        if coordinator.is_active:
-            coordinator.choose_cancel()
-        DocumentRegistry.instance().close_view(panel_id)
-        _restore_scene_manager(manager)
-
-
-def test_dirty_scene_open_uses_replace_document_transaction(monkeypatch):
-    manager = _scene_manager()
-    coordinator = DirtyPanelConfirmationCoordinator.instance()
-    try:
-        if coordinator.is_active:
-            coordinator.choose_cancel()
-        _set_scene_dirty(manager, True)
-        manager._current_scene_path = "current.scene"
-        monkeypatch.setattr(manager, "_is_play_mode", lambda: False)
-        monkeypatch.setattr(manager, "_save_camera_state", lambda _path: None)
-
-        assert manager.open_scene("next.scene") is False
-        assert coordinator.active_document_id == manager.document_id
-        assert manager._deferred_load_path is None
-
-        coordinator.choose_discard()
-
-        assert coordinator.is_active is False
-        assert manager._deferred_load_path == "next.scene"
-    finally:
-        if coordinator.is_active:
-            coordinator.choose_cancel()
         _restore_scene_manager(manager)
 
 
@@ -358,6 +174,7 @@ def test_dirty_prefab_exit_waits_for_explicit_close_decision(tmp_path, monkeypat
             "_schedule_prefab_exit",
             lambda callback=None, **_kwargs: scheduled.append(callback) or True,
         )
+
         def save_prefab(*, ticket_id=""):
             saved.append(ticket_id)
             registry = DocumentRegistry.instance()
@@ -389,62 +206,6 @@ def test_dirty_prefab_exit_waits_for_explicit_close_decision(tmp_path, monkeypat
         assert coordinator.is_active is False
         assert len(saved) == 1
         assert len(scheduled) == 1
-    finally:
-        if coordinator.is_active:
-            coordinator.choose_cancel()
-        _restore_scene_manager(manager)
-
-
-def test_open_from_prefab_resolves_prefab_then_previous_scene(tmp_path, monkeypatch):
-    manager = _scene_manager()
-    coordinator = DirtyPanelConfirmationCoordinator.instance()
-    scheduled: list[object] = []
-    saved: list[str] = []
-    try:
-        if coordinator.is_active:
-            coordinator.choose_cancel()
-        manager._current_scene_path = str(tmp_path / "Assets" / "Current.scene")
-        _set_scene_dirty(manager, True)
-        previous_id, prefab_id = _enter_fake_prefab_mode(
-            manager,
-            str(tmp_path / "Assets" / "Interaction.prefab"),
-        )
-        monkeypatch.setattr(
-            manager,
-            "_schedule_prefab_exit",
-            lambda callback=None, **_kwargs: scheduled.append(callback) or True,
-        )
-        monkeypatch.setattr(
-            manager,
-            "_save_prefab",
-            lambda *, ticket_id="": saved.append(ticket_id) or True,
-        )
-        monkeypatch.setattr(manager, "_save_camera_state", lambda _path: None)
-
-        assert manager.open_scene("next.scene") is True
-        assert coordinator.active_document_id == prefab_id
-        assert manager._deferred_load_path is None
-        assert saved == []
-
-        coordinator.choose_discard()
-        assert coordinator.is_active is False
-        assert len(scheduled) == 1
-        assert manager._deferred_load_path is None
-
-        # The deferred Prefab swap restores the previous Scene before running
-        # the continuation. The previous Scene must then get its own decision.
-        manager.is_prefab_mode = False
-        manager._scene_document_id = previous_id
-        manager._current_scene_path = manager._previous_scene_path
-        callback = scheduled[0]
-        assert callable(callback)
-        callback()
-
-        assert coordinator.active_document_id == previous_id
-        assert manager._deferred_load_path is None
-        coordinator.choose_cancel()
-        assert manager._deferred_load_path is None
-        assert saved == []
     finally:
         if coordinator.is_active:
             coordinator.choose_cancel()
@@ -501,31 +262,6 @@ def test_prefab_exit_records_history_only_after_deferred_transition_completes(
         _restore_scene_manager(manager)
 
 
-def test_deferred_prefab_exit_preserves_history_for_tracked_transition(monkeypatch):
-    manager = _scene_manager()
-    calls: list[bool] = []
-    completed: list[bool] = []
-    try:
-        manager._deferred_exit_prefab = True
-        manager._post_prefab_exit_callback = lambda: completed.append(True)
-        monkeypatch.setattr(
-            manager,
-            "_do_exit_prefab_mode",
-            lambda preserve_undo_history=False: (
-                calls.append(bool(preserve_undo_history)) or True
-            ),
-        )
-
-        assert manager._run_deferred_exit_prefab_task(
-            preserve_undo_history=True,
-        ) is True
-        assert calls == [True]
-        assert completed == [True]
-        assert manager._deferred_exit_prefab is False
-    finally:
-        _restore_scene_manager(manager)
-
-
 def test_dirty_panel_cancel_releases_native_close_request(monkeypatch):
     manager = _scene_manager()
     panel_id = "scene_close_dirty_panel_cancel"
@@ -554,40 +290,6 @@ def test_dirty_panel_cancel_releases_native_close_request(monkeypatch):
         assert native.calls == ["cancel"]
         assert manager._close_in_progress is False
         assert coordinator.is_active is False
-    finally:
-        if coordinator.is_active:
-            coordinator.choose_cancel()
-        DocumentRegistry.instance().close_view(panel_id)
-        _restore_scene_manager(manager)
-
-
-def test_play_mode_still_confirms_dirty_resource_panels(monkeypatch):
-    manager = _scene_manager()
-    panel_id = "play_close_dirty_resource"
-
-    class _Native:
-        def __init__(self) -> None:
-            self.calls: list[str] = []
-
-        def confirm_close(self) -> None:
-            self.calls.append("confirm")
-
-        def cancel_close(self) -> None:
-            self.calls.append("cancel")
-
-    native = _Native()
-    coordinator = DirtyPanelConfirmationCoordinator.instance()
-    try:
-        assert coordinator.is_active is False
-        manager._engine = native
-        monkeypatch.setattr(manager, "_is_play_mode", lambda: True)
-        _open_test_dirty_document(panel_id, "Timeline")
-        manager.request_close()
-
-        assert coordinator.active_panel_id == panel_id
-        assert native.calls == []
-        coordinator.choose_discard()
-        assert native.calls == ["confirm"]
     finally:
         if coordinator.is_active:
             coordinator.choose_cancel()

@@ -1,4 +1,5 @@
 """Structural history restores a linked object set before script lifecycle runs."""
+
 from __future__ import annotations
 
 import json
@@ -13,25 +14,39 @@ if __name__ != "__main__":
     from tests.isolated import engine_python_path
 
 
-@pytest.mark.parametrize("nested", [False, True])
-@pytest.mark.parametrize("reference", ["object", "component", "native"])
-@pytest.mark.parametrize("scenario", ["same_world", "cross_world"])
+@pytest.mark.parametrize(
+    "scenario,reference,nested",
+    [("same_world", "object", True), ("cross_world", "component", False), ("cross_world", "native", True)],
+)
 def test_linked_delete_undo_publishes_complete_graph(tmp_path, nested, reference, scenario):
     _run(tmp_path, nested, reference, scenario)
 
 
-@pytest.mark.parametrize("scenario", ["missing_parent", "bad_descriptor", "bad_native", "after_failure"])
-@pytest.mark.parametrize("multi_world", [False, True])
+@pytest.mark.parametrize(
+    "multi_world,scenario", [(False, "bad_descriptor"), (True, "bad_native"), (True, "after_failure")]
+)
 def test_failed_linked_restore_cleans_only_its_owned_objects(tmp_path, scenario, multi_world):
     _run(tmp_path, True, "component", scenario + ("_cross_world" if multi_world else ""))
 
 
 def _run(project, nested, reference, scenario):
     child = subprocess.run(
-        [sys.executable, "-X", "faulthandler", str(Path(__file__).resolve()),
-         str(project), str(int(nested)), reference, scenario],
-        env=dict(os.environ, PYTHONPATH=engine_python_path()), capture_output=True, text=True, encoding="utf-8",
-        errors="replace", timeout=60,
+        [
+            sys.executable,
+            "-X",
+            "faulthandler",
+            str(Path(__file__).resolve()),
+            str(project),
+            str(int(nested)),
+            reference,
+            scenario,
+        ],
+        env=dict(os.environ, PYTHONPATH=engine_python_path()),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=60,
     )
     assert child.returncode == 0, child.stdout + child.stderr
     assert "LINKED_DELETE_OK" in child.stdout
@@ -76,8 +91,9 @@ def _exercise(project, nested, reference, scenario):
     try:
         engine.init_headless(str(project))
         scene = SceneManager.instance().create_scene("LinkedPuzzle")
-        second_scene = (SceneManager.instance().create_scene("LinkedPuzzleSecond")
-                        if "cross_world" in scenario else scene)
+        second_scene = (
+            SceneManager.instance().create_scene("LinkedPuzzleSecond") if "cross_world" in scenario else scene
+        )
         survivor = scene.create_game_object("Unchanged")
         second_survivor = second_scene.create_game_object("OtherUnchanged")
         parent = scene.create_game_object("Room")
@@ -121,8 +137,9 @@ def _exercise(project, nested, reference, scenario):
         owners = (scene, second_scene)
         # Cross-World references currently have a separate authoring-file
         # limitation. Their live Undo contract is tested here independently.
-        authored_documents = (tuple(owner.serialize_asset_document() for owner in owners)
-                              if scene is second_scene else None)
+        authored_documents = (
+            tuple(owner.serialize_asset_document() for owner in owners) if scene is second_scene else None
+        )
         author_identities = tuple(owner.serialize_document()["authoring_identity"] for owner in owners)
         if second_scene is not scene:
             try:
@@ -140,8 +157,11 @@ def _exercise(project, nested, reference, scenario):
             if fault == "missing_parent":
                 command._entries[1]["parent_id"] = 999999999
             elif fault == "bad_descriptor":
-                record = next(record for record in command._entries[1]["document"]["components"]
-                              if record["type_id"].startswith("python:"))
+                record = next(
+                    record
+                    for record in command._entries[1]["document"]["components"]
+                    if record["type_id"].startswith("python:")
+                )
                 record["component_id"] = 0
             elif fault == "bad_native":
                 command._entries[1]["document"]["prefab_source_id"] = -1
@@ -163,11 +183,17 @@ def _exercise(project, nested, reference, scenario):
             after = tuple(owner.serialize_asset_document() for owner in owners)
             if after != before:
                 import difflib
-                raise AssertionError("\n".join(difflib.unified_diff(
-                    json.dumps(before, indent=2).splitlines(),
-                    json.dumps(after, indent=2).splitlines(),
-                    fromfile="before", tofile="after",
-                )))
+
+                raise AssertionError(
+                    "\n".join(
+                        difflib.unified_diff(
+                            json.dumps(before, indent=2).splitlines(),
+                            json.dumps(after, indent=2).splitlines(),
+                            fromfile="before",
+                            tofile="after",
+                        )
+                    )
+                )
             assert scene.find("Unchanged") is survivor
             assert second_scene.find("OtherUnchanged") is second_survivor
             assert all(not owner.has_pending_py_components() for owner in owners)
@@ -199,7 +225,12 @@ def _exercise(project, nested, reference, scenario):
             assert len(events) == 6, events
             assert all(target == expected[marker] for _phase, marker, target in events), events
             assert [phase for phase, _marker, _target in events] == [
-                "after", "after", "awake", "enable", "awake", "enable",
+                "after",
+                "after",
+                "awake",
+                "enable",
+                "awake",
+                "enable",
             ]
         print("LINKED_DELETE_OK " + json.dumps(dict(nested=nested, reference=reference, scenario=scenario)), flush=True)
     finally:

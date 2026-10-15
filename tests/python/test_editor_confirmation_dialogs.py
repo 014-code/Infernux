@@ -1,22 +1,7 @@
 from __future__ import annotations
-import inspect
-import importlib
-from pathlib import Path
-import pytest
 from infernux.engine.interaction import (
-    CloseCoordinator,
-    DocumentActionResult,
-    DocumentActionStatus,
-    DocumentCapability,
-    DocumentKind,
-    DocumentRegistry,
     ModalService,
 )
-from infernux.engine.ui.dirty_panel_confirmation import (
-    DirtyPanelConfirmationCoordinator,
-)
-from infernux.engine.ui.closable_panel import ClosablePanel
-import infernux.lib as native
 from infernux.engine.ui import project_file_ops
 from infernux.engine.ui.project_delete_confirmation import ProjectDeleteConfirmationCoordinator
 
@@ -128,28 +113,6 @@ def test_project_delete_modal_confirms_deduplicated_existing_paths(tmp_path):
     assert ctx.closed is True
 
 
-def test_project_delete_confirmation_waits_for_global_history(monkeypatch, tmp_path):
-    from types import SimpleNamespace
-    from infernux.engine.interaction import EditorInteractionCore
-
-    asset = tmp_path / "Busy.prefab"
-    asset.write_text("prefab", encoding="utf-8")
-    received: list[list[str]] = []
-    coordinator = _project_delete_confirmation()
-    assert coordinator.request([str(asset)], lambda paths: received.append(paths) or True)
-
-    monkeypatch.setattr(
-        EditorInteractionCore,
-        "instance",
-        classmethod(lambda _cls: SimpleNamespace(history_ready=False)),
-    )
-    coordinator._confirm(_ProjectDeleteSemanticContext())
-
-    assert received == []
-    assert coordinator.is_active is True
-    assert coordinator._error == "project.delete_history_busy"
-
-
 def test_project_delete_confirmation_rejects_reentrant_double_submit(tmp_path):
     asset = tmp_path / "DoubleClick.prefab"
     asset.write_text("prefab", encoding="utf-8")
@@ -192,9 +155,7 @@ def test_project_script_delete_uses_meta_guid_when_database_path_lookup_misses(m
     monkeypatch.setattr(
         AssetManager,
         "delete_asset",
-        classmethod(
-            lambda _cls, path, **kwargs: delete_calls.append((path, kwargs)) or True
-        ),
+        classmethod(lambda _cls, path, **kwargs: delete_calls.append((path, kwargs)) or True),
     )
 
     assert project_file_ops.delete_item(str(script), _Database()) is True

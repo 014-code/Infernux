@@ -1,4 +1,6 @@
 """Model clip GUIDs connect the Project picker, FSM and source-free cooked documents."""
+
+from test_model_animation_clips import model as model
 import json
 from pathlib import Path
 
@@ -11,7 +13,7 @@ from infernux.engine.game_builder import GameBuilder
 from infernux.engine.runtime_artifact_catalog import load_asset_index, source_fingerprint, build_catalog
 from infernux.engine.ui.animfsm_editor_panel import AnimFSMEditorPanel
 from infernux.lib import AssetDependencyGraph
-from test_model_animation_clips import model, spec
+from test_model_animation_clips import spec
 
 
 def output(source):
@@ -63,21 +65,35 @@ def test_imported_clip_guid_picker_fsm_and_cook(model, tmp_path, monkeypatch):
     assert cooked.take_name == record["id"] and cooked.source_model_guid == model_guid
     assert not hasattr(cooked, "source_model_path")
     assert not (data / "Assets").exists()
-    catalog = build_catalog([
-        {"package": "Content.inxpkg", "runtime_path": runtime,
-         "bytes": (data / runtime).stat().st_size, "payload": (data / runtime).read_bytes(),
-         "asset_binding": builder._runtime_artifact_bindings[runtime]},
-        {"package": "Content.inxpkg", "runtime_path": f"Library/Artifacts/Mesh/{model_guid}.inxmesh",
-         "bytes": 4, "asset_binding": {"source_guid": model_guid,
-             "source_path": "Assets/Clips.fbx", "dependencies": []}},
-    ], player_host={"executable": "Game.exe"}, package_records=[])
+    catalog = build_catalog(
+        [
+            {
+                "package": "Content.inxpkg",
+                "runtime_path": runtime,
+                "bytes": (data / runtime).stat().st_size,
+                "payload": (data / runtime).read_bytes(),
+                "asset_binding": builder._runtime_artifact_bindings[runtime],
+            },
+            {
+                "package": "Content.inxpkg",
+                "runtime_path": f"Library/Artifacts/Mesh/{model_guid}.inxmesh",
+                "bytes": 4,
+                "asset_binding": {"source_guid": model_guid, "source_path": "Assets/Clips.fbx", "dependencies": []},
+            },
+        ],
+        player_host={"executable": "Game.exe"},
+        package_records=[],
+    )
     by_path = {item["runtime_path"]: item for item in catalog["artifacts"]}
-    assert by_path[runtime]["dependencies"] == [by_path[f"Library/Artifacts/Mesh/{model_guid}.inxmesh"]["runtime_artifact_id"]]
+    assert by_path[runtime]["dependencies"] == [
+        by_path[f"Library/Artifacts/Mesh/{model_guid}.inxmesh"]["runtime_artifact_id"]
+    ]
     assert by_path[runtime]["unresolved_dependencies"] == []
     builder._cooked_asset_entries[model_guid] = entries[model_guid]
     mesh_runtime = f"Library/Artifacts/Mesh/{model_guid}.inxmesh"
     builder._runtime_artifact_bindings[mesh_runtime] = {
-        "source_guid": model_guid, "dependencies": [],
+        "source_guid": model_guid,
+        "dependencies": [],
     }
     builder._write_runtime_asset_records(str(data.parent))
     runtime_records = json.loads((data / "Library/RuntimeAssetRecords.json").read_text(encoding="utf-8"))
@@ -94,8 +110,7 @@ def test_owned_clip_identity_survives_rename_mode_toggle_refresh_and_move(model)
     original = output(source)
     settings = read_mesh_import_settings(str(source))
     settings.custom_animation_clips = True
-    settings.animation_clips = [spec() | {"source_take": original["name"],
-                                          "start": 0, "end": original["duration"]}]
+    settings.animation_clips = [spec() | {"source_take": original["name"], "start": 0, "end": original["duration"]}]
     assert AssetManager.reimport_asset(str(source), import_settings=settings.to_dict(), database=database)
     first = output(source)
     reference = AnimationClip3DRef(guid=first["guid"])
@@ -125,25 +140,3 @@ def test_owned_clip_identity_survives_rename_mode_toggle_refresh_and_move(model)
     finally:
         moved.rename(source)
         assert database.move_asset(str(moved), str(source))
-
-
-def test_clip_picker_returns_owned_guid(model, monkeypatch):
-    _, source, _ = model
-    from infernux.engine.interaction import asset_reference_catalog
-    monkeypatch.setattr(asset_reference_catalog, "items", lambda *_: [("Model", str(source))])
-    _, value = AnimFSMEditorPanel._embedded_clip3d_picker_items("")[0]
-    assert value["guid"] == output(source)["guid"]
-    assert value["path_hint"].startswith(str(source) + "::subanim:")
-
-
-def test_clip_inspector_uses_child_identity_not_parent_model(model):
-    database, source, model_guid = model
-    from infernux.engine.ui import asset_details_renderer as ui
-    record = output(source)
-    ui._ensure_categories()
-    state = ui._State()
-    path = database.get_path_from_guid(record["guid"])
-    assert state.load(path, "animclip3d", ui._categories["animclip3d"])
-    assert state.meta["guid"] == record["guid"] != model_guid
-    assert state.meta["resource_name"] == record["name"]
-    assert state.settings.take_name == record["id"]

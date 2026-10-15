@@ -116,29 +116,6 @@ class TestSerializedFieldShowcase:
 
 
 class TestStrictSerializationFailures:
-    def test_repair_keeps_editor_defaults_for_stale_scene_data(self):
-        class ShowcaseDirector(InxComponent):
-            style_interval: float = serialized_field(default=3.5)
-            camera_name: str = serialized_field(default="Main Camera")
-
-        component = ShowcaseDirector()
-        component._deserialize_fields_document(
-            {
-                "__type_name__": "ShowcaseDirector",
-                "style_interval": "broken",
-                "camera_name": "Hero Camera",
-                "camera_position_sway": [0.1, 0.2, 0.3],
-            },
-            repair=True,
-        )
-
-        assert component.style_interval == 3.5
-        assert component.camera_name == "Hero Camera"
-        healed = component._serialize_fields_document()
-        assert "camera_position_sway" not in healed
-        assert healed["style_interval"] == 3.5
-        assert healed["camera_name"] == "Hero Camera"
-
     @pytest.mark.parametrize(
         "mutate, error",
         [

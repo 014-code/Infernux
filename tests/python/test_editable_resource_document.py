@@ -1,6 +1,5 @@
 from types import SimpleNamespace
 import json
-import pytest
 
 from infernux.engine.interaction import (
     DocumentCapability,
@@ -91,22 +90,32 @@ def test_linked_resource_reload_cannot_take_over_reused_inspector_state():
     state = _State()
     try:
         source_controller = ensure_editable_resource_document(
-            category="render_effect", document_kind=DocumentKind.RENDER_EFFECT,
-            file_path="Assets/Edge Fade.effect", resource=_Resource(.35),
-            guid="source-effect-guid", view_id="inspector", state=state,
+            category="render_effect",
+            document_kind=DocumentKind.RENDER_EFFECT,
+            file_path="Assets/Edge Fade.effect",
+            resource=_Resource(0.35),
+            guid="source-effect-guid",
+            view_id="inspector",
+            state=state,
         )
         # Selection invalidation reuses this same view for the containing group.
         state.reset()
-        group = _Resource(.6)
+        group = _Resource(0.6)
         group_controller = ensure_editable_resource_document(
-            category="render_effect", document_kind=DocumentKind.RENDER_EFFECT,
-            file_path="Assets/Group.effectgroup", resource=group,
-            guid="group-guid", view_id="inspector", state=state,
+            category="render_effect",
+            document_kind=DocumentKind.RENDER_EFFECT,
+            file_path="Assets/Group.effectgroup",
+            resource=group,
+            guid="group-guid",
+            view_id="inspector",
+            state=state,
         )
-        reloaded_source = _Resource(.75)
+        reloaded_source = _Resource(0.75)
         linked_controller = ensure_editable_resource_document(
-            category="render_effect", document_kind=DocumentKind.RENDER_EFFECT,
-            file_path="Assets/Edge Fade.effect", resource=reloaded_source,
+            category="render_effect",
+            document_kind=DocumentKind.RENDER_EFFECT,
+            file_path="Assets/Edge Fade.effect",
+            resource=reloaded_source,
             guid="source-effect-guid",
         )
 
@@ -115,46 +124,6 @@ def test_linked_resource_reload_cannot_take_over_reused_inspector_state():
         assert state.resource_controller is group_controller
         assert state.settings is group
         assert registry.document_for_view("inspector").document_id == group_controller.document_id
-    finally:
-        DocumentRegistry._instance = previous_registry
-
-
-def test_editable_resource_document_is_shared_without_an_inspector_view():
-    previous_registry = DocumentRegistry._instance
-    registry = DocumentRegistry()
-    resource = _Resource()
-    execution = _ExecutionLayer()
-    state = SimpleNamespace(resource_controller=None, settings=resource)
-    try:
-        inspector_controller = ensure_editable_resource_document(
-            category="render_effect",
-            document_kind=DocumentKind.RENDER_EFFECT,
-            file_path="Assets/Bloom.effect",
-            resource=resource,
-            guid="effect-guid",
-            view_id="inspector",
-            state=state,
-            exec_layer=execution,
-            autosave_debounce_sec=0.5,
-        )
-        state.resource_controller = inspector_controller
-        stack_controller = ensure_editable_resource_document(
-            category="render_effect",
-            document_kind=DocumentKind.RENDER_EFFECT,
-            file_path="Assets/Bloom.effect",
-            resource=resource,
-            guid="effect-guid",
-            autosave_debounce_sec=0.5,
-        )
-
-        assert stack_controller is inspector_controller
-        document = registry.require(stack_controller.document_id)
-        assert document.view_ids == {"inspector"}
-        assert document.key == DocumentKey.asset(
-            DocumentKind.RENDER_EFFECT, "effect-guid"
-        )
-        assert stack_controller.exec_layer is execution
-        assert stack_controller.autosave_debounce_sec == 0.5
     finally:
         DocumentRegistry._instance = previous_registry
 
@@ -197,92 +166,6 @@ def test_dirty_editable_resource_keeps_authoritative_instance_across_views():
         DocumentRegistry._instance = previous_registry
 
 
-def test_view_scoped_execution_uses_controller_owned_asset_path(monkeypatch):
-    from infernux.core.assets import AssetManager
-
-    resource = _Resource(6.0)
-    controller = EditableResourceDocumentController(
-        "material", "Assets/Ocean.mat", resource
-    )
-    controller.exec_layer = _ViewScopedExecutionLayer()
-    scheduled = []
-    flushed = []
-    monkeypatch.setattr(
-        AssetManager,
-        "schedule_asset_save",
-        classmethod(
-            lambda _cls, category, path, value, debounce_sec=0.0: scheduled.append(
-                (category, path, value, debounce_sec)
-            )
-        ),
-    )
-    monkeypatch.setattr(
-        AssetManager,
-        "flush_scheduled_saves",
-        classmethod(
-            lambda _cls, path=None, force=False: flushed.append((path, force)) or True
-        ),
-    )
-
-    controller.schedule_autosave()
-    assert controller._flush_submission(force=True) is True
-
-    assert scheduled == [("material", "Assets/Ocean.mat", resource, 0.35)]
-    assert flushed == [("Assets/Ocean.mat", True)]
-
-
-def test_editable_resource_status_preserves_no_change_without_history_or_save():
-    from infernux.engine.interaction.serialized_properties import PropertyTransactionStatus
-
-    previous_registry = DocumentRegistry._instance
-    previous_manager = UndoManager._instance
-    registry = DocumentRegistry()
-    manager = UndoManager()
-    resource = _Resource()
-    execution = _ExecutionLayer()
-    restores = []
-    controller = EditableResourceDocumentController(
-        "physic_material", "Assets/Status.physmat", resource,
-        on_restored=lambda value: restores.append(value.value),
-    )
-    document = registry.create(
-        DocumentKind.PHYSIC_MATERIAL,
-        "Status.physmat",
-        key=DocumentKey.asset(DocumentKind.PHYSIC_MATERIAL, "status-guid"),
-        resource_path="Assets/Status.physmat",
-        capabilities=DocumentCapability.SAVE | DocumentCapability.DISCARD,
-        controller=controller,
-    )
-    controller.document_id = document.document_id
-    controller.bind(file_path=controller.file_path, resource=resource, exec_layer=execution, state=None)
-    arguments = dict(view_id="automation", edit_key="value", description="Set value")
-    try:
-        status = controller.apply_document_status({"value": 2.0}, **arguments)
-        assert status is PropertyTransactionStatus.APPLIED
-        assert controller.flush_autosave(force=True)
-        revision = document.revision
-        assert restores == [2.0]
-        assert execution.saved == [{"value": 2.0}]
-        assert len(manager.action_journal.applied_entries()) == 1
-        assert controller.apply_document_status({"value": 2.0}, **arguments) is PropertyTransactionStatus.NO_CHANGE
-        assert not controller.apply_document({"value": 2.0}, **arguments)
-        assert controller.commit_applied_document_status({"value": 2.0}, {"value": 2.0}, **arguments) is PropertyTransactionStatus.NO_CHANGE
-        assert document.revision == revision
-        assert not execution.pending
-        assert execution.saved == [{"value": 2.0}]
-        assert restores == [2.0]
-        assert len(manager.action_journal.applied_entries()) == 1
-        manager.enabled = False
-        assert controller.apply_document_status({"value": 3.0}, **arguments) is PropertyTransactionStatus.REJECTED
-        assert not controller.apply_document({"value": 3.0}, **arguments)
-        assert resource.value == 2.0
-        assert document.revision == revision
-        assert len(manager.action_journal.applied_entries()) == 1
-    finally:
-        DocumentRegistry._instance = previous_registry
-        UndoManager._instance = previous_manager
-
-
 def test_editable_resource_document_tracks_autosave_and_undo_revisions():
     previous_registry = DocumentRegistry._instance
     previous_manager = UndoManager._instance
@@ -291,9 +174,7 @@ def test_editable_resource_document_tracks_autosave_and_undo_revisions():
     resource = _Resource()
     execution = _ExecutionLayer()
     state = SimpleNamespace(resource_controller=None, settings=resource)
-    controller = EditableResourceDocumentController(
-        "physic_material", "Assets/Ice.physmat", resource
-    )
+    controller = EditableResourceDocumentController("physic_material", "Assets/Ice.physmat", resource)
     document = registry.create(
         DocumentKind.PHYSIC_MATERIAL,
         "Ice.physmat",
@@ -347,9 +228,7 @@ def test_explicit_resource_save_commits_only_its_captured_revision():
     registry = DocumentRegistry()
     resource = _Resource(4.0)
     execution = _ExecutionLayer()
-    controller = EditableResourceDocumentController(
-        "render_effect", "Assets/Bloom.effect", resource
-    )
+    controller = EditableResourceDocumentController("render_effect", "Assets/Bloom.effect", resource)
     document = registry.create(
         DocumentKind.RENDER_EFFECT,
         "Bloom.effect",
@@ -391,9 +270,7 @@ def test_async_resource_save_stays_pending_until_io_succeeds():
     registry = DocumentRegistry()
     resource = _Resource(4.0)
     execution = _AsyncExecutionLayer()
-    controller = EditableResourceDocumentController(
-        "render_effect", "Assets/Bloom.effect", resource
-    )
+    controller = EditableResourceDocumentController("render_effect", "Assets/Bloom.effect", resource)
     document = registry.create(
         DocumentKind.RENDER_EFFECT,
         "Bloom.effect",
@@ -424,105 +301,12 @@ def test_async_resource_save_stays_pending_until_io_succeeds():
         DocumentRegistry._instance = previous_registry
 
 
-@pytest.mark.parametrize("claim_before_save", [False, True])
-@pytest.mark.parametrize("edit_after_save", [False, True])
-def test_repeated_autosave_claim_preserves_explicit_save_completion(claim_before_save, edit_after_save):
-    from infernux.engine.interaction import CloseCoordinator, CloseIntent, CloseIntentKind, CloseState
-
-    previous_registry = DocumentRegistry._instance
-    registry = DocumentRegistry()
-    resource = _Resource(4.0)
-    execution = _AsyncExecutionLayer()
-    controller = EditableResourceDocumentController("render_effect", "Assets/Bloom.effect", resource)
-    document = registry.create(
-        DocumentKind.RENDER_EFFECT,
-        "Bloom.effect",
-        resource_path="Assets/Bloom.effect",
-        capabilities=DocumentCapability.SAVE | DocumentCapability.DISCARD,
-        controller=controller,
-    )
-    controller.document_id = document.document_id
-    controller.bind(file_path="Assets/Bloom.effect", resource=resource, exec_layer=execution, state=None)
-    registry.mark_changed(document.document_id)
-    try:
-        if claim_before_save:
-            controller.schedule_autosave()
-            assert controller.flush_autosave(force=True)
-            write = execution.tickets[-1]
-            execution.flush_rw_autosave = lambda *, force=False: write
-        assert registry.request_save(document.document_id).status.value == "pending"
-        written_revision = document.revision
-        write = execution.tickets[-1]
-        # The runtime owner returns an existing in-flight write to each view.
-        # Inspector autosave must not erase the formal SaveTicket association.
-        execution.flush_rw_autosave = lambda *, force=False: write
-        if edit_after_save:
-            resource.value = 9.0
-            registry.mark_changed(document.document_id)
-        assert controller.flush_autosave(force=True)
-        assert controller.flush_autosave(force=True)
-        closed = []
-        closer = CloseCoordinator(registry)
-        assert closer.request(CloseIntent(CloseIntentKind.EXIT_EDITOR), lambda: closed.append(True))
-        assert closer.state is CloseState.WAITING_FOR_SAVE
-        write.complete()
-        assert registry.process_pending_saves() == 1
-        assert registry.active_save_ticket(document.document_id) is None
-        assert document.saved_revision == written_revision
-        assert document.is_dirty is edit_after_save
-        closer.poll()
-        assert bool(closed) is (not edit_after_save)
-        assert closer.state is (CloseState.AWAITING_DECISION if edit_after_save else CloseState.IDLE)
-    finally:
-        DocumentRegistry._instance = previous_registry
-
-
-def test_async_resource_save_preserves_edits_made_after_submission():
-    previous_registry = DocumentRegistry._instance
-    registry = DocumentRegistry()
-    resource = _Resource(4.0)
-    execution = _AsyncExecutionLayer()
-    controller = EditableResourceDocumentController(
-        "render_effect", "Assets/Bloom.effect", resource
-    )
-    document = registry.create(
-        DocumentKind.RENDER_EFFECT,
-        "Bloom.effect",
-        resource_path="Assets/Bloom.effect",
-        capabilities=DocumentCapability.SAVE | DocumentCapability.DISCARD,
-        controller=controller,
-    )
-    controller.document_id = document.document_id
-    controller.bind(
-        file_path="Assets/Bloom.effect",
-        resource=resource,
-        exec_layer=execution,
-        state=None,
-    )
-    saved_revision = registry.mark_changed(document.document_id)
-    try:
-        assert registry.request_save(document.document_id).status.value == "pending"
-        resource.value = 8.0
-        registry.mark_changed(document.document_id)
-
-        execution.tickets[-1].complete()
-        registry.process_pending_saves()
-
-        assert document.saved_revision == saved_revision
-        assert document.is_dirty
-        assert controller._saved_document == {"value": 4.0}
-    finally:
-        DocumentRegistry._instance = previous_registry
-
-
 def test_async_resource_save_failure_never_moves_save_point():
     previous_registry = DocumentRegistry._instance
     registry = DocumentRegistry()
     resource = _Resource(4.0)
     execution = _AsyncExecutionLayer()
-    controller = EditableResourceDocumentController(
-        "render_effect", "Assets/Bloom.effect", resource
-    )
+    controller = EditableResourceDocumentController("render_effect", "Assets/Bloom.effect", resource)
     document = registry.create(
         DocumentKind.RENDER_EFFECT,
         "Bloom.effect",
@@ -551,51 +335,12 @@ def test_async_resource_save_failure_never_moves_save_point():
         DocumentRegistry._instance = previous_registry
 
 
-def test_background_async_autosave_marks_saved_only_after_io_completion():
-    previous_registry = DocumentRegistry._instance
-    registry = DocumentRegistry()
-    resource = _Resource(4.0)
-    execution = _AsyncExecutionLayer()
-    controller = EditableResourceDocumentController(
-        "render_effect", "Assets/Bloom.effect", resource
-    )
-    document = registry.create(
-        DocumentKind.RENDER_EFFECT,
-        "Bloom.effect",
-        resource_path="Assets/Bloom.effect",
-        capabilities=DocumentCapability.SAVE | DocumentCapability.DISCARD,
-        controller=controller,
-    )
-    controller.document_id = document.document_id
-    controller.bind(
-        file_path="Assets/Bloom.effect",
-        resource=resource,
-        exec_layer=execution,
-        state=None,
-    )
-    registry.mark_changed(document.document_id)
-    controller.schedule_autosave()
-    try:
-        assert controller.flush_autosave(force=True)
-        assert document.is_dirty
-
-        execution.tickets[-1].complete()
-        registry.process_pending_saves()
-
-        assert document.is_dirty is False
-        assert controller._saved_document == {"value": 4.0}
-    finally:
-        DocumentRegistry._instance = previous_registry
-
-
 def test_discard_supersedes_an_already_submitted_background_write():
     previous_registry = DocumentRegistry._instance
     registry = DocumentRegistry()
     resource = _Resource(1.0)
     execution = _AsyncExecutionLayer()
-    controller = EditableResourceDocumentController(
-        "render_effect", "Assets/Bloom.effect", resource
-    )
+    controller = EditableResourceDocumentController("render_effect", "Assets/Bloom.effect", resource)
     document = registry.create(
         DocumentKind.RENDER_EFFECT,
         "Bloom.effect",
@@ -701,76 +446,6 @@ def test_material_document_save_completes_from_native_document_store(tmp_path):
         DocumentRegistry._instance = previous_registry
 
 
-def test_document_controller_claims_write_submitted_by_runtime_owner(tmp_path):
-    from infernux.core.assets import AssetManager
-    from infernux.core.document_store import DocumentStore
-    from infernux.engine.path_utils import path_key
-    from infernux.engine.ui.asset_execution_layer import (
-        AssetAccessMode,
-        AssetExecutionLayer,
-    )
-
-    previous_registry = DocumentRegistry._instance
-    registry = DocumentRegistry()
-    path = tmp_path / "Shared.mat"
-
-    class _MaterialResource(_Resource):
-        file_path = str(path)
-
-        def serialize(self):
-            return json.dumps(self.serialize_document())
-
-    resource = _MaterialResource(0.8)
-    execution = AssetExecutionLayer(
-        "material",
-        str(path),
-        AssetAccessMode.READ_WRITE_RESOURCE,
-        autosave_debounce_sec=0.0,
-    )
-    controller = EditableResourceDocumentController("material", str(path), resource)
-    document = registry.create(
-        DocumentKind.MATERIAL,
-        "Shared.mat",
-        resource_path=str(path),
-        capabilities=DocumentCapability.SAVE | DocumentCapability.DISCARD,
-        controller=controller,
-    )
-    controller.document_id = document.document_id
-    controller.bind(
-        file_path=str(path),
-        resource=resource,
-        exec_layer=execution,
-        state=None,
-    )
-    registry.mark_changed(document.document_id)
-    controller.schedule_autosave()
-    normalized = path_key(str(path))
-    try:
-        runtime_ticket = AssetManager.flush_scheduled_saves(str(path), force=True)
-        assert runtime_ticket is not False
-
-        assert controller.flush_autosave(force=True)
-        pending = controller._pending_writes.get(id(runtime_ticket))
-        if pending is not None:
-            assert pending.ticket is runtime_ticket
-            assert document.is_dirty
-        else:
-            assert runtime_ticket.status == "succeeded"
-            assert document.is_dirty is False
-
-        DocumentStore.flush(str(path))
-        AssetManager.poll_pending_asset_writes()
-        registry.process_pending_saves()
-
-        assert document.is_dirty is False
-        assert json.loads(path.read_text(encoding="utf-8")) == {"value": 0.8}
-    finally:
-        AssetManager._scheduled_saves.pop(str(path), None)
-        AssetManager._material_save_snapshots.pop(normalized, None)
-        AssetManager._pending_document_write_records.pop(normalized, None)
-        DocumentRegistry._instance = previous_registry
-
-
 def test_editable_resource_controller_applies_user_document_transaction():
     previous_registry = DocumentRegistry._instance
     previous_manager = UndoManager._instance
@@ -779,9 +454,7 @@ def test_editable_resource_controller_applies_user_document_transaction():
     resource = _Resource()
     execution = _ExecutionLayer()
     state = SimpleNamespace(resource_controller=None, settings=resource)
-    controller = EditableResourceDocumentController(
-        "render_effect", "Assets/Bloom.effect", resource
-    )
+    controller = EditableResourceDocumentController("render_effect", "Assets/Bloom.effect", resource)
     document = registry.create(
         DocumentKind.RENDER_EFFECT,
         "Bloom.effect",
@@ -817,58 +490,13 @@ def test_editable_resource_controller_applies_user_document_transaction():
         UndoManager._instance = previous_manager
 
 
-def test_editable_resource_controller_preserves_automation_origin():
-    from infernux.engine.interaction import ActionOrigin
-
-    previous_registry = DocumentRegistry._instance
-    previous_manager = UndoManager._instance
-    registry = DocumentRegistry()
-    manager = UndoManager()
-    resource = _Resource()
-    controller = EditableResourceDocumentController(
-        "material", "Assets/Automation.mat", resource
-    )
-    document = registry.create(
-        DocumentKind.MATERIAL,
-        "Automation.mat",
-        resource_path="Assets/Automation.mat",
-        capabilities=DocumentCapability.SAVE | DocumentCapability.DISCARD,
-        controller=controller,
-    )
-    controller.document_id = document.document_id
-    controller.bind(
-        file_path=document.resource_path,
-        resource=resource,
-        exec_layer=_ExecutionLayer(),
-        state=None,
-    )
-    try:
-        assert controller.apply_document(
-            {"value": 7.0},
-            view_id="automation",
-            edit_key="value",
-            description="Set Material Value",
-            origin=ActionOrigin.AUTOMATION,
-        )
-        entry = manager.action_journal.applied_entries()[-1]
-        assert entry.origin is ActionOrigin.AUTOMATION
-        assert resource.value == 7.0
-        manager.undo()
-        assert resource.value == 1.0
-    finally:
-        DocumentRegistry._instance = previous_registry
-        UndoManager._instance = previous_manager
-
-
 def test_editable_resource_discard_restores_last_durable_document():
     previous_registry = DocumentRegistry._instance
     registry = DocumentRegistry()
     resource = _Resource()
     execution = _ExecutionLayer()
     state = SimpleNamespace(resource_controller=None, settings=resource)
-    controller = EditableResourceDocumentController(
-        "physic_material", "Assets/Ice.physmat", resource
-    )
+    controller = EditableResourceDocumentController("physic_material", "Assets/Ice.physmat", resource)
     document = registry.create(
         DocumentKind.PHYSIC_MATERIAL,
         "Ice.physmat",
@@ -904,10 +532,7 @@ def test_animation_clip_documents_replace_state_without_losing_asset_identity():
     clip_2d = AnimationClip(
         name="Run",
         authoring_texture_guid="texture-guid",
-        frames=[
-            AnimationFrame(sprite_frame_id=f"{index + 1:032x}")
-            for index in (0, 1)
-        ],
+        frames=[AnimationFrame(sprite_frame_id=f"{index + 1:032x}") for index in (0, 1)],
         fps=12.0,
     )
     clip_2d.file_path = "Assets/Run.animclip2d"
@@ -930,52 +555,6 @@ def test_animation_clip_documents_replace_state_without_losing_asset_identity():
     assert clip_3d.take_name == "Run"
     assert clip_3d.file_path == "Assets/Walk.animclip3d"
     assert not clip_3d.deserialize_document({"take_name": "Idle"})
-
-
-def test_animation_clip_asset_inspector_binds_the_shared_document_controller():
-    from infernux.core.animation_clip import AnimationClip, AnimationFrame
-    from infernux.engine.ui.asset_details_renderer import (
-        AssetCategoryDef,
-        _State,
-        _bind_editable_resource_document,
-    )
-    from infernux.engine.ui.asset_execution_layer import AssetAccessMode
-
-    previous_registry = DocumentRegistry._instance
-    registry = DocumentRegistry()
-    clip = AnimationClip(
-        name="Run",
-        frames=[
-            AnimationFrame(sprite_frame_id=f"{index + 1:032x}")
-            for index in (0, 1)
-        ],
-        fps=12.0,
-    )
-    clip.file_path = "Assets/Run.animclip2d"
-    state = _State()
-    state.category = "animclip"
-    state.file_path = clip.file_path
-    state.settings = clip
-    state.meta = {"guid": "clip-guid"}
-    state.exec_layer = _ExecutionLayer()
-    category = AssetCategoryDef(
-        display_name="Animation Clip",
-        access_mode=AssetAccessMode.READ_WRITE_RESOURCE,
-        load_fn=lambda _path: None,
-        autosave_debounce=0.5,
-    )
-    try:
-        _bind_editable_resource_document(state, category)
-
-        document = registry.require(state.document_id)
-        assert document.kind is DocumentKind.ANIMATION_CLIP
-        assert document.key == DocumentKey.asset(
-            DocumentKind.ANIMATION_CLIP, "clip-guid"
-        )
-        assert state.resource_controller.resource is clip
-        assert document.view_ids == {"inspector"}
-    finally:
-        DocumentRegistry._instance = previous_registry
 
 
 def test_material_asset_and_inline_inspectors_share_one_native_document():

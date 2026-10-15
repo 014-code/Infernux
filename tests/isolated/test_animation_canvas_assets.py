@@ -1,4 +1,5 @@
 """Real imported assets, graph transactions and Undo for animation canvas drops."""
+
 from __future__ import annotations
 
 import os
@@ -16,8 +17,12 @@ if __name__ != "__main__":
 def test_canvas_drop_validates_before_creating_or_replacing_state(tmp_path, mode):
     result = subprocess.run(
         [sys.executable, str(Path(__file__).resolve()), str(tmp_path), mode],
-        env=dict(os.environ, PYTHONPATH=engine_python_path()), capture_output=True, text=True, encoding="utf-8",
-        errors="replace", timeout=60,
+        env=dict(os.environ, PYTHONPATH=engine_python_path()),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=60,
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "ANIMATION_CANVAS_ASSETS_OK" in result.stdout
@@ -27,7 +32,9 @@ def _exercise(project: Path, mode: str) -> None:
     from infernux.engine.bootstrap import EditorBootstrap
     from infernux.engine.engine import Engine
     from infernux.engine.interaction import (
-        EditorInteractionCore, SelectionDomain, SelectionService,
+        EditorInteractionCore,
+        SelectionDomain,
+        SelectionService,
     )
     from infernux.engine.preferences_store import PreferencesStore
     from infernux.engine.ui import project_file_ops as ops
@@ -75,7 +82,8 @@ def _exercise(project: Path, mode: str) -> None:
         drop(payload, missing, 500.0, 500.0)
         assert panel._fsm.to_dict() == before and not manager.can_undo
         other_creator, other_ext, other_payload = (
-            (ops.create_animclip3d, ".animclip3d", "ANIMCLIP3D_FILE") if mode != "3d"
+            (ops.create_animclip3d, ".animclip3d", "ANIMCLIP3D_FILE")
+            if mode != "3d"
             else (ops.create_animclip, ".animclip2d", "ANIMCLIP_FILE")
         )
         assert other_creator(str(project / "Assets"), "Incompatible", database).success

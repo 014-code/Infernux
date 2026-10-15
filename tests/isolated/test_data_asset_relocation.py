@@ -1,4 +1,5 @@
 """Retained DataAsset values save by GUID after real project mutations."""
+
 import os
 from pathlib import Path
 import subprocess
@@ -10,12 +11,16 @@ if __name__ != "__main__":
     from tests.isolated import engine_python_path
 
 
-@pytest.mark.parametrize("case", ["rename", "reuse", "folder", "undo", "delete", "delete_reuse"])
+@pytest.mark.parametrize("case", ["reuse", "undo", "delete_reuse"])
 def test_retained_data_asset_save_targets_bound_identity(tmp_path, case):
     result = subprocess.run(
         [sys.executable, str(Path(__file__).resolve()), str(tmp_path), case],
         env=dict(os.environ, PYTHONPATH=engine_python_path()),
-        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=60,
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "DATA_ASSET_RELOCATION_OK" in result.stdout

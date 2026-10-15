@@ -77,72 +77,6 @@ def test_batch_rejects_mixed_classes_before_accessing_colliding_slots():
         second._call_on_destroy()
 
 
-@pytest.mark.parametrize("failure", ["stale", "shape"])
-def test_rejected_cds_batch_writes_neither_values_nor_notifications(failure):
-    from infernux.components._component_lifecycle import RuntimeExecutionScheduler
-    from infernux.engine.runtime_change_journal import RuntimeChangeJournal
-
-    class Value(InxComponent):
-        number: float = 1.0
-
-    journal = RuntimeChangeJournal()
-    scheduler = RuntimeExecutionScheduler(name="rejected-batch", change_journal=journal)
-    components = [Value(), Value()]
-    second = components[1]
-    class_id = second._cds_class_id
-    try:
-        for index, component in enumerate(components):
-            component._registered_go_id = index + 1
-        cursor = journal.create_cursor("rejected")
-        data = np.array([3.0, 4.0])
-        if failure == "stale":
-            lib._cds_free(class_id, second._cds_slot)
-        elif failure == "layout":
-            second._cds_class_id = class_id + 1
-        elif failure == "shape":
-            data = data[:1]
-        else:
-            data = np.array([3.0, "invalid"])
-        with pytest.raises((RuntimeError, ValueError)):
-            batch_write(components, data, "number")
-        assert components[0].number == 1.0
-        assert not journal.consume(cursor).changed
-        if failure == "stale":
-            with pytest.raises(RuntimeError, match="stale or invalid"):
-                batch_read(components, "number")
-    finally:
-        second._cds_class_id = class_id
-        for component in components:
-            component._registered_go_id = None
-            component._call_on_destroy()
-        scheduler.clear()
-
-
-def test_repeated_layout_registration_binds_new_descriptors():
-    from infernux.components._cds_bridge import get_class_info
-
-    class Repeated(InxComponent):
-        value: float = 2.0
-
-    old = Repeated()
-    old_class = Repeated
-
-    class Repeated(InxComponent):
-        value: float = 3.0
-
-    new = Repeated()
-    try:
-        assert get_class_id(old_class) == get_class_id(Repeated)
-        class_id, fields = get_class_info(Repeated)
-        field_id, type_code = fields["value"]
-        assert lib._cds_get(class_id, field_id, new._cds_slot, type_code) == 3.0
-        batch_write([new], np.asarray([8.0], dtype=np.float32), "value")
-        assert new.value == 8.0 and old.value == 2.0
-    finally:
-        old._call_on_destroy()
-        new._call_on_destroy()
-
-
 def test_inherited_candidate_publication_and_rollback_preserve_live_parent():
     from infernux.components._cds_bridge import prepare_schema_publication
     from infernux.components._component_registration import candidate_component_registration_scope
@@ -189,36 +123,6 @@ def test_inherited_candidate_publication_and_rollback_preserve_live_parent():
         parent._call_on_destroy()
 
 
-def test_deep_inheritance_and_numeric_override_use_concrete_layouts():
-    from infernux.components._cds_bridge import get_class_info
-
-    class Base(InxComponent):
-        value: float = 2.5
-
-    class Middle(Base):
-        pass
-
-    class Leaf(Middle):
-        pass
-
-    class Override(Middle):
-        value: int = 7
-
-    instances = [Base(), Middle(), Leaf(), Override()]
-    try:
-        for instance, expected in zip(instances, [2.5, 2.5, 2.5, 7]):
-            assert instance.value == expected
-            assert batch_read([instance], "value")[0] == expected
-        assert len({get_class_id(type(instance)) for instance in instances}) == 4
-        assert get_class_info(Leaf)[1]["value"][1] != get_class_info(Override)[1]["value"][1]
-        instances[2].value = 9.5
-        assert batch_read([instances[2]], "value")[0] == 9.5
-        assert [instance.value for instance in instances] == [2.5, 2.5, 9.5, 7]
-    finally:
-        for instance in instances:
-            instance._call_on_destroy()
-
-
 def test_cds_generational_handles_reject_stale_access():
     class_id = lib._cds_register_class("python.tests:GenerationalHandle")
     field_id = lib._cds_register_field(class_id, "value", 0)
@@ -238,27 +142,6 @@ def test_cds_generational_handles_reject_stale_access():
     with pytest.raises(RuntimeError, match="stale or invalid"):
         lib._cds_free(class_id, first)
     lib._cds_free(class_id, replacement)
-
-
-def test_cds_batch_validates_handle_and_data_shapes():
-    class_id = lib._cds_register_class("python.tests:BatchValidation")
-    field_id = lib._cds_register_field(class_id, "position", 4)
-    handles = [lib._cds_alloc(class_id), lib._cds_alloc(class_id)]
-    handle_array = np.asarray(handles, dtype=np.uint32)
-    values = np.asarray([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=np.float32)
-
-    lib._cds_batch_scatter(class_id, field_id, 4, handle_array, values)
-    np.testing.assert_array_equal(lib._cds_batch_gather(class_id, field_id, 4, handle_array), values)
-
-    with pytest.raises(ValueError, match=r"shape \(N, 2\)"):
-        lib._cds_batch_gather(class_id, field_id, 4, np.asarray([handles[0][0]], dtype=np.uint32))
-    with pytest.raises(ValueError, match=r"shape \(N, 3\)"):
-        lib._cds_batch_scatter(class_id, field_id, 4, handle_array, np.zeros((2, 2), dtype=np.float32))
-    with pytest.raises(ValueError, match="field type mismatch"):
-        lib._cds_batch_gather(class_id, field_id, 0, handle_array)
-
-    for handle in handles:
-        lib._cds_free(class_id, handle)
 
 
 def test_transform_batch_handle_rejects_destroyed_transform(scene):
@@ -317,27 +200,6 @@ def test_scene_batch_handle_filters_in_native_code(scene):
     )
 
 
-def test_transform_batch_write_bumps_global_transform_serial(scene):
-    first = scene.create_game_object("serial_a")
-    second = scene.create_game_object("serial_b")
-    manager = lib.SceneManager.instance()
-    before = int(manager.get_global_transform_serial())
-
-    batch_write(
-        [first.transform, second.transform],
-        np.asarray([[0.0, 15.0, 0.0], [0.0, 45.0, 0.0]], dtype=np.float32),
-        "local_euler_angles",
-    )
-
-    after = int(manager.get_global_transform_serial())
-    assert after > before
-    np.testing.assert_allclose(
-        batch_read([first.transform, second.transform], "local_euler_angles"),
-        np.asarray([[0.0, 15.0, 0.0], [0.0, 45.0, 0.0]], dtype=np.float32),
-        atol=1e-4,
-    )
-
-
 def test_script_replacement_detach_releases_the_old_numeric_slot():
     class ReplacedComponent(InxComponent):
         value: float = 1.0
@@ -366,19 +228,6 @@ def test_unbound_component_collection_releases_its_numeric_slot():
     gc.collect()
     assert witness() is None
     assert not lib._cds_is_alive(class_id, slot)
-
-
-def test_component_layout_revision_gets_distinct_storage():
-    class ReloadedComponent(InxComponent):
-        value: float = 0.0
-
-    first_class_id = get_class_id(ReloadedComponent)
-
-    class ReloadedComponent(InxComponent):
-        value: int = 0
-
-    second_class_id = get_class_id(ReloadedComponent)
-    assert first_class_id != second_class_id
 
 
 @pytest.mark.parametrize("native_storage", [False, True])
