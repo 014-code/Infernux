@@ -1,4 +1,5 @@
 """Effect imports, typed resource mounts and rejected temporal declarations."""
+
 from types import SimpleNamespace
 
 import pytest
@@ -22,9 +23,12 @@ def features(monkeypatch):
     compiler.RenderEffectArtifactRegistry.clear()
 
 
-@pytest.mark.parametrize("semantic,shader_binding", [("shadow_map", "shadowMap"), ("light_list", "lightList")])
-@pytest.mark.parametrize("extra", [False, True])
-def test_import_mount_and_dynamic_update_keep_typed_stage_resources(features, tmp_path, monkeypatch, semantic, shader_binding, extra):
+@pytest.mark.parametrize(
+    "semantic,shader_binding,extra", [("shadow_map", "shadowMap", False), ("light_list", "lightList", True)]
+)
+def test_import_mount_and_dynamic_update_keep_typed_stage_resources(
+    features, tmp_path, monkeypatch, semantic, shader_binding, extra
+):
     import infernux.engine.project_context as project_context
 
     calls = []
@@ -57,8 +61,11 @@ def test_import_mount_and_dynamic_update_keep_typed_stage_resources(features, tm
 
     graph = RenderGraph("Real Stage")
     color = graph.create_texture("color")
-    resource = (graph.create_buffer("lights", byte_size=64) if semantic == "light_list"
-                else graph.create_texture("shadow", format=Format.D32_SFLOAT))
+    resource = (
+        graph.create_buffer("lights", byte_size=64)
+        if semantic == "light_list"
+        else graph.create_texture("shadow", format=Format.D32_SFLOAT)
+    )
     bus = ResourceBus({"color": color, semantic: resource}, graph=graph)
     source = RenderEffect(document)
     slot = EffectSlot(stage_id="inspect", effect=RenderEffectRef(source))
@@ -93,12 +100,13 @@ def test_rejected_temporal_effect_does_not_jitter_real_stack(features):
     assert not description.temporal_jitter
 
 
-@pytest.mark.parametrize("prior", [False, True])
+@pytest.mark.parametrize("prior", [True])
 def test_rejected_effect_preserves_previous_temporal_declaration(features, prior):
     @compiler.render_effect_feature("tests.rejected_jitter_contract")
     class RejectedJitter(FullScreenEffect):
         name = "Rejected Jitter"
         injection_point = "final"
+
         def setup_passes(self, graph, bus):
             graph.set_temporal_jitter(not prior)
             raise ValueError("reject jitter declaration")

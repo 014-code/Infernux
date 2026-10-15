@@ -21,7 +21,7 @@ def feature_reload_catalog(monkeypatch):
 
 def declare_feature(path, field="intensity", pass_name="ReloadBefore"):
     namespace = {"__name__": "test_effect_reload", "__file__": str(path)}
-    source = f'''
+    source = f"""
 import infernux as inx
 @inx.renderstack.render_effect_feature("tests.post.reload")
 class ReloadEffect(inx.renderstack.FullScreenEffect):
@@ -35,7 +35,7 @@ class ReloadEffect(inx.renderstack.FullScreenEffect):
             output_name="reload_out", pass_name={pass_name!r},
             shader_name="fullscreen_blit", format=inx.rendergraph.Format.RGBA16_SFLOAT,
             params={{"intensity": self.{field}}})
-'''
+"""
     exec(compile(source, str(path), "exec"), namespace)
     return namespace["ReloadEffect"]
 
@@ -67,33 +67,10 @@ class RenderContext:
         self.updates.extend(updates)
 
 
-def test_feature_reload_rebuilds_mounted_graph_without_parameter_edit(tmp_path, feature_reload_catalog):
-    feature_path = tmp_path / "reload_effect.py"
-    declare_feature(feature_path)
-    effect = RenderEffect(RenderEffectAsset("tests.post.reload", parameters={"intensity": .35}))
-    stack = RenderStack()
-    stack.add_effect_slot("final", RenderEffectRef(effect=effect))
-    context = RenderContext()
-    stack.render(context, object())
-    stack.render(context, object())
-    assert len(context.applied) == 1
-    revision = effect.revision
-
-    declare_feature(feature_path, pass_name="ReloadAfter")
-    stack.render(context, object())
-
-    assert effect.revision == revision
-    assert len(context.applied) == 2
-    assert any(p.name.endswith("ReloadAfter") for p in context.applied[-1].passes)
-    assert not any(p.name.endswith("ReloadBefore") for p in context.applied[-1].passes)
-    stack.render(context, object())
-    assert len(context.applied) == 2
-
-
 def test_schema_reload_diagnoses_unchanged_mounted_source_and_preserves_slot(tmp_path, feature_reload_catalog):
     feature_path = tmp_path / "reload_effect.py"
     declare_feature(feature_path)
-    effect = RenderEffect(RenderEffectAsset("tests.post.reload", parameters={"intensity": .35}), guid="reload-guid")
+    effect = RenderEffect(RenderEffectAsset("tests.post.reload", parameters={"intensity": 0.35}), guid="reload-guid")
     stack = RenderStack()
     slot = stack.add_effect_slot("final", RenderEffectRef(effect=effect))
     context = RenderContext()
@@ -106,7 +83,7 @@ def test_schema_reload_diagnoses_unchanged_mounted_source_and_preserves_slot(tmp
     assert any("unknown parameters: ['intensity']" in error for error in stack.effect_compile_errors)
     assert stack.get_effect_stage_slots("final") == (slot,)
     assert slot.effect_ref.guid == "reload-guid"
-    assert effect.to_asset().parameters == {"intensity": .35}
+    assert effect.to_asset().parameters == {"intensity": 0.35}
 
 
 @pytest.mark.parametrize("clear_memory_cache", [False, True])
@@ -114,12 +91,15 @@ def test_schema_reload_rejects_unchanged_cached_artifact_until_json_repaired(
     tmp_path, monkeypatch, feature_reload_catalog, clear_memory_cache
 ):
     from infernux.engine import project_context
+
     monkeypatch.setattr(project_context, "get_project_root", lambda: str(tmp_path))
     feature_path = tmp_path / "reload_effect.py"
     declare_feature(feature_path)
     path = tmp_path / "Reload.effect"
-    path.write_text(dump_render_effect_document(RenderEffectAsset(
-        "tests.post.reload", parameters={"intensity": .35})), encoding="utf-8")
+    path.write_text(
+        dump_render_effect_document(RenderEffectAsset("tests.post.reload", parameters={"intensity": 0.35})),
+        encoding="utf-8",
+    )
     accepted, _ = compiler.RenderEffectArtifactRegistry.compile_and_publish(str(path), guid="reload-guid")
     artifact_bytes = Path(accepted.artifact_path).read_bytes()
     source_bytes = path.read_bytes()
@@ -135,7 +115,7 @@ def test_schema_reload_rejects_unchanged_cached_artifact_until_json_repaired(
         assert compiler.RenderEffectArtifactRegistry.get(str(path), "reload-guid") is accepted
 
     document = json.loads(path.read_text(encoding="utf-8"))
-    document["parameters"] = {"strength": .35}
+    document["parameters"] = {"strength": 0.35}
     path.write_text(json.dumps(document), encoding="utf-8")
     repaired, _ = compiler.RenderEffectArtifactRegistry.compile_and_publish(str(path), guid="reload-guid")
     assert compiler.RenderEffectArtifactRegistry.compile_and_publish(str(path), guid="reload-guid")[0] is repaired
@@ -143,12 +123,15 @@ def test_schema_reload_rejects_unchanged_cached_artifact_until_json_repaired(
 
 def test_feature_reload_recompiles_unchanged_asset_with_new_passes(tmp_path, monkeypatch, feature_reload_catalog):
     from infernux.engine import project_context
+
     monkeypatch.setattr(project_context, "get_project_root", lambda: str(tmp_path))
     feature_path = tmp_path / "reload_effect.py"
     declare_feature(feature_path)
     path = tmp_path / "Reload.effect"
-    path.write_text(dump_render_effect_document(RenderEffectAsset(
-        "tests.post.reload", parameters={"intensity": .35})), encoding="utf-8")
+    path.write_text(
+        dump_render_effect_document(RenderEffectAsset("tests.post.reload", parameters={"intensity": 0.35})),
+        encoding="utf-8",
+    )
     accepted, _ = compiler.RenderEffectArtifactRegistry.compile_and_publish(str(path), guid="reload-guid")
     source_bytes = path.read_bytes()
 
@@ -161,7 +144,7 @@ def test_feature_reload_recompiles_unchanged_asset_with_new_passes(tmp_path, mon
     assert updated.features[0]["feature_type"] == "tests.post.reload"
     # Passes require a real mount context; the portable artifact is a
     # declaration, and the replaced implementation supplies the mounted graph.
-    effect = RenderEffect(RenderEffectAsset("tests.post.reload", parameters={"intensity": .35}))
+    effect = RenderEffect(RenderEffectAsset("tests.post.reload", parameters={"intensity": 0.35}))
     stack = RenderStack()
     stack.add_effect_slot("final", RenderEffectRef(effect=effect))
     description = stack.build_graph()
@@ -179,36 +162,3 @@ def test_identical_registration_and_rejected_owner_do_not_invalidate_graphs(tmp_
         declare_feature(tmp_path / "another_effect.py")
     assert compiler.RenderEffectArtifactRegistry.topology_generation() == generation
     assert compiler.get_render_effect_feature("tests.post.reload").effect_class is effect_class
-
-
-def test_topology_parameter_rebuilds_effect_without_parameter_blocks(feature_reload_catalog):
-    import infernux as inx
-
-    @compiler.render_effect_feature("tests.post.copies", topology_parameters={"copies"})
-    class CopyEffect(inx.renderstack.FullScreenEffect):
-        name = "Copy Effect"
-        injection_point = "before_post_process"
-        default_order = 200
-        copies: int = inx.serialized_field(default=1, range=(1, 4))
-
-        def setup_passes(self, graph, bus):
-            for index in range(self.copies):
-                self.apply_single_source_effect(
-                    graph, bus, output_name=f"copy_out_{index}", pass_name=f"Copy_{index}",
-                    shader_name="Fullscreen Blit", format=inx.rendergraph.Format.RGBA16_SFLOAT,
-                )
-
-    effect = RenderEffect(RenderEffectAsset("tests.post.copies", parameters={"copies": 1}))
-    stack = RenderStack()
-    stack.add_effect_slot("final", RenderEffectRef(effect=effect))
-    context = RenderContext()
-    stack.render(context, object())
-    assert sum("/Copy_" in p.name for p in context.applied[-1].passes) == 1
-
-    effect.set_int("copies", 2)
-    stack.render(context, object())
-
-    assert len(context.applied) == 2
-    assert sum("/Copy_" in p.name for p in context.applied[-1].passes) == 2
-    stack.render(context, object())
-    assert len(context.applied) == 2

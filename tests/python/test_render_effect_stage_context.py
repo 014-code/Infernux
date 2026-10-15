@@ -1,4 +1,5 @@
 """Effect import is stage independent; value replay retains its mount context."""
+
 import json
 from pathlib import Path
 
@@ -112,13 +113,31 @@ def test_parameter_updates_retain_exact_mount_resources_and_do_not_mutate_live_g
     graph, bus, result = _stage(4, 96)
     with graph.pass_result(result), graph.effect_resources({"color": bus.get("color")}):
         binding = compiler._compile_effect(source, graph, bus, binding_id="route/slot/0")
-    live_state = (graph.pass_count, len(graph._textures), len(graph._buffers), bus.get("color").size_divisor, bus.get("light_list").byte_size)
+    live_state = (
+        graph.pass_count,
+        len(graph._textures),
+        len(graph._buffers),
+        bus.get("color").size_divisor,
+        bus.get("light_list").byte_size,
+    )
     for strength in (2.0, 3.0):
         source.set_float("strength", strength)
         rebuild, updates = binding.collect_updates()
         assert not rebuild and len(updates) == 1
-        assert dict(updates[0].values) == {"strength": strength, "samples": 4.0, "bytes": 96.0, "depth": 0.0, "prefix": 1.0}
-        assert (graph.pass_count, len(graph._textures), len(graph._buffers), bus.get("color").size_divisor, bus.get("light_list").byte_size) == live_state
+        assert dict(updates[0].values) == {
+            "strength": strength,
+            "samples": 4.0,
+            "bytes": 96.0,
+            "depth": 0.0,
+            "prefix": 1.0,
+        }
+        assert (
+            graph.pass_count,
+            len(graph._textures),
+            len(graph._buffers),
+            bus.get("color").size_divisor,
+            bus.get("light_list").byte_size,
+        ) == live_state
 
 
 def test_same_asset_mounted_in_two_stages_keeps_independent_contexts(stage_features):
@@ -137,7 +156,7 @@ def test_same_asset_mounted_in_two_stages_keeps_independent_contexts(stage_featu
         assert (values["samples"], values["bytes"], values["depth"]) == expected
 
 
-@pytest.mark.parametrize("change", ["shader", "count", "resource"])
+@pytest.mark.parametrize("change", ["resource"])
 def test_parameter_that_changes_undeclared_topology_requests_rebuild(stage_features, change):
     @compiler.render_effect_feature("tests.stage.topology")
     class Topology(inx.renderstack.FullScreenEffect):

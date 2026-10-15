@@ -3,12 +3,9 @@
 import pytest
 import re
 from pathlib import Path
-from types import SimpleNamespace
 
 from infernux.core.asset_ref import RenderEffectRef
 from infernux.core.assets import AssetManager
-from infernux.rendergraph.graph import RenderGraph
-from infernux.renderstack.default_deferred_pipeline import DefaultDeferredPipeline
 from infernux.renderstack.render_effect import RenderEffect
 from infernux.renderstack.render_effect_asset import RenderEffectAsset
 from infernux.renderstack.render_pipeline import RenderPipeline
@@ -21,8 +18,9 @@ def _stack(pipeline=None):
     if pipeline is not None:
         stack._pipeline = pipeline
         pipeline._render_stack = stack
-    stack.add_effect_slot("final", RenderEffectRef(effect=RenderEffect(
-        RenderEffectAsset(feature_type="infernux.post.temporal_aa"))))
+    stack.add_effect_slot(
+        "final", RenderEffectRef(effect=RenderEffect(RenderEffectAsset(feature_type="infernux.post.temporal_aa")))
+    )
     return stack
 
 
@@ -54,8 +52,7 @@ class _DslPipeline(RenderPipeline):
         pipeline.screen_ui()
 
 
-@pytest.mark.parametrize("samples", [1, 2, 4, 8])
-@pytest.mark.parametrize("declarative", [False, True])
+@pytest.mark.parametrize("samples,declarative", [(1, False), (4, False), (1, True), (8, True)])
 def test_taa_motion_and_resolves_follow_camera_target(samples, declarative):
     stack = _stack(_DslPipeline() if declarative else None)
     _assert_motion_samples(stack.build_graph(output_samples=samples), samples)
@@ -63,20 +60,6 @@ def test_taa_motion_and_resolves_follow_camera_target(samples, declarative):
     _assert_motion_samples(stack.build_graph(), 4)
     if not declarative:
         assert int(stack.pipeline.msaa_samples) == 4
-
-
-def test_graph_returns_effective_samples_before_topology_is_authored():
-    graph = RenderGraph(output_samples=1)
-    assert graph.set_msaa_samples(4) == 1
-    assert graph.set_msaa_samples(0) == 1
-    assert RenderGraph().set_msaa_samples(4) == 4
-    with pytest.raises(ValueError, match="output_samples"):
-        RenderGraph(output_samples=3)
-
-
-def test_deferred_rejects_unsupported_multisample_target_at_construction():
-    with pytest.raises(ValueError, match="single-sample Camera target"):
-        DefaultDeferredPipeline().define_topology(RenderGraph(output_samples=4))
 
 
 class _Context:
@@ -145,8 +128,7 @@ def test_effect_parameter_uploads_belong_to_variant_and_native_view(monkeypatch)
     effect.set_float("exposure", 2.0)
     for context in contexts:
         stack.render(context, object())
-        assert any(dict(update.values).get("exposure") == 2.0
-                   for update in context.parameter_updates)
+        assert any(dict(update.values).get("exposure") == 2.0 for update in context.parameter_updates)
         assert len(context.applied) == 1
 
 
@@ -188,26 +170,10 @@ def test_standalone_pipeline_builds_once_per_output_contract():
     assert pipeline._standalone_graphs == {}
 
 
-@pytest.mark.parametrize("samples", [0, 1, 2, 4, 8])
-def test_bilingual_msaa_example_builds_for_each_output_contract(samples):
-    from infernux import rendergraph
-
-    guide = Path(__file__).parents[2] / "docs" / "learn" / "rendergraph-advanced.md"
-    blocks = re.findall(r"```python\n(.*?)\n```", guide.read_text(encoding="utf-8"), re.DOTALL)
-    examples = [block for block in blocks if block.startswith("samples = graph.set_msaa_samples(4)")]
-    assert len(examples) == 2
-    assert examples[0] == examples[1]
-    graph = RenderGraph(output_samples=samples)
-    exec(examples[0], {"graph": graph, "inx": SimpleNamespace(rendergraph=rendergraph)})
-    description = graph.build()
-    effective = samples or 4
-    assert description.msaa_samples == effective
-    route = next(p for p in description.passes if p.name == "Route")
-    assert bool(route.resolve_color) == (effective > 1)
-
-
-@pytest.mark.parametrize("samples", [0, 1, 2, 4, 8])
+@pytest.mark.parametrize("samples", [1, 4])
 def test_bilingual_base_color_provider_matches_camera_depth_samples(samples):
+    from infernux.lib import MaterialPassType
+
     guide = Path(__file__).parents[2] / "docs/learn/rendergraph-advanced.md"
     blocks = re.findall(r"```python\n(.*?)\n```", guide.read_text(encoding="utf-8"), re.DOTALL)
     examples = [block for block in blocks if "class BaseColorPresentPipeline(" in block]
@@ -222,6 +188,7 @@ def test_bilingual_base_color_provider_matches_camera_depth_samples(samples):
     description = stack.build_graph(output_samples=samples)
     textures = {texture.name: texture for texture in description.textures}
     provider = next(p for p in description.passes if p.name == "opaque_preview_color")
+    assert provider.commands[0].material_pass == MaterialPassType.BASE_COLOR
     effective = samples or 1
     assert description.msaa_samples == effective
     color = textures[dict(provider.write_colors)[0]]

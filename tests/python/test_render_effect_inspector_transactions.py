@@ -1,4 +1,5 @@
 """Rejected Inspector edits cannot poison the published RenderEffect view."""
+
 from contextlib import nullcontext
 import json
 from pathlib import Path
@@ -45,10 +46,15 @@ def effect_document(engine, tmp_path, monkeypatch, request):
     folder = Path(database.assets_root) / tmp_path.name
     folder.mkdir()
     source_path = folder / "Bloom.effect"
-    source_path.write_text(dump_render_effect_document(RenderEffectAsset(
-        feature_type="infernux.post.bloom",
-        parameters={"intensity": 0.5, "max_iterations": 3},
-    )), encoding="utf-8")
+    source_path.write_text(
+        dump_render_effect_document(
+            RenderEffectAsset(
+                feature_type="infernux.post.bloom",
+                parameters={"intensity": 0.5, "max_iterations": 3},
+            )
+        ),
+        encoding="utf-8",
+    )
     result = AssetManager.import_asset(str(source_path), database=database)
     assert result.succeeded, result.error
     source_bytes = source_path.read_bytes()
@@ -56,10 +62,18 @@ def effect_document(engine, tmp_path, monkeypatch, request):
     path = source_path
     if is_group:
         path = folder / "Post.effectgroup"
-        path.write_text(dump_render_effect_document(RenderEffectGroupAsset(entries=(
-            RenderEffectGroupEntry("bloom", EffectAssetReference(guid=result.guid),
-                                   overrides={"intensity": 0.75}),
-        ))), encoding="utf-8")
+        path.write_text(
+            dump_render_effect_document(
+                RenderEffectGroupAsset(
+                    entries=(
+                        RenderEffectGroupEntry(
+                            "bloom", EffectAssetReference(guid=result.guid), overrides={"intensity": 0.75}
+                        ),
+                    )
+                )
+            ),
+            encoding="utf-8",
+        )
         result = AssetManager.import_asset(str(path), database=database)
         assert result.succeeded, result.error
     reference = RenderEffectRef(guid=result.guid)
@@ -72,9 +86,15 @@ def effect_document(engine, tmp_path, monkeypatch, request):
     assert controller is not None
     try:
         yield SimpleNamespace(
-            core=core, manager=manager, effect=effect, controller=controller,
-            path=path, reference=reference, is_group=is_group,
-            source_path=source_path, source_bytes=source_bytes,
+            core=core,
+            manager=manager,
+            effect=effect,
+            controller=controller,
+            path=path,
+            reference=reference,
+            is_group=is_group,
+            source_path=source_path,
+            source_bytes=source_bytes,
             initial=0.75 if is_group else 0.5,
         )
     finally:
@@ -91,7 +111,10 @@ def _view(effect):
 def _accept_undo_save_reopen(document, old_view, *, requested=1.75, expected=1.75):
     effect, controller = document.effect, document.controller
     assert apply_render_effect_parameter_edit(
-        effect, "intensity", requested, resource_controller=controller,
+        effect,
+        "intensity",
+        requested,
+        resource_controller=controller,
     )
     assert old_view.intensity == pytest.approx(document.initial)
     assert effect.get_float("intensity") == pytest.approx(expected)
@@ -120,7 +143,11 @@ def _accept_undo_save_reopen(document, old_view, *, requested=1.75, expected=1.7
     assert _view(reopened).intensity == pytest.approx(expected)
 
 
-@pytest.mark.parametrize("rejection", ["no_document", "journal_disabled", "journal_executing", "exception"])
+@pytest.mark.parametrize(
+    "effect_document,rejection",
+    [("effect", "no_document"), ("group", "journal_disabled"), ("effect", "journal_executing"), ("group", "exception")],
+    indirect=["effect_document"],
+)
 def test_rejected_edit_preserves_view_and_accepts_identical_retry(effect_document, monkeypatch, rejection):
     document = effect_document
     effect, controller, manager = document.effect, document.controller, document.manager
@@ -138,15 +165,17 @@ def test_rejected_edit_preserves_view_and_accepts_identical_retry(effect_documen
     scope = manager.suppress() if rejection == "journal_executing" else nullcontext()
     with monkeypatch.context() as local, scope:
         if rejection == "exception":
+
             def reject(*_args, **_kwargs):
                 raise RuntimeError("injected document submission rejection")
+
             local.setattr(controller, "apply_document", reject)
             with pytest.raises(RuntimeError, match="injected document submission rejection"):
-                apply_render_effect_parameter_edit(effect, "intensity", 1.75,
-                                                   resource_controller=active_controller)
+                apply_render_effect_parameter_edit(effect, "intensity", 1.75, resource_controller=active_controller)
         else:
-            assert not apply_render_effect_parameter_edit(effect, "intensity", 1.75,
-                                                          resource_controller=active_controller)
+            assert not apply_render_effect_parameter_edit(
+                effect, "intensity", 1.75, resource_controller=active_controller
+            )
     manager.enabled = True
     if document.is_group:
         effect.bind_group_document_controller(controller)
@@ -166,8 +195,7 @@ def test_invalid_candidate_preserves_view_and_next_valid_edit(effect_document):
     original = effect.to_dict()
     revision = effect.revision
     with pytest.raises(ValueError, match="could not convert string to float"):
-        apply_render_effect_parameter_edit(effect, "intensity", "not-a-number",
-                                           resource_controller=document.controller)
+        apply_render_effect_parameter_edit(effect, "intensity", "not-a-number", resource_controller=document.controller)
     assert effect.to_dict() == original and effect.revision == revision
     assert _view(effect) is view and view.intensity == pytest.approx(document.initial)
     assert not document.core.action_journal.can_undo
