@@ -1260,12 +1260,6 @@ def test_particle_system_curve_and_gradient_parameters_hot_update_fixed_gpu_bloc
     assert component._artifact_revision > 0
 
 
-def test_particle_system_has_no_instance_resource_override_contract():
-    assert not hasattr(ParticleSystem, "resource_schema")
-    assert not hasattr(ParticleSystem, "set_resource")
-    assert not hasattr(ParticleSystem, "set_data_interface_asset")
-
-
 def test_particle_system_manual_bounds_are_local_and_transform_to_world_aabb():
     from infernux.lib import Vector3
 

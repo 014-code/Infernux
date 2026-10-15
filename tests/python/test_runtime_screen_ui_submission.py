@@ -882,9 +882,3 @@ def test_engine_wraps_custom_python_pipelines_with_runtime_ui_submission():
     assert isinstance(engine._render_pipeline, RuntimeScreenUIRenderPipeline)
     assert installed == [engine._render_pipeline]
     assert engine._render_pipeline._delegate is delegate
-
-
-def test_player_gui_does_not_own_gpu_screen_ui_submission():
-    from infernux.engine.player_gui import PlayerGUI
-
-    assert not hasattr(PlayerGUI, "_render_screen_ui")

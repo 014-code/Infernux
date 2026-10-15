@@ -182,10 +182,13 @@ def test_wheel_validation_is_memoized_until_the_file_changes(tmp_path, monkeypat
 def test_double_click_and_enter_request_a_launch(tmp_path):
     _app()
     from ui_project_list import ProjectListPane
+    from i18n import tr
     records = [SimpleNamespace(project_id=str(index), name=f"Project {index}", created_at="",
                                path=str(tmp_path)) for index in range(2)]
     pane = ProjectListPane(SimpleNamespace(all_projects=lambda: records,
                                            get_project=lambda pid: records[int(pid)]))
+    actions = pane.project_cards["1"]._actions_menu.actions()
+    assert all(action.text() != tr("Migrate Project") for action in actions)
     launched = []
     pane.launch_requested.connect(launched.append)
     pane.project_cards["1"].mouseDoubleClickEvent(None)
@@ -318,6 +321,7 @@ def test_forge_combo_carries_meta_and_tag():
 def test_unavailable_rows_keep_their_menu_and_offer_a_fix(tmp_path, monkeypatch):
     _app()
     import ui_project_list
+    from PySide6.QtWidgets import QLabel
     project = tmp_path / "Needs engine"
     (project / "ProjectSettings").mkdir(parents=True)
     (project / "ProjectSettings" / "PythonRuntime.json").write_text('{"pythonVersion": "3.13"}', encoding="utf-8")
@@ -339,6 +343,11 @@ def test_unavailable_rows_keep_their_menu_and_offer_a_fix(tmp_path, monkeypatch)
             assert card.isEnabled() and not card.launchable
             assert card._actions_button.isEnabled()
             assert not card._launch_button.isVisibleTo(card)
+        assert not engine.can_select
+        assert any(action.text() == ui_project_list.tr("Remove from Hub") for action in engine._actions_menu.actions())
+        assert any(label.text().startswith(ui_project_list.tr("Install required version")) for label in engine.findChildren(QLabel))
+        pane.select_project("engine")
+        assert pane.get_selected_project_id() is None
         engine._fix_button.click()
         gone._fix_button.click()
         assert installs == ["0.9.0"] and relocations == ["gone"]

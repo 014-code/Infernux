@@ -1,26 +1,30 @@
 from __future__ import annotations
 
-from test_inxpackage_plugins import (
+import json
+import os
+from pathlib import Path
+import sys
+from types import SimpleNamespace
+
+import pytest
+
+from infernux.engine.path_utils import path_key
+import infernux.plugins.preload as preload_module
+from infernux.plugins import (
     InxPackage,
-    Path,
     PluginManager,
     PluginRegistry,
-    SimpleNamespace,
+    localized_intro,
+    parse_markdown_blocks,
+    player_file_exported,
+    split_markdown_images,
+)
+from infernux.plugins.project_index import project_guid_paths
+from test_inxpackage_plugins import (
     _export,
     _meta,
     _project,
     _source,
-    json,
-    localized_intro,
-    os,
-    parse_markdown_blocks,
-    path_key,
-    player_file_exported,
-    preload_module,
-    project_guid_paths,
-    pytest,
-    split_markdown_images,
-    sys,
     _fake_inxpack as _fake_inxpack,
 )
 
@@ -1167,29 +1171,43 @@ def test_runtime_plugin_panel_is_registered_and_removed_with_package(tmp_path):
 
 
 @pytest.mark.parametrize("teardown", ["uninstall", "disable", "shutdown"])
-def test_plugin_commands_and_shortcuts_follow_preload_lifetime(tmp_path, monkeypatch, teardown):
+def test_plugin_authoring_resources_follow_preload_lifetime(tmp_path, monkeypatch, teardown):
     from infernux.engine.interaction.commands import EditorCommandRegistry
     from infernux.engine.interaction.shortcuts import ShortcutRouter
+    from infernux.engine.interaction.handles import EditorHandleRegistry
 
     monkeypatch.setattr(EditorCommandRegistry, "_instance", None)
     monkeypatch.setattr(ShortcutRouter, "_instance", None)
+    monkeypatch.setattr(EditorHandleRegistry, "_instance", None)
     commands = EditorCommandRegistry.instance()
     shortcuts = ShortcutRouter.instance()
+    handles = EditorHandleRegistry.instance()
     source = _source(tmp_path / "source", "vendor/authoring")
     editor = source / "editor"
     editor.mkdir()
     (editor / "startup.py").write_text(
-        "from infernux.lifecycle import InxPreload\n"
-        "from infernux.engine.interaction.commands import EditorCommand, EditorCommandRegistry\n"
-        "from infernux.engine.interaction.shortcuts import KeyChord, ShortcutBinding, ShortcutRouter\n"
+        'from pathlib import Path\n'
+        'from infernux.editor import register_handle_provider\n'
+        'from infernux.lifecycle import InxPreload\n'
+        "ROOT = ''\n"
+        'def record(value):\n'
+        "    with Path(ROOT, 'handles.log').open('a', encoding='utf-8') as stream: stream.write(str(value) + '\\n')\n"
+        'def draw(handles):\n'
+        "    handles.position('pivot', (0, 0, 0), lambda value: record(('change', tuple(value))), on_cancel=lambda value: record(('cancel', tuple(value))))\n"
+        'from infernux.engine.interaction.commands import EditorCommand, EditorCommandRegistry\n'
+        'from infernux.engine.interaction.shortcuts import KeyChord, ShortcutBinding, ShortcutRouter\n'
         "EditorCommandRegistry.instance().register(EditorCommand('vendor.create', lambda ctx: 'created', display_name='创建关卡'))\n"
-        "class Startup(InxPreload):\n"
-        "    def preload(self, context):\n"
+        'class Startup(InxPreload):\n'
+        '    def preload(self, context):\n'
+        '        global ROOT\n'
+        '        ROOT = context.project_root\n'
+        "        register_handle_provider('vendor.handles', draw, on_retire=lambda: record(('retire',)))\n"
         "        ShortcutRouter.instance().register(ShortcutBinding('vendor.create', KeyChord.parse('Ctrl+F9'), binding_id='vendor.create.key'))\n",
         encoding="utf-8",
     )
     package = _export(source, tmp_path / "authoring.inxpkg")
-    manager = PluginManager(str(_project(tmp_path / "project")))
+    project = _project(tmp_path / "project")
+    manager = PluginManager(str(project))
     try:
         manager.install_package(str(package), install_dependencies=False)
         assert commands.get("vendor.create").display_name == "创建关卡"
@@ -1199,6 +1217,10 @@ def test_plugin_commands_and_shortcuts_follow_preload_lifetime(tmp_path, monkeyp
             assert commands.get("vendor.create") is not None
             assert len(shortcuts.bindings) == 1
             assert not manager.preloads.failures
+        handles.collect(object())
+        assert handles.begin_capture("vendor.handles:pivot", (0, 0, 5), (0, 0, -1))
+        handles.update_capture((1, 0, 5), (0, 0, -1))
+
         if teardown == "uninstall":
             manager.uninstall("vendor/authoring")
         elif teardown == "disable":
@@ -1207,59 +1229,6 @@ def test_plugin_commands_and_shortcuts_follow_preload_lifetime(tmp_path, monkeyp
             manager.shutdown()
         assert commands.get("vendor.create") is None
         assert shortcuts.bindings == ()
-        if teardown == "disable":
-            manager.set_enabled("vendor/authoring", True)
-            assert commands.get("vendor.create") is not None
-            assert len(shortcuts.bindings) == 1
-    finally:
-        manager.shutdown()
-
-
-@pytest.mark.parametrize("teardown", ["uninstall", "disable", "shutdown"])
-def test_plugin_handles_cancel_capture_and_retire_with_preload_lifetime(
-    tmp_path, monkeypatch, teardown
-):
-    from infernux.engine.interaction.handles import EditorHandleRegistry
-
-    monkeypatch.setattr(EditorHandleRegistry, "_instance", None)
-    handles = EditorHandleRegistry.instance()
-    source = _source(tmp_path / "source", "vendor/handles")
-    editor = source / "editor"
-    editor.mkdir()
-    (editor / "startup.py").write_text(
-        "from pathlib import Path\n"
-        "from infernux.editor import register_handle_provider\n"
-        "from infernux.lifecycle import InxPreload\n"
-        "ROOT = ''\n"
-        "def record(value):\n"
-        "    with Path(ROOT, 'handles.log').open('a', encoding='utf-8') as stream: stream.write(str(value) + '\\n')\n"
-        "def draw(handles):\n"
-        "    handles.position('pivot', (0, 0, 0), lambda value: record(('change', tuple(value))), on_cancel=lambda value: record(('cancel', tuple(value))))\n"
-        "class Startup(InxPreload):\n"
-        "    def preload(self, context):\n"
-        "        global ROOT\n"
-        "        ROOT = context.project_root\n"
-        "        register_handle_provider('vendor.handles', draw, on_retire=lambda: record(('retire',)))\n",
-        encoding="utf-8",
-    )
-    package = _export(source, tmp_path / "handles.inxpkg")
-    project = _project(tmp_path / "project")
-    manager = PluginManager(str(project))
-    try:
-        manager.install_package(str(package), install_dependencies=False)
-        handles.collect(object())
-        assert handles.begin_capture(
-            "vendor.handles:pivot", (0, 0, 5), (0, 0, -1)
-        )
-        handles.update_capture((1, 0, 5), (0, 0, -1))
-
-        if teardown == "uninstall":
-            manager.uninstall("vendor/handles")
-        elif teardown == "disable":
-            manager.set_enabled("vendor/handles", False)
-        else:
-            manager.shutdown()
-
         assert handles.active_capture_id == ""
         assert handles.frame_handles == ()
         assert handles.providers == ()
@@ -1268,6 +1237,10 @@ def test_plugin_handles_cancel_capture_and_retire_with_preload_lifetime(
             "('cancel', (0.0, 0.0, 0.0))",
             "('retire',)",
         ]
+        if teardown == "disable":
+            manager.set_enabled("vendor/authoring", True)
+            assert commands.get("vendor.create") is not None
+            assert len(shortcuts.bindings) == 1
     finally:
         manager.shutdown()
 

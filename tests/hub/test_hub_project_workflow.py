@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import sqlite3
-import zipfile
 from pathlib import Path
 
 import pytest
@@ -231,18 +230,29 @@ def test_source_project_creation_rejects_another_engine_before_creating_files(tm
     assert not list(tmp_path.iterdir())
 
 
-def test_database_allows_same_name_but_deduplicates_canonical_path(tmp_path: Path):
-    first = _make_project(tmp_path / "one")
-    second = _make_project(tmp_path / "two")
+def test_project_registry_preserves_identity_across_registration_duplicates_and_relocation(tmp_path: Path):
+    first = _make_project(tmp_path / "one", name="Same Name", version="0.2.1")
+    second = _make_project(tmp_path / "two", name="Same Name")
+    relocated = _make_project(tmp_path / "Relocated", version="0.3.0")
     with ProjectDatabase(tmp_path / "projects.db") as db:
-        first_record = db.add_project("Same Name", str(first))
-        second_record = db.add_project("Same Name", str(second))
-
-        assert first_record is not None
-        assert second_record is not None
+        model = ProjectModel(db)
+        first_record, info = model.register_existing_project(str(first))
+        second_record, _ = model.register_existing_project(str(second))
+        assert first_record.name == second_record.name == "Same Name"
+        assert info.engine_version == "0.2.1"
         assert first_record.project_id != second_record.project_id
         assert db.add_project("Another Name", str(first / ".")) is None
         assert len(db.all_projects()) == 2
+        with pytest.raises(RuntimeError, match="already"):
+            model.register_existing_project(str(first))
+
+        updated, info = model.relocate_project(first_record.project_id, str(relocated))
+        assert updated.project_id == first_record.project_id
+        assert updated.name == "Relocated"
+        assert Path(updated.path) == relocated.resolve()
+        assert info.engine_version == "0.3.0"
+        assert db.find_project_by_path(str(first)) is None
+        assert db.get_project(second_record.project_id).path == str(second.resolve())
 
 
 def test_database_rejects_noncurrent_schema(tmp_path: Path):
@@ -264,33 +274,6 @@ def test_database_rejects_noncurrent_schema(tmp_path: Path):
 
     with pytest.raises(RuntimeError, match="current schema"):
         ProjectDatabase(db_path)
-
-
-def test_register_existing_project_rejects_duplicate_path(tmp_path: Path):
-    project = _make_project(tmp_path / "Existing", version="0.2.1")
-    with ProjectDatabase(tmp_path / "projects.db") as db:
-        model = ProjectModel(db)
-        record, info = model.register_existing_project(str(project))
-        assert record.name == "Existing"
-        assert info.engine_version == "0.2.1"
-        with pytest.raises(RuntimeError, match="already"):
-            model.register_existing_project(str(project))
-
-
-def test_relocate_project_updates_existing_record(tmp_path: Path):
-    original = _make_project(tmp_path / "Original")
-    relocated = _make_project(tmp_path / "Relocated", version="0.3.0")
-    with ProjectDatabase(tmp_path / "projects.db") as db:
-        model = ProjectModel(db)
-        record, _ = model.register_existing_project(str(original))
-
-        updated, info = model.relocate_project(record.project_id, str(relocated))
-
-        assert updated.project_id == record.project_id
-        assert updated.name == "Relocated"
-        assert Path(updated.path) == relocated.resolve()
-        assert info.engine_version == "0.3.0"
-        assert db.find_project_by_path(str(original)) is None
 
 
 def test_new_project_uses_structural_staging_but_creates_runtime_at_final_path(tmp_path: Path, monkeypatch):
@@ -482,8 +465,6 @@ def test_new_project_failure_removes_only_staging(tmp_path: Path, monkeypatch):
     assert unrelated.is_dir()
     assert not (tmp_path / "FailedProject").exists()
     assert not list(tmp_path.glob(".infernux-create-*"))
-
-
 
 
 def test_language_resolution_uses_windows_style_zh_prefix():

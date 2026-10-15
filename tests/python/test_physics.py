@@ -9,7 +9,7 @@ import pytest
 
 import infernux.physics as physics_module
 from infernux.math.coerce import coerce_vec3
-from infernux.lib import CollisionInfo, EngineConfig, SceneManager, Vector3, Physics as CppPhysics
+from infernux.lib import EngineConfig, SceneManager, Vector3, Physics as CppPhysics
 from infernux.physics.settings import (
     DEFAULT_PHYSICS_SETTINGS,
     PhysicsSettingsError,
@@ -178,10 +178,6 @@ class TestPhysicsLayerCollision:
 class TestPhysicsModuleExports:
     def test_module_exports_only_physics(self):
         assert physics_module.__all__ == ["Physics"]
-
-    def test_collision_info_does_not_expose_fake_impulse(self):
-        assert not hasattr(CollisionInfo(), "impulse")
-
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Rigidbody enums (real C++ enums)

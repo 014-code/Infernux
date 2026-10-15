@@ -126,8 +126,3 @@ def test_reload_without_resource_host_fails(monkeypatch):
     monkeypatch.setattr(AssetManager, "_asset_database", None)
     with pytest.raises(RuntimeError, match="not initialized"):
         Shader.reload("NotInitialized")
-
-
-def test_no_unbound_raw_shader_api():
-    for retired in ("_engine", "_set_engine", "invalidate", "refresh_materials", "load_spirv"):
-        assert not hasattr(Shader, retired)

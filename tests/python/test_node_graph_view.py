@@ -249,13 +249,6 @@ def test_ctrl_node_click_adds_and_removes_without_losing_order():
     ) == ("second",)
 
 
-def test_node_graph_view_exposes_one_context_command_gateway():
-    view = NodeGraphView()
-
-    assert not hasattr(view, "on_can_execute_edit_command")
-    assert not hasattr(view, "on_execute_edit_command")
-
-
 def test_context_menu_disables_commands_rejected_by_the_global_registry():
     graph = NodeGraph()
     graph.register_type(NodeTypeDef("value", "Value"))

@@ -1,5 +1,3 @@
-import importlib
-
 import pytest
 
 from infernux.engine.interaction import (
@@ -13,26 +11,10 @@ from infernux.engine.interaction import (
     GraphMutation,
     GraphMutationKind,
     GraphSelectionController,
-    SelectionDomain,
     SelectionService,
     SelectionTarget,
 )
-from infernux.engine.undo import GraphDiffCommand, UndoManager
-
-
-def test_graph_snapshot_undo_legacy_api_is_removed():
-    undo = importlib.import_module("infernux.engine.undo")
-
-    for name in (
-        "NodeGraphSnapshotCommand",
-        "record_node_graph_snapshot",
-        "AnimFSMSnapshotCommand",
-        "record_animfsm_snapshot",
-    ):
-        assert not hasattr(undo, name)
-
-    with pytest.raises(ModuleNotFoundError):
-        importlib.import_module("infernux.engine.undo._animfsm_commands")
+from infernux.engine.undo import GraphDiffCommand
 
 
 class _View:

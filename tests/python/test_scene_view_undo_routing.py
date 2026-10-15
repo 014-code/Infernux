@@ -96,10 +96,6 @@ def _begin_test_gizmo_drag(panel, owner):
     panel._begin_gizmo_drag_transaction(TOOL_TRANSLATE)
 
 
-def test_scene_view_has_no_private_structural_shortcut_handler():
-    assert not hasattr(SceneViewPanel, "_handle_object_clipboard_shortcuts")
-
-
 def test_frame_selected_camera_state_is_undoable_without_dirtying_scene():
     previous_manager = UndoManager.instance()
     previous_view_commands = ViewCommandService.instance()

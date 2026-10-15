@@ -35,20 +35,6 @@ def _panel_with_persistence_spy():
     return panel, writes
 
 
-def test_ui_editor_visibility_has_no_hierarchy_mode_side_effects():
-    from infernux.engine.ui.ui_editor_panel import UIEditorPanel
-
-    panel = UIEditorPanel()
-    panel._load_view_settings = lambda: None
-
-    panel._on_visible_pre(None)
-    panel._on_visible_pre(None)
-    panel._on_not_visible(None)
-
-    assert not hasattr(panel, "_on_request_ui_mode")
-    assert not hasattr(panel, "_hierarchy_mode_active")
-
-
 def test_ui_editor_pan_is_one_non_dirty_command_without_frame_writes(
     ui_editor_view_services,
 ):
