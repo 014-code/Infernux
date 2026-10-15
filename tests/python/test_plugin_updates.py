@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from infernux.plugins import InxPackage, PackageConflictError, PackageUpdateConflict, PluginManager
-from test_inxpackage_plugins import _fake_inxpack, _project, _source
+from test_inxpackage_plugins import _fake_inxpack as _fake_inxpack, _project, _source
 
 
 @pytest.fixture
@@ -126,41 +126,70 @@ def test_source_update_is_explicit_and_preserves_guid_and_local_edits(installed,
         assert (root / "runtime/note.txt").read_text() == "second"
 
 
-def test_source_update_acquires_on_worker_and_publishes_on_owner_thread(installed):
+def test_successive_updates_preserve_disabled_identity_author_files_and_guid_locations(installed):
+    import py_compile
+
     manager, source, root = installed
     before = manager.registry.installed_record("vendor/plugin")
+    original_guid = next(item["guid"] for item in before["files"] if item["logical_path"] == "runtime/note.txt")
+    manager.set_enabled("vendor/plugin", False)
+    extra = root / "runtime/author.py"
+    extra.write_text("value = 1\n", encoding="utf-8")
+    author_bytecode = Path(py_compile.compile(str(extra), doraise=True))
+    owned_bytecode = Path(py_compile.compile(str(root / "runtime/retired.py"), doraise=True))
+    meta = root / "runtime/note.txt.meta"
+    document = json.loads(meta.read_bytes())
+    document["importer_settings"] = {"custom": True}
+    meta.write_text(json.dumps(document), encoding="utf-8")
     package = next_package(source)
+    before_download = manager.registry.installed_record("vendor/plugin")
     with ThreadPoolExecutor(max_workers=1) as executor:
         acquired = executor.submit(manager.download_source, package).result(timeout=30)
-    assert manager.registry.installed_record("vendor/plugin") == before
+    assert manager.registry.installed_record("vendor/plugin") == before_download
     assert (root / "runtime/note.txt").read_text() == "first"
-    manager.install_package(acquired["path"], source=acquired["source"], update=True, install_dependencies=False)
-    assert manager.registry.installed_record("vendor/plugin")["version"] == "2.0.0"
-    assert (root / "runtime/note.txt").read_text() == "second"
-
-
-def test_update_preserves_identity_disabled_state_and_user_files(installed):
-    manager, source, root = installed
-    before = manager.registry.installed_record("vendor/plugin")
-    manager.set_enabled("vendor/plugin", False)
-    extra = root / "runtime/author.txt"
-    extra.write_text("my work", encoding="utf-8")
-    package = next_package(source)
-    state = manager.install_package(package, update=True, install_dependencies=False)
+    state = manager.install_package(acquired["path"], source=acquired["source"],
+                                    update=True, install_dependencies=False)
     after = manager.registry.installed_record("vendor/plugin")
     assert state.enabled is False
     assert after["version"] == "2.0.0"
     assert after["control"]["guid"] == before["control"]["guid"]
-    old = next(item for item in before["files"] if item["logical_path"] == "runtime/note.txt")
-    new = next(item for item in after["files"] if item["logical_path"] == "runtime/note.txt")
-    assert new["guid"] == old["guid"]
+    assert next(item["guid"] for item in after["files"] if item["logical_path"] == "runtime/note.txt") == original_guid
     assert (root / "runtime/note.txt").read_text() == "second"
     assert (root / "runtime/new.txt").read_text() == "new"
+    assert json.loads(meta.read_bytes())["importer_settings"] == {"custom": True}
     assert not (root / "runtime/retired.txt").exists()
     assert not (root / "runtime/retired.txt.meta").exists()
-    assert extra.read_text() == "my work"
+    assert not owned_bytecode.exists()
+    assert extra.is_file() and author_bytecode.is_file()
+    assert extra.read_text(encoding="utf-8") == "value = 1\n"
+
+    note = root / "runtime/note.txt"
+    moved = root / "runtime/moved.txt"
+    note.rename(moved)
+    meta.rename(Path(str(moved) + ".meta"))
+    publisher_guid = next(item["guid"] for item in after["files"] if item["logical_path"] == "runtime/new.txt")
+    (source / "runtime/new.txt").rename(source / "runtime/renamed.txt")
+    (source / "runtime/renamed.txt.meta").write_bytes((root / "runtime/new.txt.meta").read_bytes())
+    (source / "runtime/note.txt").write_text("third", encoding="utf-8")
+    manifest = source / "inx_package.json"
+    document = json.loads(manifest.read_text(encoding="utf-8"))
+    document["version"] = "3.0.0"
+    manifest.write_text(json.dumps(document), encoding="utf-8")
+    third = source.parent / "third.inxpkg"
+    InxPackage.export_source(str(source), str(third))
+    manager.install_package(str(third), update=True, install_dependencies=False)
+    current = manager.registry.installed_record("vendor/plugin")
+    assert current["version"] == "3.0.0" and current["enabled"] is False
+    assert moved.read_text() == "third"
+    assert not note.exists()
+    assert not (root / "runtime/new.txt").exists()
+    assert (root / "runtime/renamed.txt").read_text() == "new"
+    assert next(item["guid"] for item in current["files"] if item["logical_path"] == "runtime/renamed.txt") == publisher_guid
+    assert current["control"]["guid"] == before["control"]["guid"]
+    assert extra.read_text(encoding="utf-8") == "value = 1\n"
     manager.uninstall("vendor/plugin")
-    assert extra.read_text() == "my work"
+    assert extra.is_file() and author_bytecode.is_file()
+    assert extra.read_text(encoding="utf-8") == "value = 1\n"
 
 
 def test_local_edits_require_explicit_overwrite_and_leave_pin_unchanged(installed):
@@ -176,17 +205,6 @@ def test_local_edits_require_explicit_overwrite_and_leave_pin_unchanged(installe
     assert note.read_text() == "local change"
     manager.install_package(package, update=True, overwrite_modified=True, install_dependencies=False)
     assert note.read_text() == "second"
-
-
-def test_user_moved_asset_is_updated_at_its_guid_location(installed):
-    manager, source, root = installed
-    note = root / "runtime/note.txt"
-    moved = root / "runtime/moved.txt"
-    note.rename(moved)
-    Path(str(note) + ".meta").rename(str(moved) + ".meta")
-    manager.install_package(next_package(source), update=True, install_dependencies=False)
-    assert moved.read_text() == "second"
-    assert not note.exists()
 
 
 def test_regenerated_guid_is_rejected_even_with_overwrite_consent(installed):
@@ -233,16 +251,6 @@ def test_removed_local_edits_and_importer_settings_require_consent(installed, se
         manager.install_package(next_package(source), update=True, install_dependencies=False)
     assert any(path.endswith("retired.txt.meta") for path in caught.value.paths)
     assert meta.exists()
-
-
-def test_retained_local_importer_settings_survive_update(installed):
-    manager, source, root = installed
-    meta = root / "runtime/note.txt.meta"
-    document = json.loads(meta.read_bytes())
-    document["importer_settings"] = {"custom": True}
-    meta.write_text(json.dumps(document), encoding="utf-8")
-    manager.install_package(next_package(source), update=True, install_dependencies=False)
-    assert json.loads(meta.read_bytes())["importer_settings"] == {"custom": True}
 
 
 def test_editor_generated_file_observations_are_not_author_edits(installed):
@@ -429,84 +437,52 @@ def test_download_rejects_an_archive_with_a_different_pinned_version(tmp_path, m
     assert Path(manager.registry.path).read_bytes() == registry_before
 
 
-def test_bytecode_is_removed_with_retired_source(installed):
-    manager, source, root = installed
-    # An owned source is required; a user-added script and its cache remain untouched.
-    extra = root / "runtime/author.py"
-    extra.write_text("value = 1\n", encoding="utf-8")
-    import py_compile
-    bytecode = Path(py_compile.compile(str(extra), doraise=True))
-    owned_bytecode = Path(py_compile.compile(str(root / "runtime/retired.py"), doraise=True))
-    manager.install_package(next_package(source), update=True, install_dependencies=False)
-    assert extra.exists()
-    assert bytecode.exists()
-    assert not owned_bytecode.exists()
-
-
-def test_publisher_importer_updates_apply_when_not_locally_modified(installed):
-    manager, source, root = installed
-    meta = source / "runtime/note.txt.meta"
-    document = json.loads((root / "runtime/note.txt.meta").read_bytes())
-    document["importer_settings"] = {"publisher": "new default"}
-    meta.write_text(json.dumps(document), encoding="utf-8")
-    manager.install_package(next_package(source), update=True, install_dependencies=False)
-    assert json.loads((root / "runtime/note.txt.meta").read_bytes())["importer_settings"] == {"publisher": "new default"}
-
-
-def test_exact_update_download_does_not_change_the_project_pin(installed, monkeypatch):
+def test_version_view_acquires_exact_remote_release_before_explicit_publication(installed, monkeypatch):
+    from types import SimpleNamespace
     from infernux.plugins import github_releases
+    from infernux.engine.ui.plugin_versions import PluginVersionsView
+    from infernux.engine.ui.plugin_install_progress import PluginInstallProgressService
+
     manager, source, root = installed
     document = manager.registry.load()
     document["installed"][0]["source"] = {"type": "github", "location": "https://github.com/vendor/plugin"}
     manager.registry.save(document)
     package = next_package(source)
-    seen = []
+    seen, operations = [], []
 
     def resolve(repository, workspace, **kwargs):
         seen.append((repository, kwargs["release_tag"], kwargs["expected_reference"]))
         return github_releases.GitHubReleasePackage(package, {"version": "2.0.0", "release_tag": "v2.0.0"})
 
     monkeypatch.setattr(github_releases, "resolve_github_release", resolve)
+    monkeypatch.setattr(PluginInstallProgressService, "_instance", SimpleNamespace(
+        begin=lambda **kwargs: (operations.append(kwargs), True)[1],
+    ))
     before = Path(manager.registry.path).read_bytes()
-    result = manager.download_update("vendor/plugin", "v2.0.0")
+    view = PluginVersionsView()
+    view.download(manager, "vendor/plugin", "v2.0.0")
+    operation = operations[0]
+    release = operation["work"](lambda *args: None)
     assert seen == [("https://github.com/vendor/plugin", "v2.0.0", "vendor/plugin")]
-    assert result["source"]["type"] == "github"
-    assert result["source"]["release_tag"] == "v2.0.0"
+    assert release["source"]["type"] == "github"
+    assert release["source"]["release_tag"] == "v2.0.0"
     assert Path(manager.registry.path).read_bytes() == before
     assert (root / "runtime/note.txt").read_text() == "first"
+    (root / "runtime/note.txt").write_text("local", encoding="utf-8")
+    operation["complete"](True, release, "")
+    assert "vendor/plugin" in view.pending
+    assert Path(manager.registry.path).read_bytes() == before
+    assert (root / "runtime/note.txt").read_text() == "local"
+    view.publish(manager, "vendor/plugin", overwrite=True)
+    assert "vendor/plugin" not in view.pending
+    assert manager.registry.installed_record("vendor/plugin")["version"] == "2.0.0"
+    assert (root / "runtime/note.txt").read_text() == "second"
 
 
 def test_local_author_update_does_not_download_remote(installed):
     manager, source, root = installed
     with pytest.raises(ValueError, match="Local author packages"):
         manager.download_update("vendor/plugin", "v2.0.0")
-
-
-def test_version_view_keeps_download_separate_from_publication(installed, monkeypatch):
-    from infernux.engine.ui.plugin_versions import PluginVersionsView
-    from infernux.engine.ui.plugin_install_progress import PluginInstallProgressService
-    from types import SimpleNamespace
-    manager, source, root = installed
-    package = next_package(source)
-    operations = []
-    monkeypatch.setattr(PluginInstallProgressService, "_instance", SimpleNamespace(
-        begin=lambda **kwargs: (operations.append(kwargs), True)[1],
-    ))
-    monkeypatch.setattr(manager, "download_update", lambda ref, tag, **kwargs: {
-        "reference": ref, "path": package, "source": {"type": "github", "location": "https://github.com/vendor/plugin"},
-    })
-    view = PluginVersionsView()
-    view.download(manager, "vendor/plugin", "v2.0.0")
-    operation = operations[0]
-    release = operation["work"](lambda *args: None)
-    assert manager.registry.installed_record("vendor/plugin")["version"] == "1.0.0"
-    (root / "runtime/note.txt").write_text("local", encoding="utf-8")
-    operation["complete"](True, release, "")
-    assert "vendor/plugin" in view.pending
-    assert (root / "runtime/note.txt").read_text() == "local"
-    view.publish(manager, "vendor/plugin", overwrite=True)
-    assert "vendor/plugin" not in view.pending
-    assert (root / "runtime/note.txt").read_text() == "second"
 
 
 def test_shared_removed_asset_ownership_transfers_to_remaining_plugin(installed):
@@ -614,18 +590,6 @@ def test_update_with_real_binary_archives_and_shared_cache(tmp_path):
     installed = manager.registry.installed_record("vendor/plugin")
     assert InxPackage.inspect(manager._installed_archive_path(installed)).metadata["version"] == "2.0.0"
     assert installed["package_path"] == "packages/vendor/plugin/2.0.0.inxpkg"
-
-
-def test_publisher_rename_moves_unmodified_location_but_keeps_guid(installed):
-    manager, source, root = installed
-    next_package(source)
-    (source / "runtime/note.txt").rename(source / "runtime/renamed.txt")
-    (source / "runtime/renamed.txt.meta").write_bytes((root / "runtime/note.txt.meta").read_bytes())
-    package = source.parent / "renamed.inxpkg"
-    InxPackage.export_source(str(source), str(package))
-    manager.install_package(str(package), update=True, install_dependencies=False)
-    assert not (root / "runtime/note.txt").exists()
-    assert (root / "runtime/renamed.txt").read_text() == "second"
 
 
 def test_conflicting_python_upgrade_does_not_break_other_installed_package(installed, monkeypatch):

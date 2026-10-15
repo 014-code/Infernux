@@ -129,7 +129,6 @@ def _toolchain(tmp_path: Path) -> dict[str, str]:
     }
 
 
-
 def _write_native_payload(root: Path, *, abi: str) -> Path:
     payload = importlib.import_module("infernux_android.native_payload")
     native = root / abi / "jniLibs"
@@ -217,102 +216,73 @@ def test_android_native_payload_rejects_incomplete_or_incompatible_plugin(monkey
         module.inspect_native_payload(source, abi="x86_64")
 
 
-def test_android_exporter_contributes_only_vulkan_targets(monkeypatch):
+def test_android_exporter_registration_plan_and_removal(monkeypatch, tmp_path):
     module = _android_module(monkeypatch)
-    targets = module.AndroidPlatformExporter().targets()
-
-    assert [target.id for target in targets] == [
-        "android-x64-emulator",
-        "android-arm64",
-    ]
+    exporter = module.AndroidPlatformExporter()
+    registry = BuildExporterRegistry()
+    registration = registry.register("package:infernux/platform-android", exporter)
+    targets = exporter.targets()
+    assert [target.id for target in targets] == ["android-x64-emulator", "android-arm64"]
     assert {target.capabilities.graphics_api for target in targets} == {"vulkan"}
     assert all(not target.capabilities.cpu_jit for target in targets)
+    assert {target.id for target in registry.targets()} == {target.id for target in targets}
+    request = BuildRequest(str(tmp_path / "project"), "android-x64-emulator", str(tmp_path / "output"), BuildProfile())
+    plan = exporter.create_plan(request)
+    assert [step.id for step in plan.steps] == ["cook", "imports", "native", "package", "audit"]
+    assert plan.metadata["graphics_api"] == "vulkan"
+    assert registry.unregister(registration)
+    assert registry.targets() == ()
 
 
-def test_android_build_cache_is_project_owned_by_default(monkeypatch, tmp_path):
+def test_android_build_storage_moves_from_project_to_shared_and_authored_environment(monkeypatch, tmp_path):
+    from dataclasses import replace
+
     _android_module(monkeypatch)
     exporter = importlib.import_module("infernux_android.exporter")
-    project = tmp_path / "project"
-    request = BuildRequest(
-        str(project),
-        "android-arm64",
-        str(tmp_path / "output"),
-        BuildProfile(options={}),
-    )
-
-    assert exporter._android_staging_directory(request) == (
-        project.resolve() / "Cache/Build/AndroidHost/android-arm64"
-    )
-    assert exporter._android_build_cache_root(request) / "AndroidEngine" == (
-        project.resolve() / "Cache/Build/AndroidEngine"
-    )
-
-
-def test_android_build_cache_accepts_an_explicit_shared_root(monkeypatch, tmp_path):
-    _android_module(monkeypatch)
-    exporter = importlib.import_module("infernux_android.exporter")
-    shared = tmp_path / "fast-build-disk"
-    request = BuildRequest(
-        str(tmp_path / "project"),
-        "android-arm64",
-        str(tmp_path / "output"),
-        BuildProfile(options={"build_cache_root": str(shared)}),
-    )
-
-    assert exporter._android_staging_directory(request) == (
-        shared.resolve() / "AndroidHost/android-arm64"
-    )
-
-
-@pytest.mark.parametrize("hub_owned", (False, True))
-@pytest.mark.parametrize("explicit", (False, True))
-def test_android_gradle_process_owns_cache_and_persistent_user_state(
-    monkeypatch, tmp_path, hub_owned, explicit
-):
-    _android_module(monkeypatch)
-    exporter = importlib.import_module("infernux_android.exporter")
+    monkeypatch.delenv("INFERNUX_BUILD_CACHE_ROOT", raising=False)
     project = tmp_path / "project"
     project.mkdir()
-    owner = tmp_path / "Hub Shared" if hub_owned else project
+    request = BuildRequest(str(project), "android-arm64", str(tmp_path / "output"), BuildProfile())
+    assert exporter._android_staging_directory(request) == project.resolve() / "Cache/Build/AndroidHost/android-arm64"
+    assert exporter._android_build_cache_root(request) / "AndroidEngine" == project.resolve() / "Cache/Build/AndroidEngine"
     environment = dict(exporter.os.environ)
     for name in ("INFERNUX_SHARED_DATA_ROOT", "GRADLE_USER_HOME", "ANDROID_USER_HOME"):
         environment.pop(name, None)
-    if hub_owned:
-        environment["INFERNUX_SHARED_DATA_ROOT"] = str(owner)
-    if explicit:
-        environment["GRADLE_USER_HOME"] = str(tmp_path / "author-gradle")
-        environment["ANDROID_USER_HOME"] = str(tmp_path / "author-android")
     before = environment.copy()
-    request = BuildRequest(
-        str(project), "android-arm64", str(tmp_path / "output"), BuildProfile()
-    )
     configured = exporter._android_gradle_environment(request, environment)
-    expected_gradle = before.get("GRADLE_USER_HOME", str(owner / "Cache/Gradle"))
-    expected_android = before.get("ANDROID_USER_HOME", str(owner / "State/Android"))
     assert environment == before
-    assert configured["GRADLE_USER_HOME"] == expected_gradle
-    # Android user state includes the debug signing key: it must not be a cache.
-    assert configured["ANDROID_USER_HOME"] == expected_android
-    code, output = exporter._run_command(
-        request,
-        [
-            sys.executable, "-c",
-            "import os,json;print(json.dumps([os.environ['GRADLE_USER_HOME'],"
-            "os.environ['ANDROID_USER_HOME']]))",
-        ],
-        project,
-        configured,
-        source="gradle",
-    )
+    assert configured["GRADLE_USER_HOME"] == str(project / "Cache/Gradle")
+    assert configured["ANDROID_USER_HOME"] == str(project / "State/Android")
+
+    owner = tmp_path / "Hub Shared"
+    environment["INFERNUX_SHARED_DATA_ROOT"] = str(owner)
+    shared = tmp_path / "fast-build-disk"
+    request = replace(request, profile=BuildProfile(options={"build_cache_root": str(shared)}))
+    assert exporter._android_staging_directory(request) == shared.resolve() / "AndroidHost/android-arm64"
+    configured = exporter._android_gradle_environment(request, environment)
+    assert configured["GRADLE_USER_HOME"] == str(owner / "Cache/Gradle")
+    assert configured["ANDROID_USER_HOME"] == str(owner / "State/Android")
+    environment["GRADLE_USER_HOME"] = str(tmp_path / "author-gradle")
+    environment["ANDROID_USER_HOME"] = str(tmp_path / "author-android")
+    before = environment.copy()
+    configured = exporter._android_gradle_environment(request, environment)
+    assert environment == before
+    assert configured["GRADLE_USER_HOME"] == before["GRADLE_USER_HOME"]
+    assert configured["ANDROID_USER_HOME"] == before["ANDROID_USER_HOME"]
+    code, output = exporter._run_command(request, [
+        sys.executable, "-c",
+        "import os,json;print(json.dumps([os.environ['GRADLE_USER_HOME'],os.environ['ANDROID_USER_HOME']]))",
+    ], project, configured, source="gradle")
     assert code == 0
-    assert json.loads(output[-1]) == [expected_gradle, expected_android]
+    assert json.loads(output[-1]) == [before["GRADLE_USER_HOME"], before["ANDROID_USER_HOME"]]
 
 
-def test_android_doctor_accepts_the_pinned_local_toolchain(monkeypatch, tmp_path):
+def test_android_toolchain_remains_buildable_after_device_tools_are_removed(monkeypatch, tmp_path):
     module = _android_module(monkeypatch)
+    toolchain = _toolchain(tmp_path)
     report = module.inspect_android_toolchain(
         "android-x64-emulator",
-        _toolchain(tmp_path),
+        toolchain,
     )
 
     assert report.available
@@ -321,20 +291,12 @@ def test_android_doctor_accepts_the_pinned_local_toolchain(monkeypatch, tmp_path
     assert report.details["adb_available"] is True
     assert report.details["emulator_available"] is True
 
-
-def test_android_build_doctor_does_not_require_a_local_device_or_avd(
-    monkeypatch, tmp_path
-):
-    module = _android_module(monkeypatch)
-    toolchain = _toolchain(tmp_path)
     sdk = Path(toolchain["ANDROID_SDK_ROOT"])
     suffix = ".exe" if sys.platform == "win32" else ""
     (sdk / "platform-tools" / f"adb{suffix}").unlink()
     (sdk / "emulator" / f"emulator{suffix}").unlink()
     Path(toolchain["ANDROID_AVD_HOME"], "Infernux_API_36.ini").unlink()
-
     report = module.inspect_android_toolchain("android-x64-emulator", toolchain)
-
     assert report.available
     assert report.diagnostics == ()
     assert report.details["avds"] == []
@@ -530,34 +492,22 @@ def test_android_exporter_doctor_rejects_wrong_runtime_abi(monkeypatch, tmp_path
     assert "targets x86_64" in report.diagnostics[0].message
 
 
-def test_android_exporter_plan_is_inspectable(monkeypatch, tmp_path):
-    module = _android_module(monkeypatch)
-    exporter = module.AndroidPlatformExporter()
-    request = BuildRequest(
-        str(tmp_path / "project"),
-        "android-x64-emulator",
-        str(tmp_path / "output"),
-        BuildProfile(),
-    )
-    plan = exporter.create_plan(request)
-    assert [step.id for step in plan.steps] == [
-        "cook",
-        "imports",
-        "native",
-        "package",
-        "audit",
-    ]
-    assert plan.metadata["graphics_api"] == "vulkan"
-
-
-def test_android_host_template_configures_the_generated_application(monkeypatch, tmp_path):
+def test_android_development_host_uses_landscape_defaults_and_debug_apk(monkeypatch, tmp_path):
     import xml.etree.ElementTree as ET
 
     _android_module(monkeypatch)
     exporter = importlib.import_module("infernux_android.exporter")
     project = tmp_path / "generated"
     shutil.copytree(PLUGIN_EDITOR / "infernux_android/templates/host", project)
-    exporter._configure_project(project, tmp_path / "sdk", "x86_64")
+    request = BuildRequest(str(tmp_path / "project"), "android-x64-emulator", str(tmp_path / "output"), BuildProfile())
+    orientations = exporter._android_orientation_contract(request, {})
+    resolution = exporter._android_resolution_contract(request)
+    assert orientations == ("LandscapeLeft LandscapeRight", "sensorLandscape")
+    assert resolution == ("fixed_dpi", 320)
+    exporter._configure_project(project, tmp_path / "sdk", "x86_64",
+                                sdl_orientations=orientations[0], android_orientation=orientations[1],
+                                resolution_scaling=resolution[0], target_dpi=resolution[1],
+                                game_name="Infernux041Labv2")
     android = "{http://schemas.android.com/apk/res/android}"
     manifest = ET.parse(project / "app/src/main/AndroidManifest.xml").getroot()
     application = manifest.find("application")
@@ -585,20 +535,77 @@ def test_android_host_template_configures_the_generated_application(monkeypatch,
     assert not list(project.rglob("*.in"))
     assert "@INFERNUX_" not in gradle and "@ANDROID_" not in gradle
 
+    assert 'applicationId "com.infernux.infernux041labv2"' in gradle
+    assert exporter._android_artifact_plan(request, project) == (
+        "apk", "Debug", project / "app/build/outputs/apk/debug/app-debug.apk",
+    )
 
-@pytest.mark.parametrize(
-    ("game_name", "application_id"),
-    [
-        ("Infernux041Labv2", "com.infernux.infernux041labv2"),
-        ("Runner Long", "com.infernux.runnerlong"),
-        ("123 Demo", "com.infernux.game123demo"),
-    ],
-)
-def test_android_application_id_is_project_owned(monkeypatch, game_name, application_id):
+
+def test_android_portrait_release_host_uses_authored_dpi_and_bundle(monkeypatch, tmp_path):
+    import xml.etree.ElementTree as ET
+
     _android_module(monkeypatch)
-    exporter_module = importlib.import_module("infernux_android.exporter")
+    exporter = importlib.import_module("infernux_android.exporter")
+    request = BuildRequest(str(tmp_path / "project"), "android-arm64", str(tmp_path / "output"),
+                           BuildProfile(configuration=BuildConfiguration.RELEASE, options={
+                               "android_orientation": "portrait", "android_resolution_scaling": "disabled",
+                               "android_target_dpi": 480,
+                           }))
+    orientations = exporter._android_orientation_contract(request, {"window_width": 720, "window_height": 1280})
+    resolution = exporter._android_resolution_contract(request)
+    assert orientations == ("Portrait PortraitUpsideDown", "sensorPortrait")
+    assert resolution == ("disabled", 480)
+    host = tmp_path / "host"
+    shutil.copytree(PLUGIN_EDITOR / "infernux_android/templates/host", host)
+    exporter._configure_project(host, tmp_path / "sdk", "arm64-v8a", game_name="Runner Long",
+                                sdl_orientations=orientations[0], android_orientation=orientations[1],
+                                resolution_scaling=resolution[0], target_dpi=resolution[1])
+    android = "{http://schemas.android.com/apk/res/android}"
+    application = ET.parse(host / "app/src/main/AndroidManifest.xml").getroot().find("application")
+    activity = application.find("activity")
+    metadata = {item.get(android + "name"): item.get(android + "value")
+                for item in application.findall("meta-data") + activity.findall("meta-data")}
+    assert activity.get(android + "screenOrientation") == "sensorPortrait"
+    assert metadata["infernux.orientations"] == orientations[0]
+    assert metadata["infernux.resolution_scaling"] == "disabled"
+    assert metadata["infernux.target_dpi"] == "480"
+    assert 'applicationId "com.infernux.runnerlong"' in (host / "app/build.gradle").read_text(encoding="utf-8")
+    assert exporter._android_artifact_plan(request, host) == (
+        "aab", "Release", host / "app/build/outputs/bundle/release/app-release.aab",
+    )
 
-    assert exporter_module._android_application_id(game_name) == application_id
+
+def test_android_sensor_release_host_selects_unsigned_then_signed_apk(monkeypatch, tmp_path):
+    import xml.etree.ElementTree as ET
+
+    _android_module(monkeypatch)
+    exporter = importlib.import_module("infernux_android.exporter")
+    request = BuildRequest(str(tmp_path / "project"), "android-arm64", str(tmp_path / "output"),
+                           BuildProfile(configuration=BuildConfiguration.RELEASE, options={
+                               "android_artifact": "apk", "android_orientation": "sensor",
+                               "android_resolution_scaling": "fixed_dpi", "android_target_dpi": "360",
+                           }))
+    orientations = exporter._android_orientation_contract(request, {"window_width": 1280, "window_height": 720})
+    resolution = exporter._android_resolution_contract(request)
+    assert orientations == ("LandscapeLeft LandscapeRight Portrait PortraitUpsideDown", "fullUser")
+    assert resolution == ("fixed_dpi", 360)
+    host = tmp_path / "host"
+    shutil.copytree(PLUGIN_EDITOR / "infernux_android/templates/host", host)
+    exporter._configure_project(host, tmp_path / "sdk", "arm64-v8a", game_name="123 Demo",
+                                sdl_orientations=orientations[0], android_orientation=orientations[1],
+                                resolution_scaling=resolution[0], target_dpi=resolution[1])
+    android = "{http://schemas.android.com/apk/res/android}"
+    activity = ET.parse(host / "app/src/main/AndroidManifest.xml").getroot().find("application/activity")
+    assert activity.get(android + "screenOrientation") == "fullUser"
+    manifest = (host / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
+    assert 'android:value="360"' in manifest
+    assert 'applicationId "com.infernux.game123demo"' in (host / "app/build.gradle").read_text(encoding="utf-8")
+    assert exporter._android_artifact_plan(request, host) == (
+        "apk", "Release", host / "app/build/outputs/apk/release/app-release-unsigned.apk",
+    )
+    assert exporter._android_artifact_plan(request, host, release_signed=True) == (
+        "apk", "Release", host / "app/build/outputs/apk/release/app-release.apk",
+    )
 
 
 def test_android_launcher_icons_are_generated_from_the_cooked_project_icon(
@@ -651,43 +658,6 @@ def test_android_host_template_excludes_asset_database_sidecars(
     assert not list(staging.rglob("*.meta"))
 
 
-@pytest.mark.parametrize(
-    ("option", "width", "height", "expected"),
-    (
-        (
-            "landscape",
-            1920,
-            1080,
-            ("LandscapeLeft LandscapeRight", "sensorLandscape"),
-        ),
-        ("portrait", 720, 1280, ("Portrait PortraitUpsideDown", "sensorPortrait")),
-        (
-            "sensor",
-            1280,
-            720,
-            (
-                "LandscapeLeft LandscapeRight Portrait PortraitUpsideDown",
-                "fullUser",
-            ),
-        ),
-    ),
-)
-def test_android_orientation_contract(monkeypatch, tmp_path, option, width, height, expected):
-    _android_module(monkeypatch)
-    exporter_module = importlib.import_module("infernux_android.exporter")
-    request = BuildRequest(
-        str(tmp_path / "project"),
-        "android-x64-emulator",
-        str(tmp_path / "output"),
-        BuildProfile(options={"android_orientation": option}),
-    )
-
-    assert exporter_module._android_orientation_contract(
-        request,
-        {"window_width": width, "window_height": height},
-    ) == expected
-
-
 def test_android_orientation_contract_rejects_unknown_policy(monkeypatch, tmp_path):
     _android_module(monkeypatch)
     exporter_module = importlib.import_module("infernux_android.exporter")
@@ -700,48 +670,6 @@ def test_android_orientation_contract_rejects_unknown_policy(monkeypatch, tmp_pa
 
     with pytest.raises(ValueError, match="android_orientation"):
         exporter_module._android_orientation_contract(request, {})
-
-
-def test_android_default_orientation_is_explicit_landscape(monkeypatch, tmp_path):
-    _android_module(monkeypatch)
-    exporter_module = importlib.import_module("infernux_android.exporter")
-    request = BuildRequest(
-        str(tmp_path / "Project"),
-        "android-arm64",
-        str(tmp_path / "Build"),
-        BuildProfile(options={}),
-    )
-
-    assert exporter_module._android_orientation_contract(request, {}) == (
-        "LandscapeLeft LandscapeRight", "sensorLandscape"
-    )
-
-
-@pytest.mark.parametrize(
-    ("options", "expected"),
-    (
-        ({}, ("fixed_dpi", 320)),
-        (
-            {"android_resolution_scaling": "disabled", "android_target_dpi": 480},
-            ("disabled", 480),
-        ),
-        (
-            {"android_resolution_scaling": "fixed_dpi", "android_target_dpi": "360"},
-            ("fixed_dpi", 360),
-        ),
-    ),
-)
-def test_android_resolution_contract(monkeypatch, tmp_path, options, expected):
-    _android_module(monkeypatch)
-    exporter_module = importlib.import_module("infernux_android.exporter")
-    request = BuildRequest(
-        str(tmp_path / "project"),
-        "android-arm64",
-        str(tmp_path / "output"),
-        BuildProfile(options=options),
-    )
-
-    assert exporter_module._android_resolution_contract(request) == expected
 
 
 @pytest.mark.parametrize(
@@ -767,85 +695,6 @@ def test_android_resolution_contract_rejects_invalid_values(
 
     with pytest.raises(ValueError, match="android_"):
         exporter_module._android_resolution_contract(request)
-
-
-@pytest.mark.parametrize(
-    ("configuration", "option", "kind", "variant", "relative"),
-    (
-        (
-            BuildConfiguration.DEVELOPMENT,
-            "",
-            "apk",
-            "Debug",
-            "app/build/outputs/apk/debug/app-debug.apk",
-        ),
-        (
-            BuildConfiguration.RELEASE,
-            "",
-            "aab",
-            "Release",
-            "app/build/outputs/bundle/release/app-release.aab",
-        ),
-        (
-            BuildConfiguration.RELEASE,
-            "apk",
-            "apk",
-            "Release",
-            "app/build/outputs/apk/release/app-release-unsigned.apk",
-        ),
-    ),
-)
-def test_android_artifact_plan(
-    monkeypatch,
-    tmp_path,
-    configuration,
-    option,
-    kind,
-    variant,
-    relative,
-):
-    _android_module(monkeypatch)
-    exporter_module = importlib.import_module("infernux_android.exporter")
-    options = {"android_artifact": option} if option else {}
-    request = BuildRequest(
-        str(tmp_path / "project"),
-        "android-x64-emulator",
-        str(tmp_path / "output"),
-        BuildProfile(configuration=configuration, options=options),
-    )
-    staging = tmp_path / "staging"
-
-    actual_kind, actual_variant, source = exporter_module._android_artifact_plan(
-        request,
-        staging,
-    )
-
-    assert (actual_kind, actual_variant) == (kind, variant)
-    assert source == staging / Path(relative)
-
-
-def test_android_signed_release_apk_uses_signed_gradle_artifact(
-    monkeypatch, tmp_path
-):
-    _android_module(monkeypatch)
-    exporter_module = importlib.import_module("infernux_android.exporter")
-    request = BuildRequest(
-        str(tmp_path / "project"),
-        "android-arm64",
-        str(tmp_path / "output"),
-        BuildProfile(
-            configuration=BuildConfiguration.RELEASE,
-            options={"android_artifact": "apk"},
-        ),
-    )
-
-    _, _, source = exporter_module._android_artifact_plan(
-        request,
-        tmp_path / "staging",
-        release_signed=True,
-    )
-
-    assert source.name == "app-release.apk"
 
 
 def test_android_signing_environment_keeps_passwords_out_of_profile(
@@ -1332,16 +1181,3 @@ def test_android_python_runtime_manifest_rejects_incompatible_target(
             expected_python_series="3.13",
             application_minimum_android_api=27,
         )
-
-
-def test_android_registration_can_be_removed_without_residue(monkeypatch):
-    module = _android_module(monkeypatch)
-    registry = BuildExporterRegistry()
-    registration = registry.register(
-        "package:infernux/platform-android",
-        module.AndroidPlatformExporter(),
-    )
-
-    assert len(registry.targets()) == 2
-    assert registry.unregister(registration)
-    assert registry.targets() == ()

@@ -153,102 +153,159 @@ def _export(source: Path, package: Path) -> Path:
     return package
 
 
-def test_manifestless_folder_is_the_package_root_and_uses_output_name(tmp_path):
+def test_manifestless_authoring_preserves_identity_and_expands_selected_roots(tmp_path):
     project = _project(tmp_path / "project")
     plugin_root = project / "Packages" / "abc"
     materials = plugin_root / "materials"
     materials.mkdir(parents=True)
-    asset = materials / "Neon.mat"
-    asset.write_text("material", encoding="utf-8")
+    (materials / "Neon.mat").write_text("material", encoding="utf-8")
     guid = "0123456789abcdef0123456789abcdef"
     (materials / "Neon.mat.meta").write_text(_meta(guid), encoding="utf-8")
-
     package = tmp_path / "abc.inxpkg"
     preview = InxPackage.export(str(project), [str(plugin_root)], str(package))
-
-    assert preview.metadata["reference"] == "abc"
-    assert preview.metadata["name"] == "abc"
+    assert preview.metadata["reference"] == preview.metadata["name"] == "abc"
     assert preview.logical_entries == ("materials/Neon.mat",)
     assert preview.project_entries == ("Assets/Plugins/materials/Neon.mat",)
     assert preview.file_records[0]["guid"] == guid
-
-    archived_meta = json.loads(
-        player_package_native.read_entry(
-            str(package), preview.file_records[0]["meta_archive_path"]
-        ).decode("utf-8")
-    )
+    archived_meta = json.loads(player_package_native.read_entry(
+        str(package), preview.file_records[0]["meta_archive_path"]
+    ).decode("utf-8"))
     assert "content_hash" not in archived_meta["metadata"]
     assert archived_meta["metadata"]["guid"]["value"] == guid
 
+    nested = plugin_root / "package"
+    nested.mkdir()
+    (nested / "inx_package.json").write_text("{}", encoding="utf-8")
+    (nested / "payload.bin").write_bytes(b"payload")
+    nested_preview = InxPackage.export(str(project), [str(plugin_root)], str(package))
+    assert nested_preview.metadata["reference"] == "abc"
+    assert nested_preview.logical_entries == (
+        "materials/Neon.mat", "package/inx_package.json", "package/payload.bin",
+    )
 
-def test_file_manager_can_reexport_an_installed_package_directory(tmp_path):
-    source = _source(tmp_path / "source", "vendor/reexport")
-    runtime = source / "runtime"
-    runtime.mkdir()
-    (runtime / "component.py").write_text("VALUE = 41\n", encoding="utf-8")
-    package = _export(source, tmp_path / "original.inxpkg")
+    second = project / "Assets" / "Second"
+    second.mkdir()
+    (second / "two.txt").write_text("two", encoding="utf-8")
+    selection = InxPackage.export(
+        str(project), [str(materials), str(second)], str(tmp_path / "Selection.inxpkg")
+    )
+    assert selection.logical_entries == ("Second/two.txt", "materials/Neon.mat")
+    assert selection.project_entries == (
+        "Assets/Plugins/Second/two.txt", "Assets/Plugins/materials/Neon.mat",
+    )
+
+
+def test_repository_package_export_install_reexport_and_player_inventory(tmp_path):
+    repository = tmp_path / "repository"
+    source = _source(repository / "package", "vendor/physics/jolt")
+    (repository / "README.md").write_text("repository only", encoding="utf-8")
+    (repository / "CMakeLists.txt").write_text("project(plugin)", encoding="utf-8")
+    (repository / "build.gradle").write_text("plugins {}", encoding="utf-8")
+    payloads = {
+        "runtime/backend.py": b"BACKEND = 'jolt'\n",
+        "runtime/native_backend.pyd": b"pyd",
+        "runtime/web_backend.wasm": b"wasm",
+        "editor/compiler.dll": b"dll",
+        "editor/vendor/panel.py": b"PANEL_ID = 'vendor.jolt'\n",
+        "editor/translations.json": b'{"$schema":"infernux.editor_translations","locales":{"en":{},"zh":{}}}',
+        "plugin_pages/usage.md": b"# Jolt\n",
+        "README.md": b"Physics backend.\n",
+        "LICENSE": b"license",
+        "Scenes/Demo.scene": b"scene",
+        "Variants/Alternative.inxpkg": b"opaque nested package",
+        "materials/neon.mat": b"material",
+        "shaders/neon.frag": b"shader",
+        "web/index.html": b"<button>plugin page</button>",
+        "build/generated_backend.wasm": b"generated-wasm",
+        ".well-known/plugin.json": b"{}",
+    }
+    for logical, payload in payloads.items():
+        path = source.joinpath(*logical.split("/"))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payload)
+    guid = "0123456789abcdef0123456789abcdef"
+    (source / "materials/neon.mat.meta").write_text(_meta(guid), encoding="utf-8")
+    package = tmp_path / "Jolt.inxpkg"
+    first = InxPackage.export_source(str(repository), str(package))
+    repeated = InxPackage.inspect(str(_export(source, tmp_path / "repeated.inxpkg")))
+    assert first.metadata["$schema"] == "infernux.inxpackage"
+    assert set(first.logical_entries) == set(payloads)
+    assert "CMakeLists.txt" not in first.logical_entries
+    assert "build.gradle" not in first.logical_entries
+    records = {item["logical_path"]: item for item in first.file_records}
+    assert len({item["guid"] for item in first.file_records}) == len(first.file_records)
+    assert records["materials/neon.mat"]["guid"] == guid
+    assert first.file_records == repeated.file_records
+    assert first.metadata["control_guid"] == repeated.metadata["control_guid"]
+    assert records["runtime/native_backend.pyd"]["role"] == "runtime"
+    assert records["editor/translations.json"]["role"] == "editor"
+    assert records["plugin_pages/usage.md"]["role"] == "control"
+    for logical in (
+        "runtime/backend.py", "runtime/native_backend.pyd", "runtime/web_backend.wasm",
+        "materials/neon.mat", "shaders/neon.frag", "web/index.html",
+    ):
+        assert player_file_exported(first.metadata, logical)
+        assert player_file_exported(records[logical], logical)
+    for logical in (
+        "editor/compiler.dll", "editor/translations.json", "editor/vendor/panel.py",
+        "plugin_pages/usage.md",
+    ):
+        assert not player_file_exported(first.metadata, logical)
+        assert not player_file_exported(records[logical], logical)
+    assert "Packages/vendor/physics/jolt/runtime/backend.py" in first.project_entries
+    assert "Packages/vendor/physics/jolt/editor/vendor/panel.py" in first.project_entries
+    assert "Assets/Plugins/Scenes/Demo.scene" in first.project_entries
+    assert "Assets/Plugins/Variants/Alternative.inxpkg" in first.project_entries
+
+    (source / "runtime/backend.py").write_text("BACKEND = 'updated'\n", encoding="utf-8")
+    changed = InxPackage.inspect(str(_export(source, tmp_path / "changed.inxpkg")))
+    assert changed.file_records == first.file_records
     project = _project(tmp_path / "project")
     manager = PluginManager(str(project))
     installed = manager.install_package(str(package), install_dependencies=False)
-    assert installed.loaded
-
-    installed_root = project / "Packages/vendor/reexport"
+    assert installed.loaded, installed.error
+    root = project / "Packages/vendor/physics/jolt"
+    assert (root / "runtime/backend.py").read_bytes() == payloads["runtime/backend.py"]
+    assert (root / "runtime/native_backend.pyd").read_bytes() == b"pyd"
+    assert (project / "Assets/Plugins/Scenes/Demo.scene").is_file()
+    assert {item["reference"] for item in manager.registry.installed()} == {"vendor/physics/jolt"}
+    for path in (root / "runtime/backend.py", root / "runtime/native_backend.pyd",
+                 root / "inx_package.json"):
+        metadata = json.loads(Path(str(path) + ".meta").read_text(encoding="utf-8"))["metadata"]
+        assert "content_hash" not in metadata
+        assert len(metadata["guid"]["value"]) == 32
     destination = tmp_path / "reexported.inxpkg"
-    preview = InxPackage.export(
-        str(project),
-        [str(installed_root)],
-        str(destination),
-    )
-
+    exported = InxPackage.export(str(project), [str(root)], str(destination))
     assert destination.is_file()
-    assert preview.metadata["reference"] == "vendor/reexport"
-    assert preview.logical_entries == ("runtime/component.py",)
-    assert InxPackage.inspect(str(destination)).logical_entries == (
-        "runtime/component.py",
-    )
+    assert exported.metadata["reference"] == "vendor/physics/jolt"
+    assert "runtime/backend.py" in exported.logical_entries
+    assert InxPackage.inspect(str(destination)).logical_entries == exported.logical_entries
 
+    class UrlEngine:
+        def __init__(self):
+            self.urls = []
 
-def test_local_folder_never_guesses_a_nested_repository_wrapper(tmp_path):
-    project = _project(tmp_path / "project")
-    plugin_root = project / "Packages" / "abc"
-    nested = plugin_root / "package"
-    nested.mkdir(parents=True)
-    (nested / "inx_package.json").write_text("{}", encoding="utf-8")
-    (nested / "payload.bin").write_bytes(b"payload")
+        def open_url(self, url):
+            self.urls.append(url)
+            return True
 
-    preview = InxPackage.export(
-        str(project),
-        [str(plugin_root)],
-        str(tmp_path / "abc.inxpkg"),
-    )
-
-    assert preview.metadata["reference"] == "abc"
-    assert preview.logical_entries == (
-        "package/inx_package.json",
-        "package/payload.bin",
-    )
-
-
-def test_manifestless_multi_selection_expands_directly_under_plugins(tmp_path):
-    project = _project(tmp_path / "project")
-    first = project / "Assets" / "First"
-    second = project / "Assets" / "Second"
-    first.mkdir()
-    second.mkdir()
-    (first / "one.txt").write_text("one", encoding="utf-8")
-    (second / "two.txt").write_text("two", encoding="utf-8")
-
-    preview = InxPackage.export(
-        str(project),
-        [str(first), str(second)],
-        str(tmp_path / "Selection.inxpkg"),
-    )
-
-    assert preview.logical_entries == ("First/one.txt", "Second/two.txt")
-    assert preview.project_entries == (
-        "Assets/Plugins/First/one.txt",
-        "Assets/Plugins/Second/two.txt",
-    )
+    engine = UrlEngine()
+    page = project / "Assets/Plugins/web/index.html"
+    assert page.read_bytes() == payloads["web/index.html"]
+    set_project_root(str(project))
+    Application._bind_engine(engine, "player")
+    try:
+        set_runtime_asset_query(lambda path, *, exact=False: (guid,)
+                                if path == "Assets/Plugins/web/index.html" else ())
+        set_runtime_asset_resolver(lambda value: str(page.resolve()) if value == guid else None)
+        button = UIButton()
+        button.on_click.add_listener(lambda: Application.open_url(
+            Application.asset_path("Assets/Plugins/web/index.html")))
+        button.on_pointer_click(None)
+        assert engine.urls == [page.resolve().as_uri()]
+    finally:
+        Application._unbind_engine(engine)
+        set_project_root(None)
 
 
 def test_selective_reimport_adds_missing_files_without_replacing_existing_ownership(tmp_path, monkeypatch):
@@ -345,312 +402,130 @@ def test_selective_reimport_rollback_retains_previous_files_and_registry(tmp_pat
     assert not (project / "Assets/Plugins/third.txt").exists()
 
 
-@pytest.mark.parametrize("new_scripts", [False, True])
-@pytest.mark.parametrize("partial_install", [False, True])
-def test_plugin_install_publishes_runtime_scripts_without_waiting_for_watcher(
-    tmp_path,
-    monkeypatch,
-    new_scripts,
-    partial_install,
-):
-    source = _source(tmp_path / "source", "vendor/runtime-component")
-    runtime = source / "runtime"
-    runtime.mkdir()
-    (runtime / "component.py").write_text("VALUE = 1\n", encoding="utf-8")
-    (source / "seed.txt").write_text("non-script initial selection", encoding="utf-8")
-    package = _export(source, tmp_path / "RuntimeComponent.inxpkg")
-    project = _project(tmp_path / "project")
-    published = []
-
-    class _Resources:
-        _project_path = str(project.resolve())
-
-        def begin_script_transaction(self, paths):
-            published.append(("begin", tuple(Path(path) for path in paths)))
-            return "package-runtime"
-
-        def submit_script_change(self, path, **kwargs):
-            published.append((Path(path), kwargs))
-            return object()
-
-        def process_pending_reloads(self, *, force=False):
-            published.append(("drain", force))
-            return 0
-
-        def retire_script_paths(self, paths):
-            published.append(("retire", tuple(Path(path) for path in paths)))
-
-    monkeypatch.setattr(
-        "infernux.engine.resources_manager.ResourcesManager.instance",
-        classmethod(lambda _cls: _Resources()),
-    )
-
-    manager = PluginManager(str(project))
-    if partial_install:
-        manager.install_package(str(package), selected=("seed.txt",), install_dependencies=False)
-        assert published == []
-    manager.install_package(
-        str(package),
-        install_dependencies=False,
-    )
-
-    runtime_path = project / "Packages/vendor/runtime-component/runtime/component.py"
-    assert published[0] == ("begin", (runtime_path,))
-    assert published[1][0] == runtime_path
-    assert published[1][1]["force"] is True
-    assert published[1][1]["transaction_id"] == "package-runtime"
-    assert published[2] == ("drain", True)
-    assert not (project / "Library" / "InxPackageStaging").exists()
-    expected_paths = {runtime_path}
-    if new_scripts:
-        added = runtime_path.with_name("added.py")
-        added.write_text("ADDED = True\n", encoding="utf-8")
-        added.with_suffix(".py.meta").write_text(_meta("c" * 32), encoding="utf-8")
-        editor = runtime_path.parent.parent / "editor" / "panel.py"
-        editor.parent.mkdir()
-        editor.write_text("EDITOR = True\n", encoding="utf-8")
-        editor.with_suffix(".py.meta").write_text(_meta("d" * 32), encoding="utf-8")
-        expected_paths.add(added)
-    installed_files = manager.registry.installed_record("vendor/runtime-component")["files"]
-    published.clear()
-    manager.set_enabled("vendor/runtime-component", False)
-    assert published[0][0] == "retire"
-    assert set(published[0][1]) == expected_paths
-    published.clear()
-    manager.set_enabled("vendor/runtime-component", True)
-    assert published[0][0] == "begin"
-    assert set(published[0][1]) == expected_paths
-    assert manager.registry.installed_record("vendor/runtime-component")["files"] == installed_files
-    published.clear()
-    manager.uninstall("vendor/runtime-component")
-    assert published[0][0] == "retire"
-    assert set(published[0][1]) == expected_paths
-    if new_scripts:
-        assert added.is_file() and editor.is_file()
-
-
-@pytest.mark.parametrize("mutation", ["delete", "editor", "rename"])
-def test_package_enable_uses_live_scripts_and_retire_keeps_previous_paths(
-    tmp_path, monkeypatch, request, mutation
-):
+def test_runtime_script_publication_tracks_install_and_live_topology_lifetime(tmp_path, monkeypatch, request):
     source = _source(tmp_path / "source", "vendor/mutable-component")
     (source / "runtime").mkdir()
     (source / "runtime/component.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (source / "seed.txt").write_text("initial non-script selection", encoding="utf-8")
     package = _export(source, tmp_path / "MutableComponent.inxpkg")
     project = _project(tmp_path / "project")
-    submitted, retired = [], []
+    events = []
 
     class Resources:
         _project_path = str(project.resolve())
 
         def begin_script_transaction(self, paths):
+            events.append(("begin", tuple(Path(path) for path in paths)))
             return "mutable-component"
 
         def submit_script_change(self, path, **kwargs):
-            submitted.append(Path(path))
+            events.append((Path(path), kwargs))
             return object()
 
         def process_pending_reloads(self, *, force=False):
+            events.append(("drain", force))
             return 0
 
         def retire_script_paths(self, paths):
-            retired.extend(Path(path) for path in paths)
+            events.append(("retire", tuple(Path(path) for path in paths)))
 
-    monkeypatch.setattr(
-        "infernux.engine.resources_manager.ResourcesManager.instance",
-        classmethod(lambda _cls: Resources()),
-    )
+    monkeypatch.setattr("infernux.engine.resources_manager.ResourcesManager.instance",
+                        classmethod(lambda _cls: Resources()))
     manager = PluginManager(str(project))
     request.addfinalizer(manager.preloads.unload_all)
-    manager.install_package(str(package), install_dependencies=False)
     reference = "vendor/mutable-component"
     root = project / "Packages" / reference
-    previous = root / "runtime/component.py"
-    before = manager.registry.installed_record(reference)["files"]
-    submitted.clear()
-    if mutation == "delete":
-        previous.unlink()
-        previous.with_suffix(".py.meta").unlink()
-        current = None
-    else:
-        current = root / ("editor/component.py" if mutation == "editor" else "runtime/renamed.py")
-        current.parent.mkdir(parents=True, exist_ok=True)
-        previous.replace(current)
-        previous.with_suffix(".py.meta").replace(current.with_suffix(".py.meta"))
-
-    manager.set_enabled(reference, False)
-
-    assert previous in retired  # retire the old module, not an Editor replacement
-    if mutation == "editor":
-        assert current not in retired
-    if mutation == "rename":
-        assert current in retired
-    manager.set_enabled(reference, True)
-    assert submitted == ([current] if mutation == "rename" else [])
-    assert manager.registry.installed_record(reference)["files"] == before
-
-
-def test_install_writes_authored_metadata_without_derived_fingerprints(tmp_path):
-    source = _source(tmp_path / "source", "vendor/current-meta")
-    asset = source / "runtime" / "plugin.py"
-    asset.parent.mkdir()
-    asset.write_text("VALUE = 1\n", encoding="utf-8")
-    package = _export(source, tmp_path / "CurrentMeta.inxpkg")
-    project = _project(tmp_path / "project")
-
-    manager = PluginManager(str(project))
+    runtime = root / "runtime/component.py"
+    manager.install_package(str(package), selected=("seed.txt",), install_dependencies=False)
+    assert events == []
     manager.install_package(str(package), install_dependencies=False)
+    assert events[0] == ("begin", (runtime,))
+    assert events[1][0] == runtime
+    assert events[1][1]["force"] is True
+    assert events[1][1]["transaction_id"] == "mutable-component"
+    assert events[2] == ("drain", True)
+    assert not (project / "Library/InxPackageStaging").exists()
+    before = manager.registry.installed_record(reference)["files"]
+    events.clear()
+    manager.set_enabled(reference, False)
+    assert set(events[0][1]) == {runtime}
+    manager.set_enabled(reference, True)
 
-    for installed in (
-        project / "Packages/vendor/current-meta/runtime/plugin.py",
-        project / "Packages/vendor/current-meta/inx_package.json",
-    ):
-        metadata = json.loads(
-            installed.with_name(installed.name + ".meta").read_text(encoding="utf-8")
-        )
-        assert "content_hash" not in metadata["metadata"]
-        assert len(metadata["metadata"]["guid"]["value"]) == 32
+    source_bytes = runtime.read_bytes()
+    meta_bytes = runtime.with_suffix(".py.meta").read_bytes()
+    runtime.unlink()
+    runtime.with_suffix(".py.meta").unlink()
+    events.clear()
+    manager.set_enabled(reference, False)
+    assert events[0] == ("retire", (runtime,))
+    events.clear()
+    manager.set_enabled(reference, True)
+    assert events == []
+    manager.set_enabled(reference, False)
+    runtime.write_bytes(source_bytes)
+    runtime.with_suffix(".py.meta").write_bytes(meta_bytes)
+    events.clear()
+    manager.set_enabled(reference, True)
+    assert events[0] == ("begin", (runtime,))
 
+    added = runtime.with_name("added.py")
+    added.write_text("ADDED = True\n", encoding="utf-8")
+    added.with_suffix(".py.meta").write_text(_meta("c" * 32), encoding="utf-8")
+    editor = root / "editor/panel.py"
+    editor.parent.mkdir()
+    editor.write_text("EDITOR = True\n", encoding="utf-8")
+    editor.with_suffix(".py.meta").write_text(_meta("d" * 32), encoding="utf-8")
+    events.clear()
+    manager.set_enabled(reference, False)
+    assert events[0][0] == "retire"
+    assert set(events[0][1]) == {runtime, added}
+    events.clear()
+    manager.set_enabled(reference, True)
+    assert events[0][0] == "begin"
+    assert set(events[0][1]) == {runtime, added}
 
-def test_current_layout_routes_code_control_content_and_nested_packages(tmp_path):
-    source = _source(tmp_path / "source", "aabbc/physics/jolt")
-    (source / "runtime").mkdir()
-    (source / "runtime" / "backend.py").write_text("BACKEND = 'jolt'\n", encoding="utf-8")
-    (source / "editor").mkdir()
-    (source / "editor" / "panel.py").write_text("PANEL = True\n", encoding="utf-8")
-    (source / "README.md").write_text("# Jolt\n\nPhysics backend.\n", encoding="utf-8")
-    (source / "LICENSE").write_text("license", encoding="utf-8")
-    (source / "Scenes").mkdir()
-    (source / "Scenes" / "Demo.scene").write_text("scene", encoding="utf-8")
-    (source / "Variants").mkdir()
-    (source / "Variants" / "Alternative.inxpkg").write_bytes(b"opaque nested package")
+    renamed = runtime.with_name("renamed.py")
+    runtime.rename(renamed)
+    runtime.with_suffix(".py.meta").rename(renamed.with_suffix(".py.meta"))
+    events.clear()
+    manager.set_enabled(reference, False)
+    assert set(events[0][1]) == {runtime, renamed, added}
+    events.clear()
+    manager.set_enabled(reference, True)
+    assert set(events[0][1]) == {renamed, added}
 
-    preview = InxPackage.inspect(str(_export(source, tmp_path / "Jolt.inxpkg")))
+    events.clear()
+    manager.set_enabled(reference, False)
+    assert set(events[0][1]) == {runtime, renamed, added}
+    renamed.rename(runtime)
+    renamed.with_suffix(".py.meta").rename(runtime.with_suffix(".py.meta"))
+    events.clear()
+    manager.set_enabled(reference, True)
+    assert set(events[0][1]) == {runtime, added}
+    moved_editor = root / "editor/component.py"
+    runtime.rename(moved_editor)
+    runtime.with_suffix(".py.meta").rename(moved_editor.with_suffix(".py.meta"))
+    events.clear()
+    manager.set_enabled(reference, False)
+    assert set(events[0][1]) == {runtime, added}
+    events.clear()
+    manager.set_enabled(reference, True)
+    assert events[0] == ("begin", (added,))
 
-    assert preview.metadata["$schema"] == "infernux.inxpackage"
-    assert len({item["guid"] for item in preview.file_records}) == len(preview.file_records)
-    assert "Packages/aabbc/physics/jolt/runtime/backend.py" in preview.project_entries
-    assert "Packages/aabbc/physics/jolt/editor/panel.py" in preview.project_entries
-    assert "Assets/Plugins/README.md" in preview.project_entries
-    assert "Assets/Plugins/Scenes/Demo.scene" in preview.project_entries
-    assert "Assets/Plugins/Variants/Alternative.inxpkg" in preview.project_entries
-
-    project = _project(tmp_path / "project")
-    manager = PluginManager(str(project))
-    manager.install_package(str(tmp_path / "Jolt.inxpkg"), install_dependencies=False)
-    assert (project / "Packages/aabbc/physics/jolt/runtime/backend.py").is_file()
-    assert (project / "Assets/Plugins/Scenes/Demo.scene").is_file()
-    assert {item["reference"] for item in manager.registry.installed()} == {
-        "aabbc/physics/jolt"
-    }
-
-
-def test_repository_export_archives_only_pythonic_package_tree_and_any_payload(tmp_path):
-    repository = tmp_path / "repository"
-    package_source = _source(repository / "package", "vendor/mixed-payload")
-    (repository / "README.md").write_text("repository only", encoding="utf-8")
-    (repository / "CMakeLists.txt").write_text("project(plugin)", encoding="utf-8")
-    (repository / "build.gradle").write_text("plugins {}", encoding="utf-8")
-    payloads = {
-        "runtime/native_backend.pyd": b"pyd",
-        "runtime/web_backend.wasm": b"wasm",
-        "editor/compiler.dll": b"dll",
-        "materials/neon.mat": b"material",
-        "shaders/neon.frag": b"shader",
-        "web/index.html": b"<button>plugin page</button>",
-        "build/generated_backend.wasm": b"generated-wasm",
-        ".well-known/plugin.json": b"{}",
-    }
-    for relative, payload in payloads.items():
-        path = package_source.joinpath(*relative.split("/"))
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(payload)
-
-    preview = InxPackage.export_source(
-        str(repository), str(tmp_path / "mixed.inxpkg")
-    )
-
-    assert set(preview.logical_entries) == set(payloads)
-    assert "README.md" not in preview.logical_entries
-    assert "CMakeLists.txt" not in preview.logical_entries
-    assert "build.gradle" not in preview.logical_entries
-    assert player_file_exported(preview.metadata, "runtime/native_backend.pyd")
-    assert player_file_exported(preview.metadata, "runtime/web_backend.wasm")
-    assert not player_file_exported(preview.metadata, "editor/compiler.dll")
-    assert player_file_exported(preview.metadata, "materials/neon.mat")
-    assert player_file_exported(preview.metadata, "shaders/neon.frag")
-    assert player_file_exported(preview.metadata, "web/index.html")
-
-    project = _project(tmp_path / "project")
-    manager = PluginManager(str(project))
-    manager.install_package(str(tmp_path / "mixed.inxpkg"), install_dependencies=False)
-    installed_page = project / "Assets" / "Plugins" / "web" / "index.html"
-    assert installed_page.read_bytes() == payloads["web/index.html"]
-
-    class _UrlEngine:
-        def __init__(self):
-            self.urls = []
-
-        def open_url(self, url):
-            self.urls.append(url)
-            return True
-
-    engine = _UrlEngine()
-    set_project_root(str(project))
-    Application._bind_engine(engine, "player")
-    try:
-        page_guid = "0123456789abcdef0123456789abcdef"
-        set_runtime_asset_query(
-            lambda path, *, exact=False: (page_guid,)
-            if path == "Assets/Plugins/web/index.html"
-            else ()
-        )
-        set_runtime_asset_resolver(
-            lambda guid: str(installed_page.resolve()) if guid == page_guid else None
-        )
-        button = UIButton()
-        button.on_click.add_listener(
-            lambda: Application.open_url(
-                Application.asset_path("Assets/Plugins/web/index.html")
-            )
-        )
-        button.on_pointer_click(None)
-        assert engine.urls == [installed_page.resolve().as_uri()]
-    finally:
-        Application._unbind_engine(engine)
-        set_project_root(None)
-
-
-def test_editor_translation_catalog_and_tutorial_are_pruned_from_player(tmp_path):
-    source = _source(tmp_path / "source", "vendor/localized-editor")
-    payloads = {
-        "runtime/vendor/gameplay.py": b"VALUE = 'player'\n",
-        "editor/translations.json": b'{"$schema":"infernux.editor_translations"}',
-        "editor/vendor/panel.py": b"PANEL_ID = 'vendor.localized'\n",
-        "plugin_pages/usage.md": b"# Localized Editor Panel\n",
-    }
-    for logical, payload in payloads.items():
-        path = source.joinpath(*logical.split("/"))
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(payload)
-
-    preview = InxPackage.inspect(
-        str(_export(source, tmp_path / "localized-editor.inxpkg"))
-    )
-    records = {item["logical_path"]: item for item in preview.file_records}
-
-    assert records["editor/translations.json"]["role"] == "editor"
-    assert records["editor/vendor/panel.py"]["role"] == "editor"
-    assert records["plugin_pages/usage.md"]["role"] == "control"
-    assert player_file_exported(
-        records["runtime/vendor/gameplay.py"], "runtime/vendor/gameplay.py"
-    )
-    for logical in (
-        "editor/translations.json",
-        "editor/vendor/panel.py",
-        "plugin_pages/usage.md",
-    ):
-        assert not player_file_exported(records[logical], logical)
+    assert manager.registry.installed_record(reference)["files"] == before
+    author = root / "runtime/author.py"
+    author.write_text("AUTHOR = True\n", encoding="utf-8")
+    author.with_suffix(".py.meta").write_text(_meta("e" * 32), encoding="utf-8")
+    events.clear()
+    manager.uninstall(reference)
+    assert events[0][0] == "retire"
+    assert set(events[0][1]) == {runtime, added, author}
+    assert author.is_file() and added.is_file() and editor.is_file()
+    events.clear()
+    manager.install_package(str(package), install_dependencies=False)
+    assert events[0][0] == "begin"
+    assert set(events[0][1]) == {runtime, added, author}
+    assert runtime.is_file()
 
 
 def test_player_export_uses_persisted_role_for_pre_pythonic_installed_record():
@@ -688,46 +563,6 @@ def test_plugin_source_descriptor_rejects_unknown_fields(tmp_path):
             {"type": "local", "location": "plugin.inxpkg", "unexpected": True},
             install_dependencies=False,
         )
-
-
-def test_export_preserves_meta_guid_and_is_deterministic(tmp_path):
-    source = _source(tmp_path / "source", "vendor/deterministic")
-    asset = source / "Texture.bin"
-    asset.write_bytes(b"texture")
-    guid = "0123456789abcdef0123456789abcdef"
-    (source / "Texture.bin.meta").write_text(_meta(guid), encoding="utf-8")
-
-    first = InxPackage.inspect(str(_export(source, tmp_path / "first.inxpkg")))
-    second = InxPackage.inspect(str(_export(source, tmp_path / "second.inxpkg")))
-    first_record = next(item for item in first.file_records if item["logical_path"] == "Texture.bin")
-    second_record = next(item for item in second.file_records if item["logical_path"] == "Texture.bin")
-    assert first_record == second_record
-    assert first_record["guid"] == guid
-    assert first.metadata["control_guid"] == second.metadata["control_guid"]
-
-
-def test_generated_guid_is_stable_when_package_content_changes(tmp_path):
-    source = _source(tmp_path / "source", "vendor/stable-identity")
-    asset = source / "runtime" / "backend.py"
-    asset.parent.mkdir()
-    asset.write_text("VALUE = 1\n", encoding="utf-8")
-
-    first = InxPackage.inspect(str(_export(source, tmp_path / "first.inxpkg")))
-    first_record = next(
-        item
-        for item in first.file_records
-        if item["logical_path"] == "runtime/backend.py"
-    )
-    asset.write_text("VALUE = 2\n", encoding="utf-8")
-    second = InxPackage.inspect(str(_export(source, tmp_path / "second.inxpkg")))
-    second_record = next(
-        item
-        for item in second.file_records
-        if item["logical_path"] == "runtime/backend.py"
-    )
-
-    assert first_record["guid"] == second_record["guid"]
-    assert first_record == second_record
 
 
 def test_engine_compatibility_is_validated_and_enforced_before_install(tmp_path):
@@ -990,54 +825,29 @@ def test_startup_restores_requirements_before_single_preload_catchup(
         manager.shutdown()
 
 
-def test_resources_root_inxpackages_are_mandatory_and_idempotent(tmp_path):
+def test_bundled_package_startup_idempotence_and_successive_releases(tmp_path, monkeypatch):
     source = _source(tmp_path / "source", "infernux/platform-fixture")
     (source / "runtime").mkdir()
-    (source / "runtime" / "fixture.py").write_text(
-        "PLATFORM_FIXTURE = True\n", encoding="utf-8"
-    )
+    fixture = source / "runtime/fixture.py"
+    fixture.write_text("RELEASE = 'stale-cache'\n", encoding="utf-8")
+    stale = _export(source, tmp_path / "stale.inxpkg")
+    SharedPackageCache().store(str(stale), reference="infernux/platform-fixture", version="1.0.0")
+    fixture.write_text("RELEASE = 'bundled'\n", encoding="utf-8")
     resources = tmp_path / "resources"
     resources.mkdir()
     package = _export(source, resources / "infernux.platform-fixture.inxpkg")
     project = _project(tmp_path / "project")
-    manager = PluginManager(str(project), runtime=False)
-
-    first = install_bundled_packages(
-        str(project), resources_root=str(resources), manager=manager
-    )
-    second = install_bundled_packages(
-        str(project), resources_root=str(resources), manager=manager
-    )
-
-    assert [state.reference for state in first] == ["infernux/platform-fixture"]
-    assert second == ()
+    monkeypatch.setattr("infernux.resources.get_package_resources_path", lambda: str(resources))
+    manager = PluginManager.startup(str(project), runtime=False)
+    assert "Official plugin catalog is unavailable" in manager.official_catalog_error
+    installed = project / "Packages/infernux/platform-fixture"
+    assert (installed / "runtime/fixture.py").read_text(encoding="utf-8") == "RELEASE = 'bundled'\n"
+    assert install_bundled_packages(str(project), resources_root=str(resources), manager=manager) == ()
     record = manager.registry.installed_record("infernux/platform-fixture")
-    assert record is not None
     assert record["source"]["location"] == record["source"]["cache_location"]
     assert record["source"]["builtin"] is True
-    assert (project / "Packages/infernux/platform-fixture/runtime/fixture.py").is_file()
-
-
-def test_resources_root_updates_an_installed_builtin_when_payload_changes(tmp_path):
-    source = _source(tmp_path / "source", "infernux/platform-fixture")
-    (source / "runtime").mkdir()
-    fixture = source / "runtime" / "fixture.py"
-    fixture.write_text("RELEASE = 'first'\n", encoding="utf-8")
-    resources = tmp_path / "resources"
-    resources.mkdir()
-    package = _export(source, resources / "infernux.platform-fixture.inxpkg")
-    project = _project(tmp_path / "project")
-    manager = PluginManager(str(project), runtime=False)
-
-    install_bundled_packages(
-        str(project), resources_root=str(resources), manager=manager
-    )
-    record = manager.registry.installed_record("infernux/platform-fixture")
-    assert record is not None
     cached = Path(manager._installed_archive_path(record))
-    _FakeInxPack.archives[str(cached.resolve())] = dict(
-        _FakeInxPack.archives[str(package.resolve())]
-    )
+    _FakeInxPack.archives[str(cached.resolve())] = dict(_FakeInxPack.archives[str(package.resolve())])
 
     fixture.write_text("RELEASE = 'second'\n", encoding="utf-8")
     manifest_path = source / "inx_package.json"
@@ -1045,41 +855,21 @@ def test_resources_root_updates_an_installed_builtin_when_payload_changes(tmp_pa
     manifest["version"] = "1.0.1"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     _export(source, package)
-    states = install_bundled_packages(
-        str(project), resources_root=str(resources), manager=manager
-    )
-
+    states = install_bundled_packages(str(project), resources_root=str(resources), manager=manager)
     assert [state.reference for state in states] == ["infernux/platform-fixture"]
-    assert (
-        project / "Packages/infernux/platform-fixture/runtime/fixture.py"
-    ).read_text(encoding="utf-8") == "RELEASE = 'second'\n"
-
+    assert (installed / "runtime/fixture.py").read_text(encoding="utf-8") == "RELEASE = 'second'\n"
     record = manager.registry.installed_record("infernux/platform-fixture")
-    assert record is not None
     cached = Path(manager._installed_archive_path(record))
-    _FakeInxPack.archives[str(cached.resolve())] = dict(
-        _FakeInxPack.archives[str(package.resolve())]
-    )
-    manifest_path = source / "inx_package.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    _FakeInxPack.archives[str(cached.resolve())] = dict(_FakeInxPack.archives[str(package.resolve())])
+
     manifest["version"] = "1.0.2"
     manifest["intro"] = "Updated built-in description"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     _export(source, package)
-    metadata_only = install_bundled_packages(
-        str(project), resources_root=str(resources), manager=manager
-    )
-
-    assert [state.reference for state in metadata_only] == [
-        "infernux/platform-fixture"
-    ]
-    installed_manifest = json.loads(
-        (
-            project
-            / "Packages/infernux/platform-fixture/inx_package.json"
-        ).read_text(encoding="utf-8")
-    )
-    assert installed_manifest["intro"] == "Updated built-in description"
+    states = install_bundled_packages(str(project), resources_root=str(resources), manager=manager)
+    assert [state.reference for state in states] == ["infernux/platform-fixture"]
+    assert json.loads((installed / "inx_package.json").read_text(encoding="utf-8"))["intro"] == manifest["intro"]
+    assert install_bundled_packages(str(project), resources_root=str(resources), manager=manager) == ()
 
 
 def test_startup_never_force_overwrites_an_edited_builtin_package(tmp_path):
@@ -1143,46 +933,6 @@ def test_package_update_preserves_mesh_read_write_and_strips_legacy_statistics(t
     assert "is_readable" not in plain["metadata"]
 
 
-def test_resources_root_package_ignores_an_older_shared_cache_entry(tmp_path):
-    stale_source = _source(tmp_path / "stale", "infernux/platform-fixture")
-    (stale_source / "runtime").mkdir()
-    (stale_source / "runtime" / "fixture.py").write_text(
-        "RELEASE = 'stale-cache'\n", encoding="utf-8"
-    )
-    stale_package = _export(stale_source, tmp_path / "stale.inxpkg")
-    SharedPackageCache().store(
-        str(stale_package),
-        reference="infernux/platform-fixture",
-        version="1.0.0",
-    )
-
-    bundled_source = _source(tmp_path / "bundled", "infernux/platform-fixture")
-    (bundled_source / "runtime").mkdir()
-    (bundled_source / "runtime" / "fixture.py").write_text(
-        "RELEASE = 'bundled'\n", encoding="utf-8"
-    )
-    resources = tmp_path / "resources"
-    resources.mkdir()
-    bundled_package = _export(
-        bundled_source, resources / "infernux.platform-fixture.inxpkg"
-    )
-    project = _project(tmp_path / "project")
-    manager = PluginManager(str(project), runtime=False)
-
-    states = install_bundled_packages(
-        str(project), resources_root=str(resources), manager=manager
-    )
-
-    assert [state.reference for state in states] == ["infernux/platform-fixture"]
-    assert (
-        project / "Packages/infernux/platform-fixture/runtime/fixture.py"
-    ).read_text(encoding="utf-8") == "RELEASE = 'bundled'\n"
-    record = manager.registry.installed_record("infernux/platform-fixture")
-    assert record is not None
-    assert record["source"]["location"] == record["source"]["cache_location"]
-    assert record["source"]["builtin"] is True
-
-
 def test_resources_root_preserves_existing_project_plugin_release(tmp_path):
     bundled_source = _source(tmp_path / "bundled", "infernux/platform-fixture")
     (bundled_source / "runtime").mkdir()
@@ -1215,28 +965,6 @@ def test_resources_root_preserves_existing_project_plugin_release(tmp_path):
     assert record is not None
     assert record["source"]["location"] == record["source"]["cache_location"]
     assert record["source"].get("builtin") is not True
-
-
-def test_startup_installs_resources_root_inxpackages_without_official_catalog(
-    tmp_path, monkeypatch
-):
-    source = _source(tmp_path / "source", "infernux/platform-fixture")
-    (source / "runtime").mkdir()
-    (source / "runtime" / "fixture.py").write_text(
-        "PLATFORM_FIXTURE = True\n", encoding="utf-8"
-    )
-    resources = tmp_path / "resources"
-    resources.mkdir()
-    _export(source, resources / "infernux.platform-fixture.inxpkg")
-    project = _project(tmp_path / "project")
-    monkeypatch.setattr(
-        "infernux.resources.get_package_resources_path", lambda: str(resources)
-    )
-
-    manager = PluginManager.startup(str(project), runtime=False)
-
-    assert manager.registry.installed_record("infernux/platform-fixture") is not None
-    assert "Official plugin catalog is unavailable" in manager.official_catalog_error
 
 
 def test_new_project_installs_builtins_before_resolving_default_registry(
@@ -2393,27 +2121,6 @@ def test_uninstall_file_failure_rolls_back_payload_meta_and_registry(tmp_path, m
     assert payload.read_bytes() == b"payload"
     assert meta.is_file()
     assert manager.registry.installed_record("vendor/uninstall-rollback") is not None
-
-
-def test_runtime_native_payload_uses_package_route_and_player_policy(tmp_path):
-    source = _source(tmp_path / "source", "vendor/native-runtime")
-    runtime = source / "runtime"
-    runtime.mkdir()
-    (runtime / "backend.pyd").write_bytes(b"native-extension-fixture")
-    package = _export(source, tmp_path / "native-runtime.inxpkg")
-    preview = InxPackage.inspect(str(package))
-    record = next(
-        item for item in preview.file_records if item["logical_path"] == "runtime/backend.pyd"
-    )
-    assert record["role"] == "runtime"
-    assert player_file_exported(preview.metadata, "runtime/backend.pyd") is True
-
-    project = _project(tmp_path / "project")
-    manager = PluginManager(str(project))
-    manager.install_package(str(package), install_dependencies=False)
-    installed = project / "Packages/vendor/native-runtime/runtime/backend.pyd"
-    assert installed.read_bytes() == b"native-extension-fixture"
-    assert Path(str(installed) + ".meta").is_file()
 
 
 def test_requirements_failure_rolls_back_new_plugin_dependencies(tmp_path, monkeypatch):

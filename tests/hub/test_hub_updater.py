@@ -89,71 +89,106 @@ def test_unpublished_release_does_not_offer_downloads(monkeypatch):
     assert result.update is None
 
 
-def test_check_selects_the_standalone_update(monkeypatch):
-    release = _catalog("1.1.0", "windows-x64", "linux-x64")
-    monkeypatch.setattr(
-        hub_updater,
-        "_request_bytes",
-        lambda *_args, **_kwargs: json.dumps(release).encode(),
+@pytest.mark.parametrize("archive_readonly", [False, True])
+def test_catalog_selection_and_archive_staging_use_current_platform_manifests(
+    tmp_path: Path, monkeypatch, archive_readonly
+):
+    payload = tmp_path / "payload"
+    payload.mkdir()
+    (payload / "Infernux Hub.exe").write_bytes(b"new executable")
+    (payload / "lib.dll").write_bytes(b"new library")
+    platform = "windows-x64"
+    manifest = create_manifest(payload, "1.1.0", platform)
+    manifest_bytes = (json.dumps(manifest, indent=2) + "\n").encode()
+    archive_path = tmp_path / "full.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        for file in payload.iterdir():
+            entry = zipfile.ZipInfo.from_file(file, file.name)
+            if archive_readonly:
+                entry.external_attr = 0o100444 << 16 | 1
+            archive.writestr(entry, file.read_bytes())
+
+    installed = tmp_path / "installed"
+    installed.mkdir()
+    (installed / "Infernux Hub.exe").write_bytes(b"old executable")
+    (installed / "removed.dll").write_bytes(b"removed")
+    write_manifest(
+        create_manifest(installed, "1.0.0", platform),
+        installed / manifest_asset_name(platform),
     )
 
-    result = check_for_update("1.0.0", platform_id="windows-x64")
-    update = result.update
-
+    catalog = _catalog("1.1.0", platform)
+    platform_assets = catalog["releases"][0]["platforms"][platform]
+    platform_assets["update"]["size"] = archive_path.stat().st_size
+    for asset in platform_assets.values():
+        del asset["fallback_url"]
+    monkeypatch.setattr(hub_updater, "_request_bytes", lambda *_args, **_kwargs: json.dumps(catalog).encode())
+    result = check_for_update("1.0.0", platform_id=platform)
     assert result.status is HubUpdateStatus.UPDATE_AVAILABLE
+    update = result.update
     assert update is not None
     assert update.asset_name == "InfernuxHub-1.1.0-windows-x64-full.zip"
     assert update.asset_url.endswith(update.asset_name)
     assert update.manifest_url.endswith("InfernuxHub-windows-x64-manifest.json")
-    assert update.platform == "windows-x64"
-
-
-@pytest.mark.parametrize("current", ["0.4.2", "0.4.2-2"])
-@pytest.mark.parametrize("platform", ["windows-x64", "linux-x64"])
-def test_same_base_hub_hotfix_offers_a_real_update(monkeypatch, current, platform):
-    release = _catalog("0.4.2-3", "windows-x64", "linux-x64")
-    monkeypatch.setattr(hub_updater, "_request_bytes", lambda *_args: json.dumps(release).encode())
-
-    result = check_for_update(current, platform_id=platform)
-
-    assert result.status is HubUpdateStatus.UPDATE_AVAILABLE
-    assert result.update.current_version == current
-    assert result.update.target_version == "0.4.2-3"
-    assert result.update.asset_name == f"InfernuxHub-0.4.2-3-{platform}-full.zip"
-    assert check_for_update("0.4.2-3", platform_id=platform).status is HubUpdateStatus.UP_TO_DATE
-
-
-def test_check_selects_the_linux_release(monkeypatch):
-    release = _catalog("1.1.0", "windows-x64", "linux-x64")
+    assert update.platform == platform
+    assert update.asset_fallback_url == update.manifest_fallback_url == ""
+    current = check_for_update("1.1.0", platform_id=platform)
+    assert current.status is HubUpdateStatus.UP_TO_DATE
+    assert current.update is None
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    monkeypatch.setenv("INFERNUX_SHARED_DATA_ROOT", str(installed / "InfernuxHubData/Shared"))
+    monkeypatch.setattr(hub_updater, "get_app_dir", lambda: str(installed))
     monkeypatch.setattr(
         hub_updater,
-        "_request_bytes",
-        lambda *_args, **_kwargs: json.dumps(release).encode(),
+        "_download",
+        lambda _update, destination, _progress=None: shutil.copy2(
+            archive_path, destination
+        ),
+    )
+    monkeypatch.setattr(
+        hub_updater, "_request_bytes", lambda *_args, **_kwargs: manifest_bytes
     )
 
-    result = check_for_update("1.0.0", platform_id="linux-x64")
-    update = result.update
+    staged = stage_update(update)
 
-    assert result.status is HubUpdateStatus.UPDATE_AVAILABLE
-    assert update is not None
-    assert update.asset_name == "InfernuxHub-1.1.0-linux-x64-full.zip"
-    assert update.manifest_url.endswith("InfernuxHub-linux-x64-manifest.json")
-    assert update.platform == "linux-x64"
+    assert (staged / "stage" / "Infernux Hub.exe").read_bytes() == b"new executable"
+    assert (staged / "stage" / "lib.dll").read_bytes() == b"new library"
+    assert (
+        staged / "stage" / manifest_asset_name(platform)
+    ).read_bytes() == manifest_bytes
+    metadata = json.loads(
+        (staged / "hub-update.json").read_text(encoding="utf-8")
+    )
+    assert metadata["target_version"] == "1.1.0"
+    assert metadata["delete"] == ["removed.dll"]
+    assert {entry["path"] for entry in metadata["files"]} == {
+        "Infernux Hub.exe",
+        "lib.dll",
+        manifest_asset_name(platform),
+    }
+    if sys.platform == "win32":
+        (staged / "stage" / "lib.dll").write_bytes(b"ordinary user replacement")
 
 
-
-
-def test_asset_mirror_metadata_is_optional(monkeypatch):
-    release = _catalog("1.1.0", "windows-x64")
-    for asset in release["releases"][0]["platforms"]["windows-x64"].values():
-        del asset["fallback_url"]
+@pytest.mark.parametrize("platform", ["windows-x64", "linux-x64"])
+def test_hotfix_catalog_progression_preserves_each_platform_asset(monkeypatch, platform):
+    release = _catalog("0.4.2-2", "windows-x64", "linux-x64")
     monkeypatch.setattr(hub_updater, "_request_bytes", lambda *_args: json.dumps(release).encode())
+    initial = check_for_update("0.4.2", platform_id=platform)
+    assert initial.status is HubUpdateStatus.UPDATE_AVAILABLE
+    assert initial.update.current_version == "0.4.2"
+    assert initial.update.target_version == "0.4.2-2"
+    assert initial.update.asset_name == f"InfernuxHub-0.4.2-2-{platform}-full.zip"
+    assert initial.update.manifest_url.endswith(f"InfernuxHub-{platform}-manifest.json")
+    assert initial.update.platform == platform
 
-    result = check_for_update("1.0.0", platform_id="windows-x64")
-
-    assert result.status is HubUpdateStatus.UPDATE_AVAILABLE
-    assert result.update.asset_fallback_url == ""
-    assert result.update.manifest_fallback_url == ""
+    release.update(_catalog("0.4.2-3", "windows-x64", "linux-x64"))
+    following = check_for_update(initial.update.target_version, platform_id=platform)
+    assert following.status is HubUpdateStatus.UPDATE_AVAILABLE
+    assert following.update.current_version == "0.4.2-2"
+    assert following.update.target_version == "0.4.2-3"
+    assert following.update.asset_name == f"InfernuxHub-0.4.2-3-{platform}-full.zip"
+    assert check_for_update(following.update.target_version, platform_id=platform).status is HubUpdateStatus.UP_TO_DATE
 
 
 def test_check_requires_the_current_platform_release(monkeypatch):
@@ -183,20 +218,6 @@ def test_check_rejects_a_malformed_catalog(monkeypatch):
 
     assert result.status is HubUpdateStatus.CATALOG_INVALID
     assert "current contract" in result.detail
-
-
-def test_check_returns_none_when_current_is_latest(monkeypatch):
-    release = _catalog("1.1.0", "windows-x64")
-    monkeypatch.setattr(
-        hub_updater,
-        "_request_bytes",
-        lambda *_args, **_kwargs: json.dumps(release).encode(),
-    )
-
-    result = check_for_update("1.1.0", platform_id="windows-x64")
-
-    assert result.status is HubUpdateStatus.UP_TO_DATE
-    assert result.update is None
 
 
 def test_check_reports_network_unavailable(monkeypatch):
@@ -317,41 +338,17 @@ def test_download_uses_a_bounded_timeout_and_one_asset_mirror(tmp_path, monkeypa
     assert requested == [update.asset_url, update.asset_fallback_url]
 
 
-def test_update_into_versioned_runtime_hub_is_required(monkeypatch):
-    release = _catalog(
-        "0.4.0",
-        "windows-x64",
-        minimum_updatable_version="0.4.0",
-    )
-    monkeypatch.setattr(
-        hub_updater,
-        "_request_bytes",
-        lambda *_args, **_kwargs: json.dumps(release).encode(),
-    )
-
+def test_catalog_migration_gate_becomes_an_optional_update_after_install(monkeypatch):
+    release = _catalog("0.4.0", "windows-x64", minimum_updatable_version="0.4.0")
+    monkeypatch.setattr(hub_updater, "_request_bytes", lambda *_args, **_kwargs: json.dumps(release).encode())
     result = check_for_update("0.3.7", platform_id="windows-x64")
-
     assert result.status is HubUpdateStatus.UNSUPPORTED_CURRENT_VERSION
     assert result.update is None
     assert result.installer_url.endswith("windows-x64.exe")
-
-
-def test_updates_after_runtime_catalog_migration_are_optional(monkeypatch):
-    release = _catalog(
-        "0.4.1",
-        "windows-x64",
-        minimum_updatable_version="0.4.0",
-    )
-    monkeypatch.setattr(
-        hub_updater,
-        "_request_bytes",
-        lambda *_args, **_kwargs: json.dumps(release).encode(),
-    )
-
-    result = check_for_update("0.4.0", platform_id="windows-x64")
-
-    assert result.status is HubUpdateStatus.UPDATE_AVAILABLE
-    assert result.update is not None
+    release.update(_catalog("0.4.1", "windows-x64", minimum_updatable_version="0.4.0"))
+    optional = check_for_update("0.4.0", platform_id="windows-x64")
+    assert optional.status is HubUpdateStatus.UPDATE_AVAILABLE
+    assert optional.update is not None
 
 
 def test_packaged_updater_requests_elevation(tmp_path: Path, monkeypatch):
@@ -417,80 +414,6 @@ def test_packaged_linux_updater_uses_the_managed_runtime(tmp_path: Path, monkeyp
     assert observed["arguments"][0] == "/managed/python"
     assert observed["arguments"][1] == str(updater)
     assert observed["kwargs"] == {"cwd": staged, "start_new_session": True}
-
-
-@pytest.mark.parametrize("archive_readonly", [False, True])
-def test_stage_update_uses_the_archive_and_current_manifests(
-    tmp_path: Path, monkeypatch, archive_readonly
-):
-    payload = tmp_path / "payload"
-    payload.mkdir()
-    (payload / "Infernux Hub.exe").write_bytes(b"new executable")
-    (payload / "lib.dll").write_bytes(b"new library")
-    platform = "windows-x64"
-    manifest = create_manifest(payload, "1.1.0", platform)
-    manifest_bytes = (json.dumps(manifest, indent=2) + "\n").encode()
-    archive_path = tmp_path / "full.zip"
-    with zipfile.ZipFile(archive_path, "w") as archive:
-        for file in payload.iterdir():
-            entry = zipfile.ZipInfo.from_file(file, file.name)
-            if archive_readonly:
-                entry.external_attr = 0o100444 << 16 | 1
-            archive.writestr(entry, file.read_bytes())
-
-    installed = tmp_path / "installed"
-    installed.mkdir()
-    (installed / "Infernux Hub.exe").write_bytes(b"old executable")
-    (installed / "removed.dll").write_bytes(b"removed")
-    write_manifest(
-        create_manifest(installed, "1.0.0", platform),
-        installed / manifest_asset_name(platform),
-    )
-    update = HubUpdate(
-        current_version="1.0.0",
-        target_version="1.1.0",
-        release_url="",
-        asset_name=archive_path.name,
-        asset_url="",
-        asset_fallback_url="",
-        size=archive_path.stat().st_size,
-        manifest_url="",
-        manifest_fallback_url="",
-        platform=platform,
-    )
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
-    monkeypatch.setenv("INFERNUX_SHARED_DATA_ROOT", str(installed / "InfernuxHubData/Shared"))
-    monkeypatch.setattr(hub_updater, "get_app_dir", lambda: str(installed))
-    monkeypatch.setattr(
-        hub_updater,
-        "_download",
-        lambda _update, destination, _progress=None: shutil.copy2(
-            archive_path, destination
-        ),
-    )
-    monkeypatch.setattr(
-        hub_updater, "_request_bytes", lambda *_args, **_kwargs: manifest_bytes
-    )
-
-    staged = stage_update(update)
-
-    assert (staged / "stage" / "Infernux Hub.exe").read_bytes() == b"new executable"
-    assert (staged / "stage" / "lib.dll").read_bytes() == b"new library"
-    assert (
-        staged / "stage" / manifest_asset_name(platform)
-    ).read_bytes() == manifest_bytes
-    metadata = json.loads(
-        (staged / "hub-update.json").read_text(encoding="utf-8")
-    )
-    assert metadata["target_version"] == "1.1.0"
-    assert metadata["delete"] == ["removed.dll"]
-    assert {entry["path"] for entry in metadata["files"]} == {
-        "Infernux Hub.exe",
-        "lib.dll",
-        manifest_asset_name(platform),
-    }
-    if sys.platform == "win32":
-        (staged / "stage" / "lib.dll").write_bytes(b"ordinary user replacement")
 
 
 def test_stage_update_rejects_an_unowned_archive_member(tmp_path: Path, monkeypatch):

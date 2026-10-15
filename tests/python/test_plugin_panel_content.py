@@ -61,33 +61,33 @@ def test_plugin_panel_filters_by_stable_category_key():
     assert rows[0]["_category_key"] == "platform_build"
 
 
-def test_document_images_use_source_illustration_renderer(monkeypatch):
-    panel = PluginPanel()
-    requests = []
-    monkeypatch.setattr(panel_module, "_metric", lambda ctx, value: value)
-    monkeypatch.setattr(panel_module, "render_document_image", lambda *args: requests.append(args) or True)
-    ctx = SimpleNamespace(get_content_region_avail_width=lambda: 900)
-    manager = SimpleNamespace(content_asset_path=lambda *args: "/downloaded/plugin_pages/overview.png")
-    panel._render_markdown_image(ctx, manager, {}, {}, {"source": "overview.png"})
-    assert requests == [(ctx, panel, "/downloaded/plugin_pages/overview.png", 720, 360)]
-
-
-def test_document_image_preserves_aspect_and_ui_preview_ownership(monkeypatch, tmp_path):
+def test_plugin_document_image_resolves_waits_then_draws_with_ui_preview_ownership(monkeypatch, tmp_path):
     from infernux.engine.ui import asset_resource_preview as preview
 
     path = tmp_path / "diagram.png"
     path.write_bytes(b"source illustration")
-    calls = []
-    draws = []
-    native = SimpleNamespace(
-        query_or_schedule_texture_preview=lambda *args, **kwargs:
-            calls.append((args, kwargs)) or (7, 1280, 520),
+    calls, draws, resolutions, labels = [], [], [], []
+    texture = [0, 0, 0]
+    panel = PluginPanel()
+    native = SimpleNamespace(query_or_schedule_texture_preview=lambda *args, **kwargs:
+                             calls.append((args, kwargs)) or tuple(texture))
+    monkeypatch.setattr(preview, "_resolve_native_engine", lambda owner: native if owner is panel else None)
+    monkeypatch.setattr(panel_module, "_metric", lambda ctx, value: value)
+    ctx = SimpleNamespace(
+        get_content_region_avail_width=lambda: 900,
+        image=lambda *args: draws.append(args),
+        push_style_color=lambda *args: None,
+        label=labels.append,
+        pop_style_color=lambda: None,
     )
-    monkeypatch.setattr(preview, "_resolve_native_engine", lambda panel: native)
-    ctx = SimpleNamespace(image=lambda *args: draws.append(args))
-
-    assert preview.render_document_image(ctx, None, str(path), 720, 360)
-    args, settings = calls[0]
+    manager = SimpleNamespace(content_asset_path=lambda row, page, source:
+                              resolutions.append(source) or str(path))
+    panel._render_markdown_image(ctx, manager, {}, {}, {"source": "overview.png"})
+    assert resolutions == ["overview.png"]
+    assert draws == [] and labels == ["overview.png"]
+    texture[:] = [7, 1280, 520]
+    panel._render_markdown_image(ctx, manager, {}, {}, {"source": "overview.png"})
+    args, settings = calls[-1]
     assert args[0] == f"document|{path}"
     assert args[2] == path.stat().st_mtime_ns
     assert settings["authoring"] is False
@@ -96,17 +96,6 @@ def test_document_image_preserves_aspect_and_ui_preview_ownership(monkeypatch, t
     assert settings["max_size"] >= 1280
     assert draws == [(7, 720, 292.5)]
     assert args[0] not in preview._AUTHORING_PREVIEW_KEYS
-
-
-def test_document_image_waits_for_async_upload(monkeypatch, tmp_path):
-    from infernux.engine.ui import asset_resource_preview as preview
-
-    path = tmp_path / "pending.png"
-    path.write_bytes(b"source illustration")
-    native = SimpleNamespace(query_or_schedule_texture_preview=lambda *args, **kwargs: (0, 0, 0))
-    monkeypatch.setattr(preview, "_resolve_native_engine", lambda panel: native)
-    ctx = SimpleNamespace(image=lambda *args: pytest.fail("unpublished texture was drawn"))
-    assert not preview.render_document_image(ctx, None, str(path), 720, 360)
 
 
 def test_plugin_package_mutation_runs_after_the_render_frame():

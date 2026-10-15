@@ -17,56 +17,63 @@ def publish(registry, *references):
     registry.save(document)
 
 
-def test_ordinary_queries_reuse_unchanged_registry_across_frames(tmp_path, monkeypatch):
-    registry = PluginRegistry(str(tmp_path))
-    publish(registry, "team/first")
-    original = registry._load
-    calls = []
+def test_registry_presentation_remains_coherent_through_peer_worker_and_owner_publication(tmp_path, monkeypatch):
+    registry, peer = PluginRegistry(str(tmp_path)), PluginRegistry(str(tmp_path))
+    document = registry.load()
+    document["packages"] = [{"reference": "team/first"}]
+    document["installed"] = [{"reference": "team/first", "version": "1.0", "files": [],
+                              "control": {"guid": "control-guid"}}]
+    registry.save(document)
+    original, reads = registry._load, []
 
     def load():
-        calls.append("read")
+        reads.append("read")
         return original()
 
     monkeypatch.setattr(registry, "_load", load)
-    for frame in range(2):
+    with read_model_frame():
+        assert registry.available()[0]["reference"] == "team/first"
+        assert registry.find("team/first") is not None
+        assert registry.installed_record("team/first")["version"] == "1.0"
+        assert registry.is_installed("team/first")
+        assert registry.catalog_counts() == {"available": 1, "installed": 1}
         with read_model_frame():
-            assert registry.available()[0]["reference"] == "team/first"
-            assert registry.find("team/first") is not None
-            assert registry.installed() == ()
-            assert registry.installed_record("team/first") is None
-            with read_model_frame():
-                assert registry.find("team/first") is not None
-        assert len(calls) == 1
-    # Standalone consumers get the same automatic parsing reuse.
+            assert registry.installed_metadata()[0]["version"] == "1.0"
+        assert len(reads) == 1
+    with read_model_frame():
+        assert registry.find("team/first") is not None
+    assert len(reads) == 1
     assert registry.find("team/first") is not None
-    assert len(calls) == 1
+    assert len(reads) == 1
 
-
-def test_external_publication_is_coherent_for_frame_but_mutation_reads_are_fresh(tmp_path):
-    registry = PluginRegistry(str(tmp_path))
-    peer = PluginRegistry(str(tmp_path))
-    publish(registry, "team/first")
-    with read_model_frame():
-        assert registry.available()[0]["reference"] == "team/first"
-        publish(peer, "team/second")
-        # Frame labels agree with one another. An actual mutation does not
-        # consume this presentation and can still see concurrent publication.
-        assert registry.available()[0]["reference"] == "team/first"
-        assert registry.load()["packages"][0]["reference"] == "team/second"
-    with read_model_frame():
-        assert registry.available()[0]["reference"] == "team/second"
-
-
-def test_worker_queries_do_not_inherit_the_ui_snapshot(tmp_path):
-    registry = PluginRegistry(str(tmp_path))
-    peer = PluginRegistry(str(tmp_path))
-    publish(registry, "team/first")
     with ThreadPoolExecutor(max_workers=1) as worker:
         with read_model_frame():
+            assert registry.find("team/first") is not None
+            document = peer.load()
+            document["packages"] = [{"reference": "team/peer"}]
+            document["installed"] = []
+            peer.save(document)
             assert registry.available()[0]["reference"] == "team/first"
-            publish(peer, "team/second")
-            assert worker.submit(registry.available).result()[0]["reference"] == "team/second"
+            assert registry.is_installed("team/first")
+            assert registry.installed_metadata()[0]["version"] == "1.0"
+            assert registry.catalog_counts() == {"available": 1, "installed": 1}
+            assert worker.submit(registry.available).result()[0]["reference"] == "team/peer"
             assert registry.available()[0]["reference"] == "team/first"
+            fresh = registry.load()
+            assert fresh["packages"][0]["reference"] == "team/peer"
+            assert fresh["installed"] == []
+            fresh["packages"].append({"reference": "team/ours"})
+            registry.save(fresh)
+            assert {row["reference"] for row in registry.available()} == {"team/peer", "team/ours"}
+            assert not registry.is_installed("team/first")
+            assert registry.installed_metadata() == ()
+    with read_model_frame():
+        assert registry.catalog_counts() == {"available": 2, "installed": 0}
+        assert registry.installed() == ()
+        assert registry.installed_record("team/first") is None
+    with read_model_frame():
+        publish(peer)
+        assert registry.catalog_counts() == {"available": 0, "installed": 0}
 
 
 def test_frame_exception_releases_presentation_state(tmp_path):
@@ -79,19 +86,6 @@ def test_frame_exception_releases_presentation_state(tmp_path):
             raise RuntimeError("frame error")
     publish(peer, "team/second")
     assert registry.find("team/second") is not None
-
-
-def test_synchronous_action_replaces_its_presentation_and_preserves_peer_changes(tmp_path):
-    registry = PluginRegistry(str(tmp_path))
-    peer = PluginRegistry(str(tmp_path))
-    publish(registry, "team/first")
-    with read_model_frame():
-        assert registry.find("team/first") is not None
-        publish(peer, "team/peer")
-        document = registry.load()
-        document["packages"].append({"reference": "team/ours"})
-        registry.save(document)
-        assert {row["reference"] for row in registry.available()} == {"team/peer", "team/ours"}
 
 
 def test_presentation_does_not_weaken_stale_write_rejection(tmp_path):
@@ -148,30 +142,6 @@ def test_installed_metadata_projection_avoids_ownership_and_is_detached(tmp_path
     row["pages"][0]["path"] = "changed"
     assert registry.installed_metadata()[0]["source"] == {"type": "local"}
     assert registry.installed_metadata()[0]["pages"][0]["path"] == "plugin_pages/intro.md"
-
-
-def test_lightweight_catalog_queries_follow_external_publication(tmp_path):
-    registry = PluginRegistry(str(tmp_path))
-    peer = PluginRegistry(str(tmp_path))
-    document = registry.load()
-    document["packages"] = [{"reference": "team/plugin"}]
-    document["installed"] = [{"reference": "team/plugin", "version": "1.0", "files": [],
-                              "control": {"guid": "control-guid"}}]
-    registry.save(document)
-    with read_model_frame():
-        assert registry.is_installed("team/plugin")
-        assert registry.catalog_counts() == {"available": 1, "installed": 1}
-        new = peer.load()
-        new["installed"] = []
-        new["packages"] = []
-        peer.save(new)
-        assert registry.is_installed("team/plugin")
-        assert registry.installed_metadata()[0]["version"] == "1.0"
-        assert registry.load()["installed"] == []
-    with read_model_frame():
-        assert not registry.is_installed("team/plugin")
-        assert registry.installed_metadata() == ()
-        assert registry.catalog_counts() == {"available": 0, "installed": 0}
 
 
 def _installed_page_manager(tmp_path):

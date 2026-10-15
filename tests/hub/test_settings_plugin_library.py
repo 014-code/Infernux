@@ -37,19 +37,21 @@ class _Database:
         self.settings[key] = value
 
 
-@pytest.mark.parametrize("saved, expected", [(None, True), ("enabled", True), ("disabled", False)])
-def test_automatic_update_checks_default_on_and_preserve_the_user_choice(saved, expected):
+def test_automatic_update_choice_persists_across_settings_reopen():
     database = _Database()
-    if saved is not None:
-        database.settings["automatic_update_checks"] = saved
     view = settings_view.SettingsView(database)
-
-    assert view.automatic_update_toggle.isChecked() is expected
-    assert database.settings.get("automatic_update_checks") == saved
-    view.automatic_update_toggle.stateChanged.emit(1)
-    assert database.settings["automatic_update_checks"] == "enabled"
+    assert view.automatic_update_toggle.isChecked() is True
+    assert "automatic_update_checks" not in database.settings
     view.automatic_update_toggle.stateChanged.emit(0)
     assert database.settings["automatic_update_checks"] == "disabled"
+    disabled = settings_view.SettingsView(database)
+    assert disabled.automatic_update_toggle.isChecked() is False
+    assert database.settings["automatic_update_checks"] == "disabled"
+    disabled.automatic_update_toggle.stateChanged.emit(1)
+    assert database.settings["automatic_update_checks"] == "enabled"
+    enabled = settings_view.SettingsView(database)
+    assert enabled.automatic_update_toggle.isChecked() is True
+    assert database.settings["automatic_update_checks"] == "enabled"
 
 
 def test_python_runtime_ca_certificate_is_persisted_and_cleared(tmp_path):
@@ -92,42 +94,19 @@ def test_python_runtime_ca_certificate_resolution_error_is_reported(
     assert view._runtime_ca_bundle == ""
 
 
-def test_settings_show_the_shared_plugin_library_and_cleanup_capacity(
-    tmp_path, monkeypatch
-):
-    project = tmp_path / "Project"
-    removable = tmp_path / "unused.inxpkg"
-    stats = PluginLibraryStats(
-        root=tmp_path / "Hub" / "Library" / "Plugins",
-        package_count=3,
-        total_bytes=3 * 1024 * 1024,
-        removable=(removable,),
-        removable_bytes=1024 * 1024,
-    )
-    monkeypatch.setattr(settings_view, "inspect_plugin_library", lambda roots: stats)
-
-    view = settings_view.SettingsView(_Database(project))
-
-    assert "3 packages" in view.storage_description.text()
-    assert "3.0 MiB" in view.storage_description.text()
-    assert str(stats.root) in view.storage_description.text()
-    assert view.clean_plugins_button.isEnabled()
-    assert "1.0 MiB" in view.clean_plugins_button.toolTip()
-
-
-def test_settings_cleanup_rechecks_references_before_deleting(tmp_path, monkeypatch):
+def test_shared_library_capacity_and_cleanup_recheck_use_one_settings_view(tmp_path, monkeypatch):
     project = tmp_path / "Project"
     before = PluginLibraryStats(
         root=tmp_path / "Hub" / "Library" / "Plugins",
-        package_count=1,
-        total_bytes=7,
+        package_count=3,
+        total_bytes=3 * 1024 * 1024,
         removable=(tmp_path / "unused.inxpkg",),
-        removable_bytes=7,
+        removable_bytes=1024 * 1024,
     )
     after = PluginLibraryStats(
         root=before.root,
-        package_count=0,
-        total_bytes=0,
+        package_count=2,
+        total_bytes=2 * 1024 * 1024,
         removable=(),
         removable_bytes=0,
     )
@@ -146,6 +125,11 @@ def test_settings_cleanup_rechecks_references_before_deleting(tmp_path, monkeypa
     monkeypatch.setattr(settings_view.dialogs, "question", lambda *_args, **_kwargs: QMessageBox.Yes)
 
     view = settings_view.SettingsView(_Database(project))
+    assert "3 packages" in view.storage_description.text()
+    assert "3.0 MiB" in view.storage_description.text()
+    assert str(before.root) in view.storage_description.text()
+    assert view.clean_plugins_button.isEnabled()
+    assert "1.0 MiB" in view.clean_plugins_button.toolTip()
     view._clean_plugin_library()
 
     assert observed == [
@@ -155,7 +139,7 @@ def test_settings_cleanup_rechecks_references_before_deleting(tmp_path, monkeypa
         (str(project),),
     ]
     assert not view.clean_plugins_button.isEnabled()
-    assert "0 packages" in view.storage_description.text()
+    assert "2 packages" in view.storage_description.text()
 
 
 def test_settings_disable_cleanup_when_a_registered_project_is_unavailable(

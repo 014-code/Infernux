@@ -235,7 +235,7 @@ def test_builtin_material_shader_sync_updates_readonly_cache_without_user_edit(m
     assert "_material_preview_pending" not in state.extra
 
 
-def test_shader_annotation_reflection_tracks_structure_not_value_version(monkeypatch):
+def test_material_annotation_and_layout_caches_follow_schema_not_value_edits(monkeypatch):
     import infernux.engine.ui.inspector_material as module
 
     reflection_calls = []
@@ -266,17 +266,33 @@ def test_shader_annotation_reflection_tracks_structure_not_value_version(monkeyp
         "properties": {"roughness": {"type": 0, "value": 0.25}},
         "_shader_property_order": ["roughness"],
     }
-    state = SimpleNamespace(extra={})
+    state = SimpleNamespace(extra={'_material_schema_revision': 0})
+    order_calls = []
+    monkeypatch.setattr(module, 'get_locale', lambda: 'en')
+    monkeypatch.setattr(module.shader_utils, 'get_material_property_display_order',
+                        lambda _document: order_calls.append(True) or ['roughness'])
+
+    class Context:
+        @staticmethod
+        def calc_text_width(label):
+            return float(len(label))
+
+    ctx = Context()
 
     # The first call establishes the annotation cache.
     module._sync_shader_annotations(document, state)
     assert len(reflection_calls) == 1
     initial_sync_count = len(sync_calls)
+    module._get_material_property_layout_cache(ctx, state, document)
+    module._get_material_property_layout_cache(ctx, state, document)
+    assert len(order_calls) == 1
 
     # A value-only material edit must not reflect the shader again.
     document["properties"]["roughness"]["value"] = 0.75
     module._sync_shader_annotations(document, state)
     assert len(reflection_calls) == 1
+    module._get_material_property_layout_cache(ctx, state, document)
+    assert len(order_calls) == 1
 
     # Adding a property key or changing the shader generation invalidates it.
     document["properties"]["metallic"] = {"type": 0, "value": 0.0}
@@ -286,6 +302,13 @@ def test_shader_annotation_reflection_tracks_structure_not_value_version(monkeyp
     module._sync_shader_annotations(document, state)
     assert len(reflection_calls) == 3
     assert len(sync_calls) == initial_sync_count + 1
+
+    other_ctx = Context()
+    module._get_material_property_layout_cache(other_ctx, state, document)
+    assert len(order_calls) == 2
+    module._bump_material_schema_revision(state)
+    module._get_material_property_layout_cache(other_ctx, state, document)
+    assert len(order_calls) == 3
 
 
 def test_material_shader_ui_cache_replays_catalog_and_path_without_requery(monkeypatch):
@@ -330,80 +353,63 @@ def test_material_shader_ui_cache_replays_catalog_and_path_without_requery(monke
     assert catalog_calls == [".vert", ".frag", ".vert", ".frag"]
 
 
-def test_material_property_layout_cache_ignores_value_edits_until_schema_revision(monkeypatch):
-    import infernux.engine.ui.inspector_material as module
-
-    order_calls = []
-    monkeypatch.setattr(module, "get_locale", lambda: "en")
-    monkeypatch.setattr(
-        module.shader_utils,
-        "get_material_property_display_order",
-        lambda _document: order_calls.append(True) or ["roughness", "tint"],
-    )
-
-    class Context:
-        @staticmethod
-        def calc_text_width(label):
-            return float(len(label))
-
-    document = {
-        "properties": {
-            "roughness": {"type": 0, "value": 0.25},
-            "tint": {"type": 7, "value": [1.0, 1.0, 1.0, 1.0]},
-        }
-    }
-    state = SimpleNamespace(extra={"_material_schema_revision": 0})
-    context = Context()
-    module._get_material_property_layout_cache(context, state, document)
-    module._get_material_property_layout_cache(context, state, document)
-    assert len(order_calls) == 1
-
-    document["properties"]["roughness"]["value"] = 0.75
-    module._get_material_property_layout_cache(context, state, document)
-    assert len(order_calls) == 1
-
-    other_context = Context()
-    module._get_material_property_layout_cache(other_context, state, document)
-    assert len(order_calls) == 2  # Context identity is part of the layout key.
-
-    module._bump_material_schema_revision(state)
-    module._get_material_property_layout_cache(other_context, state, document)
-    assert len(order_calls) == 3
-
-
-def test_inline_material_document_binding_is_not_repeated_for_stable_state(monkeypatch):
+def test_inline_material_binding_and_preview_follow_live_document_generation(monkeypatch):
     import infernux.engine.interaction as interaction
     import infernux.engine.ui.inspector_material as module
+    from infernux.engine.ui import asset_resource_preview
 
-    bind_calls = []
+    bindings, serializations, queries = [], [], []
 
     class NativeMaterial:
-        file_path = "C:/project/Assets/Test.mat"
-        guid = "test-guid"
+        file_path = 'C:/project/Assets/Test.mat'
+        guid = 'test-material-guid'
         is_builtin = False
+        version = 4
 
-        @staticmethod
-        def get_version():
-            return 1
+        def get_version(self):
+            return self.version
 
-        @staticmethod
-        def serialize_document():
-            return {"properties": {}, "shaders": {}}
+        def serialize_document(self):
+            serializations.append(self.version)
+            return {'properties': {}, 'shaders': {}}
 
-    controller = SimpleNamespace(document_id="material-document")
-    monkeypatch.setattr(
-        interaction,
-        "ensure_editable_resource_document",
-        lambda **kwargs: bind_calls.append(kwargs) or controller,
-    )
-
-    panel = SimpleNamespace()
-    native = NativeMaterial()
+    controller = SimpleNamespace(document_id='material-document')
+    monkeypatch.setattr(interaction, 'ensure_editable_resource_document',
+                        lambda **kwargs: bindings.append(kwargs) or controller)
+    panel, native = SimpleNamespace(), NativeMaterial()
     first = module._build_inline_state(panel, native)
+    serialize_count = len(serializations)
     second = module._build_inline_state(panel, native)
+    assert first is second and first.exec_layer is second.exec_layer
+    assert serialize_count > 0 and len(serializations) == serialize_count
+    assert len(bindings) == 1
 
-    assert first is second
-    assert len(bind_calls) == 1
+    native.version = 5
+    current = module._build_inline_state(panel, native)
+    assert current is not first
+    assert len(serializations) > serialize_count
+    current.extra['cached_json'] = '{"color":"B"}'
+    responses = iter(((41, 'material-key'), (42, 'material-key')))
+    readiness = iter((False, True))
+
+    def query(*args):
+        queries.append(args)
+        return next(responses)
+
+    preview = SimpleNamespace(
+        get_material_preview_texture_id=lambda key: 42 if key == 'material-key' else 0,
+        request_full_speed_frame=lambda: None,
+    )
+    monkeypatch.setattr(asset_resource_preview, '_resolve_native_engine', lambda _panel: preview)
+    monkeypatch.setattr(module, '_query_material_preview_tex', query)
+    monkeypatch.setattr(module, '_is_material_preview_ready', lambda *_args: next(readiness))
+    args = (panel, native, {}, current, '{"color":"A"}', native.file_path)
+    assert module._get_cached_material_preview_tex(*args) == 41
+    assert module._get_cached_material_preview_tex(*args) == 42
+    assert module._get_cached_material_preview_tex(*args) == 42
+    assert len(queries) == 2
+    assert queries[0][4] == '{"color":"B"}'
+    assert current.extra['_material_cache_tag'] == '{"color":"B"}'
 
 
 def test_serialized_bool_and_vector_fields_keep_stable_widget_ids(monkeypatch):
@@ -1207,101 +1213,6 @@ def test_builtin_asset_reference_field_records_native_property(monkeypatch, tmp_
         UndoManager._instance = previous
 
 
-def test_inline_material_state_and_preview_query_are_reused(monkeypatch):
-    import infernux.engine.ui.inspector_material as module
-    from infernux.engine.ui import asset_resource_preview
-
-    serialize_calls = []
-
-    class NativeMaterial:
-        file_path = "C:/project/Assets/Test.mat"
-        guid = "test-material-guid"
-
-        def __init__(self):
-            self.version = 4
-
-        def get_version(self):
-            return self.version
-
-        def serialize_document(self):
-            serialize_calls.append(True)
-            return {"properties": {}, "shaders": {}}
-
-    panel = SimpleNamespace()
-    native = NativeMaterial()
-    first_state = module._build_inline_state(panel, native)
-    calls_after_first = len(serialize_calls)
-    second_state = module._build_inline_state(panel, native)
-
-    assert second_state is first_state
-    assert second_state.exec_layer is first_state.exec_layer
-    assert calls_after_first > 0
-    assert len(serialize_calls) == calls_after_first
-
-    native.version = 5
-    third_state = module._build_inline_state(panel, native)
-    assert third_state is not first_state
-    assert len(serialize_calls) > calls_after_first
-
-    queries = []
-    preview_native = SimpleNamespace(
-        get_material_preview_texture_id=lambda key: 73 if key == "material-key" else 0
-    )
-    monkeypatch.setattr(
-        asset_resource_preview,
-        "_resolve_native_engine",
-        lambda _panel: preview_native,
-    )
-    monkeypatch.setattr(
-        module,
-        "_query_material_preview_tex",
-        lambda *_args: queries.append(True) or (73, "material-key"),
-    )
-    monkeypatch.setattr(module, "_is_material_preview_ready", lambda *_args: True)
-    assert module._get_cached_material_preview_tex(
-        panel, native, {}, first_state, "stable", native.file_path,
-    ) == 73
-    assert module._get_cached_material_preview_tex(
-        panel, native, {}, first_state, "stable", native.file_path,
-    ) == 73
-    assert len(queries) == 1
-
-
-def test_material_preview_does_not_cache_stale_generation(monkeypatch):
-    import infernux.engine.ui.inspector_material as module
-
-    state = SimpleNamespace(extra={})
-    queries = iter(((41, "material-key"), (42, "material-key"), (42, "material-key")))
-    ready = iter((False, True, True))
-    monkeypatch.setattr(module, "_query_material_preview_tex", lambda *_args: next(queries))
-    monkeypatch.setattr(module, "_is_material_preview_ready", lambda *_args: next(ready))
-
-    args = (SimpleNamespace(), None, {}, state, "new-json", "C:/project/Assets/Test.mat")
-    assert module._get_cached_material_preview_tex(*args) == 41
-    assert module._get_cached_material_preview_tex(*args) == 42
-    assert module._get_cached_material_preview_tex(*args) == 42
-
-
-def test_material_preview_prefers_new_live_document_over_stale_cache_tag(monkeypatch):
-    import infernux.engine.ui.inspector_material as module
-
-    query_args = []
-    state = SimpleNamespace(extra={"cached_json": '{"color":"B"}'})
-    monkeypatch.setattr(
-        module,
-        "_query_material_preview_tex",
-        lambda *args: query_args.append(args) or (77, "material-key"),
-    )
-    monkeypatch.setattr(module, "_is_material_preview_ready", lambda *_args: True)
-
-    assert module._get_cached_material_preview_tex(
-        SimpleNamespace(), None, {}, state, '{"color":"A"}',
-        "C:/project/Assets/Test.mat",
-    ) == 77
-    assert query_args[0][4] == '{"color":"B"}'
-    assert state.extra["_material_cache_tag"] == '{"color":"B"}'
-
-
 def test_shader_reference_recovers_from_stale_path_hint(monkeypatch, tmp_path):
     import os
 
@@ -1337,7 +1248,7 @@ def test_shader_reference_recovers_from_stale_path_hint(monkeypatch, tmp_path):
     }
 
 
-def test_shader_picker_path_is_resolved_to_shader_info_name(monkeypatch, tmp_path):
+def test_shader_picker_distinguishes_project_path_and_builtin_identity(monkeypatch, tmp_path):
     import os
 
     from infernux.engine.ui import inspector_shader_utils as shader_utils
@@ -1353,22 +1264,16 @@ def test_shader_picker_path_is_resolved_to_shader_info_name(monkeypatch, tmp_pat
     assert reference["shader_id"] != str(shader_path)
     assert reference["path_hint"] == os.path.normpath(str(shader_path)).replace("\\", "/")
 
-
-def test_builtin_shader_picker_persists_only_the_shader_id(monkeypatch, tmp_path):
     from infernux.engine import project_context
-    from infernux.engine.ui import inspector_shader_utils as shader_utils
 
-    project_root = tmp_path / "Project"
-    shader_path = project_root / "Library" / "Resources" / "shaders" / "lit.frag"
-    shader_path.parent.mkdir(parents=True)
-    shader_path.write_text('ShaderInfo { Name "Lit" }\n', encoding="utf-8")
-    monkeypatch.setattr(project_context._context(), "root", str(project_root))
-    monkeypatch.setattr(shader_utils, "_read_compiled_shader_metadata", lambda _path: None)
-    monkeypatch.setattr(shader_utils, "_get_shader_catalog", lambda _ext: {"items": [], "paths": {}})
-
-    reference = shader_utils.make_shader_reference(str(shader_path), ".frag")
-
-    assert reference == {"guid": "", "shader_id": "Lit", "path_hint": ""}
+    project_root = tmp_path / 'Project'
+    builtin_path = project_root / 'Library' / 'Resources' / 'shaders' / 'lit.frag'
+    builtin_path.parent.mkdir(parents=True)
+    builtin_path.write_text('ShaderInfo { Name "Lit" }\n', encoding='utf-8')
+    monkeypatch.setattr(project_context._context(), 'root', str(project_root))
+    assert shader_utils.make_shader_reference(str(builtin_path), '.frag') == {
+        'guid': '', 'shader_id': 'Lit', 'path_hint': ''
+    }
 
 
 def test_generated_library_shader_persists_only_id_before_project_context(
@@ -1415,7 +1320,7 @@ def test_initial_material_preview_uses_the_in_memory_document(monkeypatch, tmp_p
     })]
 
 
-def test_texture_preview_uses_live_settings_generation(tmp_path):
+def test_texture_preview_settings_generation_and_authoring_release(tmp_path, monkeypatch):
     from infernux.engine.ui import asset_resource_preview
 
     path = tmp_path / "Live.png"
@@ -1424,12 +1329,17 @@ def test_texture_preview_uses_live_settings_generation(tmp_path):
     class _Native:
         def __init__(self):
             self.calls = []
+            self.released = []
 
         def query_or_schedule_texture_preview(self, *args, **kwargs):
             self.calls.append((args, kwargs))
             return 7, 64, 64
 
+        def release_preview_authoring(self, key):
+            self.released.append(key)
+
     native = _Native()
+    monkeypatch.setattr(asset_resource_preview, '_resolve_native_engine', lambda _panel: native)
     settings = TextureImportSettings()
     asset_resource_preview._try_get_cpp_texture_preview(native, str(path), settings)
     settings.generate_mipmaps = False
@@ -1442,23 +1352,8 @@ def test_texture_preview_uses_live_settings_generation(tmp_path):
     assert native.calls[0][1]["texture_type"] == "default"
     assert native.calls[0][1]["authoring"] is True
 
-
-def test_texture_live_preview_can_be_released(monkeypatch, tmp_path):
-    from infernux.engine.ui import asset_resource_preview
-
-    class _Native:
-        def __init__(self):
-            self.released = []
-
-        def release_preview_authoring(self, key):
-            self.released.append(key)
-
-    native = _Native()
-    monkeypatch.setattr(asset_resource_preview, "_resolve_native_engine", lambda _panel: native)
-    path = tmp_path / "Released.png"
     asset_resource_preview.invalidate_live_texture_preview(str(path))
-
-    assert native.released == [f"tex|{os.path.normpath(path)}"]
+    assert native.released == [f'tex|{os.path.normpath(path)}']
 
 
 def test_texture_preview_query_failure_is_not_suppressed(tmp_path):
@@ -1510,210 +1405,76 @@ def test_material_undo_snapshot_is_decoded_only_when_edit_occurs():
     }
 
 
-def test_material_surface_controls_use_one_native_batch():
+def test_material_surface_edit_reuses_and_invalidates_the_native_batch_plan(monkeypatch):
     import infernux.engine.ui.inspector_material as module
 
-    captured = []
-
-    class Context:
-        @staticmethod
-        def create_property_batch_plan(descriptors):
-            return descriptors
-
-        @staticmethod
-        def render_property_batch_plan_values(descriptors, values, label_width):
-            captured.append((descriptors, label_width))
-            return {0: 1}
-
-    document = {
-        "renderState": {
-            "blendEnable": False,
-            "depthWriteEnable": True,
-            "depthTestEnable": True,
-            "depthCompareOp": 1,
-            "cullMode": 2,
-            "renderQueue": 2000,
-        },
-        "renderStateOverrides": 0,
-    }
-    overrides, change_key = module._render_surface_options_batch(
-        Context(), document["renderState"], document, 0, 144.0,
-    )
-
-    assert len(captured) == 1
-    assert len(captured[0][0]) == 6
-    assert captured[0][1] == 144.0
-    assert document["renderState"]["blendEnable"] is True
-    assert document["renderState"]["renderQueue"] == 3000
-    assert overrides == document["renderStateOverrides"]
-    assert change_key == "render_state.surface"
-
-
-def test_material_surface_batch_reuses_structure_but_refreshes_live_values():
-    import infernux.engine.ui.inspector_material as module
+    locale = ['zh']
+    monkeypatch.setattr(module, 'get_locale', lambda: locale[0])
+    monkeypatch.setattr(module, 't', lambda _key: 'xxxx')
 
     class Context:
         def __init__(self):
-            self.plan_builds = 0
-            self.values = []
+            self.plans, self.values = [], []
+            self.edits = {}
 
         def create_property_batch_plan(self, descriptors):
-            self.plan_builds += 1
-            return tuple(descriptors)
-
-        def render_property_batch_plan_values(self, plan, values, _label_width):
-            self.values.append((plan, tuple(values)))
-            return {}
-
-    ctx = Context()
-    cache = {}
-    render_state = {
-        "blendEnable": False,
-        "depthWriteEnable": True,
-        "depthTestEnable": True,
-        "depthCompareOp": 1,
-        "cullMode": 2,
-        "renderQueue": 2000,
-    }
-    document = {"renderStateOverrides": 0}
-
-    module._render_surface_options_batch(
-        ctx, render_state, document, 0, 144.0, cache=cache,
-    )
-    render_state["renderQueue"] = 1200
-    module._render_surface_options_batch(
-        ctx, render_state, document, 0, 144.0, cache=cache,
-    )
-
-    assert ctx.plan_builds == 1
-    assert ctx.values[0][0] is ctx.values[1][0]
-    assert ctx.values[0][1] != ctx.values[1][1]
-
-    render_state["alphaClipEnabled"] = True
-    module._render_surface_options_batch(
-        ctx, render_state, document, 0, 144.0, cache=cache,
-    )
-    assert ctx.plan_builds == 2
-
-
-def test_material_surface_batch_keeps_complete_native_enum_contract_in_cached_plan():
-    import infernux.engine.ui.inspector_material as module
-
-    class Context:
-        def __init__(self):
-            self.plans = []
-
-        def create_property_batch_plan(self, descriptors):
-            required_by_type = {
-                0: ("f",),
-                1: ("i",),
-                2: ("b",),
-                7: ("ei", "en"),
-            }
+            required_by_type = {0: ('f',), 1: ('i',), 2: ('b',), 7: ('ei', 'en')}
             for descriptor in descriptors:
-                required = required_by_type[descriptor["t"]]
-                assert all(key in descriptor for key in required)
+                assert all(key in descriptor for key in required_by_type[descriptor['t']])
             self.plans.append(tuple(descriptors))
             return self.plans[-1]
 
-        @staticmethod
-        def render_property_batch_plan_values(_plan, _values, _label_width):
-            return {}
+        def render_property_batch_plan_values(self, plan, values, label_width):
+            assert label_width == 144.
+            self.values.append((plan, tuple(values)))
+            edits, self.edits = self.edits, {}
+            return edits
 
-    ctx = Context()
-    cache = {}
+    ctx, cache = Context(), {}
     render_state = {
-        "blendEnable": True,
-        "depthWriteEnable": False,
-        "depthTestEnable": True,
-        "depthCompareOp": 1,
-        "cullMode": 2,
-        "srcColorBlendFactor": 6,
-        "dstColorBlendFactor": 7,
-        "alphaClipEnabled": True,
-        "alphaClipThreshold": 0.5,
-        "renderQueue": 3000,
+        'blendEnable': False, 'depthWriteEnable': True, 'depthTestEnable': True,
+        'depthCompareOp': 1, 'cullMode': 2, 'renderQueue': 2000,
+        'srcColorBlendFactor': 6, 'dstColorBlendFactor': 7,
+        'alphaClipEnabled': False, 'alphaClipThreshold': .5,
     }
-    document = {"renderStateOverrides": 0}
-
-    module._render_surface_options_batch(
-        ctx, render_state, document, 0, 144.0, cache=cache,
-    )
-    descriptors = ctx.plans[0]
-    enum_descriptors = [desc for desc in descriptors if desc["t"] == 7]
-
-    assert enum_descriptors
-    assert all("ei" in desc and "en" in desc for desc in enum_descriptors)
-    assert all(0 <= desc["ei"] < len(desc["en"]) for desc in enum_descriptors)
-    assert any(desc["t"] == 0 and "f" in desc for desc in descriptors)
-    assert any(desc["t"] == 1 and "i" in desc for desc in descriptors)
-    assert all(desc["t"] != 2 or "b" in desc for desc in descriptors)
-
-    # The cached plan must retain the same complete schema while live values
-    # continue to come from the current render state.
-    render_state["srcColorBlendFactor"] = 1
-    render_state["dstColorBlendFactor"] = 1
-    module._render_surface_options_batch(
-        ctx, render_state, document, 0, 144.0, cache=cache,
-    )
+    document = {'renderState': render_state, 'renderStateOverrides': 0}
+    module._render_surface_options_batch(ctx, render_state, document, 0, 144., cache=cache)
+    assert len(ctx.plans[0]) == 6
+    render_state['renderQueue'] = 1200
+    module._render_surface_options_batch(ctx, render_state, document, 0, 144., cache=cache)
     assert len(ctx.plans) == 1
+    assert ctx.values[0][0] is ctx.values[1][0]
+    assert ctx.values[0][1] != ctx.values[1][1]
 
-    # A cache created before the enum descriptor contract was restored must be
-    # discarded instead of reaching the native decoder with a missing ``ei``.
-    cache["entries"][0][1].pop("ei")
-    module._render_surface_options_batch(
-        ctx, render_state, document, 0, 144.0, cache=cache,
+    ctx.edits = {0: 1}
+    overrides, change_key = module._render_surface_options_batch(
+        ctx, render_state, document, 0, 144., cache=cache
     )
+    assert render_state['blendEnable'] is True
+    assert render_state['renderQueue'] == 3000
+    assert overrides == document['renderStateOverrides']
+    assert change_key == 'render_state.surface'
+    render_state['alphaClipEnabled'] = True
+    module._render_surface_options_batch(ctx, render_state, document, 0, 144., cache=cache)
     assert len(ctx.plans) == 2
-    assert all(
-        "ei" in desc
-        for _, desc in cache["entries"]
-        if desc["t"] == 7
-    )
+    descriptors = ctx.plans[-1]
+    enums = [descriptor for descriptor in descriptors if descriptor['t'] == 7]
+    assert enums and all(0 <= item['ei'] < len(item['en']) for item in enums)
+    assert any(item['t'] == 0 and 'f' in item for item in descriptors)
+    assert any(item['t'] == 1 and 'i' in item for item in descriptors)
 
-
-def test_material_surface_batch_rebuilds_for_locale_even_when_width_is_unchanged(monkeypatch):
-    import infernux.engine.ui.inspector_material as module
-
-    locale = {"value": "zh"}
-    monkeypatch.setattr(module, "get_locale", lambda: locale["value"])
-    # Keep every translated label the same width so width-only invalidation
-    # cannot make this test pass accidentally.
-    monkeypatch.setattr(module, "t", lambda _key: "xxxx")
-
-    class Context:
-        def __init__(self):
-            self.plan_builds = 0
-
-        def create_property_batch_plan(self, descriptors):
-            self.plan_builds += 1
-            return tuple(descriptors)
-
-        @staticmethod
-        def render_property_batch_plan_values(_plan, _values, _label_width):
-            return {}
-
-    ctx = Context()
-    cache = {}
-    render_state = {
-        "blendEnable": False,
-        "depthWriteEnable": True,
-        "depthTestEnable": True,
-        "depthCompareOp": 1,
-        "cullMode": 2,
-        "renderQueue": 2000,
-    }
-    document = {"renderStateOverrides": 0}
-
-    module._render_surface_options_batch(
-        ctx, render_state, document, 0, 144.0, cache=cache,
-    )
-    locale["value"] = "en"
-    module._render_surface_options_batch(
-        ctx, render_state, document, 0, 144.0, cache=cache,
-    )
-
-    assert ctx.plan_builds == 2
+    render_state['srcColorBlendFactor'] = 1
+    render_state['dstColorBlendFactor'] = 1
+    module._render_surface_options_batch(ctx, render_state, document, 0, 144., cache=cache)
+    assert len(ctx.plans) == 2
+    locale[0] = 'en'
+    module._render_surface_options_batch(ctx, render_state, document, 0, 144., cache=cache)
+    assert len(ctx.plans) == 3
+    cache['entries'][0][1].pop('ei')
+    module._render_surface_options_batch(ctx, render_state, document, 0, 144., cache=cache)
+    assert len(ctx.plans) == 4
+    assert all('ei' in descriptor for _, descriptor in cache['entries']
+               if descriptor['t'] == 7)
 
 
 def test_audio_track_renderer_exposes_picker_callbacks_and_semantic(monkeypatch):

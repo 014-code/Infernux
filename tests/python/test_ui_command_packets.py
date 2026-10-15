@@ -216,64 +216,101 @@ def ui(scene, monkeypatch, request):
         extracted=extracted, submission=submission, textures=texture_cache)
 
 
-@pytest.mark.parametrize('field,ui', [('color', False), ('text', True)], indirect=['ui'])
-def test_only_changed_label_reextracts_and_remeasures(ui, field):
+def test_text_edit_and_font_epoch_preserve_packet_locality(ui, monkeypatch):
+    from infernux.ui import ui_command_packets as packets
+
     labels = [ui.add() for _ in range(40)]
     ui.frame()
-    for index in range(4):
-        before = ui.renderer.measures
-        setattr(labels[0], field, [index / 4, .5, 1, 1] if field == 'color' else f'Frame {index}')
-        assert ui.frame()[0]
-        assert ui.extracted == [labels[0]]
-        assert ui.renderer.measures - before == (field == 'text')
-        assert sum(name == 'add_text' for name, _, _ in ui.renderer.commands) == 40
+    assert ui.renderer.captures == 40
+    assert ui.renderer.appends == 1
+    measures = ui.renderer.measures
+    visits, classifications = [], []
+    measure = packets.UICommandPackets.measure
+    classify = packets._can_retain_runtime_commands
+
+    def counted_measure(owner, element, *args):
+        visits.append(element)
+        return measure(owner, element, *args)
+
+    def counted_classify(element):
+        classifications.append(element)
+        return classify(element)
+
+    monkeypatch.setattr(packets.UICommandPackets, 'measure', counted_measure)
+    monkeypatch.setattr(packets, '_can_retain_runtime_commands', counted_classify)
+    labels[17].color = [.2, .5, 1., 1.]
+    assert ui.frame()[0]
+    assert ui.extracted == [labels[17]]
+    assert ui.renderer.measures == measures
+    assert ui.renderer.captures == 41
+    assert classifications == []
+
+    visits.clear()
+    labels[17].text = 'Changed once'
+    rebuilt, actual = ui.frame()
+    assert rebuilt
+    assert visits == [labels[17]]
+    assert ui.extracted == [labels[17]]
+    assert ui.renderer.measures == measures + 1
+    assert ui.renderer.captures == 42
+    assert ui.renderer.appends == 3
+    assert classifications == []
+    assert sum(name == 'add_text' for name, _, _ in actual) == 40
+    _assert_current_commands_match_fresh(ui, actual)
     assert ui.frame()[0] is False
 
+    captures, appends = ui.renderer.captures, ui.renderer.appends
+    ui.renderer.font_epoch += 1
+    ui.frame()
+    assert ui.renderer.captures == captures + 40
+    assert ui.renderer.appends == appends + 1
+    assert set(ui.extracted) == set(labels)
 
-@pytest.mark.parametrize('change,ui', [
-    ('transform', False), ('transform', True),
-    ('parent_transform', False), ('parent_transform', True),
-    ('reparent', False), ('reparent', True),
-    ('viewport', False), ('viewport', True),
-    ('group', True), ('mirror', False), ('enabled', False),
-    ('active', True), ('global_dirty', False),
-], indirect=['ui'])
-def test_shared_dependencies_match_fresh_submission(ui, change):
+
+def test_retained_submission_tracks_hierarchy_viewport_and_visibility_edits(ui):
     from infernux.lib import Vector3
     from infernux.ui import UIGroup
     from infernux.ui.ui_render_revision import mark_runtime_ui_dirty
+
     group = UIGroup()
     ui.root.add_py_component(group)
     label, other = ui.add(), ui.add()
     ui.frame()
-    if change == 'transform':
-        label.game_object.transform.local_position = Vector3(10, 20, 3)
-        label.game_object.transform.local_euler_angles = Vector3(10, 20, 30)
-    elif change == 'parent_transform':
-        # A parent's scale moves world UI but never scales its own geometry.
-        other.game_object.transform.local_position = Vector3(1, 2, 3)
-        ui.root.transform.local_position = Vector3(20, 30, 40)
-        ui.root.transform.local_euler_angles = Vector3(20, 30, 40)
-        ui.root.transform.local_scale = Vector3(2, 3, 4)
-    elif change == 'group':
-        group.alpha = .25
-    elif change == 'mirror':
-        label.mirror_x = True
-    elif change == 'enabled':
-        label.enabled = False
-    elif change == 'active':
-        label.game_object.active = False
-    elif change == 'reparent':
-        label.game_object.set_parent(other.game_object)
-    elif change == 'viewport':
-        ui.submission.set_target_size(1024, 768)
-    else:
-        # Tools can explicitly publish an in-place edit.
-        label.color[0] = .25
-        mark_runtime_ui_dirty()
+
+    label.game_object.transform.local_position = Vector3(10, 20, 3)
+    label.game_object.transform.local_euler_angles = Vector3(10, 20, 30)
+    ui.matches_fresh()
+    other.game_object.transform.local_position = Vector3(1, 2, 3)
+    ui.root.transform.local_position = Vector3(20, 30, 40)
+    ui.root.transform.local_euler_angles = Vector3(20, 30, 40)
+    ui.root.transform.local_scale = Vector3(2, 3, 4)
+    ui.matches_fresh()
+
+    label.game_object.set_parent(other.game_object)
+    ui.matches_fresh()
+    ui.submission.set_target_size(1024, 768)
+    ui.matches_fresh()
+    group.alpha = .25
     commands = ui.matches_fresh()
-    if change == 'group':
-        assert all(args[9] == .25 for name, args, _ in commands if name == 'add_text')
+    assert all(args[9] == .25 for name, args, _ in commands if name == 'add_text')
+
+    label.mirror_x = True
+    ui.matches_fresh()
+    label.enabled = False
+    commands = ui.matches_fresh()
+    assert sum(name == 'add_text' for name, _, _ in commands) == 1
+    label.enabled = True
+    ui.matches_fresh()
+    label.game_object.active = False
+    commands = ui.matches_fresh()
+    assert sum(name == 'add_text' for name, _, _ in commands) == 1
+    label.game_object.active = True
+    ui.matches_fresh()
+
+    label.color[0] = .25
+    mark_runtime_ui_dirty()
+    ui.matches_fresh()
+    assert ui.frame()[0] is False
 
 
 @pytest.mark.parametrize("ui", [False], indirect=True, ids=["screen"])
@@ -288,24 +325,6 @@ def test_button_private_state_rebuilds_only_the_button(ui):
     ui.matches_fresh()
     button.on_pointer_exit(None)
     ui.matches_fresh()
-
-
-@pytest.mark.parametrize("ui", [False], indirect=True, ids=["screen"])
-def test_local_change_visits_only_the_changed_text_measurement(ui, monkeypatch):
-    from infernux.ui.ui_command_packets import UICommandPackets
-    labels = [ui.add() for _ in range(100)]
-    ui.frame()
-    visits = []
-    original = UICommandPackets.measure
-    def measure(self, element, *args):
-        visits.append(element)
-        return original(self, element, *args)
-    monkeypatch.setattr(UICommandPackets, 'measure', measure)
-    labels[17].text = 'Changed once'
-    _, actual = ui.frame()
-    assert visits == [labels[17]]
-    assert ui.extracted == [labels[17]]
-    _assert_current_commands_match_fresh(ui, actual)
 
 
 @pytest.mark.parametrize("ui", [True], indirect=True, ids=["world"])
@@ -348,16 +367,19 @@ def test_released_submission_groups_do_not_stay_on_components(ui):
     label.text = 'No dead subscriber callbacks'
 
 
-@pytest.mark.parametrize('pose', ['position', 'rotation'])
-def test_transform_edit_rebuilds_only_the_affected_leaf(ui, pose):
+def test_leaf_pose_edits_keep_unrelated_packets(ui):
     from infernux.lib import Vector3
+
     labels = [ui.add() for _ in range(24)]
     ui.frame()
     target = labels[9]
-    if pose == 'position':
-        target.game_object.transform.local_position = Vector3(30., 40., 2.)
-    else:
-        target.game_object.transform.local_euler_angles = Vector3(0., 0., 37.)
+    target.game_object.transform.local_position = Vector3(30., 40., 2.)
+    rebuilt, actual = ui.frame()
+    assert rebuilt
+    assert ui.extracted == ([] if ui.world else [target])
+    _assert_current_commands_match_fresh(ui, actual)
+
+    target.game_object.transform.local_euler_angles = Vector3(0., 0., 37.)
     rebuilt, actual = ui.frame()
     assert rebuilt
     assert ui.extracted == ([] if ui.world else [target])
@@ -395,9 +417,8 @@ def test_world_layer_edit_does_not_rebuild_other_world_geometry(ui):
         assert not rebuilt  # Screen UI ignores its GameObject layer.
 
 
+@pytest.mark.parametrize("ui", [True], indirect=True, ids=["world"])
 def test_world_parent_animation_reuses_local_geometry(ui, monkeypatch):
-    if not ui.world:
-        pytest.skip('World geometry is independent of its scene pose')
     from infernux.lib import Vector3
     from infernux.ui.ui_command_packets import UICommandPackets
     labels = [ui.add() for _ in range(60)]
@@ -465,8 +486,7 @@ def test_custom_draw_layout_edit_reaches_later_cached_sibling(ui):
 
 
 @pytest.mark.parametrize('position', ['before', 'after'])
-@pytest.mark.parametrize('change', ['text', 'font_size'])
-def test_custom_draw_remeasures_text_before_later_layout(ui, position, change):
+def test_custom_draw_remeasures_successive_text_and_size_edits(ui, position):
     from infernux.ui import UIButton, UIText, UIFrame, UILayoutDirection, TextResizeMode
     from infernux.ui import ui_render_dispatch as dispatch
 
@@ -486,6 +506,7 @@ def test_custom_draw_remeasures_text_before_later_layout(ui, position, change):
     target.resize_mode = TextResizeMode.AutoWidth
     original = dispatch.get_ui_renderer('UIButton', 'runtime')
     mutate = False
+    change = "text"
 
     def draw(element, renderer, **kwargs):
         if mutate:
@@ -524,6 +545,24 @@ def test_custom_draw_remeasures_text_before_later_layout(ui, position, change):
         assert ui.renderer.captures == captures
         command = text_command(settled, target.text)
         assert command[3] - command[1] == pytest.approx(expected_width * scale)
+
+        old_width = target.get_resolved_size()[0]
+        tail_before = text_command(settled, 'tail')
+        change = 'font_size'
+        mutate = True
+        custom.label = 'Publish font-size mutation'
+        _, after = ui.frame()
+        expected_width = len(target.text) * 36 * .5
+        assert target.get_resolved_size()[0] == pytest.approx(expected_width)
+        if not ui.world:
+            assert text_command(after, 'tail')[1] - tail_before[1] == pytest.approx(
+                (expected_width - old_width) * scale
+            )
+        mutate = False
+        _, settled = ui.frame()
+        command = text_command(settled, target.text)
+        assert command[3] - command[1] == pytest.approx(expected_width * scale)
+        assert ui.frame() == (False, [])
     finally:
         dispatch.register_ui_renderer('UIButton', 'runtime', original)
 
@@ -608,25 +647,28 @@ def test_material_edit_reextracts_only_its_consumers(ui, slot):
     _assert_current_commands_match_fresh(ui, actual)
 
 
-@pytest.mark.parametrize('change,ui', [
-    ('text', False), ('color', True), ('width', False), ('hover', True),
-], indirect=['ui'])
-def test_visual_edits_keep_resource_binding_membership(ui, change):
+def test_visual_edits_reuse_resource_binding_membership(ui):
     from infernux.core.material import Material
     from infernux.lib import InxMaterial
     from infernux.ui import UIButton
     from infernux.ui import ui_render_dispatch as dispatch
+
     material = Material(InxMaterial('Retained binding', 'Unlit'))
-    labels = [ui.add() for _ in range(24)]
-    for label in labels:
-        label.material = material
+    label = ui.add()
+    label.material = material
     button = ui.add(UIButton)
     ui.frame()
     bindings = dispatch._runtime_dependencies.materials
-    if change == 'hover':
-        button.on_pointer_enter(None)
-    else:
-        setattr(labels[0], change, {'text': 'Changed', 'color': [.2, .5, .8, 1.], 'width': 290.}[change])
+    label.text = 'Changed'
+    ui.frame()
+    assert dispatch._runtime_dependencies.materials is bindings
+    label.color = [.2, .5, .8, 1.]
+    ui.frame()
+    assert dispatch._runtime_dependencies.materials is bindings
+    label.width = 290.
+    ui.frame()
+    assert dispatch._runtime_dependencies.materials is bindings
+    button.on_pointer_enter(None)
     ui.frame()
     assert dispatch._runtime_dependencies.materials is bindings
 
@@ -803,39 +845,6 @@ def test_custom_renderer_keeps_its_native_renderer_contract(ui, monkeypatch):
     ui.frame()
     assert calls == ['New Text', 'custom second frame']
     dispatch._RESOLVED_RENDERERS.clear()
-
-
-def test_geometry_packets_batch_and_font_epoch_invalidates(ui):
-    labels = [ui.add() for _ in range(12)]
-    ui.frame()
-    assert ui.renderer.captures == 12
-    assert ui.renderer.appends == 1
-    labels[5].text = 'Only this packet changes'
-    ui.frame()
-    assert ui.renderer.captures == 13
-    assert ui.renderer.appends == 2
-    assert ui.extracted == [labels[5]]
-    ui.renderer.font_epoch += 1
-    ui.frame()
-    assert ui.renderer.captures == 25
-    assert ui.renderer.appends == 3
-    assert set(ui.extracted) == set(labels)
-
-
-@pytest.mark.parametrize("ui", [True], indirect=True, ids=["world"])
-def test_unchanged_packets_do_not_rediscover_renderer_capabilities(ui, monkeypatch):
-    from infernux.ui import ui_command_packets as packets
-    labels = [ui.add() for _ in range(24)]
-    ui.frame()
-    calls = []
-    original = packets._can_retain_runtime_commands
-    def inspect(element):
-        calls.append(element)
-        return original(element)
-    monkeypatch.setattr(packets, '_can_retain_runtime_commands', inspect)
-    labels[4].text = 'Only this element changed'
-    ui.frame()
-    assert calls == []  # Membership already owns the renderer classification.
 
 
 @pytest.mark.parametrize("ui", [False], indirect=True, ids=["screen"])

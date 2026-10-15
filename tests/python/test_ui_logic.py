@@ -66,20 +66,9 @@ def test_window_manager_requires_explicit_interaction_and_gui_boundaries():
         WindowManager(object(), _WindowManagerPanelInteractions(), None)
 
 
-def test_default_editor_and_game_ui_font_size_is_18px():
-    import inspect
-
-    from infernux.engine.engine import Engine
-    from infernux.ui import UIButton, UIText
-
-    assert Theme.UI_DEFAULT_FONT_SIZE == 18.0
-    assert UIText().font_size == 18.0
-    assert UIButton().font_size == 18.0
-    assert inspect.signature(Engine.set_gui_font).parameters["font_size"].default == 18
-
-
-def test_direct_ui_resize_makes_layout_axes_authoritative():
+def test_ui_resize_preparation_and_commit_preserve_untouched_layout_axis():
     from infernux.engine.ui.ui_rect_manipulation import (
+        apply_layout_size,
         layout_snapshot,
         prepare_layout_resize,
     )
@@ -87,6 +76,8 @@ def test_direct_ui_resize_makes_layout_axes_authoritative():
     from infernux.ui.enums import TextResizeMode, UILayoutSizing
 
     text = UIText()
+    text.width = 120.
+    text.height = 48.
     text.width_sizing = UILayoutSizing.Fill
     text.height_sizing = UILayoutSizing.Hug
     text.resize_mode = TextResizeMode.AutoWidth
@@ -100,23 +91,9 @@ def test_direct_ui_resize_makes_layout_axes_authoritative():
     assert text.height_sizing == UILayoutSizing.Hug
     assert text.resize_mode == TextResizeMode.FixedSize
 
-
-def test_shared_layout_size_commit_updates_only_touched_axes():
-    from infernux.engine.ui.ui_rect_manipulation import apply_layout_size
-    from infernux.ui import UIText
-    from infernux.ui.enums import TextResizeMode, UILayoutSizing
-
-    text = UIText()
-    text.width = 120.0
-    text.height = 48.0
-    text.width_sizing = UILayoutSizing.Fill
-    text.height_sizing = UILayoutSizing.Hug
     text.resize_mode = TextResizeMode.AutoHeight
-
-    apply_layout_size(text, width=260.0)
-
-    assert text.width == 260.0
-    assert text.height == 48.0
+    apply_layout_size(text, width=260.)
+    assert text.width == 260. and text.height == 48.
     assert text.width_sizing == UILayoutSizing.Fixed
     assert text.height_sizing == UILayoutSizing.Hug
     assert text.resize_mode == TextResizeMode.FixedSize
@@ -168,9 +145,17 @@ def test_ui_material_slots_use_normal_material_assets_and_button_has_two_slots()
             assert name == "baseColor"
             return self._color
 
+    import inspect
+    from infernux.engine.engine import Engine
+
+    assert Theme.UI_DEFAULT_FONT_SIZE == 18.
+    assert UIText().font_size == 18.
+    assert inspect.signature(Engine.set_gui_font).parameters['font_size'].default == 18
+
     background = Material(NativeMaterialProbe("background-material", (0.5, 0.25, 1.0, 0.8)))
     label = Material(NativeMaterialProbe("text-material", (0.25, 1.0, 0.5, 0.5)))
     button = UIButton()
+    assert button.font_size == 18.
     button.background_color = [0.8, 0.4, 0.2, 1.0]
     button.label_color = [1.0, 0.5, 0.25, 1.0]
     button.background_material = background
@@ -184,7 +169,7 @@ def test_ui_material_slots_use_normal_material_assets_and_button_has_two_slots()
     assert "material" in get_serialized_fields(UIText)
 
 
-def test_engine_gui_registration_forwards_overlay_priority():
+def test_engine_registers_overlay_priority_and_selects_modal_dock_tab():
     from types import SimpleNamespace
 
     from infernux.engine.engine import Engine
@@ -194,7 +179,10 @@ def test_engine_gui_registration_forwards_overlay_priority():
     engine._engine = SimpleNamespace(
         register_gui_renderable=lambda name, renderable, priority: calls.append(
             (name, renderable, priority)
-        )
+        ),
+        select_docked_window=lambda window_id, allow_during_modal: calls.append(
+            (window_id, allow_during_modal)
+        ),
     )
     engine._gui_objects = {}
     renderable = object()
@@ -203,6 +191,9 @@ def test_engine_gui_registration_forwards_overlay_priority():
 
     assert calls == [("global_overlay", renderable, 1000)]
     assert engine._gui_objects["global_overlay"] is renderable
+
+    engine.select_docked_window('particle_graph_editor', True)
+    assert calls[-1] == ('particle_graph_editor', True)
 
 
 def test_engine_gui_registration_rejects_duplicate_renderable_identity():
@@ -261,24 +252,6 @@ def test_existing_window_registration_is_atomic_when_native_registration_fails()
         WindowManager._instance = previous_manager
 
 
-def test_engine_docked_window_selection_forwards_modal_flag():
-    from types import SimpleNamespace
-
-    from infernux.engine.engine import Engine
-
-    calls = []
-    engine = Engine.__new__(Engine)
-    engine._engine = SimpleNamespace(
-        select_docked_window=lambda window_id, allow_during_modal: calls.append(
-            (window_id, allow_during_modal)
-        )
-    )
-
-    engine.select_docked_window("particle_graph_editor", True)
-
-    assert calls == [("particle_graph_editor", True)]
-
-
 def test_engine_docked_window_selection_rejects_stale_native_binding():
     from infernux.engine.engine import Engine
 
@@ -296,8 +269,6 @@ def test_engine_docked_window_selection_rejects_stale_native_binding():
         engine.select_docked_window("particle_graph_editor", True)
 
     assert engine._engine.focus_requests == []
-
-
 
 
 class TestThemeNativeSSOT:
@@ -1746,32 +1717,8 @@ class TestWindowManager:
         finally:
             WindowManager._instance = previous
 
-    def _fresh_manager(self):
-        from infernux.engine.ui.window_manager import WindowManager
-        mgr = WindowManager.instance()
-        return mgr
 
-    def test_singleton(self):
-        from infernux.engine.ui.window_manager import WindowManager
-        assert WindowManager.instance() is WindowManager.instance()
-
-    def test_window_type_listener_fires_only_on_registration(self):
-        from infernux.engine.ui.window_manager import WindowManager
-
-        previous = WindowManager._instance
-        try:
-            manager = _window_manager(object())
-            calls = []
-            listener = lambda: calls.append(tuple(manager.get_registered_types()))
-            manager.add_type_change_listener(listener)
-            manager.register_window_type("sample", object, "Sample")
-            manager.remove_type_change_listener(listener)
-            manager.register_window_type("second", object, "Second")
-            assert calls == [("sample",)]
-        finally:
-            WindowManager._instance = previous
-
-    def test_explicit_dynamic_window_state_machine(self):
+    def test_dynamic_window_registration_focus_and_close_lifecycle(self):
         from infernux.engine.interaction import FocusService
         from infernux.engine.ui.window_manager import WindowManager, WindowState
 
@@ -1809,7 +1756,15 @@ class TestWindowManager:
             focus = FocusService()
             engine = Engine()
             manager = _window_manager(engine)
+            assert WindowManager.instance() is manager
+            calls = []
+            listener = lambda: calls.append(tuple(manager.get_registered_types()))
+            manager.add_type_change_listener(listener)
             manager.register_window_type("dynamic", Panel, "Dynamic", factory=Panel)
+            assert calls == [('dynamic',)]
+            manager.remove_type_change_listener(listener)
+            manager.register_window_type('second', object, 'Second')
+            assert calls == [('dynamic',)]
             panel = manager.open_window("dynamic")
             assert manager.get_window_state("dynamic") is WindowState.OPENING
             manager.process_pending_actions()
@@ -2569,14 +2524,6 @@ class TestSceneViewMath:
         assert (cx, cy, cz) == (0, 0, 1)
 
 
-class TestIGUIFilters:
-    def test_searchable_combo_filter_semantics(self):
-        labels = ["MeshRenderer", "SkinnedMeshRenderer", "Rigidbody", "BoxCollider"]
-        filt = "mesh"
-        filtered = [l for l in labels if filt.lower() in l.lower()]
-        assert filtered == ["MeshRenderer", "SkinnedMeshRenderer"]
-
-
 class TestUICanvasRaycast:
     def test_inactive_hierarchy_does_not_receive_raycast(self, scene):
         from infernux.ui import UICanvas, UIButton
@@ -2631,7 +2578,7 @@ class TestUICanvasCollectionCache:
             self.root_queries += 1
             return [self._root]
 
-    def test_same_name_and_version_do_not_alias_distinct_scenes(self):
+    def test_canvas_cache_distinguishes_scenes_and_rebuilds_after_temporal_reset(self):
         from infernux.ui import UICanvas
         from infernux.ui.ui_canvas_utils import collect_canvases, invalidate_canvas_cache
 
@@ -2644,82 +2591,38 @@ class TestUICanvasCollectionCache:
         assert collect_canvases(first_scene) == [first_canvas]
         assert collect_canvases(second_scene) == [second_canvas]
 
-    def test_temporal_discontinuity_rebuilds_same_scene_canvas_cache(self):
-        from infernux.ui import UICanvas
-        from infernux.ui.ui_canvas_utils import collect_canvases, invalidate_canvas_cache
-
-        first_canvas = UICanvas()
-        second_canvas = UICanvas()
-        scene = self._Scene(first_canvas)
-
-        invalidate_canvas_cache()
-        assert collect_canvases(scene) == [first_canvas]
-
+        replacement = UICanvas()
         first_canvas._set_game_object(None)
-        scene._root = self._Root(second_canvas)
-        second_canvas._set_game_object(scene._root)
-        second_canvas._native_scene = scene
-        second_canvas._try_get_game_object = lambda: scene._root
-        scene.temporal_discontinuity_revision += 1
-        assert collect_canvases(scene) == [second_canvas]
+        first_scene._root = self._Root(replacement)
+        replacement._set_game_object(first_scene._root)
+        replacement._native_scene = first_scene
+        replacement._try_get_game_object = lambda: first_scene._root
+        first_scene.temporal_discontinuity_revision += 1
+        assert collect_canvases(first_scene) == [replacement]
+        assert collect_canvases(second_scene) == [second_canvas]
 
-    def test_runtime_collection_includes_persistent_scene_canvases(self):
+
+    def test_runtime_canvas_collection_keeps_persistent_owners_order_and_scene_identity(self):
         from infernux.ui import UICanvas
         from infernux.ui.ui_canvas_utils import (
-            collect_sorted_runtime_canvases,
+            collect_runtime_canvases_with_go, collect_sorted_runtime_canvases,
             invalidate_canvas_cache,
         )
 
-        active_canvas = UICanvas()
-        active_canvas.sort_order = 10
-        persistent_canvas = UICanvas()
-        persistent_canvas.sort_order = 5
-
+        active, persistent = UICanvas(), UICanvas()
+        active.sort_order, persistent.sort_order = 10, 5
+        active_scene, persistent_scene = self._Scene(active), self._Scene(persistent)
         invalidate_canvas_cache()
-        canvases = collect_sorted_runtime_canvases(
-            self._Scene(active_canvas),
-            self._Scene(persistent_canvas),
-        )
-
-        assert canvases == [persistent_canvas, active_canvas]
-
-    def test_runtime_collection_with_owners_includes_persistent_scene(self):
-        from infernux.ui import UICanvas
-        from infernux.ui.ui_canvas_utils import (
-            collect_runtime_canvases_with_go,
-            invalidate_canvas_cache,
-        )
-
-        active_canvas = UICanvas()
-        persistent_canvas = UICanvas()
-        active_scene = self._Scene(active_canvas)
-        persistent_scene = self._Scene(persistent_canvas)
-
-        invalidate_canvas_cache()
-        pairs = collect_runtime_canvases_with_go(active_scene, persistent_scene)
-
-        assert [canvas for _, canvas in pairs] == [active_canvas, persistent_canvas]
-        assert [owner for owner, _ in pairs] == [
-            active_scene._root,
-            persistent_scene._root,
+        assert collect_sorted_runtime_canvases(active_scene, persistent_scene) == [persistent, active]
+        assert collect_runtime_canvases_with_go(active_scene, persistent_scene) == [
+            (active_scene._root, active), (persistent_scene._root, persistent)
+        ]
+        assert collect_runtime_canvases_with_go(active_scene, active_scene) == [
+            (active_scene._root, active)
         ]
 
-    def test_runtime_collection_does_not_duplicate_same_scene(self):
-        from infernux.ui import UICanvas
-        from infernux.ui.ui_canvas_utils import (
-            collect_runtime_canvases_with_go,
-            invalidate_canvas_cache,
-        )
 
-        canvas = UICanvas()
-        scene = self._Scene(canvas)
-
-        invalidate_canvas_cache()
-        assert collect_runtime_canvases_with_go(scene, scene) == [
-            (scene._root, canvas),
-        ]
-
-    def test_runtime_collection_tracks_dynamic_canvas_attach_and_detach(self):
+    def test_canvas_membership_changes_without_unrelated_structure_traversal(self):
         from infernux.ui import UICanvas
         import infernux.ui.ui_canvas_utils as canvas_utils
 
@@ -2736,27 +2639,15 @@ class TestUICanvasCollectionCache:
             (scene._root, canvas),
         ]
 
+        assert canvas_utils.collect_sorted_runtime_canvases(scene) == [canvas]
+        assert scene.root_queries == 0
+        scene.structure_version += 100_000
+        assert canvas_utils.collect_sorted_runtime_canvases(scene) == [canvas]
+        assert scene.root_queries == 0
+
         scene._root._components.remove(canvas)
         canvas._set_game_object(None)
         assert canvas_utils.collect_runtime_canvases_with_go(scene) == []
-
-    def test_runtime_collection_ignores_unrelated_scene_structure_changes(self):
-        from infernux.ui import UICanvas
-        from infernux.ui.ui_canvas_utils import (
-            collect_sorted_runtime_canvases,
-            invalidate_canvas_cache,
-        )
-
-        canvas = UICanvas()
-        scene = self._Scene(canvas)
-        invalidate_canvas_cache()
-
-        assert collect_sorted_runtime_canvases(scene) == [canvas]
-        assert scene.root_queries == 0
-
-        scene.structure_version += 100_000
-        assert collect_sorted_runtime_canvases(scene) == [canvas]
-        assert scene.root_queries == 0
 
 
 def test_screen_ui_rect_cache_survives_frames_and_invalidates_on_geometry_change(scene, monkeypatch):
@@ -2785,135 +2676,6 @@ def test_screen_ui_rect_cache_survives_frames_and_invalidates_on_geometry_change
     element.width = 320.0
     assert element.get_rect(1920.0, 1080.0)[2] == 320.0
     assert calls == 2
-
-
-def test_runtime_ui_packet_cache_reuses_static_text_and_tracks_mutation(monkeypatch):
-    import infernux.ui.ui_render_dispatch as dispatch_module
-    from infernux.ui.ui_command_packets import UICommandPackets
-    from infernux.ui import UIText
-
-    class Renderer:
-        def __init__(self):
-            self.text_calls = []
-            self.recording = None
-
-        def begin_command_packet(self):
-            self.recording = []
-
-        def end_command_packet(self):
-            packet, self.recording = self.recording, None
-            return tuple(packet)
-
-        def abort_command_packet(self):
-            self.recording = None
-
-        def append_command_packets(self, packets):
-            for packet in packets:
-                self.text_calls.extend(packet)
-
-        def add_text(self, *args):
-            self.recording.append(args)
-
-    element = UIText()
-    renderer = Renderer()
-    extract_calls = 0
-    original_extract = dispatch_module.extract_common
-
-    def counted_extract(value, **kwargs):
-        nonlocal extract_calls
-        extract_calls += 1
-        return original_extract(value, **kwargs)
-
-    monkeypatch.setattr(dispatch_module, "extract_common", counted_extract)
-    kwargs = {
-        "renderer": renderer,
-        "ui_list": 0,
-        "sx": 10.0,
-        "sy": 20.0,
-        "sw": 160.0,
-        "sh": 40.0,
-        "ref_w": 1920.0,
-        "ref_h": 1080.0,
-        "scale_x": 1.0,
-        "scale_y": 1.0,
-        "text_scale": 1.0,
-        "get_tex_id": lambda _path: 0,
-    }
-
-    renderer.measure_text = lambda *_: (160.0, 40.0)
-    packets = UICommandPackets()
-    def draw(current, target):
-        assert dispatch_module.dispatch(current, "runtime", **{**kwargs, "renderer": target})
-    packets.submit_elements((element,), renderer, draw)
-    packets.submit_elements((element,), renderer, draw)
-    packets.flush(renderer)
-    assert extract_calls == 1
-    assert len(renderer.text_calls) == 2
-
-    element.text = "Updated"
-    packets.submit_elements((element,), renderer, draw)
-    packets.flush(renderer)
-    assert extract_calls == 2
-    assert renderer.text_calls[-1][5] == "Updated"
-
-
-def test_runtime_text_packet_tracks_parent_group_alpha(scene):
-    from infernux.ui import UIText, UIGroup
-    from infernux.ui.ui_render_dispatch import dispatch
-
-    parent = scene.create_game_object("Text group")
-    group = UIGroup()
-    parent.add_py_component(group)
-    child = scene.create_game_object("Text")
-    child.set_parent(parent)
-    text = UIText()
-    child.add_py_component(text)
-    packets = []
-
-    class Renderer:
-        def add_text(self, *args):
-            packets.append(args)
-
-    renderer = Renderer()
-    for alpha in (1., .25, .5):
-        group.alpha = alpha
-        dispatch(text, "runtime", renderer=renderer, ui_list=0,
-                 sx=0., sy=0., sw=100., sh=40., ref_w=1920., ref_h=1080.,
-                 scale_x=1., scale_y=1., text_scale=1., get_tex_id=lambda _: 0)
-        assert packets[-1][9] == pytest.approx(alpha)
-
-
-def test_text_overflow_clip_reaches_runtime_draw_packet():
-    import infernux.ui.ui_render_dispatch as dispatch_module
-    from infernux.ui import UIText, TextOverflow
-
-    class Renderer:
-        def __init__(self):
-            self.text_calls = []
-
-        def add_text(self, *args):
-            self.text_calls.append(args)
-
-    element = UIText()
-    element.overflow = TextOverflow.Clip
-    renderer = Renderer()
-    assert dispatch_module.dispatch(
-        element,
-        "runtime",
-        renderer=renderer,
-        ui_list=0,
-        sx=10.0,
-        sy=20.0,
-        sw=160.0,
-        sh=40.0,
-        ref_w=1920.0,
-        ref_h=1080.0,
-        scale_x=1.0,
-        scale_y=1.0,
-        text_scale=1.0,
-        get_tex_id=lambda _path: 0,
-    )
-    assert renderer.text_calls[-1][-1] is True
 
 
 def test_explicit_fallback_font_chain_reaches_runtime_draw_packet(monkeypatch):

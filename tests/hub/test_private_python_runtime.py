@@ -34,46 +34,73 @@ def _write_runtime_archive(path: Path, executable: str = "python.exe") -> None:
         archive.addfile(info, io.BytesIO(payload))
 
 
-@pytest.mark.parametrize("module", [embed_runtime_manager, stage_bundled_python_runtime])
-@pytest.mark.parametrize("nested", [False, True])
-def test_runtime_discovery_only_uses_supported_root_layouts(
-    tmp_path, monkeypatch, module, nested
-):
+def test_runtime_discovery_agrees_before_and_after_interpreter_relocation(tmp_path, monkeypatch):
     relative = Path("python.exe") if sys.platform == "win32" else Path("bin/python")
-    executable = tmp_path / ("unrelated/tool" if nested else "") / relative
+    nested = tmp_path / "unrelated/tool" / relative
+    nested.parent.mkdir(parents=True)
+    nested.write_bytes(b"test interpreter")
+    monkeypatch.setattr(stage_bundled_python_runtime, "_is_target_python", lambda path: Path(path).is_file())
+    assert embed_runtime_manager._find_python_in_root(str(tmp_path)) is None
+    assert stage_bundled_python_runtime._find_python_in_root(str(tmp_path)) is None
+    executable = tmp_path / relative
     executable.parent.mkdir(parents=True, exist_ok=True)
-    executable.write_bytes(b"test interpreter")
+    nested.rename(executable)
+    assert embed_runtime_manager._find_python_in_root(str(tmp_path)) == str(executable)
+    assert stage_bundled_python_runtime._find_python_in_root(str(tmp_path)) == str(executable)
+
+
+def test_managed_runtime_extraction_and_provenance_preserve_external_python(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime_dir = tmp_path / "hub-owned-runtime"
+    private_root = runtime_dir / "python313"
+    archive = tmp_path / "private-runtime.tar.gz"
+    executable = "python.exe" if sys.platform == "win32" else "bin/python"
+    _write_runtime_archive(archive, executable)
+
+    external_python = tmp_path / "user-python" / executable
+    external_python.parent.mkdir(parents=True)
+    external_python.write_bytes(b"user installation")
+
+    monkeypatch.setattr(embed_runtime_manager, "get_hub_shared_data_dir", lambda: str(tmp_path / "HubData"))
+    monkeypatch.setattr(stage_bundled_python_runtime, "get_hub_shared_data_dir", lambda: str(tmp_path / "HubData"))
+    assert embed_runtime_manager._default_runtime_dir() == str(tmp_path / "HubData/Runtimes")
+    assert stage_bundled_python_runtime._bootstrap_root() == str(tmp_path / "HubData/Downloads/RuntimeBootstrap")
+    manager = embed_runtime_manager.PythonRuntimeManager(runtime_dir=str(runtime_dir))
     monkeypatch.setattr(
-        stage_bundled_python_runtime,
-        "_is_target_python",
-        lambda path: Path(path).is_file(),
+        manager, "_ensure_runtime_archive", lambda *_args, **_kwargs: str(archive)
     )
-
-    assert module._find_python_in_root(str(tmp_path)) == (
-        None if nested else str(executable)
-    )
-
-
-def test_runtime_and_bootstrap_staging_share_the_hub_data_root(tmp_path, monkeypatch):
-    root = tmp_path / "HubData"
     monkeypatch.setattr(
         embed_runtime_manager,
-        "get_hub_shared_data_dir",
-        lambda: str(root),
+        "extract_runtime_archive",
+        lambda source, destination, **kwargs: extract_runtime_archive(
+            source,
+            destination,
+            runtime=kwargs["runtime"],
+            validate=kwargs["validate"],
+        ),
     )
     monkeypatch.setattr(
-        stage_bundled_python_runtime,
-        "get_hub_shared_data_dir",
-        lambda: str(root),
+        embed_runtime_manager,
+        "_is_python_version",
+        lambda path, _version: Path(path).name == Path(executable).name and Path(path).is_file(),
     )
+    monkeypatch.setattr(embed_runtime_manager, "_is_embedded_root", lambda _path: False)
+    monkeypatch.setattr(manager, "_prepare_managed_runtime", lambda *a, **kw: None)
+    monkeypatch.setattr(manager, "_relocate_runtime_scripts", lambda *a: None)
 
-    assert embed_runtime_manager._default_runtime_dir() == str(root / "Runtimes")
-    assert stage_bundled_python_runtime._bootstrap_root() == str(
-        root / "Downloads" / "RuntimeBootstrap"
-    )
+    installed = manager._extract_runtime_to_root(str(private_root))
+
+    assert Path(installed) == private_root / executable
+    assert Path(installed).read_bytes() == b"private python"
+    assert external_python.read_bytes() == b"user installation"
+
+    assert is_private_runtime_root(private_root)
+    marker = (private_root / ".infernux-private-python-runtime.json").read_text(encoding="utf-8")
+    assert archive.name in marker
 
 
-def test_windows_runtime_uses_pinned_relocatable_archive() -> None:
+def test_runtime_catalog_versions_map_to_distinct_managed_roots(tmp_path) -> None:
     artifact = runtime_archive_for_machine(system="win32", machine="AMD64")
 
     assert artifact.name == (
@@ -86,13 +113,12 @@ def test_windows_runtime_uses_pinned_relocatable_archive() -> None:
     assert artifact.url.endswith(artifact.name.replace("+", "%2B"))
     assert not artifact.name.endswith((".exe", ".msi", ".pkg"))
 
-
-def test_python_312_runtime_remains_addressable() -> None:
-    artifact = runtime_archive_for_machine(
-        system="win32", machine="AMD64", runtime="3.12"
-    )
-
-    assert artifact.name.startswith("cpython-3.12.13+20260805-")
+    legacy = runtime_archive_for_machine(system="win32", machine="AMD64", runtime="3.12")
+    assert legacy.name.startswith("cpython-3.12.13+20260805-")
+    manager = embed_runtime_manager.PythonRuntimeManager(runtime_dir=str(tmp_path / "hub-runtime"))
+    assert Path(manager.private_runtime_root("3.12")).name == "python312"
+    assert Path(manager.private_runtime_root("3.13")).name == "python313"
+    assert manager.default_version == "3.13"
 
 
 def test_runtime_archive_download_uses_the_configured_ca_context(
@@ -177,21 +203,11 @@ def test_runtime_archive_download_uses_the_default_context_without_a_ca(
     ("platform_name", "header_path", "library_directory", "library_name"),
     (
         ("win32", Path("include/Python.h"), "libs", "python313.lib"),
-        (
-            "linux",
-            Path("include/python3.13/Python.h"),
-            "lib",
-            "libpython3.13.so.1.0",
-        ),
-        (
-            "darwin",
-            Path("include/python3.13/Python.h"),
-            "lib",
-            "libpython3.13.dylib",
-        ),
+        ("linux", Path("include/python3.13/Python.h"), "lib", "libpython3.13.so.1.0"),
+        ("darwin", Path("include/python3.13/Python.h"), "lib", "libpython3.13.dylib"),
     ),
 )
-def test_staged_runtime_dev_support_uses_the_target_platform_layout(
+def test_target_runtime_layout_is_prepared_and_reused_at_its_install_prefix(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     platform_name: str,
@@ -200,19 +216,16 @@ def test_staged_runtime_dev_support_uses_the_target_platform_layout(
     library_name: str,
 ) -> None:
     monkeypatch.setattr(stage_bundled_python_runtime.sys, "platform", platform_name)
-    (tmp_path / header_path).parent.mkdir(parents=True)
-    (tmp_path / header_path).write_bytes(b"")
-    (tmp_path / library_directory).mkdir()
-    (tmp_path / library_directory / library_name).write_bytes(b"")
-
-    assert stage_bundled_python_runtime._has_dev_support(str(tmp_path))
-    assert embed_runtime_manager._has_build_support(str(tmp_path), "3.13")
-
-
-@pytest.mark.parametrize("platform_name", ["win32", "linux", "darwin"])
-def test_managed_runtime_preparation_uses_install_prefix(tmp_path, monkeypatch, platform_name):
-    monkeypatch.setattr(embed_runtime_manager.sys, "platform", platform_name)
     manager = embed_runtime_manager.PythonRuntimeManager(runtime_dir=str(tmp_path))
+    prefix = Path(manager.private_runtime_root("3.13"))
+    (prefix / header_path).parent.mkdir(parents=True)
+    (prefix / header_path).write_bytes(b"")
+    (prefix / library_directory).mkdir()
+    (prefix / library_directory / library_name).write_bytes(b"")
+
+    assert stage_bundled_python_runtime._has_dev_support(str(prefix))
+    assert embed_runtime_manager._has_build_support(str(prefix), "3.13")
+
     python = manager.private_runtime_python("3.13")
     observed = []
     monkeypatch.setattr(manager, "_ensure_runtime_build_support", lambda root, *a, **kw: observed.append(root))
@@ -277,31 +290,6 @@ def test_runtime_zip_preserves_executable_permissions(tmp_path, monkeypatch):
     python = manager._seed_runtime_from_bundle(version="3.13")
     assert python == manager.private_runtime_python("3.13")
     assert os.stat(python).st_mode & 0o111 == 0o111
-
-
-def test_runtime_archive_is_extracted_into_an_owned_private_root(tmp_path: Path) -> None:
-    archive = tmp_path / "runtime.tar.gz"
-    destination = tmp_path / "hub-runtime" / "python313"
-    _write_runtime_archive(archive)
-
-    extract_runtime_archive(archive, destination)
-
-    assert (destination / "python.exe").read_bytes() == b"private python"
-    assert is_private_runtime_root(destination)
-
-
-def test_extracted_runtime_marker_records_the_source_archive(tmp_path: Path) -> None:
-    archive = tmp_path / "runtime.tar.gz"
-    destination = tmp_path / "python313"
-    _write_runtime_archive(archive)
-
-    extract_runtime_archive(archive, destination)
-
-    assert is_private_runtime_root(destination)
-    marker = (destination / ".infernux-private-python-runtime.json").read_text(
-        encoding="utf-8"
-    )
-    assert archive.name in marker
 
 
 def test_runtime_archive_rejects_paths_outside_destination(tmp_path: Path) -> None:
@@ -398,61 +386,6 @@ def test_runtime_manager_contains_no_python_installer_execution_path() -> None:
                 f"{source_path.relative_to(PACKAGING_ROOT)} reintroduced a system "
                 f"Python installer path: {token}"
             )
-
-
-def test_runtime_extraction_does_not_touch_external_python(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    runtime_dir = tmp_path / "hub-owned-runtime"
-    private_root = runtime_dir / "python313"
-    archive = tmp_path / "private-runtime.tar.gz"
-    executable = "python.exe" if sys.platform == "win32" else "bin/python"
-    _write_runtime_archive(archive, executable)
-
-    external_python = tmp_path / "user-python" / executable
-    external_python.parent.mkdir(parents=True)
-    external_python.write_bytes(b"user installation")
-
-    manager = embed_runtime_manager.PythonRuntimeManager(runtime_dir=str(runtime_dir))
-    monkeypatch.setattr(
-        manager, "_ensure_runtime_archive", lambda *_args, **_kwargs: str(archive)
-    )
-    monkeypatch.setattr(
-        embed_runtime_manager,
-        "extract_runtime_archive",
-        lambda source, destination, **kwargs: extract_runtime_archive(
-            source,
-            destination,
-            runtime=kwargs["runtime"],
-            validate=kwargs["validate"],
-        ),
-    )
-    monkeypatch.setattr(
-        embed_runtime_manager,
-        "_is_python_version",
-        lambda path, _version: Path(path).name == Path(executable).name and Path(path).is_file(),
-    )
-    monkeypatch.setattr(embed_runtime_manager, "_is_embedded_root", lambda _path: False)
-    monkeypatch.setattr(manager, "_prepare_managed_runtime", lambda *a, **kw: None)
-    monkeypatch.setattr(manager, "_relocate_runtime_scripts", lambda *a: None)
-
-    installed = manager._extract_runtime_to_root(str(private_root))
-
-    assert Path(installed) == private_root / executable
-    assert Path(installed).read_bytes() == b"private python"
-    assert external_python.read_bytes() == b"user installation"
-
-
-def test_runtime_manager_keeps_minor_versions_in_sibling_directories(
-    tmp_path: Path,
-) -> None:
-    manager = embed_runtime_manager.PythonRuntimeManager(
-        runtime_dir=str(tmp_path / "hub-runtime")
-    )
-
-    assert Path(manager.private_runtime_root("3.12")).name == "python312"
-    assert Path(manager.private_runtime_root("3.13")).name == "python313"
-    assert manager.default_version == "3.13"
 
 
 def test_project_runtime_requires_explicitly_installed_target_version(

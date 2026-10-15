@@ -1,6 +1,5 @@
 from __future__ import annotations
 import json
-import hashlib
 import os
 import struct
 from dataclasses import replace
@@ -45,7 +44,7 @@ def _isolate_particle_graph_panel_dirty_tracking(monkeypatch):
 
         def register(self, path: str, guid: str = "") -> str:
             normalized = os.path.abspath(str(path))
-            identity = guid or hashlib.sha256(normalized.encode()).hexdigest()[:32]
+            identity = guid or self._guids.get(os.path.normcase(normalized)) or f"{len(self._paths) + 1:032x}"
             self._paths[identity] = normalized
             self._guids[os.path.normcase(normalized)] = identity
             return identity
@@ -219,82 +218,62 @@ def test_particle_emitter_canvas_loads_vector_properties_named_x_y_z():
     assert vector.data == {"x": 1.0, "y": 2.0, "z": 3.0}
 
 
-def test_particle_update_palette_exposes_explicit_delta_time_value():
-    document = ParticleGraphAsset().emitters[0].update
-    model = _stage_model(document)
-
-    assert "particle.context.delta_time" in {
-        definition.type_id for definition in model.registered_types()
-    }
-
-
-def test_target_position_is_a_lifecycle_operation_not_a_particle_attribute():
+def test_particle_stage_palettes_create_lifecycle_and_data_nodes_in_the_requested_lane():
     asset = ParticleGraphAsset()
     emitter = asset.emitters[0]
-    update_types = {
-        definition.type_id for definition in _stage_model(emitter.update).registered_types()
-    }
-    init_types = {
-        definition.type_id for definition in _stage_model(emitter.init).registered_types()
-    }
-    rendering_types = {
-        definition.type_id
-        for definition in _stage_model(emitter.rendering).registered_types()
-    }
-
-    assert "particle.motion.target_position" in update_types
-    assert "particle.motion.target_position" in init_types
-    assert "particle.motion.target_position" in rendering_types
-    definition = particle_graph_node_definitions(asset).registry.get(
-        "particle.motion.target_position"
-    )
-    assert definition is not None
-    assert {port.id for port in definition.ports} == {
-        "in",
-        "out",
-        "target",
-        "speed",
-        "responsiveness",
-        "arrival_radius",
-    }
-    assert "target" not in {
-        attribute.stable_id for attribute in emitter.attributes
-    }
-
-
-def test_particle_rendering_palette_exposes_independent_wait_and_until_nodes():
-    document = ParticleGraphAsset().emitters[0].rendering
-    model = _stage_model(document)
-    type_ids = {definition.type_id for definition in model.registered_types()}
-
-    assert "particle.control.wait_frames" in type_ids
-    assert "particle.control.wait_seconds" in type_ids
-    assert "particle.control.until_frames" in type_ids
-    assert "particle.control.until_seconds" in type_ids
-
-
-def test_particle_wait_nodes_are_exposed_after_gpu_resume_is_available():
-    model = ParticleEmitterGraphAuthoringModel(ParticleGraphAsset().emitters[0])
+    definitions = particle_graph_node_definitions(asset)
+    model = ParticleEmitterGraphAuthoringModel(emitter, definition_set=definitions)
     registered = model.registered_types()
-    visible_types = {definition.type_id for definition in registered}
+    visible = {item.type_id for item in registered}
+    shared = {
+        'particle.context.delta_time', 'particle.motion.target_position',
+        'particle.attribute.get', 'particle.vector_field.sample',
+        'particle.sdf.sample_distance', 'particle.sdf.sample_gradient',
+        'particle.attribute.lifetime', 'particle.attribute.normalized_age',
+        'particle.control.wait_frames', 'particle.control.wait_seconds',
+        'particle.control.until_frames', 'particle.control.until_seconds',
+    }
+    assert shared <= visible
+    assert not any('per_second' in value for value in visible)
+    assert not any('per second' in item.label.lower() for item in registered)
+    assert 'particle.update.acceleration' not in visible
+    assert {'particle.attribute.mesh', 'particle.attribute.texture2d'}.isdisjoint(visible)
+    assert all('set mesh' not in item.lower() and 'get mesh' not in item.lower()
+               for item in visible)
+    assert 'target' not in {item.stable_id for item in emitter.attributes}
+    target_definition = definitions.registry.get('particle.motion.target_position')
+    assert {port.id for port in target_definition.ports} == {
+        'in', 'out', 'target', 'speed', 'responsiveness', 'arrival_radius'
+    }
 
-    assert "particle.control.wait_frames" in visible_types
-    assert "particle.control.wait_seconds" in visible_types
-    assert "particle.control.until_frames" in visible_types
-    assert "particle.control.until_seconds" in visible_types
-    assert not any("per_second" in type_id for type_id in visible_types)
-    assert not any("per second" in definition.label.lower() for definition in registered)
-    assert "particle.update.acceleration" not in visible_types
+    init_types = {item.type_id for item in _stage_model(emitter.init).registered_types()}
+    update_types = {item.type_id for item in _stage_model(emitter.update).registered_types()}
+    rendering_types = {item.type_id for item in _stage_model(emitter.rendering).registered_types()}
+    assert shared <= init_types & update_types & rendering_types
+    assert 'particle.attribute.velocity' in rendering_types
+    assert 'particle.output.sprite' not in update_types
 
-    model.set_authoring_stage("update")
-    model.prepare_node_creation("update")
-    assert model.add_node("particle.control.wait_frames", 240.0, 20.0) is not None
-    assert model.authoring_stage == "update"
-
-    model.set_authoring_stage("rendering")
-    model.prepare_node_creation("rendering")
-    assert model.add_node("particle.control.wait_seconds", 240.0, 20.0) is not None
-    assert model.authoring_stage == "rendering"
+    model.set_authoring_stage('init')
+    model.prepare_node_creation('init')
+    initial = model.add_node('common.constant.f32', 240., 20.)
+    assert model.stage_for_uid(initial.uid) == 'init'
+    model.set_authoring_stage('update')
+    model.prepare_node_creation('update')
+    wait = model.add_node('particle.control.wait_frames', 240., 250.)
+    assert model.stage_for_uid(wait.uid) == model.authoring_stage == 'update'
+    sample = model.add_node('particle.attribute.get', 440., 250.)
+    assert sample.uid.startswith('update::')
+    model.prepare_node_creation('update')
+    noise = model.add_node('common.noise.vector3d', 200., 460.)
+    assert noise.uid.startswith('update::') and model.authoring_stage == 'update'
+    model.set_authoring_stage('rendering')
+    model.prepare_node_creation('rendering')
+    rendering_wait = model.add_node('particle.control.wait_seconds', 240., 1150.)
+    assert model.stage_for_uid(rendering_wait.uid) == model.authoring_stage == 'rendering'
+    documents = model.to_documents()
+    assert any(node.uid == model._document_uid(initial.uid) for node in documents['init'].nodes)
+    assert any(node.uid == model._document_uid(wait.uid) for node in documents['update'].nodes)
+    assert any(node.uid == model._document_uid(rendering_wait.uid) for node in documents['rendering'].nodes)
 
 
 def test_optional_collision_lanes_never_capture_ordinary_node_creation():
@@ -323,40 +302,6 @@ def test_optional_collision_lanes_never_capture_ordinary_node_creation():
     assert unavailable.header_color[0] > unavailable.header_color[1]
 
 
-def test_particle_data_and_attribute_nodes_are_creatable_in_every_particle_stage():
-    emitter = ParticleGraphAsset().emitters[0]
-    init_types = {
-        definition.type_id for definition in _stage_model(emitter.init).registered_types()
-    }
-    update_types = {
-        definition.type_id for definition in _stage_model(emitter.update).registered_types()
-    }
-    rendering_types = {
-        definition.type_id
-        for definition in _stage_model(emitter.rendering).registered_types()
-    }
-
-    for type_id in (
-        "particle.attribute.get",
-        "particle.vector_field.sample",
-        "particle.sdf.sample_distance",
-        "particle.sdf.sample_gradient",
-        "particle.attribute.lifetime",
-        "particle.attribute.normalized_age",
-    ):
-        assert type_id in init_types
-        assert type_id in update_types
-        assert type_id in rendering_types
-
-    assert "particle.attribute.velocity" in rendering_types
-    assert "particle.output.sprite" not in update_types
-
-    model = ParticleEmitterGraphAuthoringModel(emitter)
-    model.prepare_node_creation("update")
-    position = model.add_node("particle.attribute.get", 200.0, 230.0)
-    assert position.uid.startswith("update::")
-
-
 def test_get_attribute_exec_output_is_revealed_and_cleared_with_exec_input():
     model = ParticleEmitterGraphAuthoringModel(ParticleGraphAsset().emitters[0])
     model.prepare_node_creation("update")
@@ -378,93 +323,51 @@ def test_get_attribute_exec_output_is_revealed_and_cleared_with_exec_input():
     assert {pin.id for pin in model.get_node_type(sample).output_pins()} == {"value"}
 
 
-def test_attribute_cache_node_owns_storage_and_infers_its_input_type():
+def test_attribute_cache_inference_retyping_and_removal_update_cross_stage_readers():
     model = ParticleEmitterGraphAuthoringModel(ParticleEmitterAsset())
-    model.set_authoring_stage("update")
-    model.prepare_node_creation("update")
-
-    node = model.add_node("particle.attribute.cache", 240.0, 250.0)
-    source = model.add_node(
-        "common.constant.vec3", 20.0, 250.0, value=[1.0, 2.0, 3.0]
+    model.set_authoring_stage('update')
+    model.prepare_node_creation('update')
+    cache = model.add_node(
+        'particle.attribute.cache', 240., 250.,
+        value_type='vec3', value_space='none', value=[1., 2., 3.],
     )
-    assert model.add_link(source.uid, "value", node.uid, "value") is not None
-    definition = model.get_node_type(node)
+    declared = model.get_node_type(cache)
+    assert cache.data['value'] == [1., 2., 3.]
+    assert next(pin for pin in declared.input_pins() if pin.id == 'value').data_type == 'vec3'
+    assert next(field for field in declared.inline_fields if field.id == 'value').data_type == 'vec3'
+    scalar = model.add_node('common.constant.f32', 20., 200., value=1.)
+    vector = model.add_node('common.constant.vec3', 20., 300., value=[1., 2., 3.])
+    assert cache.data['name'] == 'Attribute Cache'
+    assert model.stage_for_uid(cache.uid) == 'update'
+    cache_id = particle_attribute_cache_id('update', model._document_uid(cache.uid))
+    assert model.attribute_id_for_cache_node(cache.uid) == cache_id
+    assert model.attribute_id_for_cache_node(scalar.uid) == ''
+    assert model.node_creation_state('particle.attribute.cache') == (True, '')
+    incoming = model.add_link(scalar.uid, 'value', cache.uid, 'value')
+    assert incoming is not None
+    assert cache.data['value_type'] == 'f32'
 
-    assert node.data["name"] == "Attribute Cache"
-    assert node.data["value_type"] == "vec3"
-    assert node.data["value"] == [0.0, 0.0, 0.0]
-    value_pin = next(pin for pin in definition.input_pins() if pin.id == "value")
-    assert value_pin.data_type == "vec3"
-    assert model.stage_for_uid(node.uid) == "update"
-    expected_id = particle_attribute_cache_id(
-        "update", model._document_uid(node.uid)
-    )
-    assert model.attribute_id_for_cache_node(node.uid) == expected_id
-    assert model.attribute_id_for_cache_node(source.uid) == ""
-    assert expected_id in {value for _label, value in model.attribute_cache_entries()}
-    assert model.node_creation_state("particle.attribute.cache") == (True, "")
+    model.rebuild_nodes({cache.uid: {'name': 'Heat'}})
+    model.prepare_node_creation('rendering')
+    reader = model.add_node('particle.attribute.get', 480., 1150., attribute=cache_id)
+    assert ('Heat', cache_id) in model.attribute_cache_entries()
+    assert next(pin for pin in model.get_node_type(reader).output_pins()
+                if pin.id == 'value').data_type == 'f32'
 
+    incoming = model.replace_link(incoming.uid, vector.uid, 'value', cache.uid, 'value')
+    assert incoming is not None
+    assert cache.data['value_type'] == 'vec3'
+    assert cache.data['value'] == [0., 0., 0.]
+    assert next(pin for pin in model.get_node_type(reader).output_pins()
+                if pin.id == 'value').data_type == 'vec3'
+    assert model.remove_link(incoming.uid)
+    definition = model.get_node_type(cache)
+    assert next(pin for pin in definition.input_pins() if pin.id == 'value').data_type == 'vec3'
+    assert next(field for field in definition.inline_fields if field.id == 'value').data_type == 'vec3'
 
-def test_attribute_cache_type_change_rebuilds_dependent_get_nodes():
-    model = ParticleEmitterGraphAuthoringModel(ParticleEmitterAsset())
-    model.set_authoring_stage("update")
-    model.prepare_node_creation("update")
-    cache = model.add_node("particle.attribute.cache", 240.0, 250.0)
-    scalar = model.add_node("common.constant.f32", 20.0, 200.0, value=1.0)
-    vector = model.add_node(
-        "common.constant.vec3", 20.0, 300.0, value=[1.0, 2.0, 3.0]
-    )
-    incoming = model.add_link(scalar.uid, "value", cache.uid, "value")
-    cache_id = particle_attribute_cache_id(
-        "update", model._document_uid(cache.uid)
-    )
-    dependent = model.add_node(
-        "particle.attribute.get",
-        480.0,
-        250.0,
-        attribute=cache_id,
-    )
-
-    scalar_output = next(
-        pin for pin in model.get_node_type(dependent).output_pins() if pin.id == "value"
-    )
-    assert scalar_output.data_type == "f32"
-
-    assert model.replace_link(
-        incoming.uid,
-        vector.uid,
-        "value",
-        cache.uid,
-        "value",
-    ) is not None
-
-    vector_output = next(
-        pin for pin in model.get_node_type(dependent).output_pins() if pin.id == "value"
-    )
-    assert cache.data["value_type"] == "vec3"
-    assert vector_output.data_type == "vec3"
-
-
-def test_unlinked_attribute_cache_uses_its_declared_vector_type_in_the_canvas():
-    model = ParticleEmitterGraphAuthoringModel(ParticleEmitterAsset())
-    model.set_authoring_stage("update")
-    model.prepare_node_creation("update")
-
-    node = model.add_node(
-        "particle.attribute.cache",
-        240.0,
-        250.0,
-        name="Heat",
-        value_type="vec3",
-        value_space="none",
-        value=[1.0, 2.0, 3.0],
-    )
-    definition = model.get_node_type(node)
-
-    value_pin = next(pin for pin in definition.input_pins() if pin.id == "value")
-    value_field = next(field for field in definition.inline_fields if field.id == "value")
-    assert value_pin.data_type == "vec3"
-    assert value_field.data_type == "vec3"
+    assert model.remove_node(cache.uid)
+    assert model.find_node(reader.uid) is None
+    assert cache_id not in {value for _label, value in model.attribute_cache_entries()}
 
 
 @pytest.mark.parametrize("resource_type", (ValueType.TEXTURE2D, ValueType.MESH))
@@ -504,16 +407,6 @@ def test_attribute_cache_rejects_graph_resources(resource_type):
     assert validation.is_valid is False
     assert validation.code == "unsupported_cache_type"
     assert model.add_link(parameter.uid, "value", cache.uid, "value") is None
-
-
-def test_particle_registry_has_no_resource_attribute_nodes():
-    definitions = particle_graph_node_definitions(ParticleGraphAsset())
-    type_ids = {item.type_id for item in definitions.registry.definitions()}
-
-    assert "particle.attribute.mesh" not in type_ids
-    assert "particle.attribute.texture2d" not in type_ids
-    assert all("set mesh" not in item.lower() for item in type_ids)
-    assert all("get mesh" not in item.lower() for item in type_ids)
 
 
 def test_particle_attribute_node_title_tracks_composition_mode():
@@ -567,7 +460,7 @@ def test_collision_lifecycle_roots_require_setting_and_are_unique():
     assert enabled.node_creation_state("particle.root.collision_enter") == (True, "")
 
 
-def test_get_attribute_uses_dropdown_and_instance_typed_port_colors():
+def test_attribute_dropdown_retyping_keeps_convertible_sampling_chain():
     emitter = ParticleGraphAsset().emitters[0]
     definitions = particle_graph_node_definitions(ParticleGraphAsset(emitters=(emitter,)))
     registered = {item.type_id for item in definitions.registry.definitions()}
@@ -598,11 +491,20 @@ def test_get_attribute_uses_dropdown_and_instance_typed_port_colors():
         for value in attribute_field.enum_values
     )
 
+    vector_field = model.add_node('particle.vector_field.sample', 440., 180.)
+    acceleration = model.add_node('particle.attribute.velocity', 680., 180.)
+    link = model.add_link(node.uid, 'value', vector_field.uid, 'position')
+    assert link is not None
+    assert model.add_link(vector_field.uid, 'value', acceleration.uid, 'value') is not None
+
     node.data["attribute"] = "builtin.age"
     age_type = model.get_node_type(node)
     age_pin = next(pin for pin in age_type.pins if pin.id == "value")
     assert age_pin.data_type == "f32"
     assert age_pin.color != position_pin.color
+
+    assert model.remove_invalid_links_for_node(node.uid) == ()
+    assert model.find_link(link.uid) is not None
 
 
 def test_get_parameter_uses_parameter_identity_as_title_and_typed_output():
@@ -679,39 +581,7 @@ def test_set_parameter_only_offers_writable_parameters_and_uses_typed_input():
     assert parameter_field.enum_values == ("shared-velocity",)
 
 
-def test_set_parameter_color_inline_follows_hdr_attribute():
-    from infernux.graph.parameters import GRAPH_PARAMETER_HDR_ATTRIBUTE
-
-    def value_field(attributes=()):
-        asset = ParticleGraphAsset(
-            parameters=(
-                ParticleParameter(
-                    "paper",
-                    "Paper",
-                    TypeRef(ValueType.COLOR),
-                    [1.0, 1.0, 1.0, 1.0],
-                    writable=True,
-                    attributes=attributes,
-                ),
-            )
-        )
-        model = ParticleEmitterGraphAuthoringModel(
-            asset.emitters[0],
-            definition_set=particle_graph_node_definitions(asset),
-        )
-        model.prepare_node_creation("update")
-        node = model.add_node("particle.parameter.set", 200.0, 230.0)
-        return next(
-            field
-            for field in model.get_node_type(node).inline_fields
-            if field.id == "value"
-        )
-
-    assert value_field().hdr is False
-    assert value_field((GRAPH_PARAMETER_HDR_ATTRIBUTE,)).hdr is True
-
-
-def test_color_parameter_hdr_toggle_writes_the_hdr_attribute(monkeypatch):
+def test_color_parameter_hdr_edit_refreshes_its_setter_inline_field(monkeypatch):
     from infernux.engine.interaction import GraphElementKind, GraphElementRef
     from infernux.engine.ui.particle_graph_editor_panel import ParticleGraphEditorPanel
     from infernux.graph.parameters import GRAPH_PARAMETER_HDR_ATTRIBUTE
@@ -726,6 +596,12 @@ def test_color_parameter_hdr_toggle_writes_the_hdr_attribute(monkeypatch):
     parameter = panel.add_authoring_parameter(
         "Paper", "color", [0.97, 0.93, 0.84, 1.0]
     )
+    panel.update_authoring_parameter(parameter['stable_id'], {'writable': True})
+    setter = panel.add_authoring_node('update', 'particle.parameter.set', 200., 230.)
+    setter_uid = setter['uid']
+    initial_field = next(field for field in panel._model.get_node_type(
+        panel._model.find_node(setter_uid)).inline_fields if field.id == 'value')
+    assert initial_field.hdr is False
     panel._graph_selection.select(
         (GraphElementRef(GraphElementKind.PARAMETER, parameter["stable_id"]),),
         reason="test",
@@ -778,6 +654,10 @@ def test_color_parameter_hdr_toggle_writes_the_hdr_attribute(monkeypatch):
     assert captured["allow_hdr"] is True
     assert captured["default_hdr_enabled"] is True
 
+    setter_field = next(field for field in panel._model.get_node_type(
+        panel._model.find_node(setter_uid)).inline_fields if field.id == 'value')
+    assert setter_field.hdr is True
+
 
 def test_set_emitter_playing_dropdown_excludes_the_owning_emitter():
     asset = ParticleGraphAsset(
@@ -822,33 +702,6 @@ def test_set_emitter_playing_dropdown_excludes_the_owning_emitter():
         if item["type_id"] == "particle.emitter.playing"
     )["properties"][0]["choices"]
     assert [item["value"] for item in catalog_choices] == ["trail", "impact"]
-
-
-def test_get_attribute_preserves_links_compatible_by_dimension_conversion():
-    emitter = ParticleGraphAsset().emitters[0]
-    model = ParticleEmitterGraphAuthoringModel(emitter)
-    model.prepare_node_creation("update")
-    attribute = model.add_node("particle.attribute.get", 200.0, 180.0)
-    vector_field = model.add_node("particle.vector_field.sample", 440.0, 180.0)
-    link = model.add_link(attribute.uid, "value", vector_field.uid, "position")
-    assert link is not None
-
-    attribute.data["attribute"] = "builtin.age"
-    assert model.remove_invalid_links_for_node(attribute.uid) == ()
-    assert model.find_link(link.uid) is not None
-
-
-def test_vector_field_sample_connects_to_simulation_space_acceleration():
-    emitter = ParticleGraphAsset().emitters[0]
-    model = ParticleEmitterGraphAuthoringModel(emitter)
-    model.prepare_node_creation("update")
-
-    position = model.add_node("particle.attribute.get", 200.0, 180.0)
-    vector_field = model.add_node("particle.vector_field.sample", 440.0, 180.0)
-    acceleration = model.add_node("particle.attribute.velocity", 680.0, 180.0)
-
-    assert model.add_link(position.uid, "value", vector_field.uid, "position") is not None
-    assert model.add_link(vector_field.uid, "value", acceleration.uid, "value") is not None
 
 
 def test_particle_trigger_event_is_available_after_event_flow_is_implemented():
@@ -929,7 +782,9 @@ def test_particle_emitter_authoring_combines_stages_but_keeps_chains_isolated():
     ]
 
 
-def test_transform_position_connects_to_set_position_without_matching_target_space():
+def test_transform_position_palette_and_connections_accept_explicit_space_conversion():
+    from infernux.core.node_graph import PinKind
+
     model = ParticleEmitterGraphAuthoringModel(ParticleGraphAsset().emitters[0])
     model.prepare_node_creation("update")
     transform = model.add_node("common.space.transform_position", 240.0, 180.0)
@@ -941,6 +796,12 @@ def test_transform_position_connects_to_set_position_without_matching_target_spa
     assert model.validate_link(transform.uid, "value", setter.uid, "value")
     assert model.add_link(constant.uid, "value", transform.uid, "input") is not None
     assert model.add_link(transform.uid, "value", setter.uid, "value") is not None
+
+    pin = model.compatible_creation_pin(
+        'particle.attribute.position',
+        {'source_node': transform.uid, 'source_pin': 'value', 'source_kind': PinKind.OUTPUT},
+    )
+    assert pin is not None and pin.id == 'value'
 
 
 def test_numeric_ports_accept_convertible_shapes_across_common_and_set_nodes():
@@ -961,35 +822,6 @@ def test_numeric_ports_accept_convertible_shapes_across_common_and_set_nodes():
     assert model.add_link(scalar.uid, "value", position.uid, "value") is not None
     assert model.add_link(vector.uid, "value", size.uid, "value") is not None
     assert model.add_link(integer.uid, "value", compare.uid, "a") is not None
-
-
-def test_transform_position_palette_can_create_set_position_from_its_output():
-    from infernux.core.node_graph import PinKind
-
-    model = ParticleEmitterGraphAuthoringModel(ParticleGraphAsset().emitters[0])
-    model.prepare_node_creation("update")
-    transform = model.add_node("common.space.transform_position", 240.0, 180.0)
-    pin = model.compatible_creation_pin(
-        "particle.attribute.position",
-        {
-            "source_node": transform.uid,
-            "source_pin": "value",
-            "source_kind": PinKind.OUTPUT,
-        },
-    )
-
-    assert pin is not None
-    assert pin.id == "value"
-
-
-def test_particle_common_node_creation_keeps_the_requested_stage():
-    model = ParticleEmitterGraphAuthoringModel(ParticleGraphAsset().emitters[0])
-    model.prepare_node_creation("update")
-
-    noise = model.add_node("common.noise.vector3d", 200.0, 460.0)
-
-    assert noise.uid.startswith("update::")
-    assert model.authoring_stage == "update"
 
 
 def test_particle_common_operator_chain_follows_the_lifecycle_node_it_feeds():
@@ -1447,48 +1279,6 @@ def test_particle_compose4_connects_directly_to_color_attribute_and_compiles():
     ParticleGraphCompiler().compile(panel.asset)
 
 
-def test_removing_attribute_cache_node_removes_dependent_get_nodes():
-    model = ParticleEmitterGraphAuthoringModel(ParticleEmitterAsset())
-    model.prepare_node_creation("update")
-    owner = model.add_node("particle.attribute.cache", 240.0, 230.0)
-    cache_id = particle_attribute_cache_id(
-        "update", model._document_uid(owner.uid)
-    )
-    model.prepare_node_creation("rendering")
-    reader = model.add_node(
-        "particle.attribute.get", 320.0, 1150.0, attribute=cache_id
-    )
-
-    assert model.find_node(reader.uid) is not None
-    assert model.remove_node(owner.uid) is True
-    assert model.find_node(reader.uid) is None
-
-
-def test_get_attribute_dropdown_discovers_node_owned_cache_type():
-    model = ParticleEmitterGraphAuthoringModel(ParticleEmitterAsset())
-    model.prepare_node_creation("update")
-    owner = model.add_node(
-        "particle.attribute.cache",
-        240.0,
-        230.0,
-        name="Heat",
-        value_type="f32",
-    )
-    cache_id = particle_attribute_cache_id(
-        "update", model._document_uid(owner.uid)
-    )
-    model.prepare_node_creation("rendering")
-    reader = model.add_node(
-        "particle.attribute.get", 320.0, 1150.0, attribute=cache_id
-    )
-
-    assert ("Heat", cache_id) in model.attribute_cache_entries()
-    value_pin = next(
-        pin for pin in model.get_node_type(reader).output_pins() if pin.id == "value"
-    )
-    assert value_pin.data_type == "f32"
-
-
 def test_particle_graph_editor_authors_texture2d_parameter_node():
     from infernux.engine.ui.particle_graph_editor_panel import ParticleGraphEditorPanel
 
@@ -1531,7 +1321,6 @@ def test_unsaved_particle_graph_edits_do_not_publish_runtime_artifacts(
 def test_particle_emitter_row_defers_model_rebind_until_list_render_finishes(
     monkeypatch,
 ):
-    import infernux.engine.ui.particle_graph_editor_panel as module
     import infernux.engine.ui.node_graph_editor_panel as shared_module
 
     panel, _core, _manager = _particle_panel_with_command_core()
@@ -1583,9 +1372,6 @@ def test_particle_emitter_row_defers_model_rebind_until_list_render_finishes(
 
 def test_particle_workspace_defers_add_until_all_rows_finish(monkeypatch):
     import infernux.engine.ui.node_graph_editor_panel as shared_module
-    from infernux.engine.ui.particle_graph_editor_panel import (
-        ParticleGraphEditorPanel,
-    )
 
     panel, core, _manager = _particle_panel_with_command_core()
     rendered_rows = []
@@ -1991,31 +1777,6 @@ def test_particle_graph_alignment_axis_is_only_visible_in_axis_mode():
     assert _node_property_is_visible(node, "shader") is True
 
 
-def test_particle_output_exposes_selected_shader_properties_as_node_inputs():
-    from infernux.engine.ui.particle_graph_editor_panel import (
-        ParticleGraphEditorPanel,
-    )
-
-    panel = ParticleGraphEditorPanel()
-    output = panel._model.find_node("rendering::output.sprite")
-    definition = panel._definition_for_node(output)
-
-    assert definition is not None
-    assert {item.id for item in definition.properties} >= {"shader"}
-    assert "material" not in {item.id for item in definition.properties}
-    shader_ports = {
-        item.id: item.value_type.value_type
-        for item in definition.ports
-        if item.id.startswith("shader.") and item.value_type is not None
-    }
-    assert shader_ports == {
-        "shader.baseColor": ValueType.COLOR,
-        "shader.texSampler": ValueType.TEXTURE2D,
-        "shader.glow": ValueType.F32,
-        "shader.rainbow": ValueType.F32,
-    }
-
-
 @pytest.mark.parametrize(
     "type_id",
     (
@@ -2050,6 +1811,12 @@ def test_every_particle_output_uses_the_same_shader_property_contract(type_id):
         "shader.texSampler",
         "shader.glow",
         "shader.rainbow",
+    }
+
+    assert {item.id: item.value_type.value_type for item in definition.ports
+            if item.id.startswith('shader.') and item.value_type is not None} == {
+        'shader.baseColor': ValueType.COLOR, 'shader.texSampler': ValueType.TEXTURE2D,
+        'shader.glow': ValueType.F32, 'shader.rainbow': ValueType.F32,
     }
 
     if type_id == "particle.output.mesh":
@@ -2293,29 +2060,13 @@ def test_particle_inline_mesh_field_offers_builtin_meshes():
     assert provider("node", "texture", "Texture", "") == ()
 
 
-def test_particle_output_shader_schema_hot_reload_preserves_selection(monkeypatch):
-    from infernux.engine.ui import particle_graph_editor_panel as module
-
-    panel = module.ParticleGraphEditorPanel()
-    output_uid = "rendering::output.sprite"
-    panel._selected_node_uid = output_uid
-    panel._view.selected_nodes = [output_uid]
-    next_generation = panel._shader_definition_generation + 1
-    monkeypatch.setattr(
-        module, "get_shader_property_generation", lambda: next_generation
-    )
-
-    panel._refresh_shader_definitions_if_needed()
-
-    assert panel._shader_definition_generation == next_generation
-    assert panel._selected_node_uid == output_uid
-    assert panel._view.selected_nodes == [output_uid]
-
-
-def test_particle_output_shader_switch_preserves_compatible_ports_and_links():
+def test_particle_output_shader_edits_and_hot_reload_keep_parameter_binding(monkeypatch):
     from infernux.engine.ui.particle_graph_editor_panel import (
         ParticleGraphEditorPanel,
     )
+
+    from infernux.engine.ui import particle_graph_editor_panel as module
+    from infernux.particle import ParticleGraphCompiler
 
     panel = ParticleGraphEditorPanel()
     panel._record = lambda *_args: None
@@ -2341,6 +2092,18 @@ def test_particle_output_shader_switch_preserves_compatible_ports_and_links():
         and link.target_pin == "shader.baseColor"
         for link in panel._model.links
     )
+
+    panel._selected_node_uid = output_uid
+    panel._view.selected_nodes = [output_uid]
+    next_generation = panel._shader_definition_generation + 1
+    monkeypatch.setattr(module, 'get_shader_property_generation', lambda: next_generation)
+    panel._refresh_shader_definitions_if_needed()
+    assert panel._shader_definition_generation == next_generation
+    assert panel._selected_node_uid == output_uid
+    assert panel._view.selected_nodes == [output_uid]
+    output = ParticleGraphCompiler().compile(panel.asset).emitters[0].render_plan.outputs[0]
+    base_color = next(item for item in output.shader_properties if item.name == 'baseColor')
+    assert base_color.parameter_id == parameter['stable_id']
 
 
 @pytest.mark.parametrize("via_selection", [False, True])
@@ -2609,34 +2372,6 @@ def test_particle_output_compiler_strips_stale_internal_shader_properties():
     assert "fadeOutStart" not in names
 
 
-def test_particle_graph_parameter_connects_directly_to_output_shader_property():
-    from infernux.engine.ui.particle_graph_editor_panel import (
-        ParticleGraphEditorPanel,
-    )
-    from infernux.particle import ParticleGraphCompiler
-
-    panel = ParticleGraphEditorPanel()
-    panel._record = lambda *_args: None
-    parameter = panel.add_authoring_parameter(
-        "Tint", "color", [0.2, 0.4, 0.8, 1.0]
-    )
-    source = panel.add_authoring_parameter_node(
-        parameter["stable_id"], 180.0, 500.0, stage="rendering"
-    )
-    panel.connect_value(
-        source["uid"],
-        "value",
-        "rendering::output.sprite",
-        "shader.baseColor",
-    )
-
-    output = ParticleGraphCompiler().compile(panel.asset).emitters[0].render_plan.outputs[0]
-    base_color = next(
-        item for item in output.shader_properties if item.name == "baseColor"
-    )
-    assert base_color.parameter_id == parameter["stable_id"]
-
-
 def test_particle_graph_editor_sets_mesh_asset_through_live_authoring_model(
     tmp_path, monkeypatch
 ):
@@ -2865,25 +2600,16 @@ def test_particle_graph_editor_public_api_disconnects_exec_and_value_links():
     assert value_disconnected["target_port"] == "value"
 
 
-def test_particle_graph_editor_type_catalog_is_searchable_and_paged():
-    from infernux.engine.ui.particle_graph_editor_panel import ParticleGraphEditorPanel
-
-    panel = ParticleGraphEditorPanel()
-    catalog = panel.authoring_type_catalog(query="ribbon", offset=0, limit=1)
-
-    assert catalog["offset"] == 0
-    assert catalog["limit"] == 1
-    assert catalog["total"] >= 1
-    assert len(catalog["types"]) == 1
-    assert "ribbon" in catalog["types"][0]["type_id"]
-
-
-def test_particle_graph_editor_exposes_asset_local_burst_node():
+def test_particle_catalog_creation_and_emitter_switch_keep_current_identity():
     from infernux.engine.ui.particle_graph_editor_panel import ParticleGraphEditorPanel
 
     panel = ParticleGraphEditorPanel()
     panel._record = lambda *_args: None
-    panel.add_authoring_emitter("Burst Target")
+    second = panel.add_authoring_emitter('Burst Target')
+    ribbon = panel.authoring_type_catalog(query='ribbon', offset=0, limit=1)
+    assert ribbon['offset'] == 0 and ribbon['limit'] == 1
+    assert ribbon['total'] >= 1 and len(ribbon['types']) == 1
+    assert 'ribbon' in ribbon['types'][0]['type_id']
     panel.select_authoring_emitter(panel._asset.emitters[0].stable_id)
 
     catalog = panel.authoring_type_catalog(query="burst")
@@ -2898,21 +2624,10 @@ def test_particle_graph_editor_exposes_asset_local_burst_node():
         emitter.stable_id for emitter in panel._asset.emitters
     }
 
-
-def test_particle_graph_editor_switches_emitter_without_old_selection_winning():
-    from infernux.engine.ui.particle_graph_editor_panel import ParticleGraphEditorPanel
-
-    panel = ParticleGraphEditorPanel()
-    panel._record = lambda *_args: None
-    second = panel.add_authoring_emitter("Second")
-    first_id = panel._asset.emitters[0].stable_id
-
-    panel.select_authoring_emitter(first_id)
-    selected = panel.select_authoring_emitter(second["stable_id"])
-
-    assert selected["index"] == 1
-    assert panel.authoring_snapshot()["emitter_index"] == 1
-    assert panel._selected_emitter().stable_id == second["stable_id"]
+    selected = panel.select_authoring_emitter(second['stable_id'])
+    assert selected['index'] == 1
+    assert panel.authoring_snapshot()['emitter_index'] == 1
+    assert panel._selected_emitter().stable_id == second['stable_id']
 
 
 def test_particle_graph_editor_edits_unlinked_value_input_defaults():

@@ -28,19 +28,6 @@ from infernux.graph.registry import COMMON_NODE_REGISTRY
 import infernux.particle.nodes  # noqa: F401 - registers particle node definitions
 
 
-def test_animfsm_node_schema_has_one_strict_definition_authority():
-    from infernux.core.node_graph import node_catalog
-
-    panel = AnimFSMEditorPanel()
-
-    assert FSM_STATE_NODE_DEF.type_id == FSM_STATE_NODE_TYPE_ID
-    assert FSM_ENTRY_NODE_DEF.type_id == FSM_ENTRY_NODE_TYPE_ID
-    assert panel._graph.get_type(FSM_STATE_NODE_TYPE_ID) is not None
-    assert panel._graph.get_type(FSM_ENTRY_NODE_TYPE_ID) is not None
-    assert panel._graph.get_type("anim_state") is None
-    assert node_catalog.get_type("anim_fsm", "anim_state") is None
-
-
 def test_node_graph_projects_parameter_transactions_to_exact_mutations():
     from infernux.engine.interaction import GraphMutationKind
     from infernux.engine.ui.node_graph_editor_panel import NodeGraphEditorPanel
@@ -423,8 +410,19 @@ class _GraphParameterDetailContext:
         pass
 
 
-def test_animfsm_toolbar_exposes_stable_semantic_ids():
+def test_animfsm_toolbar_and_parameter_workspace_publish_domain_semantics():
+    from infernux.core.node_graph import node_catalog
+    from infernux.engine.ui.animfsm_editor_panel import _ANIMFSM_PANEL_INTERACTION
+
+    _install_node_graph_context_commands()
     panel = AnimFSMEditorPanel()
+    assert FSM_STATE_NODE_DEF.type_id == FSM_STATE_NODE_TYPE_ID
+    assert FSM_ENTRY_NODE_DEF.type_id == FSM_ENTRY_NODE_TYPE_ID
+    assert panel._graph.get_type(FSM_STATE_NODE_TYPE_ID) is not None
+    assert panel._graph.get_type(FSM_ENTRY_NODE_TYPE_ID) is not None
+    assert panel._graph.get_type('anim_state') is None
+    assert node_catalog.get_type('anim_fsm', 'anim_state') is None
+    assert 'animfsm.switch_mode' in {spec.command_id for spec in _ANIMFSM_PANEL_INTERACTION.commands}
     panel._fsm = AnimStateMachine(name="Locomotion")
     panel._fsm.mode = "3d"
     panel._file_path = "Assets/Locomotion.animfsm"
@@ -447,19 +445,12 @@ def test_animfsm_toolbar_exposes_stable_semantic_ids():
     assert by_id["animfsm.document.path"][6] == "Assets/Locomotion.animfsm"
     assert by_id["animfsm.document.dirty"][4] is False
 
-
-def test_animfsm_parameter_add_exposes_stable_semantic_id():
-    _install_node_graph_context_commands()
-    panel = AnimFSMEditorPanel()
-    ctx = _ToolbarContext()
     ctx.push_style_color = lambda *_args: None
     ctx.pop_style_color = lambda *_args: None
     ctx.separator = lambda: None
     ctx.dummy = lambda *_args: None
-
     panel._render_variables_panel(ctx)
-
-    assert "animfsm.parameters.add" in {item[3] for item in ctx.semantic_items}
+    assert 'animfsm.parameters.add' in {item[3] for item in ctx.semantic_items}
 
 
 def test_fsm_and_particle_parameters_share_the_base_detail_drawer():
@@ -513,6 +504,9 @@ def test_fsm_and_particle_parameters_share_the_base_detail_drawer():
     )
     assert (updated_fsm.name, updated_fsm.default) == ("Velocity", 2.5)
     assert (updated_particle.name, updated_particle.default) == ("Velocity", 2.5)
+
+    assert '_render_node_graph_detail_panel' not in AnimFSMEditorPanel.__dict__
+    assert '_render_node_graph_detail_panel' not in ParticleGraphEditorPanel.__dict__
 
 
 def test_node_graph_inline_overlay_submits_layout_item_after_cursor_restore():
@@ -980,31 +974,7 @@ def test_animfsm_clean_mode_switch_starts_blank_and_clears_stale_selection():
     assert panel._view.selected_link == ""
 
 
-def test_animfsm_mode_switch_is_a_formal_panel_command():
-    from infernux.engine.ui.animfsm_editor_panel import _ANIMFSM_PANEL_INTERACTION
-
-    command_ids = {spec.command_id for spec in _ANIMFSM_PANEL_INTERACTION.commands}
-    assert "animfsm.switch_mode" in command_ids
-
-
-def test_animfsm_selection_only_click_does_not_mark_resource_dirty():
-    panel = AnimFSMEditorPanel()
-    panel._fsm.add_state("State 0")
-    panel._sync_graph_from_fsm()
-    uid = panel._name_to_uid["State 0"]
-    from infernux.engine.interaction import DocumentRegistry
-
-    DocumentRegistry.instance().mark_saved(panel.document_id)
-
-    panel._on_canvas_selection_changed((uid,), "", True)
-    panel._on_node_drag_start(uid)
-    panel._on_node_drag_end(uid)
-
-    assert panel._graph_selection.primary_id(GraphElementKind.NODE) == uid
-    assert panel._document_is_dirty() is False
-
-
-def test_animfsm_entry_move_uses_shared_node_graph_undo_and_persists():
+def test_animfsm_selection_then_entry_drag_updates_only_the_authored_move():
     from infernux.engine.undo import UndoManager
 
     panel = AnimFSMEditorPanel()
@@ -1012,6 +982,15 @@ def test_animfsm_entry_move_uses_shared_node_graph_undo_and_persists():
     entry = panel._graph.find_node(panel._entry_uid)
     assert entry is not None
     before = (entry.pos_x, entry.pos_y)
+
+    from infernux.engine.interaction import DocumentRegistry
+
+    DocumentRegistry.instance().mark_saved(panel.document_id)
+    panel._on_canvas_selection_changed((entry.uid,), '', True)
+    panel._on_node_drag_start(entry.uid)
+    panel._on_node_drag_end(entry.uid)
+    assert panel._graph_selection.primary_id(GraphElementKind.NODE) == entry.uid
+    assert not panel._document_is_dirty()
 
     panel._on_node_drag_start(entry.uid)
     entry.pos_x += 125.0
@@ -1150,19 +1129,12 @@ def test_graph_detail_host_rejects_duplicate_contributor_ids():
         GraphDetailHost.ordered((duplicate, duplicate))
 
 
-def test_graph_domains_use_common_detail_host_instead_of_overriding_panel_dispatch():
-    from infernux.engine.ui.particle_graph_editor_panel import ParticleGraphEditorPanel
-
-    assert "_render_node_graph_detail_panel" not in AnimFSMEditorPanel.__dict__
-    assert "_render_node_graph_detail_panel" not in ParticleGraphEditorPanel.__dict__
-
-
 def test_node_graph_context_menu_uses_the_host_namespace():
     _install_node_graph_context_commands()
     view = NodeGraphView()
     view.semantic_namespace = "animfsm.graph"
     view.graph = type("Graph", (), {"registered_types": lambda _self: []})()
-    ctx = _MenuContext()
+    ctx = _MenuContext(menu_open=True)
 
     view._draw_context_menu(ctx)
 
@@ -1172,6 +1144,9 @@ def test_node_graph_context_menu_uses_the_host_namespace():
         "animfsm.graph.context.center_view",
         "animfsm.graph.context.reset_zoom",
     } <= semantic_ids
+
+    by_id = {item[3]: item for item in ctx.semantic_items}
+    assert by_id['animfsm.graph.context.add_node'][4] == {'bool_value': False}
 
 
 def test_node_graph_canvas_background_does_not_submit_an_interactive_item():
@@ -1310,19 +1285,6 @@ def test_node_graph_reconnect_released_on_empty_requests_disconnect():
     assert replaced == []
 
 
-def test_node_graph_add_command_exposes_unchecked_domain_semantic():
-    _install_node_graph_context_commands()
-    view = NodeGraphView()
-    view.semantic_namespace = "vfx.graph"
-    view.graph = type("Graph", (), {"registered_types": lambda _self: []})()
-    ctx = _MenuContext(menu_open=True)
-
-    view._draw_context_menu(ctx)
-
-    by_id = {item[3]: item for item in ctx.semantic_items}
-    assert by_id["vfx.graph.context.add_node"][4] == {"bool_value": False}
-
-
 def test_animfsm_uses_shared_node_creation_palette_for_domain_variants():
     from infernux.core.node_graph import PinKind
 
@@ -1337,7 +1299,7 @@ def test_animfsm_uses_shared_node_creation_palette_for_domain_variants():
     assert all(isinstance(entry, NodeCreationEntry) for entry in entries)
 
 
-def test_node_graph_center_view_fits_full_node_bounds_inside_canvas():
+def test_node_graph_label_width_and_centering_keep_full_bounds_visible():
     typedef = SimpleNamespace(
         min_width=170.0,
         body_bottom_pad=0.0,
@@ -1362,19 +1324,12 @@ def test_node_graph_center_view_fits_full_node_bounds_inside_canvas():
     assert left >= 31.0
     assert right <= 469.0
 
-
-def test_node_graph_width_expands_for_long_input_labels():
-    typedef = SimpleNamespace(
-        label="Sprite Output: Particle Six-Way Smoke",
-        min_width=210.0,
+    output_type = SimpleNamespace(
+        label='Sprite Output: Particle Six-Way Smoke', min_width=210.,
         show_header_color_swatch=True,
-        input_pins=lambda: [SimpleNamespace(label="positiveAxesMap")],
-        output_pins=lambda: [],
+        input_pins=lambda: [SimpleNamespace(label='positiveAxesMap')], output_pins=lambda: [],
     )
-    node = SimpleNamespace(data={}, type_id="output")
-    view = NodeGraphView()
-
-    assert view._natural_node_width(node, typedef) > typedef.min_width
+    assert view._natural_node_width(SimpleNamespace(data={}, type_id='output'), output_type) > 210.
 
 
 def test_node_graph_exports_drawn_nodes_as_explicit_semantic_rects():

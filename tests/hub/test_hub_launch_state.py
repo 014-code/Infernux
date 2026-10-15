@@ -551,63 +551,47 @@ def test_upgraded_hub_requires_the_new_default_runtime(monkeypatch):
     assert observed["finished"] is True
 
 
-def test_packaged_hub_preserves_explicitly_disabled_update_checks():
-    observed = []
+def test_startup_update_preference_controls_check_runtime_handoff_and_notices():
+    settings, observed = {}, []
     launcher = SimpleNamespace(
-        db=SimpleNamespace(get_setting=lambda _key, _default: "disabled"),
+        db=SimpleNamespace(get_setting=lambda key, default: settings.get(key, default)),
         _startup_update_pending=False,
-        update_controller=SimpleNamespace(
-            check=lambda **kwargs: observed.append(("update", kwargs))
-        ),
+        update_controller=SimpleNamespace(check=lambda **kwargs: observed.append(("update", kwargs))),
         _bootstrap_python_runtime=lambda: observed.append(("runtime", {})),
+        installs_view=SimpleNamespace(refresh=lambda: observed.append(("installs", {}))),
+        notification_controller=SimpleNamespace(show_pending=lambda: observed.append(("notices", {}))),
+        _seed_bundled_engines=lambda: observed.append(("seed", {})),
     )
-
     GameEngineLauncher._bootstrap_hub(launcher)
-
-    assert launcher._startup_update_pending is False
-    assert observed == [("runtime", {})]
-
-
-@pytest.mark.parametrize("saved", [None, "enabled"])
-def test_packaged_hub_checks_by_default_and_when_explicitly_enabled(saved):
-    observed = []
-    launcher = SimpleNamespace(
-        db=SimpleNamespace(get_setting=lambda _key, default: default if saved is None else saved),
-        _startup_update_pending=False,
-        update_controller=SimpleNamespace(
-            check=lambda **kwargs: observed.append(("update", kwargs))
-        ),
-        _bootstrap_python_runtime=lambda: observed.append(("runtime", {})),
-    )
-
-    GameEngineLauncher._bootstrap_hub(launcher)
-
     assert launcher._startup_update_pending is True
     assert observed == [("update", {"silent": True})]
-
     GameEngineLauncher._on_startup_update_check_finished(launcher)
-
     assert launcher._startup_update_pending is False
-    assert observed == [
-        ("update", {"silent": True}),
-        ("runtime", {}),
-    ]
-
-
-@pytest.mark.parametrize("saved, expected", [(None, True), ("enabled", True), ("disabled", False)])
-def test_startup_release_notices_follow_the_same_update_preference(saved, expected):
-    observed = []
-    launcher = SimpleNamespace(
-        db=SimpleNamespace(get_setting=lambda _key, default: default if saved is None else saved),
-        installs_view=SimpleNamespace(refresh=lambda: observed.append("installs")),
-        notification_controller=SimpleNamespace(show_pending=lambda: observed.append("notices")),
-        # Seeding the installer's bundled engine is local and preference-independent.
-        _seed_bundled_engines=lambda: observed.append("seed"),
-    )
-
+    assert observed[-1] == ("runtime", {})
+    observed.clear()
     GameEngineLauncher._finish_startup(launcher)
+    assert observed == [("seed", {}), ("installs", {}), ("notices", {})]
 
-    assert observed == (["seed", "installs", "notices"] if expected else ["seed", "installs"])
+    settings["automatic_update_checks"] = "disabled"
+    observed.clear()
+    GameEngineLauncher._bootstrap_hub(launcher)
+    assert launcher._startup_update_pending is False
+    assert observed == [("runtime", {})]
+    observed.clear()
+    GameEngineLauncher._finish_startup(launcher)
+    assert observed == [("seed", {}), ("installs", {})]
+
+    settings["automatic_update_checks"] = "enabled"
+    observed.clear()
+    GameEngineLauncher._bootstrap_hub(launcher)
+    assert launcher._startup_update_pending is True
+    assert observed == [("update", {"silent": True})]
+    GameEngineLauncher._on_startup_update_check_finished(launcher)
+    assert launcher._startup_update_pending is False
+    assert observed[-1] == ("runtime", {})
+    observed.clear()
+    GameEngineLauncher._finish_startup(launcher)
+    assert observed == [("seed", {}), ("installs", {}), ("notices", {})]
 
 
 def test_fresh_installer_runtime_skips_the_upgrade_requirement(monkeypatch):

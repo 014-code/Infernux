@@ -49,22 +49,26 @@ def pinned(project):
     return registry
 
 
-def test_refresh_changes_discovery_not_installed_pin(tmp_path, monkeypatch, catalog):
-    registry = pinned(tmp_path / "project")
+def test_refreshed_discovery_preserves_installed_pin_and_bootstraps_next_project_offline(tmp_path, monkeypatch, catalog):
+    project = tmp_path / "project"
+    registry = pinned(project)
     installed = registry.installed()
     lock = Path(registry.lock_path).read_bytes()
     requests = serve(monkeypatch, catalog)
-    official.refresh_official_registry(str(tmp_path / "project"))
+    official.refresh_official_registry(str(project))
     assert requests == [official.OFFICIAL_REGISTRY_URL]
     assert registry.find("infernux/platform-web")["version"] == "0.2.0"
     assert registry.installed() == installed
     assert Path(registry.lock_path).read_bytes() == lock
     assert (tmp_path / "shared/official-registry.json").is_file()
-
-
-def test_next_project_uses_shared_discovery_without_network_or_wheel(tmp_path, monkeypatch, catalog):
-    serve(monkeypatch, catalog)
-    official.refresh_official_registry(str(tmp_path / "first"))
+    manager = PluginManager(str(project), runtime=True)
+    reloaded = []
+    monkeypatch.setattr(manager, "reload", lambda reference: reloaded.append(reference))
+    monkeypatch.setattr(manager, "install_source", lambda *args, **kwargs: pytest.fail("Do not acquire a replacement"))
+    manager.install_reference("infernux/platform-web")
+    assert reloaded == ["infernux/platform-web"]
+    assert manager.registry.installed_record("infernux/platform-web")["version"] == "0.1.0"
+    assert Path(registry.lock_path).read_bytes() == lock
     monkeypatch.setattr(official, "urlopen", lambda *args, **kwargs: pytest.fail("Startup must stay offline"))
     entries = official.sync_official_registry(str(tmp_path / "second"), resources_root=str(tmp_path / "missing-wheel"))
     assert entries[0]["source"]["location"].endswith("/infernux_web")
@@ -124,16 +128,3 @@ def test_bundled_official_package_can_discover_its_publisher(tmp_path, catalog):
     registry.save(document)
     manager = PluginManager(str(tmp_path / "project"), runtime=True)
     assert manager.release_repository("infernux/platform-web") == "https://github.com/InfernuxEngine/infernux_web"
-
-
-def test_existing_install_is_not_upgraded_by_dependency_resolution(tmp_path, monkeypatch, catalog):
-    pinned(tmp_path / "project")
-    serve(monkeypatch, catalog)
-    official.refresh_official_registry(str(tmp_path / "project"))
-    manager = PluginManager(str(tmp_path / "project"), runtime=True)
-    reloaded = []
-    monkeypatch.setattr(manager, "reload", lambda reference: reloaded.append(reference))
-    monkeypatch.setattr(manager, "install_source", lambda *args, **kwargs: pytest.fail("Do not acquire a replacement"))
-    manager.install_reference("infernux/platform-web")
-    assert reloaded == ["infernux/platform-web"]
-    assert manager.registry.installed_record("infernux/platform-web")["version"] == "0.1.0"
