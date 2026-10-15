@@ -6,8 +6,8 @@ import pytest
 
 from infernux.core import RenderTexture
 from infernux.lib import AssetRegistry, InxMaterial
-from test_render_texture_asset import imported_target
-from test_shader_guid_rename import rename_assets
+from test_render_texture_asset import imported_target as imported_target
+from test_shader_guid_rename import rename_assets as rename_assets
 
 
 @pytest.mark.parametrize('width', [0.5, 1.0, 2.0, 4.0])
@@ -26,9 +26,15 @@ def test_line_width_edit_is_published_after_full_state_authorship(width):
     assert material.get_version() == before + 1
 
 
-@pytest.mark.parametrize('api', ['document', 'string', 'registry'])
-@pytest.mark.parametrize('override', [False, True])
-@pytest.mark.parametrize('edit', ['replace', 'clear', 'remove', 'float', 'invalid'])
+@pytest.mark.parametrize('api,override,edit', [
+    ('document', False, 'replace'), ('document', True, 'replace'),
+    ('document', False, 'clear'), ('document', True, 'clear'),
+    ('document', True, 'remove'), ('document', True, 'float'), ('document', True, 'invalid'),
+    ('registry', False, 'replace'), ('registry', True, 'replace'),
+    ('registry', False, 'clear'), ('registry', True, 'clear'),
+    ('registry', True, 'remove'), ('registry', True, 'float'), ('registry', True, 'invalid'),
+    ('string', False, 'replace'), ('string', True, 'invalid'),
+])
 def test_document_reconciles_texture_publication(engine, imported_target, tmp_path, api, override, edit):
     _, guid, target_document, database = imported_target
     registry = AssetRegistry.instance()

@@ -1,15 +1,27 @@
 """Tests for infernux.renderstack — InjectionPoint, RenderPass, ResourceBus, FullScreenEffect (real C++ backend)."""
 
+
 from __future__ import annotations
 
+
 import sys
+
+
 import types
+
 
 import pytest
 
+
 from infernux.renderstack.injection_point import InjectionPoint
+
+
 from infernux.renderstack.resource_bus import ResourceBus
+
+
 from infernux.renderstack.render_pass import RenderPass
+
+
 from infernux.renderstack.fullscreen_effect import FullScreenEffect
 
 
@@ -350,159 +362,75 @@ def test_effect_feature_decorator_replaces_same_source_candidate_class(tmp_path)
     assert get_render_effect_feature("tests.post.same_source_replacement").effect_class is second
 
 
-# ══════════════════════════════════════════════════════════════════════
-# InjectionPoint
-# ══════════════════════════════════════════════════════════════════════
+def test_bind_buffers_uses_instance_resource_contract():
+    from infernux.renderstack.resource_bus import ResourceBus
 
-class TestInjectionPoint:
-    def test_auto_display_name(self):
-        ip = InjectionPoint(name="after_opaque")
-        assert ip.display_name == "After Opaque"
+    class TestFX(FullScreenEffect):
+        name = "test_fx"
+        injection_point = "before_post_process"
+        requires = {"color", "depth", "normal"}
+        modifies = {"color"}
 
-    def test_explicit_display_name(self):
-        ip = InjectionPoint(name="x", display_name="Custom")
-        assert ip.display_name == "Custom"
+    class RecordingPass:
+        def __init__(self):
+            self.bindings = {}
 
-    def test_default_resource_state(self):
-        ip = InjectionPoint(name="test")
-        assert ip.resource_state == {"color", "depth"}
+        def set_texture(self, name, handle):
+            self.bindings[name] = handle
 
-    def test_custom_resource_state(self):
-        ip = InjectionPoint(name="test", resource_state={"color"})
-        assert ip.resource_state == {"color"}
+    render_pass = RecordingPass()
+    bus = ResourceBus(
+        {"color": object(), "depth": object(), "normal": object()}
+    )
 
+    TestFX().bind_buffers(render_pass, bus)
 
-# ══════════════════════════════════════════════════════════════════════
-# ResourceBus
-# ══════════════════════════════════════════════════════════════════════
-
-class TestResourceBus:
-    def test_empty_bus(self):
-        bus = ResourceBus()
-        assert bus.available_resources == set()
-        assert bus.get("color") is None
-        assert not bus.has("color")
-
-    def test_set_and_get(self):
-        bus = ResourceBus()
-        bus.set("color", "handle_c")
-        bus.set("depth", "handle_d")
-        assert bus.get("color") == "handle_c"
-        assert bus.has("depth")
-        assert bus.available_resources == {"color", "depth"}
-
-    def test_initial_resources(self):
-        bus = ResourceBus(initial={"a": 1, "b": 2})
-        assert bus.has("a")
-        assert bus.get("b") == 2
-
-    def test_snapshot(self):
-        bus = ResourceBus(initial={"x": 10})
-        snap = bus.snapshot()
-        assert snap == {"x": 10}
-        snap["x"] = 999
-        assert bus.get("x") == 10
-
-    def test_repr(self):
-        bus = ResourceBus(initial={"a": 1, "b": 2})
-        r = repr(bus)
-        assert "a" in r
-        assert "b" in r
+    assert set(render_pass.bindings) == {
+        "_InxPassColor",
+        "_InxPassDepth",
+        "_InxPassNormal",
+    }
 
 
-# ══════════════════════════════════════════════════════════════════════
-# RenderPass (base class)
-# ══════════════════════════════════════════════════════════════════════
+def test_render_pass_resource_validation_uses_an_independent_bus_snapshot():
+    injection = InjectionPoint(name="after_opaque")
+    assert injection.display_name == "After Opaque"
+    assert injection.resource_state == {"color", "depth"}
+    custom = InjectionPoint(name="custom", display_name="Custom", resource_state={"color"})
+    assert custom.display_name == "Custom" and custom.resource_state == {"color"}
 
-class TestRenderPass:
-    def test_requires_name(self):
-        with pytest.raises(ValueError, match="name"):
-            RenderPass()
+    class NeedsBuffers(RenderPass):
+        name = "buffer_pass"
+        injection_point = "after_opaque"
+        requires = {"color", "depth"}
 
-    def test_requires_injection_point(self):
-        class NoIP(RenderPass):
-            name = "test"
-        with pytest.raises(ValueError, match="injection_point"):
-            NoIP()
-
-    def test_valid_subclass_constructs(self):
-        class Good(RenderPass):
-            name = "good"
-            injection_point = "after_opaque"
-        p = Good()
-        assert p.enabled is True
-
-    def test_validate_missing_resources(self):
-        class NeedsColor(RenderPass):
-            name = "need"
-            injection_point = "x"
-            requires = {"color", "depth"}
-        p = NeedsColor()
-        errors = p.validate({"color"})
-        assert len(errors) > 0
-
-    def test_validate_all_satisfied(self):
-        class NeedsColor(RenderPass):
-            name = "need"
-            injection_point = "x"
-            requires = {"color"}
-        p = NeedsColor()
-        errors = p.validate({"color", "depth"})
-        assert errors == []
+    bus = ResourceBus(initial={"color": "color-handle"})
+    render_pass = NeedsBuffers()
+    assert render_pass.enabled and render_pass.validate(bus.available_resources)
+    bus.set("depth", "depth-handle")
+    assert bus.get("color") == "color-handle" and bus.has("depth")
+    assert render_pass.validate(bus.available_resources) == []
+    snapshot = bus.snapshot()
+    snapshot["color"] = "other"
+    assert bus.get("color") == "color-handle"
 
 
-# ══════════════════════════════════════════════════════════════════════
-# FullScreenEffect (base class)
-# ══════════════════════════════════════════════════════════════════════
+def test_render_pass_requires_declared_name_and_injection_point():
+    with pytest.raises(ValueError, match="name"):
+        RenderPass()
 
-class TestFullScreenEffect:
-    def test_default_resource_declarations(self):
-        class TestFX(FullScreenEffect):
-            name = "test_fx"
-            injection_point = "before_post_process"
-        fx = TestFX()
-        assert "color" in fx.requires
-        assert "color" in fx.modifies
+    class MissingInjectionPoint(RenderPass):
+        name = "invalid"
 
-    def test_enabled_default(self):
-        class TestFX(FullScreenEffect):
-            name = "test_fx"
-            injection_point = "before_post_process"
-        fx = TestFX()
-        assert fx.enabled is True
+    with pytest.raises(ValueError, match="injection_point"):
+        MissingInjectionPoint()
 
-    def test_disabled_construction(self):
-        class TestFX(FullScreenEffect):
-            name = "test_fx"
-            injection_point = "before_post_process"
-        fx = TestFX(enabled=False)
-        assert fx.enabled is False
 
-    def test_bind_buffers_uses_instance_resource_contract(self):
-        from infernux.renderstack.resource_bus import ResourceBus
+def test_fullscreen_effect_default_resources_and_disabled_construction():
+    class Effect(FullScreenEffect):
+        name = "effect"
+        injection_point = "before_post_process"
 
-        class TestFX(FullScreenEffect):
-            name = "test_fx"
-            injection_point = "before_post_process"
-            requires = {"color", "depth", "normal"}
-            modifies = {"color"}
-
-        class RecordingPass:
-            def __init__(self):
-                self.bindings = {}
-
-            def set_texture(self, name, handle):
-                self.bindings[name] = handle
-
-        render_pass = RecordingPass()
-        bus = ResourceBus(
-            {"color": object(), "depth": object(), "normal": object()}
-        )
-
-        TestFX().bind_buffers(render_pass, bus)
-
-        assert set(render_pass.bindings) == {
-            "_InxPassColor",
-            "_InxPassDepth",
-            "_InxPassNormal",
-        }
+    effect = Effect()
+    assert effect.enabled and "color" in effect.requires and "color" in effect.modifies
+    assert not Effect(enabled=False).enabled

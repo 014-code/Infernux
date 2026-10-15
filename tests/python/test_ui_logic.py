@@ -9,16 +9,10 @@ geometry, and selection manager behavior.
 from __future__ import annotations
 
 
-import math
-
-
-import os
-
-
 import pytest
 
 
-from infernux.engine.ui.theme import Theme, srgb_to_linear, srgb3, hex_to_linear
+from infernux.engine.ui.theme import Theme
 
 
 class _WindowManagerPanelInteractions:
@@ -304,93 +298,37 @@ def test_engine_docked_window_selection_rejects_stale_native_binding():
     assert engine._engine.focus_requests == []
 
 
-class TestThemeColorMath:
-    def test_srgb_to_linear_low_segment(self):
-        assert srgb_to_linear(0.0) == 0.0
-        assert srgb_to_linear(0.04045) == pytest.approx(0.04045 / 12.92)
-
-    def test_srgb_to_linear_power_segment(self):
-        assert srgb_to_linear(1.0) == pytest.approx(1.0)
-        assert srgb_to_linear(0.5) == pytest.approx(((0.5 + 0.055) / 1.055) ** 2.4)
-
-    def test_srgb_to_linear_monotonic(self):
-        samples = [srgb_to_linear(i / 20.0) for i in range(21)]
-        assert all(b >= a for a, b in zip(samples, samples[1:]))
-
-    def test_srgb3_keeps_alpha(self):
-        r, g, b, a = srgb3(1.0, 0.5, 0.25, 0.7)
-        assert a == 0.7
-        assert r == pytest.approx(1.0)
-
-    def test_hex_to_linear(self):
-        r, g, b, a = hex_to_linear(255, 0, 255)
-        assert r == pytest.approx(1.0)
-        assert g == pytest.approx(0.0)
-        assert b == pytest.approx(1.0)
-        assert a == 1.0
 
 
 class TestThemeNativeSSOT:
-    """The C++ EditorThemeRegistry is the single source of truth."""
-
-    def test_native_registry_exposed(self):
+    def test_native_registry_projects_the_editor_palette(self):
         from infernux.lib import (
-            get_editor_theme_colors,
-            get_editor_theme_floats,
-            get_editor_theme_vec2s,
+            get_editor_theme_colors, get_editor_theme_floats, get_editor_theme_vec2s,
         )
         colors = get_editor_theme_colors()
-        floats = get_editor_theme_floats()
-        assert len(colors) >= 90, "expected the full migrated color table"
-        assert len(floats) >= 50
-        assert isinstance(get_editor_theme_vec2s(), dict)
-
-    def test_python_theme_overridden_from_native(self):
-        from infernux.lib import get_editor_theme_colors
-        native = get_editor_theme_colors()
-        assert getattr(Theme, "_NATIVE_OVERRIDES_APPLIED", 0) > 0
-        # Every overlapping constant must match the native value exactly.
-        mismatches = []
-        for name, value in native.items():
+        assert colors and get_editor_theme_floats() and get_editor_theme_vec2s()
+        assert Theme._NATIVE_OVERRIDES_APPLIED > 0
+        for name, value in colors.items():
+            assert len(value) == 4 and all(isinstance(channel, float) for channel in value), name
             if hasattr(Theme, name):
-                if tuple(getattr(Theme, name)) != tuple(value):
-                    mismatches.append(name)
-        assert mismatches == []
-
-    def test_native_values_are_rgba(self):
-        from infernux.lib import get_editor_theme_colors
-        for name, value in get_editor_theme_colors().items():
-            assert len(value) == 4, name
-            assert all(isinstance(c, float) for c in value), name
-
-    def test_play_border_color_logic(self):
-        playing = Theme.get_play_border_color(False)
-        paused = Theme.get_play_border_color(True)
-        assert playing == tuple(Theme.BORDER_PLAY)
-        assert paused == tuple(Theme.BORDER_PAUSE)
-        assert playing != paused
+                assert tuple(getattr(Theme, name)) == tuple(value), name
+        assert Theme.get_play_border_color(False) == tuple(Theme.BORDER_PLAY)
+        assert Theme.get_play_border_color(True) == tuple(Theme.BORDER_PAUSE)
+        assert Theme.BORDER_PLAY != Theme.BORDER_PAUSE
 
 
 class TestViewportInfo:
-    def _vp(self):
+    def test_viewport_dimensions_coordinate_conversion_and_hit_boundaries(self):
         from infernux.engine.ui.viewport_utils import ViewportInfo
-        return ViewportInfo(image_min_x=100, image_min_y=50,
-                            image_max_x=300, image_max_y=250)
 
-    def test_dimensions(self):
-        vp = self._vp()
-        assert vp.width == 200 and vp.height == 200
-
-    def test_mouse_local(self):
-        vp = self._vp()
-        assert vp.mouse_local(_FakeCtx(150, 75)) == (50, 25)
-
-    def test_mouse_inside_boundaries(self):
-        vp = self._vp()
-        assert vp.is_mouse_inside(_FakeCtx(100, 50))      # top-left corner
-        assert vp.is_mouse_inside(_FakeCtx(300, 250))     # bottom-right corner
-        assert not vp.is_mouse_inside(_FakeCtx(99, 50))
-        assert not vp.is_mouse_inside(_FakeCtx(301, 250))
+        viewport = ViewportInfo(image_min_x=100, image_min_y=50,
+                                image_max_x=300, image_max_y=250)
+        assert (viewport.width, viewport.height) == (200, 200)
+        assert viewport.mouse_local(_FakeCtx(150, 75)) == (50, 25)
+        assert viewport.is_mouse_inside(_FakeCtx(100, 50))
+        assert viewport.is_mouse_inside(_FakeCtx(300, 250))
+        assert not viewport.is_mouse_inside(_FakeCtx(99, 50))
+        assert not viewport.is_mouse_inside(_FakeCtx(301, 250))
 
 
 class TestWindowManager:
@@ -440,7 +378,6 @@ class TestWindowManager:
         )
         from infernux.engine.ui.closable_panel import ClosablePanel
         from infernux.engine.ui.editor_panel import EditorPanel
-        from infernux.engine.ui.window_manager import WindowManager
 
         class Engine:
             def __init__(self):
@@ -1192,7 +1129,7 @@ class TestWindowManager:
     def test_dynamic_views_keep_panel_type_separate_from_instance_identity(self):
         from infernux.engine.interaction import FocusService
         from infernux.engine.ui.editor_panel import EditorPanel
-        from infernux.engine.ui.window_manager import WindowManager, WindowState
+        from infernux.engine.ui.window_manager import WindowManager
 
         class Engine:
             @staticmethod

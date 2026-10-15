@@ -95,13 +95,9 @@ def resolve_model_disk_path_from_virtual_base(base: str) -> Optional[str]:
     if not b:
         return None
     if is_asset_guid_string(b):
-        try:
-            from infernux.core.assets import AssetManager
-            adb = getattr(AssetManager, "_asset_database", None)
-            p = resolve_disk_path_for_guid_string(adb, b)
-            return p
-        except Exception:
-            return None
+        from infernux.core.assets import AssetManager
+
+        return resolve_disk_path_for_guid_string(AssetManager._asset_database, b)
     p = resolved_path(b)
     return p if os.path.isfile(p) else None
 

@@ -40,27 +40,28 @@ def typed_stack(monkeypatch):
 
 
 @pytest.mark.parametrize("inactive", [False, True])
-@pytest.mark.parametrize("field,factory", [
-    ("offset", lambda: Vector3(4, 5, 6)), ("extent", lambda: Vector2(2, 3)),
-    ("tint", lambda: Vector4(.1, .2, .3, .4)), ("samples", lambda: MSAASamples.X2),
-    ("weights", lambda: [2.0, 4.0]), ("settings", lambda: ParameterSettings(gain=3.5)),
-    ("texture", lambda: TextureRef(guid="a" * 32)),
-])
-def test_pipeline_parameters_roundtrip_through_shared_codec(typed_stack, inactive, field, factory):
+def test_authored_pipeline_configuration_roundtrips_through_shared_codec(typed_stack, inactive):
     stack = typed_stack
-    value = factory()
     if inactive:
         stack.set_pipeline(RenderStack.DEFAULT_PIPELINE_NAME)
-    stack.set_pipeline_parameter(field, value, pipeline_class_name=ParameterDocumentPipeline.name)
+    settings = {
+        "offset": Vector3(4, 5, 6), "extent": Vector2(2, 3),
+        "tint": Vector4(.1, .2, .3, .4), "samples": MSAASamples.X2,
+        "weights": [2.0, 4.0], "settings": ParameterSettings(gain=3.5),
+        "texture": TextureRef(guid="a" * 32),
+    }
+    for field, value in settings.items():
+        stack.set_pipeline_parameter(field, value, pipeline_class_name=ParameterDocumentPipeline.name)
     document = json.loads(json.dumps(stack._serialize_fields_document(), allow_nan=False))
-    encoded = json.loads(document["pipeline_params_json"])[ParameterDocumentPipeline.name][field]
-    assert encoded == VALUE_CODECS.encode(value)
+    encoded = json.loads(document["pipeline_params_json"])[ParameterDocumentPipeline.name]
+    assert all(encoded[field] == VALUE_CODECS.encode(value) for field, value in settings.items())
     restored = RenderStack()
     restored._deserialize_fields_document(document)
     restored.set_pipeline(ParameterDocumentPipeline.name)
-    actual = get_raw_field_value(restored.pipeline, field)
-    assert type(actual) is type(value)
-    assert VALUE_CODECS.encode(actual) == VALUE_CODECS.encode(value)
+    for field, value in settings.items():
+        actual = get_raw_field_value(restored.pipeline, field)
+        assert type(actual) is type(value), field
+        assert VALUE_CODECS.encode(actual) == VALUE_CODECS.encode(value), field
 
 
 def test_rejected_pipeline_value_does_not_publish_live_or_saved_state(typed_stack):

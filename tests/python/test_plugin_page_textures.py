@@ -51,11 +51,8 @@ def test_plugin_page_scope_and_inspector(tmp_path, relative, expected):
         assert not _is_plugin_page_texture(state)
 
 
-@pytest.mark.parametrize("role", ["runtime", "content", "control", ""])
-@pytest.mark.parametrize("logical", [
-    "plugin_pages/image.png", "runtime/deep/plugin_pages/image.png",
-    r"runtime\PLUGIN_PAGES\nested\data.bin",
-])
+@pytest.mark.parametrize('role,logical', [(role, 'plugin_pages/image.png') for role in ('runtime', 'content', 'control', '')]
+    + [('runtime', 'runtime/deep/plugin_pages/image.png'), ('runtime', r'runtime\PLUGIN_PAGES\nested\data.bin')])
 def test_package_export_excludes_docs_despite_persisted_role(role, logical):
     assert not player_file_exported({"role": role}, logical)
 

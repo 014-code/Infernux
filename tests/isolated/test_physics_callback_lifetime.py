@@ -13,13 +13,15 @@ if __name__ != "__main__":
     from tests.isolated import engine_python_path
 
 
-@pytest.mark.parametrize("kind", ["trigger", "collision"])
-@pytest.mark.parametrize("phase", ["enter", "stay", "exit"])
-@pytest.mark.parametrize("action", [
-    "remove_sibling", "remove_peer", "disable_sibling", "disable_peer",
-    "deactivate_owner", "remove_self", "remove_own_collider",
-    "remove_peer_collider", "replace_sibling", "append_peer", "remove_self_throw",
-])
+# Mutation rules share one dispatch path; stay/exit retain rekey, self-removal
+# and exception coverage for both callback kinds rather than multiplying all rules.
+@pytest.mark.parametrize("kind,phase,action", [
+    (kind, "enter", action) for kind in ("trigger", "collision") for action in (
+        "remove_sibling", "remove_peer", "disable_sibling", "disable_peer",
+        "deactivate_owner", "remove_self", "remove_own_collider",
+        "remove_peer_collider", "replace_sibling", "append_peer", "remove_self_throw")
+] + [(kind, phase, action) for kind in ("trigger", "collision") for phase in ("stay", "exit")
+     for action in ("remove_self", "replace_sibling", "remove_self_throw")])
 def test_contact_dispatch_resolves_live_receivers(tmp_path, kind, phase, action):
 
     result = subprocess.run(
@@ -39,9 +41,11 @@ def test_contact_dispatch_resolves_live_receivers(tmp_path, kind, phase, action)
     assert evidence["status"] == "passed"
 
 
-@pytest.mark.parametrize("phase", ["enter", "stay", "exit"])
-@pytest.mark.parametrize("action", ["keep", "remove", "replace", "ignore_box", "ignore_sphere", "ignore_both"])
-@pytest.mark.parametrize("kind", ["trigger", "collision"])
+@pytest.mark.parametrize("kind,phase,action", [
+    (kind, "enter", action) for kind in ("trigger", "collision")
+    for action in ("keep", "remove", "replace", "ignore_box", "ignore_sphere", "ignore_both")
+] + [(kind, phase, action) for kind in ("trigger", "collision") for phase in ("stay", "exit")
+     for action in ("replace", "ignore_both")])
 def test_contact_batch_retains_compound_member_identity(tmp_path, phase, action, kind):
 
     result = subprocess.run(

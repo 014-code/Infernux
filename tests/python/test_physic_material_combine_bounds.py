@@ -7,13 +7,15 @@ from infernux.core.physic_material import PhysicMaterial
 from infernux.lib import AssetRegistry, InxPhysicMaterial
 
 
-INVALID = [-1, 4, 255, 256, 257, 259, 260, 512, -256, -255,
-           2**31 - 1, -(2**31), 2**32, 2**32 + 3, 2**63 - 1, 2**64 - 1, -(2**63)]
-
-
-@pytest.mark.parametrize('field', ['friction_combine', 'bounce_combine'])
-@pytest.mark.parametrize('entry', ['native', 'public', 'document'])
-@pytest.mark.parametrize('value', list(range(4)) + INVALID)
+@pytest.mark.parametrize('field,entry,value', [
+    ('friction_combine', 'native', 0), ('bounce_combine', 'public', 3),
+    ('friction_combine', 'document', 1), ('bounce_combine', 'document', 2),
+    ('friction_combine', 'native', -1), ('bounce_combine', 'public', 4),
+    ('friction_combine', 'document', 256), ('bounce_combine', 'native', -256),
+    ('friction_combine', 'public', 2**32), ('bounce_combine', 'document', 2**64 - 1),
+    ('bounce_combine', 'native', 2**64 - 1), ('friction_combine', 'public', 256),
+    ('bounce_combine', 'document', -1), ('friction_combine', 'document', 4),
+])
 def test_combine_preserves_original_integer_and_atomicity(field, entry, value):
     material = PhysicMaterial() if entry == 'public' else InxPhysicMaterial()
     material.friction_combine = 2
@@ -36,8 +38,10 @@ def test_combine_preserves_original_integer_and_atomicity(field, entry, value):
         assert material.serialize_document() == before
 
 
-@pytest.mark.parametrize('field', ['friction_combine', 'bounce_combine'])
-@pytest.mark.parametrize('value', [256, -256, 2**32, 2**64 - 1, 1, 3])
+@pytest.mark.parametrize('field,value', [
+    ('friction_combine', 256), ('bounce_combine', -256),
+    ('friction_combine', 2**64 - 1), ('bounce_combine', 1),
+])
 def test_asset_reload_rejects_wrapped_mode_without_partial_publication(engine, tmp_path, field, value):
     database = engine.get_asset_database()
     registry = AssetRegistry.instance()

@@ -57,9 +57,6 @@ class TestCppPropertyBinding:
         with pytest.raises(ReferenceError):
             demo.raw = 7
 
-    def test_set_name_assigns_metadata_name(self):
-        desc = DemoBuiltin.__dict__["raw"]
-        assert desc.metadata.name == "raw"
 
     def test_display_name_key_is_preserved_in_metadata(self):
         class LocalizedBuiltin(BuiltinComponent):
@@ -132,28 +129,19 @@ class TestCppPropertyBinding:
 
 
 class TestCppPropertyReadWrite:
-    def test_reads_from_cpp_and_casts_enum(self):
-        demo = DemoBuiltin()
-        demo._cpp_component = DemoCpp()
-        assert demo.mode is DemoEnum.B   # cpp.mode = 2, DemoEnum(2) == B
-        assert demo.raw == 11
-
-    def test_writes_to_cpp(self):
+    def test_bound_property_read_write_and_readonly_rejection(self):
         cpp = DemoCpp()
         demo = DemoBuiltin()
         demo._cpp_component = cpp
-
-        demo.mode = DemoEnum.A
-        demo.raw = 42
-
-        assert cpp.mode == 1
-        assert cpp.raw == 42
-
-    def test_readonly_rejects_set(self):
-        demo = DemoBuiltin()
-        demo._cpp_component = DemoCpp()
+        assert isinstance(DemoBuiltin.mode, CppProperty)
+        assert DemoBuiltin.raw.metadata.name == 'raw'
+        assert demo.mode is DemoEnum.B and demo.raw == 11
+        demo.mode, demo.raw = DemoEnum.A, 42
+        assert cpp.mode == 1 and cpp.raw == 42
+        assert demo.mode is DemoEnum.A and demo.raw == 42
         with pytest.raises(AttributeError):
             demo.locked = 10
+        assert cpp.locked == demo.locked == 5
 
     def test_lazy_enum_type_resolved_from_lib(self):
         """Test lazy enum resolution using the real infernux.lib."""
@@ -167,9 +155,6 @@ class TestCppPropertyReadWrite:
 
 
 class TestCppPropertyEdgeCases:
-    def test_class_access_returns_descriptor(self):
-        desc = DemoBuiltin.mode
-        assert isinstance(desc, CppProperty)
 
     @pytest.mark.parametrize("operation", ["get", "set"])
     def test_business_runtime_error_preserves_live_binding(self, operation):

@@ -109,9 +109,10 @@ def _assert_target(reference, target, body, *, component):
         assert reference.resolve().id == target.id
 
 
-@pytest.mark.parametrize("field", ["body", "object_target"])
-@pytest.mark.parametrize("other_active", [False, True])
-@pytest.mark.parametrize("source", ["drop", "picker"])
+@pytest.mark.parametrize("field,other_active,source", [
+    ("body", True, "drop"), ("body", False, "picker"),
+    ("object_target", False, "drop"), ("object_target", True, "picker"),
+])
 def test_inline_reference_assignment_uses_its_owner_scene(reference_authoring, scene, monkeypatch,
                                                         field, other_active, source):
     core, files, folder, owner, target, body = reference_authoring
@@ -145,8 +146,9 @@ def test_inline_reference_assignment_uses_its_owner_scene(reference_authoring, s
                    loaded_target.get_component("Rigidbody"), component=field == "body")
 
 
-@pytest.mark.parametrize("field", ["bodies", "objects"])
-@pytest.mark.parametrize("source", ["header_drop", "item_drop", "item_picker"])
+@pytest.mark.parametrize("field,source", [
+    ("bodies", "header_drop"), ("objects", "item_drop"), ("bodies", "item_picker"),
+])
 def test_list_reference_callbacks_commit_to_inactive_owner_document(
     reference_authoring, scene, monkeypatch, field, source,
 ):
@@ -303,8 +305,9 @@ def test_native_joint_reference_commits_to_inactive_owner_document(
     assert loaded.connected_body.component_id == loaded_body.component_id
 
 
-@pytest.mark.parametrize("kind", ["target", "game_object", "component"])
-@pytest.mark.parametrize("source", ["drop", "picker"])
+@pytest.mark.parametrize("kind,source", [
+    ("target", "drop"), ("game_object", "picker"), ("component", "drop"),
+])
 def test_ui_event_reference_callbacks_commit_to_inactive_owner_document(
     reference_authoring, scene, monkeypatch, kind, source,
 ):

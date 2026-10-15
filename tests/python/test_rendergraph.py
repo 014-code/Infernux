@@ -7,7 +7,6 @@ import infernux.lib as native
 
 from infernux.lib import (
     CommandBuffer, DrawParameterBlock,
-    RenderGraphDescription, GraphPassDesc, GraphTextureDesc,
     GraphBufferUsage, GraphCommandType, GraphMaterialFilter,
     GraphTextureRole,
     GraphPassType,
@@ -48,20 +47,6 @@ class TestFormat:
         commands.clear()
         assert commands.command_count == 0
 
-    def test_color_formats(self):
-        assert Format is PixelFormat
-        assert Format.RGBA8_UNORM.name == "RGBA8_UNORM"
-        assert Format.RGBA16_SFLOAT.name == "RGBA16_SFLOAT"
-
-    def test_depth_formats(self):
-        assert Format.D32_SFLOAT.is_depth
-        assert Format.D24_UNORM_S8_UINT.is_depth
-        assert not Format.RGBA8_UNORM.is_depth
-
-    def test_native_rendering_surface_has_no_vulkan_format_types(self):
-        assert not hasattr(native, "VkFormat")
-        assert not hasattr(native, "VkSampleCount")
-
     def test_native_description_and_command_buffer_use_rhi_types(self):
         graph = _make_graph()
         with graph.add_pass("Opaque") as render_pass:
@@ -79,16 +64,6 @@ class TestFormat:
         with pytest.raises(RuntimeError, match="RenderGraph"):
             commands.release_temporary_rt(native.CAMERA_TARGET)
         assert commands.command_count == 0
-
-    def test_shader_parameters_use_explicit_domains_not_noop_global_names(self):
-        commands = CommandBuffer("Explicit parameter domains")
-        assert not hasattr(commands, "set_global_float")
-        assert not hasattr(commands, "set_global_vector")
-        assert not hasattr(commands, "set_global_texture")
-        assert not hasattr(commands, "set_global_matrix")
-        assert not hasattr(native.ScriptableRenderContext, "set_global_float")
-        assert not hasattr(native.ScriptableRenderContext, "set_global_vector")
-        assert not hasattr(native.ScriptableRenderContext, "set_global_texture")
 
     def test_explicit_draw_parameter_block_is_typed_and_recorded(self):
         block = DrawParameterBlock()
@@ -115,31 +90,20 @@ class TestFormat:
 # ══════════════════════════════════════════════════════════════════════
 
 class TestTextureHandle:
-    def test_default_properties(self):
-        h = TextureHandle("color", Format.RGBA8_UNORM, is_camera_target=True)
-        assert h.name == "color"
-        assert h.is_camera_target
-        assert not h.is_depth
-
-    def test_depth_handle(self):
-        h = TextureHandle("depth", Format.D32_SFLOAT)
-        assert h.is_depth
-
-    def test_eq_by_name(self):
-        a = TextureHandle("x", Format.RGBA8_UNORM)
-        b = TextureHandle("x", Format.RGBA16_SFLOAT)
-        assert a == b
-
-    def test_hash_by_name(self):
-        a = TextureHandle("x", Format.RGBA8_UNORM)
-        b = TextureHandle("x", Format.RGBA16_SFLOAT)
-        assert hash(a) == hash(b)
-
-    def test_repr(self):
-        h = TextureHandle("color", Format.RGBA8_UNORM, is_camera_target=True)
-        r = repr(h)
-        assert "color" in r
-        assert "camera_target" in r
+    def test_named_texture_identity_and_resource_roles(self):
+        graph = RenderGraph('Named resources')
+        color = graph.create_texture('color', camera_target=True)
+        depth = graph.create_texture('depth', format=Format.D32_SFLOAT)
+        assert Format is PixelFormat
+        assert graph.get_texture('color') is color
+        assert graph.get_texture('missing') is None
+        assert graph.texture_count == 2
+        assert color.is_camera_target and not color.is_depth
+        assert depth.is_depth and not depth.is_camera_target
+        same_name = TextureHandle('color', Format.RGBA16_SFLOAT)
+        resources = {color: 'attachment', depth: 'depth'}
+        assert same_name == color and same_name != depth
+        assert resources[same_name] == 'attachment'
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -167,11 +131,6 @@ class TestTypedResourcePasses:
         assert handle.usage & int(GraphBufferUsage.STORAGE)
         assert handle.usage & int(GraphBufferUsage.INDIRECT)
         assert handle.usage & int(GraphBufferUsage.TRANSFER_SOURCE)
-
-    def test_python_pipeline_does_not_expose_noop_compute_passes(self):
-        graph = _make_graph()
-        assert not hasattr(graph, "add_compute_pass")
-        assert not hasattr(GraphPassType, "COMPUTE")
 
     def test_buffer_copy_serializes_and_adds_transfer_usage(self):
         graph = _make_graph()
@@ -260,13 +219,6 @@ class TestTypedResourcePasses:
 # ══════════════════════════════════════════════════════════════════════
 
 class TestRenderPassBuilder:
-    def test_context_manager(self):
-        graph = _make_graph()
-        with graph.add_pass("Test") as p:
-            p.write_color("color")
-            p.draw_renderers()
-        assert p._action == "draw_renderers"
-
     def test_draw_renderers_selects_linked_material_pass(self):
         graph = _make_graph()
         graph.create_texture("g0", format=Format.RGBA8_UNORM)
@@ -325,29 +277,7 @@ class TestRenderPassBuilder:
         with graph.add_pass("Sky") as p:
             p.write_color("color")
             p.draw_skybox()
-        assert p._action == "draw_skybox"
-
-    def test_draw_shadow_casters(self):
-        graph = _make_graph()
-        graph.create_texture("shadow", format=Format.D32_SFLOAT, size=(2048, 2048))
-        with graph.add_pass("Shadow") as p:
-            p.write_depth("shadow")
-            p.set_clear(depth=1.0)
-            p.draw_shadow_casters(light_index=0)
-        assert p._action == "draw_shadow_casters"
-        assert p._light_index == 0
-
-    def test_fullscreen_quad_with_params(self):
-        graph = _make_graph()
-        graph.create_texture("fx", format=Format.RGBA16_SFLOAT)
-        with graph.add_pass("FX") as p:
-            p.set_texture("_Src", "color")
-            p.write_color("fx")
-            p.set_param("intensity", 0.5)
-            p.fullscreen_quad("my_shader")
-        assert p._action == "fullscreen_quad"
-        assert p._shader_name == "my_shader"
-        assert p._push_constants["intensity"] == 0.5
+        assert graph.build().passes[0].commands[0].type == GraphCommandType.DRAW_SKYBOX
 
     def test_fullscreen_quad_can_bind_dynamic_parameter_block(self):
         graph = _make_graph()
@@ -387,12 +317,6 @@ class TestRenderPassBuilder:
         with graph.add_pass("UI") as p:
             with pytest.raises(ValueError):
                 p.draw_screen_ui(list="nonsense")
-
-    def test_repr(self):
-        graph = _make_graph()
-        with graph.add_pass("Test") as p:
-            p.draw_renderers()
-        assert "Test" in repr(p)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -475,12 +399,6 @@ class TestGraphTextures:
         assert first.source_revision > 0
         assert second.source_revision > first.source_revision
 
-    def test_create_and_get(self):
-        g = RenderGraph("G")
-        h = g.create_texture("t", format=Format.RGBA8_UNORM)
-        assert g.get_texture("t") is h
-        assert g.texture_count == 1
-
     def test_duplicate_name_raises(self):
         g = _make_graph()
         with pytest.raises(ValueError, match="already exists"):
@@ -505,10 +423,6 @@ class TestGraphTextures:
         g = RenderGraph("G")
         with pytest.raises(ValueError):
             g.create_texture("t", size_divisor=1)
-
-    def test_get_nonexistent_returns_none(self):
-        g = RenderGraph("G")
-        assert g.get_texture("nope") is None
 
     def test_name_scope_reuses_readable_local_resource_and_pass_names(self):
         graph = _make_graph()
@@ -616,29 +530,7 @@ class TestGraphTextures:
 # ══════════════════════════════════════════════════════════════════════
 
 class TestPassManagement:
-    def test_remove_pass_returns_builder(self):
-        graph = _make_graph()
-        with graph.add_pass("A") as p:
-            p.write_color("color")
-            p.draw_renderers()
-        removed = graph.remove_pass("A")
-        assert removed is not None
-        assert removed._name == "A"
-        assert graph.pass_count == 0
-
-    def test_remove_nonexistent_returns_none(self):
-        graph = _make_graph()
-        assert graph.remove_pass("DoesNotExist") is None
-
-    def test_remove_clears_topology(self):
-        graph = _make_graph()
-        with graph.add_pass("A") as p:
-            p.write_color("color")
-            p.draw_renderers()
-        graph.remove_pass("A")
-        assert not any(label == "A" for _, label in graph.topology_sequence)
-
-    def test_append_pass_adds_to_end(self):
+    def test_remove_and_reappend_reorders_topology_and_built_passes(self):
         graph = _make_graph()
         with graph.add_pass("A") as p:
             p.write_color("color")
@@ -646,16 +538,17 @@ class TestPassManagement:
         with graph.add_pass("B") as p:
             p.write_color("color")
             p.draw_renderers()
+        assert graph.has_pass('A') and not graph.has_pass('missing')
+        assert graph.remove_pass('missing') is None
         removed = graph.remove_pass("A")
+        assert removed is not None
+        assert not graph.has_pass('A') and graph.pass_count == 1
+        assert not any(label == "A" for _, label in graph.topology_sequence)
         graph.append_pass(removed)
+        assert graph.has_pass('A') and graph.pass_count == 2
         names = [label for kind, label in graph.topology_sequence if kind == "pass"]
         assert names == ["B", "A"]
-
-    def test_has_pass(self):
-        graph = _make_graph()
-        graph.add_pass("X")
-        assert graph.has_pass("X")
-        assert not graph.has_pass("Y")
+        assert [item.name for item in graph.build().passes] == ['B', 'A']
 
 
 # ══════════════════════════════════════════════════════════════════════

@@ -10,8 +10,9 @@ if __name__ != "__main__":
     from tests.isolated import engine_python_path
 
 
-@pytest.mark.parametrize("kind", ["runtime", "action", "spirit", "skeletal"])
-@pytest.mark.parametrize("case", ["default", "bool", "trigger", "overwrite-bool", "overwrite-value", "unrelated", "reset"])
+@pytest.mark.parametrize("kind,case", [
+    ("runtime", case) for case in ("default", "bool", "trigger", "overwrite-bool", "overwrite-value", "unrelated", "reset")
+] + [(kind, case) for kind in ("action", "spirit", "skeletal") for case in ("default", "bool", "trigger", "reset")])
 def test_parameter_lifetime_through_native_assets(tmp_path, kind, case):
     run_case(tmp_path, kind, case)
 

@@ -10,9 +10,12 @@ if __name__ != "__main__":
     from tests.isolated import engine_python_path
 
 
-@pytest.mark.parametrize("fps", [30, 60, 144, 240])
-@pytest.mark.parametrize("nested", [False, True])
-@pytest.mark.parametrize("write_mode", ["scalar", "batch_local", "batch_world_position"])
+# Each writer handles both world layouts. Timing boundaries are independent of
+# the writer: below fixed-step, above it and a non-integral frame ratio.
+@pytest.mark.parametrize("fps,nested,write_mode", [
+    (240, True, mode) for mode in ("scalar", "batch_local", "batch_world_position")
+] + [(60, False, mode) for mode in ("scalar", "batch_local", "batch_world_position")]
+    + [(30, True, "scalar"), (144, False, "batch_local")])
 def test_animation_final_pose_survives_native_frame_commit(tmp_path, fps, nested, write_mode):
 
     result = subprocess.run(

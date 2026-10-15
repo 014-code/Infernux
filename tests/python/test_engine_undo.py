@@ -1,112 +1,30 @@
-"""Tests for infernux.engine.undo — UndoCommand subclasses and UndoManager.
-
-Pure-Python tests — no C++ backend needed.
-Imports bypass the heavy infernux.__init__ / native-module chain by loading
-the undo package directly via importlib.
-"""
+"""Undo command workflows and independent transaction/lifetime failures."""
 
 from __future__ import annotations
 
 from contextlib import contextmanager
-import importlib.util
-import os
 import sys
-import time
 import types
 
 import pytest
 
-# ── Direct-load helper ───────────────────────────────────────────────
-# Load a module or package file directly, avoiding __init__.py chains that
-# pull in the C++ native backend.
-
-_PROJECT_PY = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, "python", "infernux"))
-
-
-def _direct_import(module_name: str, rel_path: str):
-    """Import *rel_path* (relative to python/infernux/) as *module_name*."""
-    if module_name in sys.modules:
-        return sys.modules[module_name]
-    filepath = os.path.join(_PROJECT_PY, *rel_path.split("/"))
-
-    package_dir = None
-    if os.path.isdir(filepath):
-        package_dir = filepath
-        filepath = os.path.join(filepath, "__init__.py")
-    elif not os.path.exists(filepath) and filepath.endswith(".py"):
-        candidate_package_dir = filepath[:-3]
-        candidate_init = os.path.join(candidate_package_dir, "__init__.py")
-        if os.path.exists(candidate_init):
-            package_dir = candidate_package_dir
-            filepath = candidate_init
-
-    if package_dir is not None:
-        spec = importlib.util.spec_from_file_location(
-            module_name,
-            filepath,
-            submodule_search_locations=[package_dir],
-        )
-    else:
-        spec = importlib.util.spec_from_file_location(module_name, filepath)
-
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Cannot import {module_name!r} from {filepath!r}")
-
-    mod = importlib.util.module_from_spec(spec)
-    if package_dir is not None:
-        mod.__path__ = [package_dir]
-    sys.modules[module_name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-# Pre-register lightweight stub packages so sub-module imports resolve.
-for _pkg in [
-    "infernux",
-    "infernux.engine",
-]:
-    if _pkg not in sys.modules:
-        _p = types.ModuleType(_pkg)
-        _p.__path__ = [os.path.join(_PROJECT_PY,
-                                     *_pkg.split(".")[1:])] if _pkg != "infernux" \
-                       else [_PROJECT_PY]
-        _p.__package__ = _pkg
-        sys.modules[_pkg] = _p
-
-# Now load the actual modules we need — this executes their code but
-# won't trigger infernux/__init__.py's heavy imports.
-_undo_mod = _direct_import("infernux.engine.undo", "engine/undo.py")
-
-# Pull symbols into module scope for convenience.
-UndoCommand = _undo_mod.UndoCommand
-UndoManager = _undo_mod.UndoManager
-SetPropertyCommand = _undo_mod.SetPropertyCommand
-GenericComponentCommand = _undo_mod.GenericComponentCommand
-BuiltinPropertyCommand = _undo_mod.BuiltinPropertyCommand
-CreateGameObjectCommand = _undo_mod.CreateGameObjectCommand
-DeleteGameObjectCommand = _undo_mod.DeleteGameObjectCommand
-DeleteGameObjectsCommand = _undo_mod.DeleteGameObjectsCommand
-ReparentCommand = _undo_mod.ReparentCommand
-MoveGameObjectCommand = _undo_mod.MoveGameObjectCommand
-MaterialDocumentCommand = _undo_mod.MaterialDocumentCommand
-CompoundCommand = _undo_mod.CompoundCommand
-RemoveComponentsCommand = _undo_mod.RemoveComponentsCommand
-GlobalSelectionCommand = _undo_mod.GlobalSelectionCommand
-PrefabModeCommand = _undo_mod.PrefabModeCommand
-PrefabUnpackCommand = _undo_mod.PrefabUnpackCommand
-PrefabRevertCommand = _undo_mod.PrefabRevertCommand
-RenderStackFieldCommand = _undo_mod.RenderStackFieldCommand
-_snapshot_value = _undo_mod._snapshot_value
-SelectionService = sys.modules["infernux.engine.interaction"].SelectionService
-SelectionSnapshot = sys.modules["infernux.engine.interaction"].SelectionSnapshot
-SelectionTarget = sys.modules["infernux.engine.interaction"].SelectionTarget
-EditorContextSnapshot = sys.modules["infernux.engine.interaction"].EditorContextSnapshot
-ContextRestoreStatus = sys.modules["infernux.engine.interaction"].ContextRestoreStatus
-_helpers_mod = sys.modules["infernux.engine.undo._helpers"]
-_property_mod = sys.modules["infernux.engine.undo._property_commands"]
-_structural_mod = sys.modules["infernux.engine.undo._structural_commands"]
-_recreate_mod = sys.modules["infernux.engine.undo._recreate"]
+import infernux.engine.undo as _undo_mod
+import infernux.engine.undo._helpers as _helpers_mod
+import infernux.engine.undo._property_commands as _property_mod
+import infernux.engine.undo._recreate as _recreate_mod
+import infernux.engine.undo._structural_commands as _structural_mod
+from infernux.engine.interaction import (
+    ContextRestoreStatus, EditorContextSnapshot, SelectionService, SelectionSnapshot,
+    SelectionTarget,
+)
+from infernux.engine.undo import (
+    BuiltinPropertyCommand, CompoundCommand, CreateGameObjectCommand,
+    DeleteGameObjectCommand, DeleteGameObjectsCommand, GenericComponentCommand,
+    GlobalSelectionCommand, MaterialDocumentCommand,
+    PrefabModeCommand, PrefabUnpackCommand,
+    RemoveComponentsCommand, RenderStackFieldCommand,
+    SetPropertyCommand, UndoCommand, UndoManager,
+)
 
 
 def _patch_undo_modules(monkeypatch, attr: str, value):
@@ -209,23 +127,6 @@ def test_unbound_component_identity_probe_falls_back_to_own_id():
 # _snapshot_value
 # ══════════════════════════════════════════════════════════════════════
 
-class TestSnapshotValue:
-    def test_immutable_pass_through(self):
-        assert _snapshot_value(42) == 42
-        assert _snapshot_value("hello") == "hello"
-        assert _snapshot_value(None) is None
-
-    def test_list_deepcopy(self):
-        original = [[1, 2], [3, 4]]
-        snapped = _snapshot_value(original)
-        snapped[0][0] = 999
-        assert original[0][0] == 1
-
-    def test_dict_deepcopy(self):
-        original = {"a": [1, 2]}
-        snapped = _snapshot_value(original)
-        snapped["a"].append(3)
-        assert len(original["a"]) == 2
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -233,26 +134,8 @@ class TestSnapshotValue:
 # ══════════════════════════════════════════════════════════════════════
 
 class TestSetPropertyCommand:
-    def test_execute_sets_value(self):
-        obj = _Obj()
-        cmd = SetPropertyCommand(obj, "x", 0, 42)
-        cmd.execute()
-        assert obj.x == 42
 
-    def test_undo_restores_old(self):
-        obj = _Obj()
-        cmd = SetPropertyCommand(obj, "x", 0, 42)
-        cmd.execute()
-        cmd.undo()
-        assert obj.x == 0
 
-    def test_redo_reapplies(self):
-        obj = _Obj()
-        cmd = SetPropertyCommand(obj, "x", 0, 42)
-        cmd.execute()
-        cmd.undo()
-        cmd.redo()
-        assert obj.x == 42
 
     def test_merge_within_window(self):
         obj = _Obj()
@@ -282,15 +165,7 @@ class TestSetPropertyCommand:
         cmd2.timestamp = cmd1.timestamp + 0.1
         assert not cmd1.can_merge(cmd2)
 
-    def test_is_property_edit_flag(self):
-        obj = _Obj()
-        cmd = SetPropertyCommand(obj, "x", 0, 1)
-        assert cmd.marks_dirty is True
 
-    def test_default_description(self):
-        obj = _Obj()
-        cmd = SetPropertyCommand(obj, "x", 0, 1)
-        assert "x" in cmd.description
 
     def test_native_backed_undo_fails_closed_when_target_missing(self, monkeypatch):
         class _NativeTarget:
@@ -368,13 +243,6 @@ class TestSetPropertyCommand:
 # ══════════════════════════════════════════════════════════════════════
 
 class TestGenericComponentCommand:
-    def test_execute_and_undo(self):
-        comp = _FakeComp()
-        cmd = GenericComponentCommand(comp, {"old": 1}, {"new": 2})
-        cmd.execute()
-        assert comp._document == {"new": 2}
-        cmd.undo()
-        assert comp._document == {"old": 1}
 
     def test_merge(self):
         comp = _FakeComp()
@@ -386,17 +254,6 @@ class TestGenericComponentCommand:
         cmd1.execute()
         assert comp._document == {"a": 2}
 
-    def test_documents_are_owned_by_command(self):
-        comp = _FakeComp()
-        old_document = {"value": [1]}
-        new_document = {"value": [2]}
-        cmd = GenericComponentCommand(comp, old_document, new_document)
-        old_document["value"].append(99)
-        new_document["value"].append(99)
-        cmd.execute()
-        assert comp._document == {"value": [2]}
-        cmd.undo()
-        assert comp._document == {"value": [1]}
 
     def test_explicit_component_actions_do_not_merge(self):
         comp = _FakeComp()
@@ -435,21 +292,7 @@ class TestBuiltinPropertyCommand:
 # ══════════════════════════════════════════════════════════════════════
 
 class TestMaterialDocumentCommand:
-    def test_execute_undo_redo(self):
-        mat = _FakeComp()
-        mat.guid = "test-guid"
-        cmd = MaterialDocumentCommand(mat, {"old": 1}, {"new": 2})
-        cmd.execute()
-        assert mat._document == {"new": 2}
-        cmd.undo()
-        assert mat._document == {"old": 1}
-        cmd.redo()
-        assert mat._document == {"new": 2}
 
-    def test_marks_dirty_false(self):
-        mat = _FakeComp()
-        cmd = MaterialDocumentCommand(mat, {}, {})
-        assert cmd.marks_dirty is False
 
     def test_merge(self):
         mat = _FakeComp()
@@ -467,17 +310,6 @@ class TestMaterialDocumentCommand:
         cmd2.timestamp = cmd1.timestamp + 0.1
         assert not cmd1.can_merge(cmd2)
 
-    def test_documents_are_owned_by_command(self):
-        mat = _FakeComp()
-        old_document = {"properties": {"x": [1]}}
-        new_document = {"properties": {"x": [2]}}
-        cmd = MaterialDocumentCommand(mat, old_document, new_document)
-        old_document["properties"]["x"].append(99)
-        new_document["properties"]["x"].append(99)
-        cmd.execute()
-        assert mat._document == {"properties": {"x": [2]}}
-        cmd.undo()
-        assert mat._document == {"properties": {"x": [1]}}
 
     def test_undo_publishes_live_material_without_durable_invalidation(
         self,
@@ -529,42 +361,8 @@ class TestMaterialDocumentCommand:
 # ══════════════════════════════════════════════════════════════════════
 
 class TestCompoundCommand:
-    def test_execute_all(self):
-        a = _Obj()
-        b = _Obj()
-        cmds = [
-            SetPropertyCommand(a, "x", 0, 10),
-            SetPropertyCommand(b, "x", 0, 20),
-        ]
-        compound = CompoundCommand(cmds, "Compound Edit")
-        compound.execute()
-        assert a.x == 10
-        assert b.x == 20
 
-    def test_undo_in_reverse(self):
-        log = []
 
-        class LogCmd(UndoCommand):
-            def __init__(self, tag):
-                super().__init__(tag)
-                self.tag = tag
-            def execute(self):
-                log.append(("exec", self.tag))
-            def undo(self):
-                log.append(("undo", self.tag))
-
-        cmds = [LogCmd("A"), LogCmd("B")]
-        compound = CompoundCommand(cmds)
-        compound.execute()
-        log.clear()
-        compound.undo()
-        assert log == [("undo", "B"), ("undo", "A")]
-
-    def test_supports_redo_all_true(self):
-        obj = _Obj()
-        cmds = [SetPropertyCommand(obj, "x", 0, 1)]
-        compound = CompoundCommand(cmds)
-        assert compound.supports_redo is True
 
     def test_only_explicit_selection_context_propagates(self):
         before = SelectionSnapshot.create(
@@ -710,77 +508,12 @@ class TestCompoundCommand:
 # UndoCommand base
 # ══════════════════════════════════════════════════════════════════════
 
-class TestUndoCommandBase:
-    def test_default_flags(self):
-        class Concrete(UndoCommand):
-            def execute(self): pass
-            def undo(self): pass
-        cmd = Concrete("test")
-        assert cmd.supports_redo is True
-        assert cmd.marks_dirty is True
-        assert isinstance(cmd.timestamp, float)
-
-    def test_default_redo_calls_execute(self):
-        calls = []
-        class Concrete(UndoCommand):
-            def execute(self):
-                calls.append("exec")
-            def undo(self):
-                calls.append("undo")
-        cmd = Concrete()
-        cmd.redo()
-        assert calls == ["exec"]
-
-    def test_default_merge_returns_false(self):
-        class Concrete(UndoCommand):
-            def execute(self): pass
-            def undo(self): pass
-        cmd = Concrete()
-        assert not cmd.can_merge(cmd)
 
 
 # ══════════════════════════════════════════════════════════════════════
 # GlobalSelectionCommand
 # ══════════════════════════════════════════════════════════════════════
 
-class TestGlobalSelectionCommand:
-    def test_undo_redo_are_inert_because_journal_restores_context(self):
-        old = SelectionSnapshot.create(
-            (SelectionTarget.scene_object(1), SelectionTarget.scene_object(2)),
-            owner_id="hierarchy",
-        )
-        new = SelectionSnapshot.create(
-            (SelectionTarget.asset("Assets/test.mat"),),
-            owner_id="project",
-        )
-        cmd = GlobalSelectionCommand(old, new)
-        cmd.undo()
-        cmd.redo()
-        assert cmd.before_selection_snapshot == old
-        assert cmd.after_selection_snapshot == new
-
-    def test_execute_is_noop(self):
-        applied = []
-        empty = SelectionSnapshot()
-        selected = SelectionSnapshot.create(
-            (SelectionTarget.scene_object(1),),
-            owner_id="hierarchy",
-        )
-        cmd = GlobalSelectionCommand(empty, selected)
-        cmd.execute()
-        assert applied == []
-
-    def test_is_non_dirty_and_exposes_explicit_context(self):
-        old = SelectionSnapshot()
-        new = SelectionSnapshot.create(
-            (SelectionTarget.scene_object(1),),
-            owner_id="hierarchy",
-        )
-        cmd = GlobalSelectionCommand(old, new)
-        assert cmd.marks_dirty is False
-        assert cmd.description == "Change Selection"
-        assert cmd.before_selection_snapshot == old
-        assert cmd.after_selection_snapshot == new
 
 
 class TestPrefabUnpackCommand:
@@ -946,32 +679,7 @@ class TestPrefabModeCommand:
 # ══════════════════════════════════════════════════════════════════════
 
 class TestRenderStackFieldCommand:
-    def test_execute_undo_redo(self):
-        target = _Obj()
-        stack = _FakeStack(target)
-        cmd = RenderStackFieldCommand(stack, target, "x", 0, 42)
-        cmd.execute()
-        assert target.x == 42
-        assert stack.invalidated == 1
-        cmd.undo()
-        assert target.x == 0
-        assert stack.invalidated == 2
-        cmd.redo()
-        assert target.x == 42
-        assert stack.invalidated == 3
 
-    def test_merge_same_target_field(self):
-        target = _Obj()
-        stack = _FakeStack(target)
-        cmd1 = RenderStackFieldCommand(stack, target, "x", 0, 1)
-        cmd2 = RenderStackFieldCommand(stack, target, "x", 1, 5)
-        cmd2.timestamp = cmd1.timestamp + 0.1
-        assert cmd1.can_merge(cmd2)
-        cmd1.merge(cmd2)
-        cmd1.execute()
-        assert target.x == 5
-        cmd1.undo()
-        assert target.x == 0
 
     def test_merge_rejected_different_field(self):
         target = _Obj()
@@ -1020,45 +728,10 @@ class TestUndoManager:
         assert obj.x == 10 and not mgr.is_replay_pending
         assert restored
 
-    def test_execute_then_undo(self, _reset_undo_manager):
-        mgr = _reset_undo_manager
-        obj = _Obj()
-        mgr.execute(SetPropertyCommand(obj, "x", 0, 10))
-        assert obj.x == 10
-        mgr.undo()
-        assert obj.x == 0
 
-    def test_redo_after_undo(self, _reset_undo_manager):
-        mgr = _reset_undo_manager
-        obj = _Obj()
-        mgr.execute(SetPropertyCommand(obj, "x", 0, 10))
-        mgr.undo()
-        mgr.redo()
-        assert obj.x == 10
 
-    def test_execute_clears_redo(self, _reset_undo_manager):
-        mgr = _reset_undo_manager
-        obj = _Obj()
-        mgr.execute(SetPropertyCommand(obj, "x", 0, 1))
-        mgr.undo()
-        assert mgr.can_redo
-        mgr.execute(SetPropertyCommand(obj, "y", 0, 2))
-        assert not mgr.can_redo
 
-    def test_can_undo_redo_properties(self, _reset_undo_manager):
-        mgr = _reset_undo_manager
-        assert not mgr.can_undo
-        assert not mgr.can_redo
-        obj = _Obj()
-        mgr.execute(SetPropertyCommand(obj, "x", 0, 1))
-        assert mgr.can_undo
-        assert not mgr.can_redo
 
-    def test_undo_description(self, _reset_undo_manager):
-        mgr = _reset_undo_manager
-        obj = _Obj()
-        mgr.execute(SetPropertyCommand(obj, "x", 0, 1, "Move X"))
-        assert mgr.undo_description == "Move X"
 
     def test_record_pushes_without_executing(self, _reset_undo_manager):
         mgr = _reset_undo_manager
@@ -1088,13 +761,6 @@ class TestUndoManager:
         mgr.undo()
         assert obj.x == 0
 
-    def test_clear(self, _reset_undo_manager):
-        mgr = _reset_undo_manager
-        obj = _Obj()
-        mgr.execute(SetPropertyCommand(obj, "x", 0, 1))
-        mgr.clear()
-        assert not mgr.can_undo
-        assert not mgr.can_redo
 
     def test_is_executing_during_undo_redo(self, _reset_undo_manager):
         mgr = _reset_undo_manager
@@ -1115,9 +781,6 @@ class TestUndoManager:
         mgr.redo()
         assert seen_exec == [True, True, True]
 
-    def test_suppress_context_manager(self, _reset_undo_manager):
-        mgr = _reset_undo_manager
-        assert not mgr.is_executing
 
     def test_execute_reports_failure_without_recording(self, _reset_undo_manager):
         mgr = _reset_undo_manager
@@ -1183,112 +846,19 @@ class TestUndoManager:
         assert obj.x == 5
         assert not mgr.can_undo
 
-    def test_state_changed_callback(self, _reset_undo_manager):
-        mgr = _reset_undo_manager
-        calls = []
-        mgr.set_on_state_changed(lambda: calls.append(1))
-        obj = _Obj()
-        mgr.execute(SetPropertyCommand(obj, "x", 0, 1))
-        assert len(calls) == 1
-        mgr.undo()
-        assert len(calls) == 2
 
-    def test_multiple_undo_redo(self, _reset_undo_manager):
-        mgr = _reset_undo_manager
-        obj = _Obj()
-        for i in range(3):
-            cmd = SetPropertyCommand(obj, "x", i, i + 1)
-            cmd.timestamp = i * 10.0
-            mgr.execute(cmd)
-        assert obj.x == 3
-        mgr.undo()
-        assert obj.x == 2
-        mgr.undo()
-        assert obj.x == 1
-        mgr.redo()
-        assert obj.x == 2
 
 
 # ══════════════════════════════════════════════════════════════════════
 # UndoManager — save points belong to DocumentRegistry
 # ══════════════════════════════════════════════════════════════════════
 
-class TestUndoManagerSavePoint:
-    def test_selection_command_does_not_dirty(self, _reset_undo_manager):
-        mgr = _reset_undo_manager
-        old = SelectionSnapshot.create(
-            (SelectionTarget.scene_object(1),),
-            owner_id="hierarchy",
-        )
-        new = SelectionSnapshot.create(
-            (SelectionTarget.scene_object(2),),
-            owner_id="hierarchy",
-        )
-        cmd = GlobalSelectionCommand(old, new)
-        mgr.record(cmd)
-        # UndoManager exposes no independent save-point API.
-        assert not hasattr(mgr, "mark_save_point")
-        assert not hasattr(mgr, "is_at_save_point")
 
 
 # ══════════════════════════════════════════════════════════════════════
 # Typed scene-object selection operations
 # ══════════════════════════════════════════════════════════════════════
 
-class TestSceneObjectSelectionOperations:
-    @pytest.fixture(autouse=True)
-    def _fresh_selection(self):
-        old = SelectionService._instance
-        sel = SelectionService()
-        yield sel
-        SelectionService._instance = old
-
-    def test_set_ids_replaces_selection(self, _fresh_selection):
-        sel = _fresh_selection
-        sel.replace_scene_objects(
-            [10, 20, 30], owner_id="hierarchy", record_history=False
-        )
-        assert sel.scene_object_ids() == (10, 20, 30)
-        assert sel.primary_scene_object_id() == 30
-
-    def test_set_ids_empty(self, _fresh_selection):
-        sel = _fresh_selection
-        sel.select_scene_object(1, owner_id="hierarchy", record_history=False)
-        sel.replace_scene_objects([], owner_id="hierarchy", record_history=False)
-        assert sel.scene_object_ids() == ()
-        assert sel.primary_scene_object_id() == 0
-
-    def test_set_ids_fires_callback(self, _fresh_selection):
-        sel = _fresh_selection
-        called = []
-        sel.add_listener(lambda _change: called.append(1))
-        sel.select_scene_object(5, owner_id="hierarchy", record_history=False)
-        assert len(called) == 1
-
-    def test_set_ids_no_change_no_callback(self, _fresh_selection):
-        sel = _fresh_selection
-        sel.select_scene_object(5, owner_id="hierarchy", record_history=False)
-        called = []
-        sel.add_listener(lambda _change: called.append(1))
-        sel.select_scene_object(
-            5, owner_id="hierarchy", record_history=False
-        )  # same -> should not fire
-        assert len(called) == 0
-
-    def test_clear(self, _fresh_selection):
-        sel = _fresh_selection
-        sel.select_scene_object(42, owner_id="hierarchy", record_history=False)
-        sel.clear(reason="test_clear", record_history=False)
-        assert sel.scene_object_ids() == ()
-        assert sel.primary_scene_object_id() == 0
-
-    def test_toggle(self, _fresh_selection):
-        sel = _fresh_selection
-        sel.select_scene_object(1, owner_id="hierarchy", record_history=False)
-        sel.toggle_scene_object(2, owner_id="hierarchy", record_history=False)
-        assert sel.scene_object_ids() == (1, 2)
-        sel.toggle_scene_object(1, owner_id="hierarchy", record_history=False)
-        assert sel.scene_object_ids() == (2,)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -1305,10 +875,7 @@ class TestSelectionUndoIntegration:
 
     @staticmethod
     def _install_recording_listener():
-        module = _direct_import(
-            "infernux.engine._bootstrap_selection",
-            "engine/_bootstrap_selection.py",
-        )
+        from infernux.engine import _bootstrap_selection as module
         selection = module.BootstrapSelectionMixin()
         selection.window_manager = None
         selection._present_selection_snapshot = lambda _snapshot: None
@@ -1828,3 +1395,215 @@ class TestImmediateDestroyHelpers:
         delete_cmd.redo()
 
         assert calls == [(True, 42), (True, 42), (True, 42)]
+
+
+def test_property_snapshot_is_owned_across_execute_undo_redo():
+    obj = _Obj()
+    before = {"items": [[1]], "label": "before", "optional": None}
+    after = {"items": [[2]], "label": "after", "optional": None}
+    command = SetPropertyCommand(obj, "x", before, after)
+    before["items"][0].append(99)
+    after["items"][0].append(99)
+    command.execute()
+    assert obj.x == {"items": [[2]], "label": "after", "optional": None}
+    assert obj.x is not after
+    command.undo()
+    assert obj.x == {"items": [[1]], "label": "before", "optional": None}
+    command.redo()
+    assert obj.x == {"items": [[2]], "label": "after", "optional": None}
+
+
+def test_property_command_edit_undo_redo_and_metadata():
+    obj = _Obj()
+    command = SetPropertyCommand(obj, "x", 0, 42)
+    assert command.marks_dirty and "x" in command.description
+    command.execute()
+    assert obj.x == 42
+    command.undo()
+    assert obj.x == 0
+    command.redo()
+    assert obj.x == 42
+
+
+def test_generic_component_document_restore_owns_its_snapshots():
+    component = _FakeComp()
+    before, after = {"value": [1]}, {"value": [2]}
+    command = GenericComponentCommand(component, before, after)
+    before["value"].append(99)
+    after["value"].append(99)
+    command.execute()
+    assert component._document == {"value": [2]}
+    command.undo()
+    assert component._document == {"value": [1]}
+    command.redo()
+    assert component._document == {"value": [2]}
+
+
+def test_material_document_history_owns_snapshots_without_scene_dirtying():
+    material = _FakeComp()
+    material.guid = "test-guid"
+    before, after = {"properties": {"x": [1]}}, {"properties": {"x": [2]}}
+    command = MaterialDocumentCommand(material, before, after)
+    assert command.marks_dirty is False
+    before["properties"]["x"].append(99)
+    after["properties"]["x"].append(99)
+    command.execute()
+    assert material._document == {"properties": {"x": [2]}}
+    command.undo()
+    assert material._document == {"properties": {"x": [1]}}
+    command.redo()
+    assert material._document == {"properties": {"x": [2]}}
+
+
+def test_compound_property_edit_replays_in_forward_and_reverse_order():
+    first, second = _Obj(), _Obj()
+    calls = []
+
+    class LoggedProperty(SetPropertyCommand):
+        def execute(self):
+            super().execute()
+            calls.append(("execute", self.description))
+
+        def undo(self):
+            super().undo()
+            calls.append(("undo", self.description))
+
+    command = CompoundCommand([
+        LoggedProperty(first, "x", 0, 10, "First"),
+        LoggedProperty(second, "x", 0, 20, "Second"),
+    ])
+    assert command.supports_redo
+    command.execute()
+    assert (first.x, second.x) == (10, 20)
+    assert calls == [("execute", "First"), ("execute", "Second")]
+    calls.clear()
+    command.undo()
+    assert (first.x, second.x) == (0, 0)
+    assert calls == [("undo", "Second"), ("undo", "First")]
+    command.redo()
+    assert (first.x, second.x) == (10, 20)
+
+
+def test_custom_undo_command_defaults_and_redo_dispatch():
+    calls = []
+
+    class CustomCommand(UndoCommand):
+        def execute(self):
+            calls.append("execute")
+
+        def undo(self):
+            calls.append("undo")
+
+    command = CustomCommand("Custom edit")
+    assert command.supports_redo and command.marks_dirty
+    assert isinstance(command.timestamp, float) and not command.can_merge(command)
+    command.execute()
+    command.undo()
+    command.redo()
+    assert calls == ["execute", "undo", "execute"]
+
+
+def test_selection_command_only_holds_context_for_the_action_journal():
+    previous = SelectionService._instance
+    service = SelectionService()
+    before = SelectionSnapshot.create(
+        (SelectionTarget.scene_object(1), SelectionTarget.scene_object(2)),
+        owner_id="hierarchy",
+    )
+    after = SelectionSnapshot.create(
+        (SelectionTarget.asset("Assets/test.mat"),), owner_id="project",
+    )
+    service.apply_snapshot(before, record_history=False)
+    try:
+        command = GlobalSelectionCommand(before, after)
+        assert not command.marks_dirty and command.description == "Change Selection"
+        assert command.before_selection_snapshot == before
+        assert command.after_selection_snapshot == after
+        command.execute()
+        command.undo()
+        command.redo()
+        assert service.snapshot == before
+    finally:
+        SelectionService._instance = previous
+
+
+def test_renderstack_continuous_edit_merges_and_republishes_each_replay():
+    target = _Obj()
+    stack = _FakeStack(target)
+    first = RenderStackFieldCommand(stack, target, "x", 0, 1)
+    first.execute()
+    second = RenderStackFieldCommand(stack, target, "x", 1, 5)
+    second.timestamp = first.timestamp + 0.1
+    second.execute()
+    assert target.x == 5 and stack.invalidated == 2
+    assert first.can_merge(second)
+    first.merge(second)
+    first.undo()
+    assert target.x == 0 and stack.invalidated == 3
+    first.redo()
+    assert target.x == 5 and stack.invalidated == 4
+
+
+def test_history_branching_reports_state_and_clears_redo(_reset_undo_manager):
+    manager = _reset_undo_manager
+    target = _Obj()
+    changed = []
+    manager.set_on_state_changed(lambda: changed.append(True))
+    assert not manager.can_undo and not manager.can_redo
+    manager.execute(SetPropertyCommand(target, "x", 0, 10, "Move X"))
+    assert target.x == 10 and manager.undo_description == "Move X"
+    assert manager.can_undo and not manager.can_redo and len(changed) == 1
+    manager.undo()
+    assert target.x == 0 and manager.can_redo and len(changed) == 2
+    manager.redo()
+    assert target.x == 10
+    manager.undo()
+    manager.execute(SetPropertyCommand(target, "y", 0, 20, "Move Y"))
+    assert target.y == 20 and target.x == 0
+    assert not manager.can_redo and manager.undo_description == "Move Y"
+    manager.clear()
+    assert not manager.can_undo and not manager.can_redo
+
+
+def test_history_walks_multiple_distinct_edits(_reset_undo_manager):
+    manager = _reset_undo_manager
+    target = _Obj()
+    for value in range(3):
+        command = SetPropertyCommand(target, "x", value, value + 1)
+        command.timestamp = value * 10.0
+        manager.execute(command)
+    assert target.x == 3
+    manager.undo()
+    assert target.x == 2
+    manager.undo()
+    assert target.x == 1
+    manager.redo()
+    assert target.x == 2
+
+
+def test_scene_object_selection_replacement_toggle_notification_and_clear():
+    previous = SelectionService._instance
+    selection = SelectionService()
+    changes = []
+    selection.add_listener(changes.append)
+    try:
+        selection.replace_scene_objects(
+            [10, 20, 30], owner_id="hierarchy", record_history=False,
+        )
+        assert selection.scene_object_ids() == (10, 20, 30)
+        assert selection.primary_scene_object_id() == 30
+        selection.select_scene_object(5, owner_id="hierarchy", record_history=False)
+        assert selection.scene_object_ids() == (5,) and len(changes) == 2
+        selection.select_scene_object(5, owner_id="hierarchy", record_history=False)
+        assert len(changes) == 2
+        selection.toggle_scene_object(2, owner_id="hierarchy", record_history=False)
+        assert selection.scene_object_ids() == (5, 2)
+        selection.toggle_scene_object(5, owner_id="hierarchy", record_history=False)
+        assert selection.scene_object_ids() == (2,)
+        selection.replace_scene_objects([], owner_id="hierarchy", record_history=False)
+        assert selection.scene_object_ids() == () and selection.primary_scene_object_id() == 0
+        selection.select_scene_object(42, owner_id="hierarchy", record_history=False)
+        selection.clear(reason="test_clear", record_history=False)
+        assert selection.scene_object_ids() == () and selection.primary_scene_object_id() == 0
+    finally:
+        SelectionService._instance = previous

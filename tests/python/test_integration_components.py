@@ -478,24 +478,7 @@ class TestComponentLifecycle:
         assert components[0]._serialize_fields_document()["value"] == 1
         assert scene.has_pending_py_components() is False
 
-    def test_add_and_get_component(self, scene):
-        go = scene.create_game_object("GO")
-        rb = go.add_component("Rigidbody")
-        assert rb is not None
-        fetched = go.get_component("Rigidbody")
-        assert fetched is not None
 
-    def test_add_and_get_python_component_by_class(self, scene):
-        class ProbeComponent(InxComponent):
-            pass
-
-        go = scene.create_game_object("GO")
-        probe = go.add_component(ProbeComponent)
-
-        assert isinstance(probe, ProbeComponent)
-        assert go.get_component(ProbeComponent) is probe
-        assert go.get_component("ProbeComponent") is probe
-        assert go.get_components(ProbeComponent) == [probe]
 
     def test_python_component_constraints_are_enforced_from_registry(self, scene):
         from infernux.components.decorators import disallow_multiple, require_component
@@ -684,42 +667,9 @@ class TestComponentLifecycle:
         assert component is not None
         assert observed == [(go, component._cpp_component)]
 
-    def test_add_and_get_builtin_component_by_class(self, scene):
-        go = scene.create_game_object("CamGO")
-        cam = go.add_component(CameraComponent)
 
-        assert isinstance(cam, CameraComponent)
-        assert go.get_component(CameraComponent) is cam
-        assert go.get_components(CameraComponent) == [cam]
-        assert go.remove_component(cam) is True
 
-    def test_transform_always_present(self, scene):
-        go = scene.create_game_object("GO")
-        t = go.get_component("Transform")
-        assert t is not None
-        assert t.type_name == "Transform"
 
-    def test_get_components_lists_all(self, scene):
-        go = scene.create_game_object("GO")
-        go.add_component("Rigidbody")
-
-        go.add_component("BoxCollider")
-        names = [c.type_name for c in go.get_components()]
-        assert "Transform" in names
-        assert "Rigidbody" in names
-        assert "BoxCollider" in names
-
-    def test_get_components_returns_python_instances_not_proxies(self, scene):
-        class ProbeComponent(InxComponent):
-            pass
-
-        go = scene.create_game_object("GO")
-        probe = go.add_component(ProbeComponent)
-
-        components = go.get_components()
-
-        assert probe in components
-        assert all(type(component).__name__ != "PyComponentProxy" for component in components)
 
     def test_game_object_document_restore_recreates_python_components(self, scene):
         class DocumentProbeComponent(InxComponent):
@@ -782,11 +732,6 @@ class TestComponentLifecycle:
                 if module is not None:
                     sys.modules[name] = module
 
-    def test_remove_component(self, scene):
-        go = scene.create_game_object("GO")
-        rb = go.add_component("Rigidbody")
-        go.remove_component(rb)
-        assert go.get_component("Rigidbody") is None
 
     def test_remove_box_collider_with_mesh_collider_and_rigidbody(self, scene):
         go = scene.create_primitive(PrimitiveType.Cube, "ColliderHost")
@@ -967,23 +912,7 @@ class TestComponentLifecycle:
         Physics.sync_transforms()
         assert "requires a MeshRenderer" in mesh.shape_error
 
-    def test_cannot_remove_transform(self, scene):
-        go = scene.create_game_object("GO")
-        t = go.get_component("Transform")
-        result = go.remove_component(t)
-        assert result is False
-        assert go.get_component("Transform") is not None
 
-    @pytest.mark.parametrize("comp_type", [
-        "Rigidbody", "BoxCollider", "SphereCollider", "CapsuleCollider", "CylinderCollider",
-        "MeshCollider", "MeshRenderer", "Light", "Camera",
-        "AudioSource", "AudioListener",
-    ])
-    def test_all_component_types_addable(self, scene, comp_type):
-        go = scene.create_game_object(f"GO_{comp_type}")
-        comp = go.add_component(comp_type)
-        assert comp is not None
-        assert comp.type_name == comp_type
 
     def test_python_component_receives_disable_when_game_object_deactivates(self, scene):
         events = []
@@ -1372,52 +1301,10 @@ class TestComponentLifecycle:
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TestColliders:
-    def test_box_collider_size(self, scene):
-        go = scene.create_game_object("BC")
-        bc = go.add_component("BoxCollider")
-        bc.size = Vector3(2, 3, 4)
-        s = bc.size
-        assert (s.x, s.y, s.z) == pytest.approx((2, 3, 4))
 
-    def test_sphere_collider_radius(self, scene):
-        go = scene.create_game_object("SC")
-        sc = go.add_component("SphereCollider")
-        sc.radius = 2.5
-        assert sc.radius == pytest.approx(2.5)
 
-    def test_capsule_collider_properties(self, scene):
-        go = scene.create_game_object("CC")
-        cc = go.add_component("CapsuleCollider")
-        cc.height = 3.0
-        cc.radius = 1.0
-        assert cc.radius == pytest.approx(1.0)
-        assert cc.height == pytest.approx(3.0)
 
-    def test_cylinder_collider_properties_and_round_trip(self, scene):
-        go = scene.create_game_object("YC")
-        cylinder = go.add_component("CylinderCollider")
-        cylinder.radius = 1.25
-        cylinder.height = 4.0
-        cylinder.direction = 2
 
-        assert cylinder.radius == pytest.approx(1.25)
-        assert cylinder.height == pytest.approx(4.0)
-        assert cylinder.direction == 2
-
-        document = cylinder.serialize_document()
-        assert document["type"] == "CylinderCollider"
-        assert document["radius"] == pytest.approx(1.25)
-        assert document["height"] == pytest.approx(4.0)
-        assert document["direction"] == 2
-        assert cylinder.deserialize_document(document) is True
-
-    def test_collider_is_trigger(self, scene):
-        go = scene.create_game_object("T")
-        bc = go.add_component("BoxCollider")
-        bc.is_trigger = True
-        assert bc.is_trigger is True
-        bc.is_trigger = False
-        assert bc.is_trigger is False
 
     def test_collider_material_combine_round_trip(self, scene):
         material = InxPhysicMaterial()
@@ -1658,34 +1545,9 @@ class TestColliders:
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TestCamera:
-    def test_camera_defaults(self, scene):
-        go = scene.create_game_object("Cam")
-        cam = go.add_component("Camera")
-        assert cam.field_of_view == pytest.approx(60.0)
-        assert cam.near_clip > 0
-        assert cam.far_clip > cam.near_clip
-        assert cam.dithering is False
-        assert cam.stop_nans is False
 
-    def test_camera_fov_round_trip(self, scene):
-        go = scene.create_game_object("Cam")
-        cam = go.add_component("Camera")
-        cam.field_of_view = 90.0
-        assert cam.field_of_view == pytest.approx(90.0)
 
-    def test_camera_depth(self, scene):
-        go = scene.create_game_object("Cam")
-        cam = go.add_component("Camera")
-        cam.depth = 5
-        assert cam.depth == pytest.approx(5)
 
-    def test_camera_output_controls_round_trip(self, scene):
-        go = scene.create_game_object("Cam")
-        cam = go.add_component("Camera")
-        cam.dithering = True
-        cam.stop_nans = True
-        assert cam.dithering is True
-        assert cam.stop_nans is True
 
     def test_camera_ray_accepts_one_authoritative_viewport_size(self, scene):
         go = scene.create_game_object("Ray Camera")
@@ -1704,37 +1566,9 @@ class TestCamera:
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TestLight:
-    def test_light_defaults(self, scene):
-        go = scene.create_game_object("L")
-        light = go.add_component("Light")
-        assert light.light_type == LightType.Directional
-        assert light.intensity == pytest.approx(1.0)
-        assert light.shadow_bias == pytest.approx(1.0)
-        assert light.shadow_normal_bias == pytest.approx(1.0)
-        assert light.affect_geometry is True
-        assert light.affect_particles is True
 
-    def test_light_type_point(self, scene):
-        go = scene.create_game_object("PL")
-        light = go.add_component("Light")
-        light.light_type = LightType.Point
-        assert light.light_type == LightType.Point
 
-    def test_light_intensity_round_trip(self, scene):
-        go = scene.create_game_object("L")
-        light = go.add_component("Light")
-        light.intensity = 2.5
-        assert light.intensity == pytest.approx(2.5)
 
-    def test_light_color(self, scene):
-        go = scene.create_game_object("L")
-        light = go.add_component("Light")
-        light.color = Vector3(1, 0, 0)
-        c = light.color
-        assert c[0] == pytest.approx(1.0)
-        assert c[1] == pytest.approx(0.0)
-        assert c[2] == pytest.approx(0.0)
-        assert c[3] == pytest.approx(1.0)
 
     def test_light_color_modes_and_kelvin_round_trip(self, scene):
         light = scene.create_game_object("TemperatureLight").add_component("Light")
@@ -1764,63 +1598,20 @@ class TestLight:
         invalid = dict(document, colorTemperature=999.0)
         assert native.deserialize_document(invalid) is False
 
-    def test_light_shadows(self, scene):
-        go = scene.create_game_object("L")
-        light = go.add_component("Light")
-        light.shadows = LightShadows.Hard
-        assert light.shadows == LightShadows.Hard
 
-    def test_light_influence_domains_round_trip(self, scene):
-        go = scene.create_game_object("DomainLight")
-        light = go.add_component("Light")
-        light.affect_geometry = False
-        light.affect_particles = True
-
-        assert light.affect_geometry is False
-        assert light.affect_particles is True
-        data = json.loads(light.serialize())
-        assert data["influenceDomains"] == 2
 
 # ═══════════════════════════════════════════════════════════════════════════
 # MeshRenderer
 # ═══════════════════════════════════════════════════════════════════════════
 
-class TestMeshRenderer:
-    def test_primitive_mesh_has_data(self, scene):
-        cube = scene.create_primitive(PrimitiveType.Cube, "Cube")
-        mr = cube.get_component("MeshRenderer")
-        assert mr is not None
-        positions = mr.get_positions()
-        normals = mr.get_normals()
-        indices = mr.get_indices()
-        assert len(positions) > 0
-        assert len(normals) > 0
-        assert len(indices) > 0
 
-    def test_sphere_has_more_verts_than_cube(self, scene):
-        cube = scene.create_primitive(PrimitiveType.Cube, "C")
-        sphere = scene.create_primitive(PrimitiveType.Sphere, "S")
-        cube_verts = len(cube.get_component("MeshRenderer").get_positions())
-        sphere_verts = len(sphere.get_component("MeshRenderer").get_positions())
-        assert sphere_verts > cube_verts
 
-    def test_shadow_properties(self, scene):
-        cube = scene.create_primitive(PrimitiveType.Cube, "C")
-        mr = cube.get_component("MeshRenderer")
-        mr.casts_shadows = False
-        assert mr.casts_shadows is False
-        mr.casts_shadows = True
-        assert mr.casts_shadows is True
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Texture (real GPU-side creation)
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TestTextureCreation:
-    def test_solid_color(self, engine):
-        tex = TextureLoader.create_solid_color(32, 32, 255, 0, 0, 255)
-        assert tex.width == 32
-        assert tex.height == 32
 
     def test_different_sizes(self, engine):
         for size in [1, 16, 64, 256]:
@@ -1867,16 +1658,7 @@ class TestMaterial:
             == missing_guid
         )
 
-    def test_create_default_lit(self, engine):
-        mat = InxMaterial.create_default_lit()
-        assert mat is not None
 
-    def test_material_assignable_to_renderer(self, scene):
-        cube = scene.create_primitive(PrimitiveType.Cube, "MatCube")
-        mr = cube.get_component("MeshRenderer")
-        mat = InxMaterial.create_default_lit()
-        mr.material = mat
-        assert mr.get_material(0) is not None
 
     def test_material_document_is_strict_and_transactional(self, engine):
         mat = InxMaterial.create_default_lit()
@@ -2222,46 +2004,7 @@ class TestComponentSerialization:
             == "missing-physic-material-guid"
         )
 
-    @pytest.mark.parametrize(
-        "component_type",
-        [
-            "Transform",
-            "Camera",
-            "Light",
-            "AudioListener",
-            "AudioSource",
-            "Rigidbody",
-            "BoxCollider",
-            "SphereCollider",
-            "CapsuleCollider",
-            "CylinderCollider",
-            "MeshCollider",
-            "MeshRenderer",
-            "SkinnedMeshRenderer",
-            "SpriteRenderer",
-        ],
-    )
-    def test_registered_component_ignores_unknown_field(self, scene, component_type):
-        owner = scene.create_game_object(f"Strict{component_type}")
-        if component_type == "Transform":
-            component = owner.transform
-        else:
-            component = owner.add_component(component_type)
-        original = component.serialize_document()
-        invalid = dict(original)
-        invalid["unexpected"] = True
 
-        assert component.deserialize_document(invalid) is True
-        assert component.serialize_document() == original
-
-    def test_registered_component_does_not_special_case_retired_identity_field(self, scene):
-        light = scene.create_game_object("CurrentLight").add_component("Light")
-        original = light.serialize_document()
-        authored = dict(original)
-        authored["instance_guid"] = "retired-editor-value"
-
-        assert light.deserialize_document(authored) is True
-        assert light.serialize_document() == original
 
     def test_component_documents_are_strict(self, scene):
         cube = scene.create_primitive(PrimitiveType.Cube, "CurrentFormatCube")
@@ -2308,12 +2051,6 @@ class TestComponentSerialization:
         assert rigidbody.deserialize_document(incomplete) is False
         assert rigidbody.serialize_document() == original
 
-    def test_rigidbody_serializes(self, scene):
-        go = scene.create_game_object("RB")
-        rb = go.add_component("Rigidbody")
-        rb.mass = 3.14
-        json_str = rb.serialize()
-        assert "mass" in json_str.lower() or "3.14" in json_str
 
     def test_round_trip_via_scene(self, scene):
         go = scene.create_game_object("Persist")
@@ -2337,3 +2074,97 @@ class TestComponentSerialization:
         assert rb2.mass == pytest.approx(7.77)
         sc2 = found.get_component("SphereCollider")
         assert sc2.radius == pytest.approx(2.0)
+
+
+def test_mixed_python_and_native_component_authoring_lifecycle(scene):
+    class AuthoringProbe(InxComponent):
+        value: int = 7
+
+    owner = scene.create_game_object("MixedComponents")
+    transform = owner.get_component("Transform")
+    assert transform is owner.transform and not owner.remove_component(transform)
+    probe = owner.add_component(AuthoringProbe)
+    camera = owner.add_component(CameraComponent)
+    rigidbody = owner.add_component("Rigidbody")
+    assert owner.get_component(AuthoringProbe) is probe
+    assert owner.get_component("AuthoringProbe") is probe
+    assert owner.get_components(AuthoringProbe) == [probe]
+    assert owner.get_component(CameraComponent) is camera
+    assert owner.get_component("Rigidbody") is rigidbody
+    components = owner.get_components()
+    assert probe in components and all(type(item).__name__ != "PyComponentProxy" for item in components)
+    assert {"Transform", "Camera", "Rigidbody"} <= {item.type_name for item in components}
+    assert owner.remove_component(camera) and owner.get_component(CameraComponent) is None
+    assert owner.remove_component(rigidbody) and owner.get_component("Rigidbody") is None
+    assert owner.get_component(AuthoringProbe) is probe
+
+
+def test_collider_palette_configuration_survives_native_document_restore(scene):
+    floor = scene.create_game_object("Floor").add_component("BoxCollider")
+    floor.size = Vector3(2, 3, 4)
+    floor.is_trigger = True
+    sphere = scene.create_game_object("Ball").add_component("SphereCollider")
+    sphere.radius = 2.5
+    capsule = scene.create_game_object("Actor").add_component("CapsuleCollider")
+    capsule.height, capsule.radius = 3.0, 1.0
+    cylinder = scene.create_game_object("Post").add_component("CylinderCollider")
+    cylinder.radius, cylinder.height, cylinder.direction = 1.25, 4.0, 2
+    documents = [component.serialize_document() for component in (floor, sphere, capsule, cylinder)]
+    assert tuple(floor.size) == pytest.approx((2, 3, 4))
+    assert floor.is_trigger and sphere.radius == pytest.approx(2.5)
+    assert (capsule.radius, capsule.height) == pytest.approx((1, 3))
+    assert (cylinder.radius, cylinder.height, cylinder.direction) == pytest.approx((1.25, 4, 2))
+    for component, document in zip((floor, sphere, capsule, cylinder), documents):
+        assert component.deserialize_document(document)
+        assert component.serialize_document() == document
+    floor.is_trigger = False
+    assert not floor.is_trigger
+
+
+def test_camera_authored_projection_and_output_survive_document_restore(scene):
+    camera = scene.create_game_object("AuthorCamera").add_component("Camera")
+    assert camera.field_of_view == pytest.approx(60)
+    assert 0 < camera.near_clip < camera.far_clip
+    assert not camera.dithering and not camera.stop_nans
+    camera.field_of_view, camera.depth = 90, 5
+    camera.dithering = camera.stop_nans = True
+    document = camera.serialize_document()
+    camera.field_of_view, camera.depth = 45, 0
+    assert camera.deserialize_document(document)
+    assert camera.field_of_view == pytest.approx(90) and camera.depth == pytest.approx(5)
+    assert camera.dithering and camera.stop_nans
+
+
+def test_light_authored_type_color_shadow_and_domains_survive_document_restore(scene):
+    light = scene.create_game_object("AuthorLight").add_component("Light")
+    assert light.light_type == LightType.Directional and light.intensity == pytest.approx(1)
+    assert (light.shadow_bias, light.shadow_normal_bias) == pytest.approx((1, 1))
+    assert light.affect_geometry and light.affect_particles
+    light.light_type = LightType.Point
+    light.intensity = 2.5
+    light.color = Vector3(1, 0, 0)
+    light.shadows = LightShadows.Hard
+    light.affect_geometry, light.affect_particles = False, True
+    document = light.serialize_document()
+    assert document["influenceDomains"] == 2
+    light.intensity = 0.5
+    assert light.deserialize_document(document)
+    assert light.light_type == LightType.Point and light.shadows == LightShadows.Hard
+    assert light.intensity == pytest.approx(2.5)
+    assert tuple(light.color) == pytest.approx((1, 0, 0, 1))
+    assert not light.affect_geometry and light.affect_particles
+
+
+def test_mesh_and_material_authoring_sets_geometry_and_shadow_state(scene):
+    owner = scene.create_primitive(PrimitiveType.Cube, "AuthoredMesh")
+    renderer = owner.get_component("MeshRenderer")
+    assert len(renderer.get_positions()) > 0
+    assert len(renderer.get_normals()) > 0 and len(renderer.get_indices()) > 0
+    renderer.material = InxMaterial.create_default_lit()
+    assert renderer.get_material(0) is not None
+    renderer.casts_shadows = False
+    assert not renderer.casts_shadows
+    document = renderer.serialize_document()
+    renderer.casts_shadows = True
+    assert renderer.deserialize_document(document)
+    assert not renderer.casts_shadows

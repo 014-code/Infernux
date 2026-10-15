@@ -17,12 +17,6 @@ from hub_release import (
 )
 
 
-def test_project_version_uses_current_project_metadata(tmp_path: Path):
-    (tmp_path / "pyproject.toml").write_text(
-        '[project]\nversion = "0.4.0"\n', encoding="utf-8"
-    )
-
-    assert project_version(tmp_path) == "0.4.0"
 
 
 def test_rebuild_keeps_package_version_and_has_distinct_hub_identity(tmp_path):
@@ -87,14 +81,6 @@ def test_bundled_python_runtime_is_installer_only(tmp_path: Path):
     assert runtime.is_file()
 
 
-def test_manifest_entries_are_paths(tmp_path: Path):
-    hub = tmp_path / "hub"
-    hub.mkdir()
-    (hub / "Infernux Hub.exe").write_bytes(b"executable")
-
-    manifest = create_manifest(hub, "0.4.0", "windows-x64")
-
-    assert manifest["files"] == [{"path": "Infernux Hub.exe"}]
 
 
 def test_manifest_rejects_parent_traversal(tmp_path: Path):

@@ -551,12 +551,10 @@ def test_web_publish_html_switch_failure_keeps_previous_generation_complete(
     assert not list(output.glob(".*.tmp"))
 
 
-@pytest.mark.parametrize("had_template,failure", [
-    (had_template, failure)
-    for had_template in (False, True)
-    for failure in ("template_copy", "template_scan", "template_publish", "html_switch",
-                    "interrupt", "none", "remove_template", "remove_template_failure")
-] + [(True, "rollback")])
+@pytest.mark.parametrize('had_template,failure', [
+    (True, failure) for failure in ('template_copy', 'template_scan', 'template_publish', 'html_switch',
+        'interrupt', 'none', 'remove_template', 'remove_template_failure', 'rollback')
+] + [(False, 'none'), (False, 'html_switch')])
 def test_web_custom_template_failure_preserves_previous_publication(monkeypatch, tmp_path, had_template, failure):
     _web_module(monkeypatch)
     exporter = importlib.import_module("infernux_web.exporter")

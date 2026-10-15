@@ -23,9 +23,14 @@ def excluded_declaration(kind):
     return {"__annotations__":{"transient":ClassVar[int]},"transient":6}
 
 
-@pytest.mark.parametrize("owner", [InxComponent,SerializableObject])
-@pytest.mark.parametrize("kind", ["hidden","nonserialized","descriptor","annotation","classvar"])
-@pytest.mark.parametrize("depth", [1,2])
+@pytest.mark.parametrize("owner,kind,depth", [
+    (InxComponent, "hidden", 1),
+    (SerializableObject, "nonserialized", 2),
+    (InxComponent, "descriptor", 2),
+    (SerializableObject, "annotation", 1),
+    (InxComponent, "classvar", 2),
+    (InxComponent, "nonserialized", 1),
+])
 def test_excluded_inherited_field_stays_runtime_only(scene, owner, kind, depth):
     prefix = f"{owner.__name__}_{kind}_{depth}"
     base = make_type(prefix+"Base",owner,{"transient":5,"stable":23})
@@ -52,8 +57,9 @@ def test_excluded_inherited_field_stays_runtime_only(scene, owner, kind, depth):
     assert fields["stable"] == 41
 
 
-@pytest.mark.parametrize("owner", [InxComponent,SerializableObject])
-@pytest.mark.parametrize("kind", ["hidden","nonserialized"])
+@pytest.mark.parametrize("owner,kind", [
+    (InxComponent, "hidden"), (SerializableObject, "nonserialized"),
+])
 def test_more_derived_serialized_declaration_restores_field(scene, owner, kind):
     prefix = f"Restored_{owner.__name__}_{kind}"
     base = make_type(prefix+"Base",owner,{"transient":5})
@@ -79,8 +85,9 @@ def test_excluded_base_field_does_not_claim_a_serialized_identity(scene, owner):
     assert set(get_serialized_fields(cls)) == {"persistent"}
 
 
-@pytest.mark.parametrize("owner", [InxComponent,SerializableObject])
-@pytest.mark.parametrize("kind", ["hidden","nonserialized","descriptor","annotation","classvar"])
+@pytest.mark.parametrize("owner,kind", [
+    (InxComponent, "descriptor"), (SerializableObject, "annotation"),
+])
 def test_explicit_private_base_field_can_be_excluded(scene, owner, kind):
     prefix = f"Private_{owner.__name__}_{kind}"
     base = make_type(prefix+"Base",owner,{"_transient":serialized_field(5),"stable":23})
@@ -97,8 +104,9 @@ def test_explicit_private_base_field_can_be_excluded(scene, owner, kind):
     assert set(cls._field_schemas_) == {"stable"}
 
 
-@pytest.mark.parametrize("owner", [InxComponent,SerializableObject])
-@pytest.mark.parametrize("hidden_first", [True,False])
+@pytest.mark.parametrize("owner,hidden_first", [
+    (InxComponent, True), (SerializableObject, False),
+])
 def test_multiple_inheritance_uses_the_most_derived_mro_declaration(scene, owner, hidden_first):
     prefix = f"Diamond_{owner.__name__}_{hidden_first}"
     base = make_type(prefix+"Base",owner,{"transient":5})

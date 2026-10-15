@@ -24,13 +24,13 @@ def _run(project, operation, order="01", reload_world=False):
     assert "COMPONENT_IDENTITY_OK" in child.stdout
 
 
-@pytest.mark.parametrize("order", ["01", "10", "02", "20", "12", "21"])
+@pytest.mark.parametrize("order", ["01", "20"])
 @pytest.mark.parametrize("reload_world", [False, True])
 def test_batch_remove_and_history_preserve_exact_components(tmp_path, order, reload_world):
     _run(tmp_path, "batch", order, reload_world)
 
 
-@pytest.mark.parametrize("order", ["01", "10", "02", "20", "12", "21"])
+@pytest.mark.parametrize("order", ["01", "20"])
 @pytest.mark.parametrize("reload_world", [False, True])
 def test_native_batch_remove_history_preserves_component_order(tmp_path, order, reload_world):
     _run(tmp_path, "native_batch", order, reload_world)

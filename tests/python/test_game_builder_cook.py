@@ -36,12 +36,11 @@ from test_game_builder import (
     pytest,
     read_entry,
     read_manifest,
-    source_fingerprint,
     sys,
     threading,
     validate_artifact,
     write_pack,
-    _native_package_backend,
+    _native_package_backend as _native_package_backend,
 )
 
 def test_runtime_pack_rejects_unsafe_archive_paths(tmp_path, monkeypatch):
@@ -974,104 +973,56 @@ def test_requirements_install_is_skipped_when_content_is_unchanged(tmp_path, mon
     assert len(calls) == 1
 
 
-@pytest.mark.skipif(sys.platform != "win32", reason="Windows case-insensitive file identities")
-def test_player_cleanup_deduplicates_case_variant_paths(tmp_path):
+def test_player_cleanup_preserves_runtime_closure_and_removes_authoring_state(tmp_path):
     builder = _make_builder(tmp_path, tmp_path / "build_output")
     final_dir = tmp_path / "dist"
-    stub = final_dir / "infernux" / "lib" / "_Infernux.pyi"
-    stub.parent.mkdir(parents=True)
-    stub.write_text("# build-time stubs", encoding="utf-8")
-    (stub.parent / "keep.dll").write_bytes(b"runtime")
+    retained = {
+        "infernux/lib/keep.dll": b"runtime",
+        "infernux/lib/_Infernux.pyd": b"native module",
+        "_InfernuxBootstrap.pyd": b"bootstrap module",
+        "infernux/resources/icons/gizmo_camera.png": b"camera",
+        "infernux/resources/icons/gizmo_light.png": b"light",
+        "infernux/resources/fonts/engine.otf": b"package-font",
+        "Data/Assets/Scripts/player.py.meta": b"project",
+        "numpy/__init__.pyc": b"runtime package",
+        "numpy/_core/__init__.pyc": b"runtime core",
+    }
+    removed = {
+        "infernux/lib/_Infernux.pyi": b"build-time stubs",
+        "_Infernux.pyd": b"native module",
+        "infernux/resources/shaders/lit.frag.meta": b"engine",
+        "numpy/__pycache__/stale.pyc": b"cache",
+        "Data/Library/Resources/fonts/engine.otf": b"duplicate-font",
+    }
+    for relative, content in (retained | removed).items():
+        path = final_dir / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
 
+    # One actual cleanup of one prepared product, rather than six independent
+    # products. On Windows the mixed-case _Infernux.pyi still reaches both
+    # cleanup discovery paths and must be removed only once.
     builder._cleanup_dist(str(final_dir))
 
-    assert not stub.exists()
-    assert (stub.parent / "keep.dll").read_bytes() == b"runtime"
+    assert {relative: (final_dir / relative).read_bytes() for relative in retained} == retained
+    assert all(not (final_dir / relative).exists() for relative in removed)
+    assert not (final_dir / "numpy/__pycache__").exists()
+    assert not (final_dir / "Data/Library/Resources").exists()
 
 
-def test_player_cleanup_preserves_engine_icon_resources(tmp_path):
-    builder = _make_builder(tmp_path, tmp_path / "build_output")
-    final_dir = tmp_path / "dist"
-    icons = final_dir / "infernux" / "resources" / "icons"
-    icons.mkdir(parents=True)
-    camera_icon = icons / "gizmo_camera.png"
-    light_icon = icons / "gizmo_light.png"
-    camera_icon.write_bytes(b"camera")
-    light_icon.write_bytes(b"light")
-
-    builder._cleanup_dist(str(final_dir))
-
-    assert camera_icon.read_bytes() == b"camera"
-    assert light_icon.read_bytes() == b"light"
 
 
-def test_player_cleanup_preserves_project_meta_and_removes_engine_meta(tmp_path):
-    builder = _make_builder(tmp_path, tmp_path / "build_output")
-    final_dir = tmp_path / "dist"
-    project_meta = final_dir / "Data" / "Assets" / "Scripts" / "player.py.meta"
-    engine_meta = final_dir / "infernux" / "resources" / "shaders" / "lit.frag.meta"
-    project_meta.parent.mkdir(parents=True)
-    engine_meta.parent.mkdir(parents=True)
-    project_meta.write_text("project", encoding="utf-8")
-    engine_meta.write_text("engine", encoding="utf-8")
-
-    builder._cleanup_dist(str(final_dir))
-
-    assert project_meta.read_text(encoding="utf-8") == "project"
-    assert not engine_meta.exists()
 
 
-def test_player_cleanup_preserves_sourceless_runtime_dependency_bytecode(tmp_path):
-    builder = _make_builder(tmp_path, tmp_path / "build_output")
-    final_dir = tmp_path / "dist"
-    numpy_init = final_dir / "numpy" / "__init__.pyc"
-    numpy_core = final_dir / "numpy" / "_core" / "__init__.pyc"
-    cache_file = final_dir / "numpy" / "__pycache__" / "stale.pyc"
-    numpy_core.parent.mkdir(parents=True)
-    cache_file.parent.mkdir(parents=True)
-    numpy_init.write_bytes(b"runtime package")
-    numpy_core.write_bytes(b"runtime core")
-    cache_file.write_bytes(b"cache")
-
-    builder._cleanup_dist(str(final_dir))
-
-    assert numpy_init.read_bytes() == b"runtime package"
-    assert numpy_core.read_bytes() == b"runtime core"
-    assert not cache_file.parent.exists()
 
 
-def test_player_cleanup_keeps_bootstrap_root_and_package_full_module(tmp_path):
-    builder = _make_builder(tmp_path, tmp_path / "build_output")
-    final_dir = tmp_path / "dist"
-    package_module = final_dir / "infernux" / "lib" / "_Infernux.pyd"
-    root_module = final_dir / "_Infernux.pyd"
-    bootstrap_module = final_dir / "_InfernuxBootstrap.pyd"
-    package_module.parent.mkdir(parents=True)
-    package_module.write_bytes(b"native module")
-    root_module.write_bytes(b"native module")
-    bootstrap_module.write_bytes(b"bootstrap module")
-
-    builder._cleanup_dist(str(final_dir))
-
-    assert not root_module.exists()
-    assert package_module.read_bytes() == b"native module"
-    assert bootstrap_module.read_bytes() == b"bootstrap module"
 
 
-def test_player_cleanup_removes_redundant_library_resources(tmp_path):
-    builder = _make_builder(tmp_path, tmp_path / "build_output")
-    final_dir = tmp_path / "dist"
-    package_font = final_dir / "infernux" / "resources" / "fonts" / "engine.otf"
-    library_font = final_dir / "Data" / "Library" / "Resources" / "fonts" / "engine.otf"
-    package_font.parent.mkdir(parents=True)
-    library_font.parent.mkdir(parents=True)
-    package_font.write_bytes(b"package-font")
-    library_font.write_bytes(b"duplicate-font")
 
-    builder._cleanup_dist(str(final_dir))
 
-    assert package_font.read_bytes() == b"package-font"
-    assert not library_font.parent.parent.exists()
+
+
+
 
 
 def test_game_data_includes_render_effect_artifacts(tmp_path):

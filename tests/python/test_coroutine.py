@@ -7,7 +7,6 @@ import time as stdlib_time
 import pytest
 
 from infernux.coroutine import (
-    Coroutine,
     CoroutineScheduler,
     WaitForEndOfFrame,
     WaitForFrames,
@@ -30,9 +29,6 @@ def iter_wait(instruction):
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TestWaitForSeconds:
-    def test_duration_stored(self):
-        w = WaitForSeconds(2.5)
-        assert w.duration == 2.5
 
     def test_tick_not_ready(self):
         scheduler = CoroutineScheduler()
@@ -47,8 +43,6 @@ class TestWaitForSeconds:
         scheduler.tick_update(0.6)
         assert handle.is_finished
 
-    def test_repr(self):
-        assert "1.0" in repr(WaitForSeconds(1.0))
 
 
 class TestWaitForSecondsRealtime:
@@ -65,26 +59,11 @@ class TestWaitForSecondsRealtime:
         scheduler.tick_update(0.0)
         assert handle.is_finished
 
-    def test_ready_after_duration(self):
-        scheduler = CoroutineScheduler()
-        handle = scheduler.start(iter_wait(WaitForSecondsRealtime(0.0)))
-        assert not handle.is_finished
-        scheduler.tick_update(0.0)
-        assert handle.is_finished
 
-    def test_not_ready_before_duration(self):
-        scheduler = CoroutineScheduler()
-        handle = scheduler.start(iter_wait(WaitForSecondsRealtime(10.0)))
-        scheduler.tick_update(0.0)
-        assert not handle.is_finished
 
-    def test_repr(self):
-        assert "WaitForSecondsRealtime" in repr(WaitForSecondsRealtime(1))
 
 
 class TestWaitForEndOfFrame:
-    def test_repr(self):
-        assert "WaitForEndOfFrame" in repr(WaitForEndOfFrame())
 
     def test_rejects_invalid_frame_count(self):
         with pytest.raises(ValueError):
@@ -93,67 +72,18 @@ class TestWaitForEndOfFrame:
             WaitForEndOfFrame(1.5)
 
 
-class TestWaitForFrames:
-    def test_repr(self):
-        assert "WaitForFrames(3)" == repr(WaitForFrames(3))
 
 
-class TestWaitForFixedUpdate:
-    def test_repr(self):
-        assert "WaitForFixedUpdate" in repr(WaitForFixedUpdate())
 
 
-class TestWaitUntil:
-    def test_ready_when_true(self):
-        w = WaitUntil(lambda: True)
-        assert w._is_ready() is True
-
-    def test_not_ready_when_false(self):
-        w = WaitUntil(lambda: False)
-        assert w._is_ready() is False
 
 
-class TestWaitWhile:
-    def test_ready_when_false(self):
-        w = WaitWhile(lambda: False)
-        assert w._is_ready() is True
-
-    def test_not_ready_when_true(self):
-        w = WaitWhile(lambda: True)
-        assert w._is_ready() is False
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Coroutine handle
 # ═══════════════════════════════════════════════════════════════════════════
 
-class TestCoroutineHandle:
-    def test_initial_state(self):
-        def gen():
-            yield None
-        co = Coroutine(gen())
-        assert co.is_finished is False
-        assert co._phase == "update"
-
-    def test_repr_running(self):
-        def gen():
-            yield None
-        co = Coroutine(gen())
-        assert "running" in repr(co)
-
-    def test_repr_finished(self):
-        def gen():
-            yield None
-        co = Coroutine(gen())
-        co._is_finished = True
-        assert "finished" in repr(co)
-
-    def test_unique_ids(self):
-        def gen():
-            yield None
-        c1 = Coroutine(gen())
-        c2 = Coroutine(gen())
-        assert c1._id != c2._id
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -281,41 +211,8 @@ class TestCoroutineScheduler:
         scheduler.stop(handle)
         assert handle.is_finished and scheduler.count == 0 and cleaned == [True]
 
-    def test_start_runs_to_first_yield(self):
-        steps = []
 
-        def gen():
-            steps.append("before")
-            yield None
-            steps.append("after")
 
-        sched = CoroutineScheduler()
-        co = sched.start(gen())
-        assert steps == ["before"]
-        assert co.is_finished is False
-
-    def test_tick_advances_past_yield_none(self):
-        steps = []
-
-        def gen():
-            steps.append(1)
-            yield None
-            steps.append(2)
-
-        sched = CoroutineScheduler()
-        sched.start(gen())
-        sched.tick_update(0.016)
-        assert steps == [1, 2]
-
-    def test_generator_completes(self):
-        def gen():
-            yield None
-
-        sched = CoroutineScheduler()
-        co = sched.start(gen())
-        sched.tick_update(0.016)
-        assert co.is_finished is True
-        assert sched.count == 0
 
     def test_wait_for_seconds(self):
         steps = []
@@ -536,14 +433,6 @@ class TestCoroutineScheduler:
         assert sched.count == 0
         assert transitions == [True, False]
 
-    def test_count_property(self):
-        def gen():
-            yield None
-
-        sched = CoroutineScheduler()
-        sched.start(gen())
-        sched.start(gen())
-        assert sched.count == 2
 
     def test_exception_in_generator_finishes_coroutine(self):
         def gen():

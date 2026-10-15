@@ -27,9 +27,9 @@ from infernux.components.fields import (
     build_field_from_annotation, coerce_serialized_field_input,
     _unwrap_annotation, _UNSET,
 )
-from infernux.components.ref_wrappers import MaterialRef, GameObjectRef, ComponentRef, PrefabRef
-from infernux.core.asset_ref import AudioClipRef, ParticleGraphRef, TextureRef
-from infernux.graph.ramp import AnimationCurve, Gradient, GradientKey, Keyframe
+from infernux.components.ref_wrappers import GameObjectRef, PrefabRef
+from infernux.core.asset_ref import AudioClipRef, ParticleGraphRef
+from infernux.graph.ramp import AnimationCurve, Gradient, Keyframe
 
 
 # ── annotation unwrapping ────────────────────────────────────────────────
@@ -259,77 +259,51 @@ class SerializedFieldShowcase(InxComponent):
 
 
 class TestSerializedFieldShowcase:
-    def setup_method(self):
-        self.fields = get_serialized_fields(SerializedFieldShowcase)
+    def test_declared_fields_preserve_metadata_and_authored_document(self):
+        fields = get_serialized_fields(SerializedFieldShowcase)
+        assert fields['armor'].field_type == FieldType.FLOAT
+        assert isinstance(fields['armor'].default, float)
+        assert fields['health'].field_type == FieldType.INT and fields['health'].default == 100
+        assert fields['speed'].range == (0, 20) and fields['speed'].tooltip == 'm/s'
+        assert fields['name_tag'].multiline
+        assert fields['phase'].field_type == FieldType.ENUM
+        assert fields['phase'].enum_type is _Phase and fields['phase'].default == _Phase.RUN
+        assert fields['tint'].field_type == FieldType.COLOR
+        assert fields['tint'].default == [1., 0., 0., 1.] and not fields['tint'].hdr
+        assert fields['secret'].hidden and 'scratch' not in fields
+        assert fields['opt_count'].field_type == FieldType.INT and fields['opt_count'].default == 4
+        assert fields['mat'].field_type == FieldType.MATERIAL
+        assert fields['grouped_value'].group == 'Advanced'
+        assert fields['grouped_value'].default == 1.5
+        authored, restored = SerializedFieldShowcase(), SerializedFieldShowcase()
+        try:
+            assert authored.health == 100 and authored.speed == pytest.approx(5.)
+            authored.health, authored.speed, authored.secret = 55, 9.5, 1234
+            document = authored._serialize_fields_document()
+            assert document['secret'] == 1234 and 'scratch' not in document
+            restored._deserialize_fields_document(document)
+            assert restored._serialize_fields_document() == document
+            assert restored.health == 55 and restored.speed == pytest.approx(9.5)
+            assert restored.phase is _Phase.RUN and restored.secret == 1234
+        finally:
+            authored._call_on_destroy()
+            restored._call_on_destroy()
 
-    def test_annotation_drives_type_over_value(self):
-        assert self.fields['armor'].field_type == FieldType.FLOAT
-        assert isinstance(self.fields['armor'].default, float)
+    def test_annotated_numeric_fields_share_scalar_and_batch_storage(self):
+        import numpy as np
+        from infernux.batch import batch_read, batch_write
 
-    def test_basic_typed_default(self):
-        assert self.fields['health'].field_type == FieldType.INT
-        assert self.fields['health'].default == 100
-
-    def test_markers_applied(self):
-        assert self.fields['speed'].range == (0, 20)
-        assert self.fields['speed'].tooltip == "m/s"
-        assert self.fields['name_tag'].multiline is True
-
-    def test_enum_field(self):
-        meta = self.fields['phase']
-        assert meta.field_type == FieldType.ENUM
-        assert meta.enum_type is _Phase and meta.default == _Phase.RUN
-
-    def test_color_field(self):
-        meta = self.fields['tint']
-        assert meta.field_type == FieldType.COLOR
-        assert tuple(meta.default)[:3] == (1.0, 0.0, 0.0)
-        assert meta.hdr is False
-
-    def test_hidden_field_serialized(self):
-        assert 'secret' in self.fields
-        assert self.fields['secret'].hidden is True
-
-    def test_non_serialized_excluded(self):
-        assert 'scratch' not in self.fields
-
-    def test_optional_unwrap(self):
-        assert self.fields['opt_count'].field_type == FieldType.INT
-        assert self.fields['opt_count'].default == 4
-
-    def test_string_annotation_material(self):
-        assert self.fields['mat'].field_type == FieldType.MATERIAL
-
-    def test_descriptor_marker_composition(self):
-        meta = self.fields['grouped_value']
-        assert meta.group == "Advanced" and meta.default == 1.5
-
-    def test_instance_roundtrip(self):
-        comp = SerializedFieldShowcase()
-        assert comp.health == 100
-        assert comp.speed == pytest.approx(5.0)
-        comp.health = 55
-        comp.speed = 9.5
-        assert comp.health == 55
-        assert comp.speed == pytest.approx(9.5)
-        assert comp.phase == _Phase.RUN
-
-    def test_cds_backing_for_annotated_numeric(self):
-        # Annotated numeric fields should ride the same CDS fast path as
-        # serialized_field() ones — descriptor carries CDS ids after register.
-        desc = SerializedFieldShowcase.__dict__['health']
-        comp = SerializedFieldShowcase()
-        if comp._cds_slot is not None:
-            assert desc._cds_class_id is not None
-
-    def test_serialization_includes_hidden_excludes_nonserialized(self):
-        import json
-        comp = SerializedFieldShowcase()
-        comp.secret = 1234
-        data = json.loads(comp._serialize_fields())
-        assert data['secret'] == 1234          # HideInInspector → still serialized
-        assert 'scratch' not in data           # NonSerialized → excluded
-        assert data['health'] == 100
+        components = [SerializedFieldShowcase(), SerializedFieldShowcase()]
+        try:
+            np.testing.assert_array_equal(batch_read(components, 'health'), [100, 100])
+            components[0].health = 55
+            np.testing.assert_array_equal(batch_read(components, 'health'), [55, 100])
+            batch_write(components, np.array([7., 9.5]), 'speed')
+            assert [component.speed for component in components] == pytest.approx([7., 9.5])
+            np.testing.assert_allclose(batch_read(components, 'speed'), [7., 9.5])
+        finally:
+            for component in components:
+                component._call_on_destroy()
 
 
 class TestAnnotationOnlyDeclarations:

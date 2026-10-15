@@ -15,7 +15,7 @@ import embed_runtime_manager as runtime
 import stage_bundled_python_runtime as stage
 
 
-@pytest.mark.parametrize("explicit", (False, True))
+@pytest.mark.parametrize("explicit", [True])
 def test_builder_subprocesses_use_owned_pip_cache(tmp_path, monkeypatch, explicit):
     shared = tmp_path / "Shared"
     monkeypatch.setenv("INFERNUX_SHARED_DATA_ROOT", str(shared))

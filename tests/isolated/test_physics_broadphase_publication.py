@@ -18,9 +18,10 @@ def run_case(project, mode, repeats, motion):
     assert json.loads((project / "broadphase-evidence.json").read_text())["passed"]
 
 
-@pytest.mark.parametrize("motion", ["static", "dynamic", "kinematic"])
-@pytest.mark.parametrize("mode", ["add", "remove"])
-@pytest.mark.parametrize("repeats", [1, 2, 4])
+# All motion/add-remove routes, plus one repeated-toggle publication boundary.
+@pytest.mark.parametrize("motion,mode,repeats", [
+    (motion, mode, 1) for motion in ("static", "dynamic", "kinematic") for mode in ("add", "remove")
+] + [("dynamic", "add", 4), ("dynamic", "remove", 4)])
 def test_same_frame_collider_toggles_publish_one_body(tmp_path, mode, repeats, motion):
     run_case(tmp_path, mode, repeats, motion)
 
@@ -35,8 +36,8 @@ def test_reenabled_collider_publishes_disabled_authored_configuration(tmp_path):
     run_case(tmp_path, "configuration", 1, "dynamic")
 
 
-@pytest.mark.parametrize("force", ["linear", "angular", "position"])
-@pytest.mark.parametrize("cancel", [0, 1, 2])
+@pytest.mark.parametrize("force,cancel", [(force, 0) for force in ("linear", "angular", "position")]
+    + [("linear", 1), ("linear", 2)])
 def test_force_after_enable_waits_for_actual_residency(tmp_path, force, cancel):
     run_case(tmp_path, "pending_force_" + force, cancel, "dynamic")
 

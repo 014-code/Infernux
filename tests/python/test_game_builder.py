@@ -1,12 +1,10 @@
 from __future__ import annotations
-import importlib.util
-import importlib.machinery
 import hashlib
 import json
 import os
 from collections import defaultdict
 from pathlib import Path
-import py_compile
+import py_compile as py_compile
 import shutil
 import subprocess
 import sys
@@ -16,18 +14,18 @@ from types import SimpleNamespace
 import pytest
 from infernux.engine.build_cancellation import BuildCancelled
 from infernux.engine import game_builder as game_builder_module
-from infernux.engine.game_builder import BuildOutputDirectoryError, GameBuilder
+from infernux.engine.game_builder import BuildOutputDirectoryError as BuildOutputDirectoryError, GameBuilder
 from infernux.engine.runtime_artifact_catalog import (
     RuntimeArtifactError,
     artifact_source_hash,
     build_catalog,
     logical_type_for_path,
-    load_asset_index,
+    load_asset_index as load_asset_index,
     payload_kind_for,
     runtime_artifact_reason_for,
     source_fingerprint,
     unix_ns_to_filetime_ticks,
-    validate_artifact,
+    validate_artifact as validate_artifact,
 )
 from infernux.engine import nuitka_builder as nuitka_builder_module
 from infernux.engine import player_package_audit as player_package_audit_module
@@ -39,7 +37,7 @@ from infernux.engine.player_package_native import (
     set_test_backend,
     write_pack,
 )
-from infernux.engine.player_service_graph import forbidden_player_service_modules
+from infernux.engine.player_service_graph import forbidden_player_service_modules as forbidden_player_service_modules
 from infernux.lifecycle import PreloadContext
 from infernux.particle.asset import ParticleGraphAsset
 from infernux.plugins.preload import PreloadManager
@@ -1001,17 +999,19 @@ def test_all_runtime_document_and_audio_sources_are_library_only(suffix):
         )
 
 
-@pytest.mark.parametrize("suffix", RUNTIME_DOCUMENT_AND_AUDIO_SUFFIXES)
-def test_all_runtime_document_and_audio_library_paths_are_compiled_artifacts(suffix):
-    if suffix == ".inxdata":
-        directory, artifact_suffix = "Data", ".inxasset"
-    else:
-        directory = "Audio" if suffix in {".wav", ".ogg", ".mp3", ".flac", ".aiff", ".aif"} else "Document"
-        artifact_suffix = suffix
-    artifact_type = logical_type_for_path(
-        f"Library/Artifacts/{directory}/asset-guid{artifact_suffix}"
-    )
-    assert payload_kind_for(artifact_type) == "compiled_artifact"
+@pytest.mark.parametrize("runtime_path,logical_type", [
+    ("Library/Artifacts/Document/asset-guid.scene", "scene_artifact"),
+    ("Library/Artifacts/Document/asset-guid.custom", "project_runtime_document_artifact"),
+    ("Library/Artifacts/Data/asset-guid.inxasset", "data_asset_artifact"),
+    ("Library/Artifacts/Audio/asset-guid.wav", "audio_artifact"),
+    ("Library/Artifacts/Blob/asset-guid.bin", "project_runtime_blob_artifact"),
+    ("Library/Artifacts/Document/asset-guid.inxdoc", "document_artifact"),
+])
+def test_library_artifact_directory_and_extension_precedence(runtime_path, logical_type):
+    # Directory dispatch is independent of the full source suffix policy above.
+    # Keep the named-document/fallback split and the early binary document rule.
+    assert logical_type_for_path(runtime_path) == logical_type
+    assert payload_kind_for(logical_type) == "compiled_artifact"
 
 
 def test_source_fingerprint_accepts_cross_platform_timestamp_when_content_matches(tmp_path):

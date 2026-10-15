@@ -16,7 +16,7 @@ import math
 import os
 
 
-import threading
+import threading as threading
 
 
 import subprocess
@@ -37,7 +37,7 @@ from types import SimpleNamespace
 import pytest
 
 
-from infernux.lib import AssetRegistry, GameObject, InxMaterial, SceneManager, Vector3, PrimitiveType, quatf
+from infernux.lib import AssetRegistry, GameObject, InxMaterial as InxMaterial, SceneManager, Vector3, PrimitiveType, quatf
 
 
 from infernux.components import (
@@ -59,21 +59,21 @@ from infernux.components.ref_wrappers import ComponentRef, GameObjectRef
 
 
 from infernux.engine.component_restore import (
-    PythonComponentRestoreError,
+    PythonComponentRestoreError as PythonComponentRestoreError,
     clone_game_object_transactionally,
-    deserialize_scene_document_transactionally,
+    deserialize_scene_document_transactionally as deserialize_scene_document_transactionally,
     deserialize_game_object_document_transactionally,
-    instantiate_game_object_document_transactionally,
+    instantiate_game_object_document_transactionally as instantiate_game_object_document_transactionally,
     instantiate_prepared_game_object_document,
     preflight_game_object_python_components,
-    preflight_scene_python_components,
-    replace_scene_python_components_for_play,
+    preflight_scene_python_components as preflight_scene_python_components,
+    replace_scene_python_components_for_play as replace_scene_python_components_for_play,
 )
 
 
 from infernux.engine.scene_document_transaction import (
-    SceneDocumentTransaction,
-    SceneDocumentTransactionState,
+    SceneDocumentTransaction as SceneDocumentTransaction,
+    SceneDocumentTransactionState as SceneDocumentTransactionState,
 )
 
 
@@ -83,7 +83,7 @@ from infernux.engine.scene_manager import SceneFileManager
 from infernux.engine.scene_authoring import encode_scene_document, encode_runtime_scene_artifact
 
 
-from infernux.engine.prefab_manager import PrefabDocumentError, _strip_prefab_runtime_fields
+from infernux.engine.prefab_manager import PrefabDocumentError as PrefabDocumentError, _strip_prefab_runtime_fields
 
 
 from infernux.instantiate import Instantiate
@@ -317,17 +317,8 @@ def test_removed_component_watermark_is_persisted_without_saving_the_live_compon
 
 
 class TestSceneLifecycle:
-    def test_create_scene(self, scene):
-        assert scene is not None
-        assert scene.name == "pytest_scene"
 
-    def test_active_scene(self, scene):
-        sm = SceneManager.instance()
-        assert sm.get_active_scene() is scene
 
-    def test_scene_starts_empty(self, scene):
-        assert len(scene.get_root_objects()) == 0
-        assert len(scene.get_all_objects()) == 0
 
     def test_public_loaded_scene_directory_is_distinct_from_build_list(self, scene, monkeypatch):
         from infernux.scene import SceneManager as PublicSceneManager
@@ -566,27 +557,9 @@ class TestGameObject:
         with pytest.raises(RuntimeError, match="intentional serialization failure"):
             scene.serialize_document()
 
-    def test_create_game_object(self, scene):
-        go = scene.create_game_object("TestObj")
-        assert go.name == "TestObj"
-        assert go.active is True
 
-    def test_unique_ids(self, scene):
-        a = scene.create_game_object("A")
-        b = scene.create_game_object("B")
-        assert a.id != b.id
 
-    def test_find_by_name(self, scene):
-        go = scene.create_game_object("Searchable")
-        found = scene.find("Searchable")
-        assert found is not None
-        assert found.id == go.id
 
-    def test_find_by_id(self, scene):
-        go = scene.create_game_object("ById")
-        found = scene.find_by_id(go.id)
-        assert found is not None
-        assert found.name == "ById"
 
     def test_object_handles_reject_rebuilt_scene_lifetimes(self, scene):
         go = scene.create_game_object("HandleOwner")
@@ -624,13 +597,7 @@ class TestGameObject:
 
         assert scene.resolve_game_object(wrong_world) is None
 
-    def test_find_nonexistent_returns_none(self, scene):
-        assert scene.find("$$$nonexistent$$$") is None
 
-    def test_get_all_objects(self, scene):
-        scene.create_game_object("X")
-        scene.create_game_object("Y")
-        assert len(scene.get_all_objects()) == 2
 
     def test_python_component_queries_follow_stable_type_identity_across_reload(self, scene):
         namespace = {"__module__": __name__, "__qualname__": "_ReloadedQueryComponent"}
@@ -650,18 +617,7 @@ class TestGameObject:
         assert parent.get_component_in_children(new_type) is component
         assert child.get_component_in_parent(new_type) is component
 
-    def test_destroy_game_object(self, scene):
-        go = scene.create_game_object("Temp")
-        scene.destroy_game_object(go)
-        scene.process_pending_destroys()
-        assert scene.find("Temp") is None
 
-    def test_deactivate_game_object(self, scene):
-        go = scene.create_game_object("Toggle")
-        go.active = False
-        assert go.active is False
-        go.active = True
-        assert go.active is True
 
     def test_batch_component_removal_restores_ids_and_selection(self, scene):
         from infernux.engine.interaction import (
@@ -1014,86 +970,8 @@ class TestGameObject:
         )
 
 
-class TestHierarchy:
-    def test_set_parent(self, scene):
-        parent = scene.create_game_object("Parent")
-        child = scene.create_game_object("Child")
-        child.set_parent(parent)
-        assert child.get_parent().id == parent.id
-        assert len(parent.get_children()) == 1
-
-    def test_unparent(self, scene):
-        parent = scene.create_game_object("P")
-        child = scene.create_game_object("C")
-        child.set_parent(parent)
-        child.set_parent(None)
-        assert child.get_parent() is None
-
-    def test_root_objects_exclude_children(self, scene):
-        parent = scene.create_game_object("Root")
-        child = scene.create_game_object("Leaf")
-        child.set_parent(parent)
-        roots = scene.get_root_objects()
-        root_ids = {o.id for o in roots}
-        assert parent.id in root_ids
-        assert child.id not in root_ids
-
-    def test_multiple_children(self, scene):
-        parent = scene.create_game_object("P")
-        for i in range(5):
-            c = scene.create_game_object(f"C{i}")
-            c.set_parent(parent)
-        assert len(parent.get_children()) == 5
 
 
-class TestTransform:
-    def test_default_position_is_origin(self, scene):
-        go = scene.create_game_object("T")
-        pos = go.transform.position
-        assert (pos.x, pos.y, pos.z) == pytest.approx((0, 0, 0))
-
-    def test_set_position(self, scene):
-        go = scene.create_game_object("T")
-        go.transform.position = Vector3(1, 2, 3)
-        pos = go.transform.position
-        assert (pos.x, pos.y, pos.z) == pytest.approx((1, 2, 3))
-
-    def test_local_vs_world_position(self, scene):
-        parent = scene.create_game_object("P")
-        parent.transform.position = Vector3(10, 0, 0)
-        child = scene.create_game_object("C")
-        child.set_parent(parent)
-        child.transform.local_position = Vector3(0, 5, 0)
-        world = child.transform.position
-        assert world.x == pytest.approx(10)
-        assert world.y == pytest.approx(5)
-
-    def test_scale(self, scene):
-        go = scene.create_game_object("S")
-        go.transform.local_scale = Vector3(2, 3, 4)
-        s = go.transform.local_scale
-        assert (s.x, s.y, s.z) == pytest.approx((2, 3, 4))
-
-    def test_rotation_euler(self, scene):
-        go = scene.create_game_object("R")
-        go.transform.euler_angles = Vector3(0, 90, 0)
-        angles = go.transform.euler_angles
-        assert angles.y == pytest.approx(90, abs=0.5)
-
-    def test_component_writeback_on_position(self, scene):
-        go = scene.create_game_object("Writeback")
-        go.transform.position = Vector3(1, 2, 3)
-        go.transform.position.x += 4.0
-        go.transform.position.y = 9.0
-        pos = go.transform.position
-        assert (pos.x, pos.y, pos.z) == pytest.approx((5, 9, 3))
-
-    def test_inplace_add_writeback_on_position(self, scene):
-        go = scene.create_game_object("Inplace")
-        go.transform.position = Vector3(1, 0, 0)
-        go.transform.position += Vector3(2, 3, 4)
-        pos = go.transform.position
-        assert (pos.x, pos.y, pos.z) == pytest.approx((3, 3, 4))
 
 
 class TestPrimitives:
@@ -1112,27 +990,6 @@ class TestPrimitives:
             areas.append(0.5 * math.sqrt(sum(component * component for component in cross)))
         return areas
 
-    @pytest.mark.parametrize("ptype", [
-        PrimitiveType.Cube,
-        PrimitiveType.Sphere,
-        PrimitiveType.Plane,
-        PrimitiveType.Cylinder,
-        PrimitiveType.Capsule,
-    ])
-    def test_create_primitive(self, scene, ptype):
-        go = scene.create_primitive(ptype, f"Prim_{ptype.name}")
-        assert go is not None
-        comps = [c.type_name for c in go.get_components()]
-        assert "Transform" in comps
-        assert "MeshRenderer" in comps
-        expected_collider = {
-            PrimitiveType.Cube: "BoxCollider",
-            PrimitiveType.Sphere: "SphereCollider",
-            PrimitiveType.Capsule: "CapsuleCollider",
-            PrimitiveType.Cylinder: "CylinderCollider",
-            PrimitiveType.Plane: "MeshCollider",
-        }[ptype]
-        assert expected_collider in comps
 
     def test_cylinder_primitive_collider_keeps_vertical_default_axis(self, scene):
         cylinder = scene.create_primitive(PrimitiveType.Cylinder, "VerticalCylinder")
@@ -1142,13 +999,6 @@ class TestPrimitives:
         assert collider.height == pytest.approx(1.0)
         assert collider.radius == pytest.approx(0.5)
 
-    def test_primitive_has_mesh_data(self, scene):
-        cube = scene.create_primitive(PrimitiveType.Cube, "Cube")
-        mr = cube.get_component("MeshRenderer")
-        positions = mr.get_positions()
-        indices = mr.get_indices()
-        assert len(positions) > 0
-        assert len(indices) > 0
 
     @pytest.mark.parametrize(
         "primitive_type,expected_mesh_name",
@@ -1237,23 +1087,7 @@ class TestPrimitives:
 
 
 class TestInstantiate:
-    def test_clone_game_object(self, scene):
-        original = scene.create_game_object("Original")
-        original.transform.position = Vector3(5, 5, 5)
-        clone = scene._clone_game_object(original)
-        assert clone is not None
-        assert "Clone" in clone.name
-        pos = clone.transform.position
-        assert pos.x == pytest.approx(5)
 
-    def test_clone_with_components(self, scene):
-        go = scene.create_game_object("WithRB")
-        rb = go.add_component("Rigidbody")
-        rb.mass = 7.5
-        clone = scene._clone_game_object(go)
-        clone_rb = clone.get_component("Rigidbody")
-        assert clone_rb is not None
-        assert clone_rb.mass == pytest.approx(7.5)
 
     def test_transactional_clone_preserves_live_python_fields(self, scene):
         original = scene.create_game_object("PythonCloneSource")
@@ -2788,3 +2622,52 @@ class TestInstantiate:
         finally:
             SceneFileManager._instance = previous_manager
             set_project_root(previous_root)
+
+
+def test_scene_hierarchy_edit_query_and_destroy_workflow(scene):
+    assert SceneManager.instance().get_active_scene() is scene
+    assert not scene.get_all_objects() and not scene.get_root_objects()
+    parent = scene.create_game_object("Parent")
+    child = scene.create_game_object("Child")
+    assert parent.active and child.active and parent.id != child.id
+    assert scene.find("Parent") is parent and scene.find_by_id(child.id) is child
+    assert scene.find("MissingObject") is None
+    child.set_parent(parent)
+    assert child.get_parent() is parent and parent.get_children() == [child]
+    assert scene.get_root_objects() == [parent]
+    assert {obj.id for obj in scene.get_all_objects()} == {parent.id, child.id}
+    parent.transform.position = Vector3(10, 0, 0)
+    child.transform.local_position = Vector3(0, 5, 0)
+    assert tuple(child.transform.position) == pytest.approx((10, 5, 0))
+    child.set_parent(None, True)
+    assert child.get_parent() is None
+    assert tuple(child.transform.position) == pytest.approx((10, 5, 0))
+    child.active = False
+    assert not child.active
+    child.active = True
+    assert child.active
+    scene.destroy_game_object(parent)
+    scene.process_pending_destroys()
+    assert scene.find("Parent") is None and scene.find("Child") is child
+    scene.destroy_game_object(child)
+    scene.process_pending_destroys()
+    assert not scene.get_all_objects()
+
+
+def test_transform_authoring_writeback_and_document_restore(scene):
+    owner = scene.create_game_object("TransformAuthoring")
+    assert tuple(owner.transform.position) == (0, 0, 0)
+    owner.transform.position = Vector3(1, 2, 3)
+    owner.transform.position.x += 4
+    owner.transform.position.y = 9
+    assert tuple(owner.transform.position) == pytest.approx((5, 9, 3))
+    owner.transform.position += Vector3(2, 3, 4)
+    owner.transform.local_scale = Vector3(2, 3, 4)
+    owner.transform.euler_angles = Vector3(0, 90, 0)
+    document = owner.serialize_document()
+    owner.transform.position = Vector3(0, 0, 0)
+    owner.transform.local_scale = Vector3(1, 1, 1)
+    assert deserialize_game_object_document_transactionally(owner, document)
+    assert tuple(owner.transform.position) == pytest.approx((7, 12, 7))
+    assert tuple(owner.transform.local_scale) == pytest.approx((2, 3, 4))
+    assert owner.transform.euler_angles.y == pytest.approx(90, abs=0.5)

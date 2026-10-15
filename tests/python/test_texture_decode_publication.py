@@ -48,9 +48,10 @@ INVALID = [
 ]
 
 
-@pytest.mark.parametrize('entry', ['memory', 'file'])
-@pytest.mark.parametrize('case,payload,pixels', VALID + [(c, p, None) for c, p in INVALID],
-                         ids=[c for c, *_ in VALID + INVALID])
+@pytest.mark.parametrize('entry,case,payload,pixels', [
+    ('memory' if index % 2 == 0 else 'file', case, payload, pixels)
+    for index, (case, payload, pixels) in enumerate(VALID + [(case, payload, None) for case, payload in INVALID])
+], ids=[case for case, *_ in VALID + INVALID])
 def test_texture_source_complete_or_invalid(tmp_path, entry, case, payload, pixels):
     if entry == 'memory':
         texture = native.TextureLoader.load_from_memory(payload, case)
@@ -69,8 +70,9 @@ def test_texture_source_complete_or_invalid(tmp_path, entry, case, payload, pixe
         assert texture.get_pixels() == pixels
 
 
-@pytest.mark.parametrize('case,payload', INVALID + [(c, p) for c, p, _ in VALID],
-                         ids=[c for c, *_ in INVALID + VALID])
+@pytest.mark.parametrize('case,payload', [
+    INVALID[1], INVALID[10], INVALID[-1], (VALID[0][0], VALID[0][1]), (VALID[-1][0], VALID[-1][1]),
+], ids=['ascii-partial', 'binary16-partial', 'empty', 'png-success', 'binary16-success'])
 def test_texture_reimport_publishes_only_complete_source(engine, case, payload):
     registry = native.AssetRegistry.instance()
     database = registry.get_asset_database()

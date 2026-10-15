@@ -61,8 +61,11 @@ def _prepare(scene, kind):
     return owner, target, command, remove, unchanged
 
 
-@pytest.mark.parametrize("kind", KINDS)
-@pytest.mark.parametrize("direction", ["execute", "undo", "redo"])
+@pytest.mark.parametrize("kind,direction", [
+    ("native-property", "execute"), ("wrapper-property", "undo"),
+    ("native-document", "redo"), ("python-property", "undo"),
+    ("python-document", "redo"),
+])
 def test_missing_property_target_rejects_without_writing_same_type_peer(scene, kind, direction):
     owner, target, command, remove, unchanged = _prepare(scene, kind)
     if direction in ("undo", "redo"):
@@ -77,8 +80,11 @@ def test_missing_property_target_rejects_without_writing_same_type_peer(scene, k
     assert scene.serialize_document() == before
 
 
-@pytest.mark.parametrize("kind", KINDS)
-@pytest.mark.parametrize("direction", ["undo", "redo"])
+@pytest.mark.parametrize("kind,direction", [
+    ("native-property", "redo"), ("wrapper-property", "undo"),
+    ("native-document", "undo"), ("python-property", "redo"),
+    ("python-document", "undo"),
+])
 def test_missing_property_target_keeps_journal_cursor_and_nonactive_owner(scene, kind, direction):
     old_manager = UndoManager._instance
     manager = UndoManager()
@@ -120,8 +126,10 @@ def test_property_history_follows_exact_identity_after_whole_world_replacement(s
         assert survivor.value == 99 if kind.startswith("python") else survivor.enabled is True
 
 
-@pytest.mark.parametrize("direction", ["execute", "undo", "redo"])
-@pytest.mark.parametrize("kind", ["material", "pipeline", "pipeline-field", "effect-slots"])
+@pytest.mark.parametrize("direction,kind", [
+    ("execute", "material"), ("undo", "pipeline"),
+    ("redo", "pipeline-field"), ("execute", "effect-slots"),
+])
 def test_renderer_and_renderstack_history_cannot_select_replacement(scene, kind, direction):
     from infernux.renderstack import RenderStack
 

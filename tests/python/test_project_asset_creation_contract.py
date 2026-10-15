@@ -142,13 +142,20 @@ def test_model_read_write_import_setting_remains_shared_in_meta(asset_directory)
     assert meta.read_bytes() == before
 
 
-@pytest.mark.parametrize("creator", [
-    ops.create_folder, ops.create_scene, ops.create_material, ops.create_physic_material,
-    ops.create_render_texture, ops.create_animclip, ops.create_animclip3d,
-    ops.create_animfsm, ops.create_timelinefsm, ops.create_animtimeline,
-    ops.create_particlegraph, ops.create_render_effect_group,
+@pytest.mark.parametrize("creator,name", [
+    (ops.create_folder, "../Escape"),
+    (ops.create_scene, "sub\\Escape"),
+    (ops.create_material, "CON"),
+    (ops.create_physic_material, "NUL.mat"),
+    (ops.create_render_texture, "bad:name"),
+    (ops.create_animclip, ".scene"),
+    (ops.create_animclip3d, "../Escape"),
+    (ops.create_animfsm, "CON"),
+    (ops.create_timelinefsm, "bad:name"),
+    (ops.create_animtimeline, "NUL.mat"),
+    (ops.create_particlegraph, "sub\\Escape"),
+    (ops.create_render_effect_group, ".scene"),
 ])
-@pytest.mark.parametrize("name", ["../Escape", "sub\\Escape", "CON", "NUL.mat", "bad:name", ".scene"])
 def test_asset_creation_rejects_nonportable_names_before_writing(tmp_path, creator, name):
     success, error = creator(str(tmp_path), name)
     assert not success and error

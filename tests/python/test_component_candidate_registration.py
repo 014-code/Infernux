@@ -1079,8 +1079,10 @@ def test_committed_schema_rollback_does_not_depend_on_per_slot_free(
     def reject_redundant_slot_free(*_args):
         raise AssertionError("committed schema rollback must destroy candidate storage atomically")
 
-    monkeypatch.setattr(probe, "_cds_free", reject_redundant_slot_free)
-    transaction.rollback()
+    # Restored old slots still need normal finalizer cleanup after this call.
+    with monkeypatch.context() as rollback_patch:
+        rollback_patch.setattr(probe, "_cds_free", reject_redundant_slot_free)
+        transaction.rollback()
 
     assert transaction.rolled_back
     assert all(instance._cds_class_id == old_class_id for instance in instances)

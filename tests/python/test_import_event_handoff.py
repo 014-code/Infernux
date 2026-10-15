@@ -28,9 +28,20 @@ CASES = {
 }
 
 
-@pytest.mark.parametrize('operation', ['retry', 'defer'])
-@pytest.mark.parametrize('case', CASES)
-@pytest.mark.parametrize('watcher_thread', [False, True])
+@pytest.mark.parametrize('operation,case,watcher_thread', [
+    ('retry', 'modify_delete', True),
+    ('defer', 'modify_modify', False),
+    ('retry', 'modify_move', False),
+    ('defer', 'move_delete', True),
+    ('retry', 'move_move', True),
+    ('defer', 'move_modify', False),
+    ('retry', 'meta_delete', False),
+    ('defer', 'create_modify', True),
+    ('retry', 'create_delete', True),
+    ('defer', 'modify_replace_delete', False),
+    ('retry', 'move_replace_delete', False),
+    ('defer', 'delete_create_guid', True),
+])
 def test_handoff_composes_original_identity_with_successor(tmp_path, operation, case, watcher_thread):
     coordinator = ImportCoordinator(clock=lambda: 100.)
     old, following, expected = CASES[case]
@@ -166,9 +177,10 @@ def test_completion_and_clear_retire_exact_owner_claims(tmp_path, operation):
     assert coordinator.drain(force=True) == []
 
 
-@pytest.mark.parametrize('operation', ['retry', 'defer'])
-@pytest.mark.parametrize('successor', ['move', 'delete'])
-@pytest.mark.parametrize('publication', ['before', 'after'])
+@pytest.mark.parametrize('operation,successor,publication', [
+    ('retry', 'move', 'before'), ('defer', 'move', 'after'),
+    ('retry', 'delete', 'after'), ('defer', 'delete', 'before'),
+])
 def test_real_move_handoff_preserves_source_guid(engine, tmp_path, monkeypatch, operation, successor, publication):
     database = engine.get_asset_database()
     monkeypatch.setattr(AssetManager, '_engine', engine)

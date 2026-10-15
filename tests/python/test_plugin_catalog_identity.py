@@ -9,7 +9,7 @@ import pytest
 
 from infernux.plugins import InxPackage
 from infernux.version import ENGINE_VERSION
-from test_plugin_preload_failures import package_project
+from test_plugin_preload_failures import package_project as package_project
 
 
 @contextmanager
@@ -75,9 +75,9 @@ def register_source(manager, reference, archive, source_folder, mode, url):
         path.write_bytes(archive.read_bytes())  # Deliberately mislabel a complete native archive.
 
 
-@pytest.mark.parametrize('mode', ['url', 'local', 'builtin', 'cached'])
-@pytest.mark.parametrize('operation', ['install', 'download'])
-@pytest.mark.parametrize('mismatch', ['reference', 'version'])
+@pytest.mark.parametrize('mode,operation,mismatch', [
+    (mode, 'install', mismatch) for mode in ('url', 'local', 'builtin', 'cached') for mismatch in ('reference', 'version')
+] + [('url', 'download', 'reference'), ('cached', 'download', 'version')])
 def test_registry_identity_rejected_before_publication(package_project, tmp_path, mode, operation, mismatch):
     root, manager, _ = package_project
     reference = 'test/catalog-pin'

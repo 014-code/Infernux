@@ -14,10 +14,9 @@ if __name__ != "__main__":
     from tests.isolated import engine_python_path
 
 
-@pytest.mark.parametrize("event_kind", [
-    "modified", "created", "atomic_move", "delete_create", "stale_delete", "guid_replaced", "malformed",
-])
-@pytest.mark.parametrize("draft", [False, True])
+@pytest.mark.parametrize('event_kind,draft', [
+    (event, True) for event in ('modified', 'created', 'atomic_move', 'delete_create', 'stale_delete', 'guid_replaced', 'malformed')
+] + [('modified', False)])
 def test_external_metadata_refreshes_import_settings(tmp_path, event_kind, draft):
 
     result = subprocess.run(

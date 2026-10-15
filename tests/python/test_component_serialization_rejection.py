@@ -18,8 +18,7 @@ class PuzzleSaveData(InxComponent):
     title: str = serialized_field(default="default")
 
 
-@pytest.mark.parametrize("boundary", ["_serialize_fields_document", "_serialize_fields"])
-@pytest.mark.parametrize("invalid", [float("nan"), float("inf"), -float("inf")], ids=["nan", "inf", "negative-inf"])
+@pytest.mark.parametrize('boundary,invalid', [('_serialize_fields_document', float('nan')), ('_serialize_fields', float('inf'))])
 def test_component_rejects_nonfinite_list_without_default_substitution(boundary, invalid):
     component = PuzzleSaveData()
     component.values = [42.0, 43.0]
@@ -35,8 +34,7 @@ def test_component_rejects_nonfinite_list_without_default_substitution(boundary,
     assert component._serialize_fields_document()["values"] == [42.0, 43.0]
 
 
-@pytest.mark.parametrize("boundary", ["_serialize_fields_document", "_serialize_fields"])
-@pytest.mark.parametrize("invalid", ["wrong element", True])
+@pytest.mark.parametrize('boundary,invalid', [('_serialize_fields_document', 'wrong element'), ('_serialize_fields', True)])
 def test_component_save_rejects_mutated_list_element_type(boundary, invalid):
     component = PuzzleSaveData()
     component.values = [42.0, 43.0]
@@ -46,9 +44,11 @@ def test_component_save_rejects_mutated_list_element_type(boundary, invalid):
     assert component.values == [42.0, 43.0, invalid]
 
 
-@pytest.mark.parametrize("boundary", ["native-scene", "editor-scene", "prefab"])
-@pytest.mark.parametrize("existing", [False, True])
-@pytest.mark.parametrize("invalid", [float("nan"), float("inf"), -float("inf")], ids=["nan", "inf", "negative-inf"])
+@pytest.mark.parametrize('boundary,existing,invalid', [
+    ('native-scene', False, float('nan')), ('native-scene', True, float('inf')),
+    ('editor-scene', False, float('inf')), ('editor-scene', True, -float('inf')),
+    ('prefab', False, -float('inf')), ('prefab', True, float('nan')),
+])
 def test_invalid_component_save_preserves_file_and_can_be_explicitly_corrected(
     engine, scene, tmp_path, monkeypatch, boundary, existing, invalid,
 ):

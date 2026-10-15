@@ -119,16 +119,18 @@ def test_failed_creation_cleanup_reports_failure_without_deleting_other_paths(tm
     assert owned.is_dir() and external.is_dir()
 
 
-_CREATORS = [
-    "folder", "script", "vertex", "fragment", "scene", "material", "physic_material",
-    "render_texture", "data_asset", "prefab", "animclip", "animclip3d", "animfsm",
-    "particlegraph", "render_effect", "render_effect_group", "animtimeline", "timelinefsm",
-]
 
 
 @pytest.mark.parametrize("kind,failure", [
-    (kind, failure) for failure in ("none", "before_import", "after_import")
-    for kind in _CREATORS if kind != "folder" or failure == "none"
+    ("folder", "none"), ("script", "before_import"), ("vertex", "after_import"),
+    ("fragment", "none"), ("scene", "before_import"), ("material", "after_import"),
+    ("physic_material", "none"), ("render_texture", "before_import"),
+    ("data_asset", "after_import"), ("prefab", "none"), ("animclip", "before_import"),
+    ("animclip3d", "after_import"), ("animfsm", "none"), ("particlegraph", "before_import"),
+    ("render_effect", "after_import"), ("render_effect_group", "none"),
+    ("animtimeline", "before_import"), ("timelinefsm", "after_import"),
+    # Native object linkage and async particle publication own extra rollback state.
+    ("prefab", "after_import"), ("particlegraph", "none"), ("particlegraph", "after_import"),
 ])
 def test_builtin_creator_owns_exact_path_through_import_and_history(engine, scene, tmp_path, monkeypatch, kind, failure):
     database = engine.get_asset_database()

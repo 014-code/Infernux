@@ -28,8 +28,10 @@ def _run(project, query, action):
     assert json.loads((project / "record-evidence.json").read_text(encoding="utf-8"))["status"] == "passed"
 
 
-@pytest.mark.parametrize("query", QUERIES)
-@pytest.mark.parametrize("action", ACTIONS)
+# The query adapters produce the same retained value type. Cover each adapter
+# once and every retirement rule on raycast; collision has a separate payload.
+@pytest.mark.parametrize("query,action", [(query, "destroy") for query in QUERIES]
+    + [("raycast", action) for action in ACTIONS if action != "destroy"])
 def test_retained_query_targets_follow_native_lifetimes(tmp_path, query, action):
     _run(tmp_path, query, action)
 

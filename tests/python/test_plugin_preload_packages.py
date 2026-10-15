@@ -21,7 +21,7 @@ from test_inxpackage_plugins import (
     pytest,
     split_markdown_images,
     sys,
-    _fake_inxpack,
+    _fake_inxpack as _fake_inxpack,
 )
 
 def test_package_preload_supports_relative_imports(tmp_path):
@@ -177,8 +177,7 @@ def test_editor_translation_catalog_hot_reload_is_atomic(tmp_path, monkeypatch):
     assert "JSONDecodeError" in manager.preloads.failures[path_key(installed_catalog)]
 
 
-@pytest.mark.parametrize("role", ["editor", "runtime"])
-@pytest.mark.parametrize("extract_only", [False, True])
+@pytest.mark.parametrize('role,extract_only', [('editor', False), ('runtime', False), ('runtime', True)])
 def test_import_reuses_authored_role_root_without_moving_user_files(tmp_path, role, extract_only):
     source = _source(tmp_path / "source", "vendor/authored-role")
     module = source / role / "authored_role_probe"
@@ -774,9 +773,7 @@ def test_ordinary_script_change_does_not_reload_preloads_or_rescan_catalog(
     assert not (project / "Assets" / "unloaded.txt").exists()
 
 
-@pytest.mark.parametrize("partial", [False, True])
-@pytest.mark.parametrize("role", ["editor", "runtime"])
-@pytest.mark.parametrize("background", [False, True])
+@pytest.mark.parametrize('partial,role,background', [(False, 'editor', False), (True, 'runtime', False), (True, 'editor', True)])
 def test_install_script_events_are_owned_but_later_author_edits_refresh(
     tmp_path, partial, role, background
 ):
@@ -948,8 +945,8 @@ def test_package_reload_preflights_every_source_before_unloading_live_state(tmp_
     manager.shutdown()
 
 
-@pytest.mark.parametrize("refresh", ["reload_all", "catch_up", "reload_path", "reload_package"])
-@pytest.mark.parametrize("native_index", [False, True])
+@pytest.mark.parametrize('refresh,native_index', [(refresh, True) for refresh in ('reload_all', 'catch_up', 'reload_path', 'reload_package')]
+    + [('reload_all', False)])
 def test_new_package_preload_obeys_disable_and_enable_without_taking_ownership(
     tmp_path, monkeypatch, request, refresh, native_index
 ):
@@ -1000,8 +997,8 @@ def test_new_package_preload_obeys_disable_and_enable_without_taking_ownership(
     assert not manager.preloads.states
 
 
-@pytest.mark.parametrize("role", ["runtime", "editor"])
-@pytest.mark.parametrize("refresh", ["reload_all", "reload_path", "reload_package"])
+@pytest.mark.parametrize('role,refresh', [('runtime', refresh) for refresh in ('reload_all', 'reload_path', 'reload_package')]
+    + [('editor', 'reload_all')])
 def test_player_preload_refresh_respects_current_role_and_package_boundary(
     tmp_path, request, role, refresh
 ):

@@ -29,7 +29,7 @@ import weakref
 import uuid
 from dataclasses import dataclass
 from pathlib import PurePosixPath, PureWindowsPath
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Type
 
 from infernux.core.material import Material
 from infernux.core.texture import Texture
@@ -57,6 +57,9 @@ from infernux.core.animation_timeline import AnimationTimeline
 from infernux.debug import Debug
 from infernux.engine.path_utils import managed_asset_glob_match, path_key, portable_path, resolved_path
 
+if TYPE_CHECKING:
+    from infernux.core.document_store import DocumentWriteTicket
+
 # ── Constants ──
 _META_SUPPRESSION_TIMEOUT: float = 2.0  # seconds
 _DEFAULT_DEBOUNCE_SEC: float = 0.35  # seconds
@@ -81,7 +84,7 @@ class _AssetRevisionState:
 @dataclass(slots=True)
 class _PendingDocumentWrite:
     path: str
-    ticket: Any
+    ticket: DocumentWriteTicket
     edit_revision: int
     requested_write_revision: int
     commit_token: str
@@ -96,7 +99,7 @@ class _PendingDocumentWrite:
 class _SelfWriteCommit:
     """The last exact publication that a watcher may acknowledge."""
 
-    ticket: Any
+    ticket: DocumentWriteTicket | None
     commit_token: str
     content_token: str
     file_state: Any = None
@@ -1477,7 +1480,7 @@ class AssetManager:
 
     @classmethod
     def _register_self_write_commit(cls, record: _PendingDocumentWrite) -> None:
-        committed_state = getattr(record.ticket, "committed_file_state", None)
+        committed_state = record.ticket.committed_file_state
         if committed_state is None:
             return
         entries = cls._self_write_commits.setdefault(record.path, [])
@@ -1560,7 +1563,7 @@ class AssetManager:
         if cls._render_effect_save_snapshots.get(normalized) is not None:
             return True
         return any(
-            not bool(getattr(record.ticket, "is_complete", False))
+            not record.ticket.is_complete
             for record in cls._pending_document_write_records.get(normalized, ())
         )
 
@@ -1575,11 +1578,11 @@ class AssetManager:
         records = cls._pending_document_write_records.get(normalized, ())
         for record in records:
             ticket = record.ticket
-            if not bool(getattr(ticket, "is_complete", False)):
+            if not ticket.is_complete:
                 return "pending"
-            if str(getattr(ticket, "status", "") or "").lower() != "succeeded":
+            if ticket.status != "succeeded":
                 continue
-            committed = getattr(ticket, "committed_file_state", None)
+            committed = ticket.committed_file_state
             if committed is not None and cls._file_state_matches(file_path, committed):
                 cls._register_self_write_commit(record)
                 return "ack"
@@ -1593,9 +1596,8 @@ class AssetManager:
             # A completed write with a mismatching fingerprint is an external
             # edit; only an unsent revision should defer the event.
             if not any(
-                bool(getattr(record.ticket, "is_complete", False))
-                and str(getattr(record.ticket, "status", "") or "").lower()
-                == "succeeded"
+                record.ticket.is_complete
+                and record.ticket.status == "succeeded"
                 for record in records
             ):
                 return "pending"
@@ -1858,10 +1860,10 @@ class AssetManager:
             remaining: list[_PendingDocumentWrite] = []
             for record in records:
                 ticket = record.ticket
-                if not bool(getattr(ticket, "is_complete", False)):
+                if not ticket.is_complete:
                     remaining.append(record)
                     continue
-                status = str(getattr(ticket, "status", "") or "").lower()
+                status = ticket.status
                 state = cls._asset_revision_state(path)
                 if status == "succeeded":
                     cls._register_self_write_commit(record)
@@ -1873,14 +1875,14 @@ class AssetManager:
                             state.persisted_revision,
                             record.edit_revision,
                         )
-                    committed_state = getattr(ticket, "committed_file_state", None)
+                    committed_state = ticket.committed_file_state
                     if committed_state is not None and disk_is_current:
                         state.persisted_file_state = committed_state
                         state.expected_file_state = committed_state
                     if record.content_token == state.content_token and record.callback is None:
                         state.content_token = record.content_token
                 elif status not in {"superseded", "cancelled"}:
-                    detail = str(getattr(ticket, "error", "") or "").strip()
+                    detail = ticket.error.strip()
                     Debug.log_error(
                         f"Asset document write failed for '{path}' "
                         f"({status or 'unknown'}): {detail or 'no diagnostic'}"
@@ -2423,11 +2425,11 @@ class AssetManager:
             # Inspect completed records directly so the editor's own replace is
             # acknowledged by commit fingerprint, not by a time window.
             for record in cls._pending_document_write_records.get(normalized, ()):
-                if not bool(getattr(record.ticket, "is_complete", False)):
+                if not record.ticket.is_complete:
                     continue
-                if str(getattr(record.ticket, "status", "") or "").lower() != "succeeded":
+                if record.ticket.status != "succeeded":
                     continue
-                committed = getattr(record.ticket, "committed_file_state", None)
+                committed = record.ticket.committed_file_state
                 if committed is not None and cls._file_state_matches(path, committed):
                     cls._register_self_write_commit(record)
                     return True

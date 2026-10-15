@@ -25,9 +25,11 @@ def _run(project, kind, retirement, access):
     assert json.loads((project / "retirement-evidence.json").read_text(encoding="utf-8"))["status"] == "passed"
 
 
-@pytest.mark.parametrize("kind", ["object", "transform", "component"])
-@pytest.mark.parametrize("retirement", ["destroy", "unload", "replace"])
-@pytest.mark.parametrize("access", ["truth", "property", "saved_method"])
+@pytest.mark.parametrize("kind,retirement,access", [
+    (kind, "destroy", access) for kind in ("object", "transform", "component")
+    for access in ("truth", "property", "saved_method")
+] + [(kind, retirement, "property") for kind in ("object", "transform", "component")
+     for retirement in ("unload", "replace")])
 def test_retired_native_reference_rejects_access(tmp_path, kind, retirement, access):
     _run(tmp_path, kind, retirement, access)
 
@@ -37,8 +39,8 @@ def test_unloaded_scene_reference_rejects_access(tmp_path, access):
     _run(tmp_path, "scene", "unload", access)
 
 
-@pytest.mark.parametrize("kind", ["object", "component"])
-@pytest.mark.parametrize("retirement", ["destroy", "unload", "replace"])
+@pytest.mark.parametrize("kind,retirement", [("object", "destroy"), ("component", "destroy"),
+    ("object", "unload"), ("object", "replace")])
 def test_retired_native_reference_cannot_enter_another_native_call(tmp_path, kind, retirement):
     _run(tmp_path, kind, retirement, "argument")
 
@@ -48,15 +50,12 @@ def test_retained_raycast_record_keeps_values_without_reviving_targets(tmp_path,
     _run(tmp_path, "hit", retirement, "property")
 
 
-@pytest.mark.parametrize("retirement", ["destroy", "unload", "replace"])
-@pytest.mark.parametrize("conversion", ["scalar", "component", "vector_argument", "vector_iteration", "builtin_argument"])
+@pytest.mark.parametrize("retirement,conversion", [('destroy', 'scalar'), ('destroy', 'component'), ('destroy', 'vector_argument'), ('destroy', 'vector_iteration'), ('destroy', 'builtin_argument'), ('unload', 'scalar'), ('replace', 'scalar')])
 def test_native_call_revalidates_after_python_argument_conversion(tmp_path, retirement, conversion):
     _run(tmp_path, "object", retirement, f"reentrant_{conversion}")
 
 
-@pytest.mark.parametrize("retirement", ["destroy", "unload", "replace"])
-@pytest.mark.parametrize("operation", ["component_validate", "component_document", "prefab_document",
-                                       "object_document", "renderer_parameter"])
+@pytest.mark.parametrize("retirement,operation", [('destroy', 'component_validate'), ('destroy', 'component_document'), ('destroy', 'prefab_document'), ('destroy', 'object_document'), ('destroy', 'renderer_parameter'), ('unload', 'component_validate'), ('replace', 'component_validate')])
 def test_native_call_converts_user_data_before_resolving_owner(tmp_path, retirement, operation):
     _run(tmp_path, "object", retirement, f"conversion_{operation}")
 
@@ -66,8 +65,7 @@ def test_scene_document_conversion_cannot_use_unloaded_scene(tmp_path, operation
     _run(tmp_path, "object", "unload", f"conversion_{operation}")
 
 
-@pytest.mark.parametrize("retirement", ["destroy", "unload", "replace"])
-@pytest.mark.parametrize("operation", ["mesh_normals", "mesh_tangents", "clone_rotations", "clone_scales"])
+@pytest.mark.parametrize("retirement,operation", [('destroy', 'mesh_normals'), ('destroy', 'mesh_tangents'), ('destroy', 'clone_rotations'), ('destroy', 'clone_scales'), ('unload', 'mesh_normals'), ('replace', 'mesh_normals')])
 def test_optional_array_conversion_cannot_retire_native_argument(tmp_path, retirement, operation):
     _run(tmp_path, "object", retirement, f"array_{operation}")
 

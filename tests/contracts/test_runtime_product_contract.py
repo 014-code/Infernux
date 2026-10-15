@@ -1,13 +1,19 @@
 """Build/Player contract checks that work before a native engine is built."""
 
-import itertools
 from pathlib import Path
 
 import pytest
 
 
 SOURCE = Path(__file__).resolve().parents[2] / "python"
-FEATURES = list(itertools.product([(False, False), (True, False), (True, True)], [False, True]))
+PRODUCT_CASES = [
+    ("EDITOR_DEVELOPMENT", (False, False), False),
+    ("PLAYER_DEBUG", (False, False), False),
+    ("PLAYER_RELEASE", (False, False), False),
+    ("PLAYER_RELEASE", (True, False), False),
+    ("PLAYER_RELEASE", (True, True), True),
+    ("PLAYER_DEBUG", (True, True), True),
+]
 
 
 def _document(contract, flavor, features):
@@ -20,8 +26,7 @@ def _document(contract, flavor, features):
     }
 
 
-@pytest.mark.parametrize("flavor_name", ["EDITOR_DEVELOPMENT", "PLAYER_DEBUG", "PLAYER_RELEASE"])
-@pytest.mark.parametrize("compute,splash", FEATURES)
+@pytest.mark.parametrize("flavor_name,compute,splash", PRODUCT_CASES)
 def test_product_graph_and_manifest_contract(service_contract, flavor_name, compute, splash):
     c = service_contract
     flavor = c.RuntimeFlavor[flavor_name]

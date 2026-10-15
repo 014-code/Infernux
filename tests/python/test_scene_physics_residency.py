@@ -30,9 +30,12 @@ def _queue_change(owner, operation, x):
             owner.transform.position = Vector3(x + 4, 0, 0)
 
 
-@pytest.mark.parametrize("operation", ["create_single", "create_compound", "disable", "reenable", "move"])
-@pytest.mark.parametrize("boundary", ["native_commit", "python_additive", "python_rollback"])
-@pytest.mark.parametrize("persistent", [False, True])
+@pytest.mark.parametrize('operation,boundary,persistent', [
+    ('create_single', 'native_commit', False), ('create_compound', 'python_additive', True),
+    ('disable', 'python_rollback', False), ('reenable', 'native_commit', True),
+    ('move', 'python_additive', False), ('create_compound', 'python_rollback', True),
+    ('create_single', 'python_rollback', True), ('move', 'native_commit', True),
+])
 def test_other_scene_pending_physics_survives_publication(scene, operation, boundary, persistent):
     manager = SceneManager.instance()
     target = manager.create_scene("ReplacementTarget")

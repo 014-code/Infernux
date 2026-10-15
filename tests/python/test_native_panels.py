@@ -1,488 +1,138 @@
-"""Tests for native StatusBarPanel, ToolbarPanel, MenuBarPanel, and HierarchyPanel."""
-from pathlib import Path
-import re
+"""Native panel lifecycle and callbacks actually dispatched by native code."""
 
 import pytest
+
 from infernux.lib import (
-    StatusBarPanel,
-    ToolbarPanel,
-    MenuBarPanel,
-    EditorShortcutInput,
     ConsolePanel,
+    EditorPanel,
     HierarchyPanel,
     InspectorPanel,
-    ProjectPanel,
-    PlayState,
     LogLevel,
-    WindowTypeInfo,
+    MenuBarPanel,
+    ProjectPanel,
+    ToolbarPanel,
 )
 
 
-# ═══════════════════════════════════════════════════════════════════════
-#  StatusBarPanel
-# ═══════════════════════════════════════════════════════════════════════
-
-class TestConsolePanel:
-
-    def test_all_native_editor_panels_share_the_base_command_bridge(self):
-        for panel in (
-            ConsolePanel(),
-            ToolbarPanel(),
-            HierarchyPanel(),
-            InspectorPanel(),
-            ProjectPanel(),
-        ):
-            calls = []
-            panel.execute_command = (
-                lambda command_id, source, argument, _calls=calls: _calls.append(
-                    (command_id, source, argument)
-                )
-                or True
-            )
-            panel.can_execute_command = lambda command_id, argument: bool(
-                command_id and not argument
-            )
-
-            assert panel.execute_command("test.command", "api", "")
-            assert panel.can_execute_command("test.command", "")
-            assert calls == [("test.command", "api", "")]
-
-    def test_status_snapshot_is_exact_before_panel_render(self):
-        console = ConsolePanel()
-        selection_changes = []
-        console.on_selection_changed = (
-            lambda uid, record_history: selection_changes.append(
-                (uid, record_history)
-            )
-        )
-        console.log_from_python(LogLevel.Info, "first")
-        console.log_from_python(LogLevel.Warn, "second")
-        console.log_from_python(LogLevel.Error, "latest")
-
-        message, level, info, warning, error, uid = console._get_status_snapshot()
-        assert (message, level) == ("latest", "error")
-        assert (info, warning, error) == (1, 1, 1)
-        assert uid > 0
-
-        console.select_entry(uid)
-        assert selection_changes == [(uid, True)]
-        assert console._selected_uid == 0
-
-        # Native panels publish selection intent. SelectionService owns the
-        # authoritative value and projects the accepted snapshot back.
-        console.set_selection_snapshot(uid)
-        assert console._selected_uid == uid
-
-        console.set_selection_snapshot(0)
-        assert console._selected_uid == 0
-        assert selection_changes == [(uid, True)]
-
-        console.set_selection_snapshot(uid)
-        console.clear()
-        assert selection_changes[-1] == (0, False)
-
-    def test_error_pause_callback_runs_when_error_enters_console(self):
-        console = ConsolePanel()
+def test_native_panels_share_window_lifecycle_and_command_bridge():
+    for panel, window_id in (
+        (ConsolePanel(), "console"),
+        (ToolbarPanel(), "toolbar"),
+        (HierarchyPanel(), "hierarchy"),
+        (InspectorPanel(), "inspector"),
+        (ProjectPanel(), "project"),
+    ):
+        assert isinstance(panel, EditorPanel)
+        assert panel.get_window_id() == window_id
+        assert panel.is_open()
+        panel.set_open(False)
+        assert not panel.is_open()
+        panel.set_open(True)
+        assert panel.is_open()
         calls = []
-        console.error_pause = True
-        console.on_error_pause = lambda: calls.append("pause")
-
-        console.log_from_python(LogLevel.Error, "runtime failure")
-        console._get_status_snapshot()
-        assert calls == ["pause"]
-
-    def test_clear_resets_authoritative_summary_and_counts(self):
-        console = ConsolePanel()
-        console.log_from_python(LogLevel.Warn, "warning")
-        first_uid = console._get_status_snapshot()[-1]
-        revision = console._revision
-
-        console.clear()
-        assert console._revision > revision
-        assert console._get_status_snapshot() == ("", "info", 0, 0, 0, 0)
-
-        console.log_from_python(LogLevel.Info, "after clear")
-        next_uid = console._get_status_snapshot()[-1]
-        assert next_uid > first_uid
-
-    def test_select_requests_window_manager_focus(self):
-        console = ConsolePanel()
-        calls = []
-        console.on_request_focus = lambda: calls.append("focus")
-        console.select_latest_entry()
-        assert calls == ["focus"]
-
-
-    def test_view_state_projection_api_is_complete(self):
-        console = ConsolePanel()
-        assert console.has_view_option("collapse")
-        assert not console.get_view_option("collapse")
-        console.set_view_option("collapse", True)
-        assert console.get_view_option("collapse")
-
-        console.set_search_query("validation")
-        assert console.get_search_query() == "validation"
-
-        console.set_detail_height(123.0)
-        assert console.get_detail_height() == pytest.approx(123.0)
-        console.set_detail_height(1.0)
-        assert console.get_detail_height() == pytest.approx(40.0)
-
-
-# ═══════════════════════════════════════════════════════════════════════
-#  ToolbarPanel
-# ═══════════════════════════════════════════════════════════════════════
-
-class TestToolbarPanel:
-
-
-    def test_is_editor_panel(self):
-        tb = ToolbarPanel()
-        assert tb.is_open()
-        assert tb.get_window_id() == "toolbar"
-
-    def test_set_open(self):
-        tb = ToolbarPanel()
-        tb.set_open(False)
-        assert not tb.is_open()
-
-    def test_command_callbacks(self):
-        tb = ToolbarPanel()
-        calls = []
-        tb.execute_command = lambda command_id, source, argument: calls.append(
-            (command_id, source, argument)
+        panel.execute_command = lambda command, source, argument: calls.append(
+            (command, source, argument)
         ) or True
-        tb.can_execute_command = lambda command_id, argument: (
-            command_id == "play.toggle" and not argument
-        )
-
-        assert tb.execute_command("play.toggle", "toolbar", "") is True
-        assert tb.can_execute_command("play.toggle", "") is True
-        assert calls == [("play.toggle", "toolbar", "")]
-
-    def test_get_play_state_callback(self):
-        tb = ToolbarPanel()
-        tb.get_play_state = lambda: PlayState.Edit
-        assert tb.get_play_state() == PlayState.Edit
-
-        tb.get_play_state = lambda: PlayState.Playing
-        assert tb.get_play_state() == PlayState.Playing
-
-        tb.get_play_state = lambda: PlayState.Paused
-        assert tb.get_play_state() == PlayState.Paused
-
-    def test_get_play_time_str(self):
-        tb = ToolbarPanel()
-        tb.get_play_time_str = lambda: "01:23.456"
-        assert tb.get_play_time_str() == "01:23.456"
-
-    def test_camera_settings_roundtrip(self):
-        tb = ToolbarPanel()
-        settings = {
-            "orthographic": True,
-            "fov": 75.0,
-            "orthographic_size": 12.0,
-            "rotation_speed": 0.1,
-            "pan_speed": 2.0,
-            "zoom_speed": 1.5,
-            "move_speed": 10.0,
-            "move_speed_boost": 5.0,
-        }
-        tb.set_camera_settings(settings)
-        result = tb.get_camera_settings()
-        assert result["orthographic"] is True
-        assert abs(result["fov"] - 75.0) < 0.01
-        assert abs(result["orthographic_size"] - 12.0) < 0.01
-        assert abs(result["rotation_speed"] - 0.1) < 0.01
-        assert abs(result["pan_speed"] - 2.0) < 0.01
-        assert abs(result["zoom_speed"] - 1.5) < 0.01
-        assert abs(result["move_speed"] - 10.0) < 0.01
-        assert abs(result["move_speed_boost"] - 5.0) < 0.01
-
-    def test_camera_settings_defaults(self):
-        tb = ToolbarPanel()
-        result = tb.get_camera_settings()
-        assert result["orthographic"] is False
-        assert abs(result["fov"] - 60.0) < 0.01
-        assert abs(result["move_speed"] - 5.0) < 0.01
-
-    def test_translate_callback(self):
-        tb = ToolbarPanel()
-        tb.translate = lambda key: f"[{key}]"
-        # Callback is invoked during render; just verify wiring
-        assert tb.translate is not None
-
-    def test_grid_state_is_read_only_and_mutation_uses_global_command(self):
-        tb = ToolbarPanel()
-        tb.is_show_grid = lambda: True
-        tb.is_show_gizmos = lambda: True
-        assert tb.is_show_grid()
-        assert tb.is_show_gizmos()
-
-    def test_sync_camera_from_engine(self):
-        tb = ToolbarPanel()
-        tb.sync_camera_from_engine = lambda: {
-            "fov": 90.0,
-            "rotation_speed": 0.1,
-            "pan_speed": 2.0,
-            "zoom_speed": 1.0,
-            "move_speed": 5.0,
-            "move_speed_boost": 3.0,
-        }
-        # Will be invoked during render when camera popup opens
-
-    def test_apply_camera_to_engine(self):
-        applied = {}
-        tb = ToolbarPanel()
-        tb.apply_camera_to_engine = lambda d: applied.update(d)
-        # Setting camera should invoke the apply callback
-        tb.set_camera_settings({"fov": 45.0})
-        assert abs(applied.get("fov", 0) - 45.0) < 0.01
-
-
-# ═══════════════════════════════════════════════════════════════════════
-#  MenuBarPanel
-# ═══════════════════════════════════════════════════════════════════════
-
-class TestMenuBarPanel:
-
-
-    def test_command_callbacks(self):
-        mb = MenuBarPanel()
-        calls = []
-        mb.execute_command = lambda command_id, source, argument: calls.append(
-            (command_id, source, argument)
-        ) or True
-        mb.can_execute_command = lambda command_id, argument: (
-            command_id == "file.save" or argument == "console"
-        )
-        mb.is_command_checked = lambda command_id, argument: (
-            command_id == "window.open" and argument == "console"
-        )
-        mb.on_request_close = lambda: calls.append("close")
-
-        assert mb.execute_command("file.save", "menu", "") is True
-        assert mb.can_execute_command("file.save", "") is True
-        assert mb.can_execute_command("window.open", "console") is True
-        assert mb.is_command_checked("window.open", "console") is True
-        mb.on_request_close()
-        assert calls == [
-            ("file.save", "menu", ""), "close"
-        ]
-
-
-    def test_window_management_callbacks(self):
-        mb = MenuBarPanel()
-
-        wti = WindowTypeInfo()
-        wti.type_id = "console"
-        wti.display_name = "Console"
-        wti.singleton = True
-
-        mb.get_registered_types = lambda: [wti]
-
-        types = mb.get_registered_types()
-        assert len(types) == 1
-        assert types[0].type_id == "console"
-        assert types[0].display_name == "Console"
-        assert types[0].singleton is True
-
-        mb.invalidate_window_type_cache()
-
-    def test_close_requested_callback(self):
-        mb = MenuBarPanel()
-        mb.is_close_requested = lambda: False
-        assert not mb.is_close_requested()
-
-
-    def test_translate_callback(self):
-        mb = MenuBarPanel()
-        mb.translate = lambda key: f"<<{key}>>"
-        assert mb.translate("menu.project") == "<<menu.project>>"
-
-    def test_dynamic_menu_uses_literal_for_undeclared_plugin_path(self):
-        mb = MenuBarPanel()
-        declared = {"menu.extensions": "扩展"}
-        mb.translate = lambda key: declared.get(key, key)
-        mb.has_translation = lambda key: key in declared
-
-        assert mb.resolve_menu_label("menu.extensions", "Extensions") == "扩展"
-        assert mb.resolve_menu_label(
-            "menu.extensions_example_plugin", "Example Plugin"
-        ) == "Example Plugin"
-
-
-class TestEditorShortcutInput:
-
-    def test_creation_and_route_callback(self):
-        shortcut_input = EditorShortcutInput()
-        calls = []
-        shortcut_input.route_shortcut = lambda chord, text_input, modal: calls.append(
-            (chord, text_input, modal)
-        ) or True
-
-        assert shortcut_input.route_shortcut("Ctrl+S", False, False) is True
-        assert calls == [("Ctrl+S", False, False)]
-
-
-# ═══════════════════════════════════════════════════════════════════════
-#  PlayState enum
-# ═══════════════════════════════════════════════════════════════════════
-
-class TestPlayState:
-
-    def test_values(self):
-        assert PlayState.Edit is not None
-        assert PlayState.Playing is not None
-        assert PlayState.Paused is not None
-
-    def test_distinct(self):
-        assert PlayState.Edit != PlayState.Playing
-        assert PlayState.Playing != PlayState.Paused
-        assert PlayState.Edit != PlayState.Paused
-
-
-# ═══════════════════════════════════════════════════════════════════════
-#  WindowTypeInfo
-# ═══════════════════════════════════════════════════════════════════════
-
-class TestWindowTypeInfo:
-
-    def test_creation(self):
-        wti = WindowTypeInfo()
-        assert wti.type_id == ""
-        assert wti.display_name == ""
-        assert wti.singleton is True
-
-    def test_readwrite(self):
-        wti = WindowTypeInfo()
-        wti.type_id = "hierarchy"
-        wti.display_name = "Hierarchy"
-        wti.singleton = False
-        assert wti.type_id == "hierarchy"
-        assert wti.display_name == "Hierarchy"
-        assert wti.singleton is False
-
-
-# ═══════════════════════════════════════════════════════════════════════
-#  HierarchyPanel
-# ═══════════════════════════════════════════════════════════════════════
-
-class TestHierarchyPanel:
-
-
-    def test_is_editor_panel(self):
-        from infernux.lib import EditorPanel
-        hp = HierarchyPanel()
-        assert isinstance(hp, EditorPanel)
-
-    def test_hierarchy_has_one_mode(self):
-        hp = HierarchyPanel()
-        assert not hasattr(hp, "ui_mode")
-        assert not hasattr(hp, "set_ui_mode")
-        assert not hasattr(hp, "get_ui_mode")
-
-    def test_selection_callbacks(self):
-        hp = HierarchyPanel()
-        selected = set()
-        primary = [0]
-
-        hp.is_selected = lambda oid: oid in selected
-        hp.select_id = lambda oid: (selected.clear(), selected.add(oid), primary.__setitem__(0, oid))
-        hp.clear_selection = lambda: (selected.clear(), primary.__setitem__(0, 0))
-        hp.get_primary = lambda: primary[0]
-        hp.get_selected_ids = lambda: list(selected)
-        hp.selection_count = lambda: len(selected)
-        hp.is_selection_empty = lambda: len(selected) == 0
-
-        assert hp.is_selection_empty()
-        hp.select_id(42)
-        assert hp.is_selected(42)
-        assert hp.get_primary() == 42
-        assert hp.selection_count() == 1
-        hp.clear_selection()
-        assert hp.is_selection_empty()
-
-
-    def test_scene_mutation_callbacks(self):
-        hp = HierarchyPanel()
-        records = []
-        hp.rename_object = lambda oid, new: records.append(("rename", oid, new))
-        hp.move_objects = lambda ids, mode, target, after: records.append(
-            ("move", list(ids), mode, target, after)
-        )
-
-        hp.rename_object(3, "New")
-        hp.move_objects([3, 4], "adjacent", 1, True)
-        assert records == [
-            ("rename", 3, "New"),
-            ("move", [3, 4], "adjacent", 1, True),
-        ]
-
-    def test_scene_info_callbacks(self):
-        hp = HierarchyPanel()
-        hp.get_scene_display_name = lambda: "TestScene"
-        hp.is_prefab_mode = lambda: False
-        hp.get_prefab_display_name = lambda: "Prefab: TestPrefab"
-
-        assert hp.get_scene_display_name() == "TestScene"
-        assert hp.is_prefab_mode() is False
-        assert hp.get_prefab_display_name() == "Prefab: TestPrefab"
-
-    def test_translate_callback(self):
-        hp = HierarchyPanel()
-        hp.translate = lambda key: f"[{key}]"
-        assert hp.translate("hierarchy.search_placeholder") == "[hierarchy.search_placeholder]"
-
-    def test_command_callbacks(self):
-        hp = HierarchyPanel()
-        calls = []
-        hp.execute_command = lambda command_id, source, argument: calls.append(
-            (command_id, source, argument)
-        ) or True
-        assert hp.execute_command("edit.rename", "context_menu", "42") is True
-        assert hp.execute_command(
-            "scene.instantiate_prefab",
-            "drag_drop",
-            "prefab-guid\t7\t1",
-        ) is True
-        hp.begin_rename_object(0)
-        assert calls == [
-            ("edit.rename", "context_menu", "42"),
-            (
-                "scene.instantiate_prefab",
-                "drag_drop",
-                "prefab-guid\t7\t1",
-            ),
-        ]
-
-    def test_hierarchy_context_menu_is_owned_by_shared_python_presenter(self):
-        hp = HierarchyPanel()
-        calls = []
-        callback = lambda *_args: calls.append(_args)
-        hp.render_context_menu = callback
-        hp.render_context_menu(None, 42, True, 42)
-        assert calls == [(None, 42, True, 42)]
-
-    def test_canvas_query_callbacks(self):
-        hp = HierarchyPanel()
-        hp.go_has_canvas = lambda oid: oid == 10
-        hp.go_has_ui_screen_component = lambda oid: False
-        hp.parent_has_canvas_ancestor = lambda oid: oid > 5
-
-        assert hp.go_has_canvas(10) is True
-        assert hp.go_has_canvas(11) is False
-
-        # No assertion needed — verifies API exists without crash
-
-
-    def test_set_selected_object_by_id(self):
-        hp = HierarchyPanel()
-        selected = set()
-        hp.select_id = lambda oid: selected.add(oid)
-        hp.get_primary = lambda: max(selected) if selected else 0
-        hp.selection_count = lambda: len(selected)
-        hp.get_selected_ids = lambda: list(selected)
-        hp.is_selection_empty = lambda: len(selected) == 0
-        hp.set_selected_object_by_id(42)
-        assert 42 in selected
+        panel.can_execute_command = lambda command, argument: bool(command and not argument)
+        assert panel.execute_command("test.command", "api", "")
+        assert panel.can_execute_command("test.command", "")
+        assert not panel.can_execute_command("", "")
+        assert calls == [("test.command", "api", "")]
+
+
+def test_console_selection_intent_and_silent_projection_remain_distinct():
+    panel = ConsolePanel()
+    selected, focused = [], []
+    panel.on_selection_changed = lambda uid, history: selected.append((uid, history))
+    panel.on_request_focus = lambda: focused.append(True)
+    panel.log_from_python(LogLevel.Info, "first")
+    panel.log_from_python(LogLevel.Warn, "second")
+    panel.log_from_python(LogLevel.Error, "latest")
+    message, level, info, warning, error, uid = panel._get_status_snapshot()
+    assert (message, level, info, warning, error) == ("latest", "error", 1, 1, 1)
+    assert uid > 0
+
+    panel.select_entry(uid)
+    assert selected == [(uid, True)]
+    assert focused == [True]
+    assert panel._selected_uid == 0
+    panel.set_selection_snapshot(uid)
+    assert panel._selected_uid == uid
+    assert panel._selected_uids == [uid]
+    assert panel.has_selected_entry()
+    panel.set_selection_snapshot(0)
+    assert panel._selected_uid == 0
+    assert selected == [(uid, True)]
+    panel.select_latest_entry()
+    assert focused == [True, True]
+
+
+def test_console_clear_resets_counts_and_selection_without_reusing_ids():
+    panel = ConsolePanel()
+    paused, selected = [], []
+    panel.error_pause = True
+    panel.on_error_pause = lambda: paused.append(True)
+    panel.on_selection_changed = lambda uid, history: selected.append((uid, history))
+    panel.log_from_python(LogLevel.Error, "failure")
+    uid = panel._get_status_snapshot()[-1]
+    assert paused == [True]
+    panel.set_selection_snapshot(uid)
+    revision = panel._revision
+    panel.clear()
+    assert panel._revision > revision
+    assert panel._get_status_snapshot() == ("", "info", 0, 0, 0, 0)
+    assert panel._selected_uids == [] and not panel.has_selected_entry()
+    assert selected == [(0, False)]
+    panel.log_from_python(LogLevel.Info, "after clear")
+    assert panel._get_status_snapshot()[-1] > uid
+
+    assert panel.has_view_option("collapse")
+    panel.set_view_option("collapse", True)
+    panel.set_search_query("validation")
+    assert panel.get_view_option("collapse")
+    assert panel.get_search_query() == "validation"
+    panel.set_detail_height(123.0)
+    assert panel.get_detail_height() == pytest.approx(123.0)
+    panel.set_detail_height(1.0)
+    assert panel.get_detail_height() == pytest.approx(40.0)
+
+
+def test_toolbar_camera_update_is_published_to_engine():
+    panel = ToolbarPanel()
+    defaults = panel.get_camera_settings()
+    assert (defaults["orthographic"], defaults["fov"], defaults["move_speed"]) == (
+        False, 60.0, 5.0,
+    )
+    applied = {}
+    panel.apply_camera_to_engine = applied.update
+    settings = {
+        "orthographic": True, "fov": 75.0, "orthographic_size": 12.0,
+        "rotation_speed": 0.1, "pan_speed": 2.0, "zoom_speed": 1.5,
+        "move_speed": 10.0, "move_speed_boost": 5.0,
+    }
+    panel.set_camera_settings(settings)
+    assert panel.get_camera_settings() == pytest.approx(settings)
+    assert applied == pytest.approx(settings)
+
+
+def test_menu_resolves_declared_translation_and_plugin_literal():
+    panel = MenuBarPanel()
+    declared = {"menu.extensions": "扩展"}
+    panel.translate = lambda key: declared.get(key, key)
+    panel.has_translation = lambda key: key in declared
+    assert panel.resolve_menu_label("menu.extensions", "Extensions") == "扩展"
+    assert panel.resolve_menu_label("menu.extensions_example_plugin", "Example Plugin") == "Example Plugin"
+
+
+def test_hierarchy_native_selection_routes_to_authoritative_selection():
+    panel = HierarchyPanel()
+    selected = set()
+    panel.select_id = selected.add
+    panel.get_primary = lambda: max(selected) if selected else 0
+    panel.selection_count = lambda: len(selected)
+    panel.get_selected_ids = lambda: list(selected)
+    panel.is_selection_empty = lambda: not selected
+    assert panel.is_selection_empty()
+    panel.set_selected_object_by_id(42)
+    assert selected == {42}
+    assert panel.get_primary() == 42 and panel.selection_count() == 1

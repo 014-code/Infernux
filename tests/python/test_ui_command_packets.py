@@ -216,7 +216,7 @@ def ui(scene, monkeypatch, request):
         extracted=extracted, submission=submission, textures=texture_cache)
 
 
-@pytest.mark.parametrize('field', ['color', 'text'])
+@pytest.mark.parametrize('field,ui', [('color', False), ('text', True)], indirect=['ui'])
 def test_only_changed_label_reextracts_and_remeasures(ui, field):
     labels = [ui.add() for _ in range(40)]
     ui.frame()
@@ -230,8 +230,14 @@ def test_only_changed_label_reextracts_and_remeasures(ui, field):
     assert ui.frame()[0] is False
 
 
-@pytest.mark.parametrize('change', ['transform', 'parent_transform', 'group', 'mirror',
-                                   'enabled', 'active', 'reparent', 'viewport', 'global_dirty'])
+@pytest.mark.parametrize('change,ui', [
+    ('transform', False), ('transform', True),
+    ('parent_transform', False), ('parent_transform', True),
+    ('reparent', False), ('reparent', True),
+    ('viewport', False), ('viewport', True),
+    ('group', True), ('mirror', False), ('enabled', False),
+    ('active', True), ('global_dirty', False),
+], indirect=['ui'])
 def test_shared_dependencies_match_fresh_submission(ui, change):
     from infernux.lib import Vector3
     from infernux.ui import UIGroup
@@ -270,6 +276,7 @@ def test_shared_dependencies_match_fresh_submission(ui, change):
         assert all(args[9] == .25 for name, args, _ in commands if name == 'add_text')
 
 
+@pytest.mark.parametrize("ui", [False], indirect=True, ids=["screen"])
 def test_button_private_state_rebuilds_only_the_button(ui):
     from infernux.ui import UIButton
     button, label = ui.add(UIButton), ui.add()
@@ -283,6 +290,7 @@ def test_button_private_state_rebuilds_only_the_button(ui):
     ui.matches_fresh()
 
 
+@pytest.mark.parametrize("ui", [False], indirect=True, ids=["screen"])
 def test_local_change_visits_only_the_changed_text_measurement(ui, monkeypatch):
     from infernux.ui.ui_command_packets import UICommandPackets
     labels = [ui.add() for _ in range(100)]
@@ -300,6 +308,7 @@ def test_local_change_visits_only_the_changed_text_measurement(ui, monkeypatch):
     _assert_current_commands_match_fresh(ui, actual)
 
 
+@pytest.mark.parametrize("ui", [True], indirect=True, ids=["world"])
 def test_two_submission_owners_observe_edits_independently(ui):
     from infernux.engine.runtime_screen_ui import RuntimeScreenUISubmission
     first, second = ui.add(), ui.add()
@@ -324,6 +333,7 @@ def test_two_submission_owners_observe_edits_independently(ui):
     assert renderer.captures == 4  # Two initial packets, two changed packets.
 
 
+@pytest.mark.parametrize("ui", [False], indirect=True, ids=["screen"])
 def test_released_submission_groups_do_not_stay_on_components(ui):
     import gc
     import weakref
@@ -569,7 +579,7 @@ def _assert_current_commands_match_fresh(ui, actual):
     assert ui.frame()[1] == actual
 
 
-@pytest.mark.parametrize('slot', ['material', 'text_material'])
+@pytest.mark.parametrize('slot,ui', [('material', False), ('text_material', True)], indirect=['ui'])
 def test_material_edit_reextracts_only_its_consumers(ui, slot):
     from infernux.lib import InxMaterial
     from infernux.core.material import Material
@@ -598,7 +608,9 @@ def test_material_edit_reextracts_only_its_consumers(ui, slot):
     _assert_current_commands_match_fresh(ui, actual)
 
 
-@pytest.mark.parametrize('change', ['text', 'color', 'width', 'hover'])
+@pytest.mark.parametrize('change,ui', [
+    ('text', False), ('color', True), ('width', False), ('hover', True),
+], indirect=['ui'])
 def test_visual_edits_keep_resource_binding_membership(ui, change):
     from infernux.core.material import Material
     from infernux.lib import InxMaterial
@@ -619,6 +631,7 @@ def test_visual_edits_keep_resource_binding_membership(ui, change):
     assert dispatch._runtime_dependencies.materials is bindings
 
 
+@pytest.mark.parametrize("ui", [False], indirect=True, ids=["screen"])
 def test_material_owner_replacement_does_not_hide_other_reference_owners(ui, monkeypatch):
     from infernux.core.material import Material
     from infernux.lib import InxMaterial
@@ -639,6 +652,7 @@ def test_material_owner_replacement_does_not_hide_other_reference_owners(ui, mon
     _assert_current_commands_match_fresh(ui, actual)
 
 
+@pytest.mark.parametrize("ui", [True], indirect=True, ids=["world"])
 def test_material_binding_document_restore_and_removal_match_fresh(ui, monkeypatch):
     from infernux.components.value_document import make_asset_ref
     from infernux.core.assets import AssetManager
@@ -656,6 +670,7 @@ def test_material_binding_document_restore_and_removal_match_fresh(ui, monkeypat
         _assert_current_commands_match_fresh(ui, actual)
 
 
+@pytest.mark.parametrize("ui", [False], indirect=True, ids=["screen"])
 def test_render_texture_resize_reextracts_only_its_images(ui):
     from infernux.core.render_texture import RenderTexture
     from infernux.ui import UIImage
@@ -675,6 +690,7 @@ def test_render_texture_resize_reextracts_only_its_images(ui):
     _assert_current_commands_match_fresh(ui, actual)
 
 
+@pytest.mark.parametrize("ui", [True], indirect=True, ids=["world"])
 def test_button_render_texture_assignment_tracks_later_target_revision(ui):
     from infernux.core.render_texture import RenderTexture
     from infernux.ui import UIButton
@@ -691,6 +707,7 @@ def test_button_render_texture_assignment_tracks_later_target_revision(ui):
     _assert_current_commands_match_fresh(ui, actual)
 
 
+@pytest.mark.parametrize("ui", [False], indirect=True, ids=["screen"])
 def test_renderer_replacement_releases_old_bound_calls(ui):
     label = ui.add()
     ui.frame()
@@ -718,6 +735,7 @@ def test_destroyed_element_packets_do_not_survive_membership_change(ui):
     assert sum(name == 'add_text' for name, _, _ in commands) == 2
 
 
+@pytest.mark.parametrize("ui", [True], indirect=True, ids=["world"])
 def test_explicit_font_chain_and_measured_size_publication(ui, monkeypatch):
     from infernux.application import Application
     from infernux.core.asset_ref import create_asset_ref
@@ -750,6 +768,7 @@ def test_explicit_font_chain_and_measured_size_publication(ui, monkeypatch):
         set_runtime_asset_resolver(None)
 
 
+@pytest.mark.parametrize("ui", [False], indirect=True, ids=["screen"])
 def test_assigning_font_references_does_not_load_assets(ui, monkeypatch):
     from infernux.core.asset_ref import create_asset_ref
     from infernux.core.assets import AssetManager
@@ -769,6 +788,7 @@ def test_assigning_font_references_does_not_load_assets(ui, monkeypatch):
     label.fallback_fonts = []
 
 
+@pytest.mark.parametrize("ui", [False], indirect=True, ids=["screen"])
 def test_custom_renderer_keeps_its_native_renderer_contract(ui, monkeypatch):
     from infernux.ui import ui_render_dispatch as dispatch
     calls = []
@@ -802,6 +822,7 @@ def test_geometry_packets_batch_and_font_epoch_invalidates(ui):
     assert set(ui.extracted) == set(labels)
 
 
+@pytest.mark.parametrize("ui", [True], indirect=True, ids=["world"])
 def test_unchanged_packets_do_not_rediscover_renderer_capabilities(ui, monkeypatch):
     from infernux.ui import ui_command_packets as packets
     labels = [ui.add() for _ in range(24)]
@@ -817,6 +838,7 @@ def test_unchanged_packets_do_not_rediscover_renderer_capabilities(ui, monkeypat
     assert calls == []  # Membership already owns the renderer classification.
 
 
+@pytest.mark.parametrize("ui", [False], indirect=True, ids=["screen"])
 def test_registered_renderer_replacement_invalidates_warm_packets(ui):
     from infernux.ui import ui_render_dispatch as dispatch
     label = ui.add()
@@ -855,7 +877,7 @@ def test_packet_capture_failure_does_not_publish_partial_geometry(ui, monkeypatc
     ui.matches_fresh()
 
 
-@pytest.mark.parametrize('inactive', [False, True])
+@pytest.mark.parametrize('inactive,ui', [(False, True), (True, False)], indirect=['ui'])
 def test_font_epoch_remeasures_intrinsic_size_without_field_edits(ui, monkeypatch, inactive):
     from infernux.ui import TextResizeMode
     label = ui.add()

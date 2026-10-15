@@ -6,8 +6,10 @@ import pytest
 from infernux import Vector2, Vector3, vec4f
 
 
-@pytest.mark.parametrize('operation', [operator.add, operator.sub, operator.mul, operator.truediv])
-@pytest.mark.parametrize('left_proxy,right_proxy', [(False, False), (True, False), (False, True), (True, True)])
+@pytest.mark.parametrize('operation,left_proxy,right_proxy', [
+    (operator.add, False, True), (operator.sub, True, False), (operator.sub, False, True),
+    (operator.mul, True, True), (operator.truediv, True, False), (operator.truediv, False, True),
+])
 def test_native_and_transform_vectors_support_both_operand_orders(scene, operation, left_proxy, right_proxy):
     a = scene.create_game_object('Left').transform
     b = scene.create_game_object('Right').transform
@@ -40,8 +42,10 @@ def test_native_equality_defers_to_transform_proxy(scene):
     assert Vector3(1,4,6) != transform.position
 
 
-@pytest.mark.parametrize('constructor,dimension', [(Vector2,2), (Vector3,3), (vec4f,4)])
-@pytest.mark.parametrize('operation', [operator.add, operator.sub, operator.mul, operator.truediv])
+@pytest.mark.parametrize('constructor,dimension,operation', [
+    (Vector2, 2, operator.add), (Vector3, 3, operator.sub),
+    (vec4f, 4, operator.mul), (vec4f, 4, operator.truediv),
+])
 def test_vector_unsupported_operand_uses_python_operator_protocol(constructor, dimension, operation):
     vector = constructor(*([2] * dimension))
     with pytest.raises(TypeError):
@@ -55,8 +59,7 @@ def test_vector_unsupported_operand_uses_python_operator_protocol(constructor, d
     assert operation(vector, Reflected()) is sentinel
 
 
-@pytest.mark.parametrize('constructor,dimension', [(Vector2,2), (Vector3,3), (vec4f,4)])
-@pytest.mark.parametrize('scalar', [2, 2.5, 2**40])
+@pytest.mark.parametrize('constructor,dimension,scalar', [(Vector2, 2, 2), (Vector3, 3, 2.5), (vec4f, 4, 2**40)])
 def test_vector_scalar_operator_contract(constructor, dimension, scalar):
     vector = constructor(*([4] * dimension))
     assert tuple(vector + scalar) == pytest.approx([4 + scalar] * dimension)

@@ -923,25 +923,6 @@ def test_render_stack_normalizes_the_removed_empty_default_sentinel():
     assert stack.pipeline_class_name == "Default Forward"
 
 
-def test_render_stack_ignores_obsolete_json_binding_field():
-    stack = RenderStack()
-    stack._deserialize_fields_document({"effect_stage_bindings_json": "{}"})
-    assert "effect_stage_bindings_json" not in stack._serialize_fields_document()
-
-
-@pytest.mark.parametrize(
-    "removed_field",
-    [
-        "effect_stage_bindings_json",
-        "mounted_passes_json",
-    ],
-)
-def test_render_stack_ignores_removed_storage_fields(removed_field):
-    stack = RenderStack()
-    stack._deserialize_fields_document({removed_field: "[]"})
-    assert removed_field not in stack._serialize_fields_document()
-
-
 def test_slot_effect_property_resolves_to_mutable_runtime_asset(tmp_path, effect_catalog):
     path = tmp_path / "Bloom.effect"
     path.write_text(

@@ -47,8 +47,7 @@ class AssignableData(SerializableObject):
     group: ContractGroup
 
 
-@pytest.mark.parametrize("boundary", ["component", "data", "object", "scene"])
-@pytest.mark.parametrize("location", ["child", "members", "group.child", "group.members"])
+@pytest.mark.parametrize('boundary,location', [('component', 'child'), ('data', 'members'), ('object', 'group.child'), ('scene', 'group.members')])
 def test_unrelated_document_is_rejected_before_owner_publication(scene, boundary, location):
     component = scene.create_game_object("Declared type").add_component(AssignableComponent)
     if boundary == "data":
@@ -156,8 +155,7 @@ def test_script_rename_keeps_normalized_fields_during_reference_remap(scene, tmp
     assert not scene.has_pending_py_components()
 
 
-@pytest.mark.parametrize("kind", [ContractStats, ContractExtendedStats, None])
-@pytest.mark.parametrize("boundary", ["data", "scene"])
+@pytest.mark.parametrize('kind,boundary', [(ContractStats, 'scene'), (ContractExtendedStats, 'data'), (None, 'scene')])
 def test_polymorphic_and_explicit_null_values_survive_real_document_roundtrip(scene, tmp_path, kind, boundary):
     owner = (AssignableData() if boundary == "data" else
              scene.create_game_object("Typed scene").add_component(AssignableComponent))

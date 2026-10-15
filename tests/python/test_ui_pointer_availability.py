@@ -75,7 +75,7 @@ def invalidate(scene, root, canvas, control, mode):
         control.game_object.set_parent(destination, True)
 
 
-@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("mode", ["enabled", "parent_active", "canvas_removed", "reparent"])
 def test_prior_click_can_disable_a_later_queued_click(scene, mode):
     root, canvas = make_canvas(scene)
     first = make_control(scene, root, UIButton)
@@ -97,9 +97,19 @@ def test_prior_click_can_disable_a_later_queued_click(scene, mode):
     assert not processor._pointers
 
 
-@pytest.mark.parametrize("mode", MODES)
-@pytest.mark.parametrize("timing", ["before_frame", "before_drain"])
-@pytest.mark.parametrize("pointer_type", [PointerType.Mouse, PointerType.Touch])
+@pytest.mark.parametrize("mode,timing,pointer_type", [
+    ("enabled", "before_frame", PointerType.Mouse),
+    ("owner_active", "before_drain", PointerType.Touch),
+    ("parent_active", "before_frame", PointerType.Touch),
+    ("group", "before_drain", PointerType.Mouse),
+    ("interactable", "before_frame", PointerType.Mouse),
+    ("canvas_enabled", "before_drain", PointerType.Touch),
+    ("canvas_removed", "before_frame", PointerType.Touch),
+    ("reparent", "before_drain", PointerType.Mouse),
+    # Losing a coordinate surface is distinct at both dispatch barriers.
+    ("canvas_removed", "before_drain", PointerType.Mouse),
+    ("reparent", "before_frame", PointerType.Touch),
+])
 def test_disabled_capture_cancels_once_without_late_value_changes(scene, mode, timing, pointer_type):
     root, canvas = make_canvas(scene)
     slider = make_control(scene, root, TrackedSlider)

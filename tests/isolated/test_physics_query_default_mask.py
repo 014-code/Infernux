@@ -13,23 +13,45 @@ QUERIES = ["raycast", "raycast_all", "raycast_batch", "overlap_sphere", "overlap
 MODES = {"default": None, "none": None, "empty": 0, "layer0": 1, "layer2": 4, "all": 0xFFFFFFFF}
 SINGLE = {"raycast", "raycast_batch", "sphere_cast", "box_cast", "capsule_cast"}
 
+# Every entry point resolves an omitted mask; the shared policy is exercised
+# separately for zero, the high bit, exclusion, None and explicit overrides.
+QUERY_CASES = (
+    [(4, api, query, "default") for api in ("native", "public") for query in QUERIES]
+    + [(mask, api, "raycast", "default") for mask in (0, 0x80000000, 0xFFFFFFFB)
+       for api in ("native", "public")]
+    + [(4, api, query, mode) for api, query in (("public", "raycast"), ("native", "overlap_box"))
+       for mode in ("none", "empty", "layer0", "layer2", "all")]
+)
+SCREEN_CASES = [(4, mode) for mode in ("default", "none", "empty", "all")]
+MAPPED_CASES = [(4, "combined", mode) for mode in ("default", "none", "empty", "all")] + [
+    (0x80000000, "combined", "default")]
+GPU_CASES = [(4, query, mode) for query in ("box", "combined") for mode in ("default", "empty")] + [
+    (0x80000000, "combined", "default"), (4, "box", "all")]
 
-@pytest.fixture(scope="module", params=[0, 4, 0x80000000, 0xFFFFFFFB])
-def observed(request, tmp_path_factory):
-    project = tmp_path_factory.mktemp("query-mask")
-    result = subprocess.run([sys.executable, "-X", "utf8", "-B", str(Path(__file__).resolve()),
-        str(project), str(request.param)], env=os.environ.copy(), capture_output=True, text=True,
-        encoding="utf-8", timeout=60)
-    assert result.returncode == 0, result.stdout + result.stderr
-    value = json.loads((project / "query-masks.json").read_text(encoding="utf-8"))
-    assert value["configured"] == request.param
-    return value
+
+def observe_masks(tmp_path_factory, cases, gpu=False):
+    observed = {}
+    for configured in dict.fromkeys(row[0] for row in cases):
+        project = tmp_path_factory.mktemp("query-mask-gpu" if gpu else "query-mask")
+        command = [sys.executable, "-X", "utf8", "-B", str(Path(__file__).resolve()), str(project), str(configured)]
+        result = subprocess.run(command + (["gpu"] if gpu else []), env=os.environ.copy(),
+            capture_output=True, text=True, encoding="utf-8", timeout=90 if gpu else 60)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert not any(token in result.stdout + result.stderr for token in ("VUID-", "SYNC-HAZARD"))
+        value = json.loads((project / "query-masks.json").read_text(encoding="utf-8"))
+        assert value["configured"] == configured
+        observed[configured] = value
+    return observed
 
 
-@pytest.mark.parametrize("api", ["native", "public"])
-@pytest.mark.parametrize("query", QUERIES)
-@pytest.mark.parametrize("mode", MODES)
-def test_query_mask_resolution(observed, api, query, mode):
+@pytest.fixture(scope="module")
+def observed(tmp_path_factory):
+    return observe_masks(tmp_path_factory, QUERY_CASES + SCREEN_CASES + MAPPED_CASES)
+
+
+@pytest.mark.parametrize("configured,api,query,mode", QUERY_CASES)
+def test_query_mask_resolution(observed, configured, api, query, mode):
+    observed = observed[configured]
     mask = observed["configured"] if MODES[mode] is None else MODES[mode]
     selected = [int(value) for layer, value in observed["owners"].items() if mask & (1 << int(layer))]
     if query in SINGLE:
@@ -37,33 +59,25 @@ def test_query_mask_resolution(observed, api, query, mode):
     assert observed["results"][api][query][mode] == sorted(selected)
 
 
-@pytest.mark.parametrize("mode", MODES)
-def test_screen_ray_uses_configured_mask(observed, mode):
+@pytest.mark.parametrize("configured,mode", SCREEN_CASES)
+def test_screen_ray_uses_configured_mask(observed, configured, mode):
+    observed = observed[configured]
     assert observed["screen"][mode] == observed["results"]["public"]["raycast"][mode]
 
 
-@pytest.mark.parametrize("mode", MODES)
-def test_mapped_buffer_query_uses_configured_mask(observed, mode):
-    assert_buffer_query(observed, "combined", mode)
+@pytest.mark.parametrize("configured,query,mode", MAPPED_CASES)
+def test_mapped_buffer_query_uses_configured_mask(observed, configured, query, mode):
+    assert_buffer_query(observed[configured], query, mode)
 
 
-@pytest.fixture(scope="module", params=[0, 4, 0x80000000, 0xFFFFFFFB])
-def observed_gpu(request, tmp_path_factory):
-    project = tmp_path_factory.mktemp("query-mask-gpu")
-    result = subprocess.run([sys.executable, "-X", "utf8", "-B", str(Path(__file__).resolve()),
-        str(project), str(request.param), "gpu"], env=os.environ.copy(), capture_output=True,
-        text=True, encoding="utf-8", timeout=90)
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert not any(token in result.stdout + result.stderr for token in ("VUID-", "SYNC-HAZARD"))
-    value = json.loads((project / "query-masks.json").read_text(encoding="utf-8"))
-    assert value["configured"] == request.param
-    return value
+@pytest.fixture(scope="module")
+def observed_gpu(tmp_path_factory):
+    return observe_masks(tmp_path_factory, GPU_CASES, gpu=True)
 
 
-@pytest.mark.parametrize("query", ["box", "combined"])
-@pytest.mark.parametrize("mode", MODES)
-def test_gpu_buffer_query_uses_configured_mask(observed_gpu, query, mode):
-    assert_buffer_query(observed_gpu, query, mode)
+@pytest.mark.parametrize("configured,query,mode", GPU_CASES)
+def test_gpu_buffer_query_uses_configured_mask(observed_gpu, configured, query, mode):
+    assert_buffer_query(observed_gpu[configured], query, mode)
 
 
 def assert_buffer_query(observed, query, mode):
@@ -95,9 +109,10 @@ def exercise_buffers(evidence, gpu):
         ("half_extents", inx.vector3), ("friction", np.float32), ("bounciness", np.float32))}
     try:
         rows = evidence["buffers"] = {}
-        for query in (["box", "combined"] if gpu else ["combined"]):
-            rows[query] = {}
-            for mode, mask in MODES.items():
+        for configured, query, mode in (GPU_CASES if gpu else MAPPED_CASES):
+            if configured == evidence["configured"]:
+                rows.setdefault(query, {})
+                mask = MODES[mode]
                 kwargs = {} if mode == "default" else {"layer_mask": mask}
                 if query == "box":
                     Physics.query_rigidbody_box_states_in_bounds((-2, -2, -2), (2, 6, 2), boxes, **kwargs)
@@ -161,42 +176,46 @@ def exercise(project, configured, gpu=False):
             exercise_buffers(evidence, gpu=True)
             return
         origin, direction = Vector3(0, 8, 0), Vector3(0, -1, 0)
-        for api_name, api in (("native", Physics), ("public", PublicPhysics)):
-            rows = evidence["results"][api_name] = {}
-            for query in QUERIES:
-                rows[query] = {}
-                for mode, mask in MODES.items():
-                    kwargs = {} if mode == "default" else {"layer_mask": mask}
-                    fn = getattr(api, query)
-                    if query == "raycast_batch":
-                        output = fn(np.array([[0, 8, 0]], dtype=np.float32),
-                            np.array([[0, -1, 0]], dtype=np.float32), batch_output(), 12, **kwargs)
-                        ids = [int(output["game_object_id"][0])] if output["hit"][0] else []
+        for case_configured, api_name, query, mode in QUERY_CASES:
+            if case_configured == configured:
+                api = Physics if api_name == "native" else PublicPhysics
+                rows = evidence["results"].setdefault(api_name, {})
+                rows.setdefault(query, {})
+                mask = MODES[mode]
+                kwargs = {} if mode == "default" else {"layer_mask": mask}
+                fn = getattr(api, query)
+                if query == "raycast_batch":
+                    output = fn(np.array([[0, 8, 0]], dtype=np.float32),
+                        np.array([[0, -1, 0]], dtype=np.float32), batch_output(), 12, **kwargs)
+                    ids = [int(output["game_object_id"][0])] if output["hit"][0] else []
+                else:
+                    if query in ("raycast", "raycast_all"):
+                        value = fn(origin, direction, 12, **kwargs)
+                    elif query == "sphere_cast":
+                        value = fn(origin, .25, direction, 12, **kwargs)
+                    elif query == "box_cast":
+                        value = fn(origin, Vector3(.25, .25, .25), direction, max_distance=12, **kwargs)
+                    elif query == "capsule_cast":
+                        value = fn(Vector3(0, 7.75, 0), Vector3(0, 8.25, 0), .25, direction, 12, **kwargs)
+                    elif query == "overlap_sphere":
+                        value = fn(Vector3(0, 2, 0), 6, **kwargs)
+                    elif query == "overlap_box":
+                        value = fn(Vector3(0, 2, 0), Vector3(2, 6, 2), **kwargs)
+                    elif query == "overlap_capsule":
+                        value = fn(Vector3(0, 0, 0), Vector3(0, 4, 0), 2, **kwargs)
                     else:
-                        if query in ("raycast", "raycast_all"):
-                            value = fn(origin, direction, 12, **kwargs)
-                        elif query == "sphere_cast":
-                            value = fn(origin, .25, direction, 12, **kwargs)
-                        elif query == "box_cast":
-                            value = fn(origin, Vector3(.25, .25, .25), direction, max_distance=12, **kwargs)
-                        elif query == "capsule_cast":
-                            value = fn(Vector3(0, 7.75, 0), Vector3(0, 8.25, 0), .25, direction, 12, **kwargs)
-                        elif query == "overlap_sphere":
-                            value = fn(Vector3(0, 2, 0), 6, **kwargs)
-                        elif query == "overlap_box":
-                            value = fn(Vector3(0, 2, 0), Vector3(2, 6, 2), **kwargs)
-                        elif query == "overlap_capsule":
-                            value = fn(Vector3(0, 0, 0), Vector3(0, 4, 0), 2, **kwargs)
-                        else:
-                            value = fn(Vector3(-2, -2, -2), Vector3(2, 6, 2), **kwargs)
-                        values = ([value] if value is not None else []) if query in SINGLE else value
-                        ids = [item.game_object.id for item in values]
-                    rows[query][mode] = sorted(ids)
+                        value = fn(Vector3(-2, -2, -2), Vector3(2, 6, 2), **kwargs)
+                    values = ([value] if value is not None else []) if query in SINGLE else value
+                    ids = [item.game_object.id for item in values]
+                rows[query][mode] = sorted(ids)
         class CameraRay:
             def screen_point_to_ray(self, *_):
                 return origin, direction
         evidence["screen"] = {}
-        for mode, mask in MODES.items():
+        for case_configured, mode in SCREEN_CASES:
+            if case_configured != configured:
+                continue
+            mask = MODES[mode]
             kwargs = {} if mode == "default" else {"layer_mask": mask}
             hit = PublicPhysics.raycast_screen(CameraRay(), (32, 32), (64, 64), 12, **kwargs)
             evidence["screen"][mode] = [] if hit is None else [hit.game_object.id]

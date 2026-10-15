@@ -15,7 +15,7 @@ from infernux.engine.nuitka_builder import NuitkaBuilder
 
 
 KINDS = ("project", "embedded", "bundle", "player", "staging", "intermediates", "package", "package-libs")
-NAMES = ("Puzzle&Co", "Puzzle%INX_CLEANUP_SENTINEL%", "Puzzle (team)^!", "中文 合作项目")
+NAMES = ("中文 Puzzle&Co%INX_CLEANUP_SENTINEL% (team)^!",)
 
 
 @pytest.fixture

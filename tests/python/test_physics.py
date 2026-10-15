@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 
 import pytest
 
@@ -46,25 +45,23 @@ class TestCoerceVec3:
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TestPhysicsGravity:
-    def test_body_count_forwards_native_world_telemetry(self):
-        assert physics_module.Physics.body_count == CppPhysics.body_count
-
-    def test_gravity_returns_vector3(self):
-        g = physics_module.Physics.gravity
-        assert hasattr(g, "x") and hasattr(g, "y") and hasattr(g, "z")
-
-    def test_default_gravity_is_earth(self):
-        g = physics_module.Physics.gravity
-        assert g.y == pytest.approx(-9.81, abs=0.01)
-
-    def test_set_gravity_accepts_tuple(self):
-        """set_gravity call chain does not crash."""
-        physics_module.Physics.gravity = (0, -20, 0)
-        # Reset
-        physics_module.Physics.gravity = (0, -9.81, 0)
-
-    def test_set_gravity_accepts_vector3(self):
-        physics_module.Physics.gravity = Vector3(0, -9.81, 0)
+    def test_editing_gravity_matches_native_world_and_restores_it(self):
+        physics = physics_module.Physics
+        original = physics.gravity
+        before = (original.x, original.y, original.z)
+        assert before == pytest.approx((0., -9.81, 0.))
+        assert physics.body_count == CppPhysics.body_count
+        try:
+            physics.gravity = (1., -20., 2.)
+            changed = physics.gravity
+            assert (changed.x, changed.y, changed.z) == pytest.approx((1., -20., 2.))
+            native = CppPhysics.get_gravity()
+            assert (native.x, native.y, native.z) == pytest.approx((1., -20., 2.))
+            physics.gravity = Vector3(*before)
+            restored = physics.gravity
+            assert (restored.x, restored.y, restored.z) == pytest.approx(before)
+        finally:
+            physics.gravity = original
 
 
 class TestPhysicsRaycast:
@@ -203,45 +200,30 @@ class TestRigidbodyEnums:
         assert int(RigidbodyConstraints.FreezeAll) == 126
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Collision detection mode mapping
-# ═══════════════════════════════════════════════════════════════════════════
-
-def _backend_motion_quality(mode: CollisionDetectionMode, is_kinematic: bool) -> int:
-    if mode == CollisionDetectionMode.ContinuousDynamic:
-        return 0 if is_kinematic else 2
-    if mode == CollisionDetectionMode.Continuous:
-        return 0 if is_kinematic else 1
-    return 0
-
-
-class TestCollisionDetectionMapping:
-    def test_dynamic_body_modes(self):
-        assert _backend_motion_quality(CollisionDetectionMode.Discrete, False) == 0
-        assert _backend_motion_quality(CollisionDetectionMode.Continuous, False) == 1
-        assert _backend_motion_quality(CollisionDetectionMode.ContinuousDynamic, False) == 2
-
-    def test_kinematic_body_modes(self):
-        assert _backend_motion_quality(CollisionDetectionMode.Discrete, True) == 0
-        assert _backend_motion_quality(CollisionDetectionMode.Continuous, True) == 0
-        assert _backend_motion_quality(CollisionDetectionMode.ContinuousDynamic, True) == 0
-
-
-# ═══════════════════════════════════════════════════════════════════════════
 # Physics settings (load / save / defaults)
-# ═══════════════════════════════════════════════════════════════════════════
 
 class TestPhysicsSettings:
-    def test_defaults(self):
-        assert DEFAULT_PHYSICS_SETTINGS["gravity"] == [0.0, -9.81, 0.0]
-        assert DEFAULT_PHYSICS_SETTINGS["fixed_delta_time"] == 0.02
-        assert DEFAULT_PHYSICS_SETTINGS["max_fixed_delta_time"] == pytest.approx(1.0 / 3.0)
-        assert DEFAULT_PHYSICS_SETTINGS["collision_steps"] == 1
-        assert DEFAULT_PHYSICS_SETTINGS["velocity_steps"] == 10
-        assert DEFAULT_PHYSICS_SETTINGS["position_steps"] == 3
-        assert DEFAULT_PHYSICS_SETTINGS["min_velocity_for_restitution"] == 2.0
-        assert DEFAULT_PHYSICS_SETTINGS["time_before_sleep"] == 0.5
-        assert DEFAULT_PHYSICS_SETTINGS["point_velocity_sleep_threshold"] == 0.005
+    def test_settings_defaults_authored_roundtrip_and_file_publication(self, tmp_path):
+        project = str(tmp_path)
+        defaults = load_physics_settings(project)
+        assert defaults == DEFAULT_PHYSICS_SETTINGS
+        assert defaults['gravity'] == [0., -9.81, 0.]
+        assert defaults['fixed_delta_time'] == .02
+        assert defaults['max_fixed_delta_time'] == pytest.approx(1. / 3.)
+        assert (defaults['collision_steps'], defaults['velocity_steps'], defaults['position_steps']) == (1, 10, 3)
+        assert defaults['min_velocity_for_restitution'] == 2.
+        assert defaults['time_before_sleep'] == .5
+        assert defaults['point_velocity_sleep_threshold'] == .005
+        authored = {**defaults, 'gravity': [0., -20., 0.], 'fixed_delta_time': .01,
+                    'max_fixed_delta_time': .05}
+        save_physics_settings(project, authored)
+        path = settings_path(project)
+        assert path == os.path.join(project, 'ProjectSettings', 'PhysicsSettings.json')
+        with open(path, encoding='utf-8') as file:
+            assert json.load(file) == authored
+        assert load_physics_settings(project) == authored
+        assert list((tmp_path / 'ProjectSettings').glob('PhysicsSettings.json.tmp.*')) == []
+
 
     def test_load_missing_project(self):
         result = load_physics_settings("")
@@ -251,24 +233,6 @@ class TestPhysicsSettings:
         result = load_physics_settings(str(tmp_path))
         assert result == DEFAULT_PHYSICS_SETTINGS
 
-    def test_settings_path(self, tmp_path):
-        p = settings_path(str(tmp_path))
-        assert p.endswith("PhysicsSettings.json")
-        assert "ProjectSettings" in p
-
-    def test_save_and_load_round_trip(self, tmp_path):
-        project = str(tmp_path)
-        os.makedirs(os.path.join(project, "ProjectSettings"), exist_ok=True)
-        settings = {
-            **DEFAULT_PHYSICS_SETTINGS,
-            "gravity": [0.0, -20.0, 0.0],
-            "fixed_delta_time": 0.01,
-            "max_fixed_delta_time": 0.05,
-        }
-        save_physics_settings(project, settings)
-        loaded = load_physics_settings(project)
-        assert loaded["gravity"] == [0.0, -20.0, 0.0]
-        assert loaded["fixed_delta_time"] == 0.01
 
     def test_load_corrupted_file_is_rejected(self, tmp_path):
         project = str(tmp_path)
@@ -279,22 +243,6 @@ class TestPhysicsSettings:
         with pytest.raises(PhysicsSettingsError):
             load_physics_settings(project)
 
-    def test_load_current_document(self, tmp_path):
-        project = str(tmp_path)
-        ps_dir = os.path.join(project, "ProjectSettings")
-        os.makedirs(ps_dir, exist_ok=True)
-        with open(os.path.join(ps_dir, "PhysicsSettings.json"), "w", encoding="utf-8") as file:
-            json.dump(dict(DEFAULT_PHYSICS_SETTINGS), file)
-        assert load_physics_settings(project) == DEFAULT_PHYSICS_SETTINGS
-
-    def test_save_uses_current_fields_and_leaves_no_temporary_file(self, tmp_path):
-        project = str(tmp_path)
-        save_physics_settings(project, dict(DEFAULT_PHYSICS_SETTINGS))
-        path = settings_path(project)
-        with open(path, encoding="utf-8") as file:
-            document = json.load(file)
-        assert document == DEFAULT_PHYSICS_SETTINGS
-        assert list((tmp_path / "ProjectSettings").glob("PhysicsSettings.json.tmp.*")) == []
 
     def test_unknown_field_is_rejected(self, tmp_path):
         project_settings = tmp_path / "ProjectSettings"

@@ -42,41 +42,8 @@ def test_variant_inherits_base_edits_preserving_explicit_overrides():
     assert rebase_variant_definition(updated, changed) == updated
 
 
-def test_equal_valued_override_can_be_explicitly_reverted_without_touching_other_properties():
-    base = prefab()
-    own = copy.deepcopy(base)
-    own["root_object"]["name"] = "Private"
-    own["root_object"]["children"][0]["layer"] = 5
-    definition = create_variant_definition("base-guid", base, own)
-    base["root_object"]["children"][0]["layer"] = 5
-    current = variant_document(rebase_variant_definition(definition, base))
-    before = copy.deepcopy(current)
-    rows = variant_property_modifications(current)
-    layer = next(item for item in rows if item["path"] == ["layer"])
-    assert layer["value"] == layer["source_value"] == 5
-    reverted = revert_variant_property(current, 2, 0, ("layer",))
-    assert current == before
-    assert reverted["root_object"] == current["root_object"]
-    assert [item["path"] for item in variant_property_modifications(reverted)] == [["name"]]
-    base["root_object"]["children"][0]["layer"] = 7
-    later = rebase_variant_definition(variant_definition(reverted), base)["document"]
-    assert later["root_object"]["children"][0]["layer"] == 7
-    assert later["root_object"]["name"] == "Private"
 
 
-def test_editing_override_to_equal_base_does_not_silently_restore_inheritance():
-    from infernux.engine.prefab_variant import edit_variant_document
-
-    base = prefab()
-    own = copy.deepcopy(base)
-    own["root_object"]["layer"] = 5
-    current = variant_document(create_variant_definition("base-guid", base, own))
-    edited = copy.deepcopy(own)
-    edited["root_object"]["layer"] = 0
-    saved = edit_variant_document(current, edited)
-    assert saved["variant"]["property_overrides"] == [dict(object=1, component=0, path=["layer"], value=0)]
-    base["root_object"]["layer"] = 8
-    assert rebase_variant_definition(variant_definition(saved), base)["document"]["root_object"]["layer"] == 0
 
 
 def test_variant_revert_projects_references_into_local_identity_domain():
@@ -188,16 +155,6 @@ def test_invalid_projections_rejected_at_authoring_boundary(mutation):
         validate_variant_definition(definition)
 
 
-def test_explicit_override_survives_base_matching_then_changing_its_value():
-    base = prefab()
-    own = copy.deepcopy(base)
-    own["root_object"]["layer"] = 3
-    definition = create_variant_definition("base", base, own)
-    base["root_object"]["layer"] = 3
-    updated = rebase_variant_definition(definition, base)
-    base["root_object"]["layer"] = 7
-    again = rebase_variant_definition(json.loads(json.dumps(updated)), base)
-    assert again["document"]["root_object"]["layer"] == 3
 
 
 def test_variant_chain_resolves_shared_base_once_without_modifying_inputs():
@@ -297,3 +254,53 @@ def test_typed_reference_override_remains_one_value():
     assert len(overrides) == 1
     assert overrides[0]["path"] == ["target"]
     assert overrides[0]["value"]["component_id"] == 2
+
+
+def test_explicit_variant_overrides_survive_equal_base_edits_and_selective_revert():
+    from infernux.engine.prefab_variant import edit_variant_document
+
+    base = prefab()
+    own = copy.deepcopy(base)
+    own["root_object"]["name"] = "Private"
+    own["root_object"]["layer"] = 3
+    own["root_object"]["children"][0]["layer"] = 5
+    definition = create_variant_definition("base-guid", base, own)
+
+    # Equality with a newer base never implicitly deletes override intent.
+    base["root_object"]["layer"] = 3
+    base["root_object"]["children"][0]["layer"] = 5
+    matching = rebase_variant_definition(definition, base)
+    base["root_object"]["layer"] = 7
+    base["root_object"]["children"][0]["layer"] = 9
+    updated = rebase_variant_definition(json.loads(json.dumps(matching)), base)
+    assert updated["document"]["root_object"]["layer"] == 3
+    assert updated["document"]["root_object"]["children"][0]["layer"] == 5
+
+    # An explicit user edit to a matching value remains an explicit override.
+    current = variant_document(updated)
+    authored = copy.deepcopy(current)
+    authored["root_object"]["layer"] = 7
+    saved = edit_variant_document(current, authored)
+    base["root_object"]["layer"] = 11
+    updated = rebase_variant_definition(variant_definition(saved), base)
+    assert updated["document"]["root_object"]["layer"] == 7
+
+    # Revert only the child's equal-valued override; preserve the root edits.
+    base["root_object"]["children"][0]["layer"] = 5
+    current = variant_document(rebase_variant_definition(updated, base))
+    row = next(item for item in variant_property_modifications(current)
+               if item["object"] == 2 and item["path"] == ["layer"])
+    assert row["value"] == row["source_value"] == 5
+    before = copy.deepcopy(current)
+    reverted = revert_variant_property(current, 2, 0, ("layer",))
+    assert current == before
+    assert reverted["root_object"] == current["root_object"]
+    assert {(item["object"], tuple(item["path"]))
+            for item in variant_property_modifications(reverted)} == {
+        (1, ("name",)), (1, ("layer",)),
+    }
+    base["root_object"]["children"][0]["layer"] = 13
+    later = rebase_variant_definition(variant_definition(reverted), base)["document"]
+    assert later["root_object"]["children"][0]["layer"] == 13
+    assert later["root_object"]["name"] == "Private"
+    assert later["root_object"]["layer"] == 7

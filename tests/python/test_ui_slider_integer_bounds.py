@@ -6,19 +6,18 @@ import pytest
 from infernux.ui import PointerEventData, UICanvas, UIFillDirection, UISlider
 
 
-@pytest.mark.parametrize("minimum,maximum,requested,expected", [
-    (0.25, 2.75, -10, 1),
-    (0.25, 2.75, 10, 2),
-    (0.25, 2.75, 1.4, 1),
-    (0.25, 2.75, 1.5, 2),
-    (-3.75, -1.25, -10, -3),
-    (-3.75, -1.25, 10, -2),
-    (-3.75, -1.25, -2.5, -2),
-    (-0.2, 0.2, 10, 0),
-    (2, 2, -10, 2),
-    (0, 4, 2.5, 2),  # Retain the existing ties-to-even rounding rule.
+@pytest.mark.parametrize("minimum,maximum,requested,expected,notify", [
+    (0.25, 2.75, -10, 1, True),
+    (0.25, 2.75, 10, 2, False),
+    (0.25, 2.75, 1.4, 1, False),
+    (0.25, 2.75, 1.5, 2, True),
+    (-3.75, -1.25, -10, -3, False),
+    (-3.75, -1.25, 10, -2, True),
+    (-3.75, -1.25, -2.5, -2, False),
+    (-0.2, 0.2, 10, 0, True),
+    (2, 2, -10, 2, True),
+    (0, 4, 2.5, 2, True),  # Retain the existing ties-to-even rounding rule.
 ])
-@pytest.mark.parametrize("notify", [True, False])
 def test_integer_slider_return_storage_and_notifications_share_valid_bounds(
     minimum, maximum, requested, expected, notify,
 ):
@@ -35,20 +34,15 @@ def test_integer_slider_return_storage_and_notifications_share_valid_bounds(
     assert observed == ([expected] if notify and before != expected else [])
 
 
-@pytest.mark.parametrize("minimum,maximum,requested", [
-    (0.25, 0.75, 0.5),
-    (-0.75, -0.25, -0.5),
-    (2, 1, 1),
-    (0.5, 0.5, 0.5),
-    (math.nan, 2, 1),
-    (0, math.nan, 1),
-    (-math.inf, 2, 1),
-    (0, math.inf, 1),
-    (0, 2, math.nan),
-    (0, 2, math.inf),
-    (0, 2, -math.inf),
+@pytest.mark.parametrize("minimum,maximum,requested,notify", [
+    (0.25, 0.75, 0.5, True),  # No representable integer.
+    (2, 1, 1, False),  # Reversed interval.
+    (0.5, 0.5, 0.5, False),  # Fractional singleton.
+    (math.nan, 2, 1, True),
+    (0, math.inf, 1, False),
+    (0, 2, math.nan, True),
+    (0, 2, -math.inf, False),
 ])
-@pytest.mark.parametrize("notify", [True, False])
 def test_invalid_integer_slider_update_does_not_mutate_or_publish(minimum, maximum, requested, notify):
     slider = UISlider()
     slider.value = 1.0

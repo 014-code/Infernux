@@ -11,14 +11,6 @@ from infernux.engine.interaction import (
 import pytest
 
 
-def test_selection_service_has_one_active_domain():
-    service = SelectionService()
-    service.select(SelectionTarget.scene_object(7), owner_id="hierarchy")
-
-    service.select(SelectionTarget.asset("Assets/Test.mat"), owner_id="project")
-
-    assert service.snapshot.domain is SelectionDomain.ASSET
-    assert service.snapshot.primary == SelectionTarget.asset("Assets/Test.mat")
 
 
 def test_selection_snapshot_rejects_mixed_domains():
@@ -83,31 +75,8 @@ def test_selection_snapshot_deduplication_preserves_anchor_identity():
     assert snapshot.anchor == first
 
 
-def test_selection_range_keeps_stable_anchor_and_clicked_primary():
-    service = SelectionService()
-    targets = [SelectionTarget.scene_object(value) for value in range(1, 6)]
-    service.set_ordered_targets("hierarchy", targets)
-    service.select(targets[1], owner_id="hierarchy")
-
-    service.range_select(targets[4], owner_id="hierarchy")
-
-    assert service.snapshot.targets == tuple(targets[1:])
-    assert service.snapshot.anchor == targets[1]
-    assert service.snapshot.primary == targets[4]
 
 
-def test_same_domain_toggle_crosses_views_without_resetting_selection():
-    service = SelectionService()
-    first = SelectionTarget.scene_object(41)
-    second = SelectionTarget.scene_object(42)
-    service.select(first, owner_id="hierarchy")
-
-    service.toggle(second, owner_id="scene_view")
-
-    assert service.snapshot.targets == (first, second)
-    assert service.snapshot.primary == second
-    assert service.snapshot.anchor == first
-    assert service.snapshot.owner_id == "scene_view"
 
 
 def test_scene_object_projection_includes_component_owners_without_second_state():
@@ -128,48 +97,10 @@ def test_scene_object_projection_includes_component_owners_without_second_state(
     assert service.snapshot.domain is SelectionDomain.COMPONENT
 
 
-def test_scene_object_operations_publish_typed_selection_directly():
-    service = SelectionService()
-    service.set_ordered_scene_objects("hierarchy", [1, 2, 3, 4])
-    service.select_scene_object(2, owner_id="hierarchy")
-    service.range_select_scene_object(4, owner_id="hierarchy")
-
-    assert service.scene_object_ids() == (2, 3, 4)
-    assert service.primary_scene_object_id() == 4
-    assert service.snapshot.anchor == SelectionTarget.scene_object(2)
-
-    service.toggle_scene_object(3, owner_id="scene_view")
-    assert service.scene_object_ids() == (2, 4)
-    assert service.snapshot.owner_id == "scene_view"
 
 
-def test_range_selection_can_reuse_same_domain_anchor_from_another_view():
-    service = SelectionService()
-    targets = [SelectionTarget.scene_object(value) for value in range(1, 6)]
-    service.select(targets[1], owner_id="scene_view")
-    service.set_ordered_targets("hierarchy", targets)
-
-    service.range_select(targets[4], owner_id="hierarchy")
-
-    assert service.snapshot.targets == tuple(targets[1:])
-    assert service.snapshot.anchor == targets[1]
-    assert service.snapshot.primary == targets[4]
-    assert service.snapshot.owner_id == "hierarchy"
 
 
-def test_selection_replay_does_not_request_another_history_entry():
-    service = SelectionService()
-    changes = []
-    service.add_listener(changes.append)
-    snapshot = SelectionSnapshot.create(
-        (SelectionTarget.scene_object(42),),
-        owner_id="scene_view",
-    )
-
-    service.apply_snapshot(snapshot, reason="undo", record_history=False)
-
-    assert len(changes) == 1
-    assert changes[0].record_history is False
 
 
 def test_selection_reconcile_preserves_valid_order_and_repairs_primary_anchor():
@@ -279,29 +210,7 @@ def test_timeline_editor_projects_stable_keyframe_selection():
 
         service.select(target, owner_id=panel.window_id, record_history=False)
         assert panel._current_sel_key() is key
-    finally:
-        panel.on_disable()
-        SelectionService._instance = previous
-
-
-def test_timeline_editor_drops_stale_keyframe_selection():
-    from infernux.engine.ui.animtimeline_editor_panel import AnimTimelineEditorPanel
-
-    previous = SelectionService._instance
-    service = SelectionService()
-    panel = AnimTimelineEditorPanel()
-    try:
-        panel.on_enable()
-        service.select(
-            SelectionTarget.timeline_element(
-                panel.document_id,
-                "missing-key",
-                sub_kind="keyframe",
-            ),
-            owner_id=panel.window_id,
-            record_history=False,
-        )
-
+        panel._timeline.keyframes.remove(key)
         assert panel._current_sel_key() is None
         assert service.snapshot.is_empty
     finally:
@@ -309,35 +218,10 @@ def test_timeline_editor_drops_stale_keyframe_selection():
         SelectionService._instance = previous
 
 
-def test_focus_service_owns_pending_and_active_panel_state():
-    focus = FocusService()
-
-    assert focus.request_panel_focus("project")
-    assert focus.consume_panel_focus_request("project")
-    assert not focus.consume_panel_focus_request("project")
-    assert focus.activate_panel("project", child_context_id="project.search")
-    assert focus.snapshot.active_panel_id == "project"
-    assert focus.snapshot.child_context_id == "project.search"
-
-    # A native WindowManager acknowledgement must not erase child focus.
-    assert not focus.activate_panel("project")
-    assert focus.snapshot.child_context_id == "project.search"
 
 
-def test_focus_change_distinguishes_user_history_from_replay():
-    focus = FocusService()
-    changes = []
-    focus.add_change_listener(changes.append)
 
-    assert focus.activate_panel("project", reason="project_click")
-    assert focus.apply_snapshot(
-        FocusService().snapshot,
-        reason="undo",
-        record_history=False,
-    )
 
-    assert [change.reason for change in changes] == ["project_click", "undo"]
-    assert [change.record_history for change in changes] == [True, False]
 
 
 def test_bootstrap_records_focus_in_global_action_journal(monkeypatch):
@@ -1128,6 +1012,8 @@ def test_typed_selection_undo_replays_without_legacy_domain_loss():
     from infernux.engine._bootstrap_selection import BootstrapSelectionMixin
 
     service = SelectionService()
+    changes = []
+    service.add_listener(changes.append)
     focus_requests = []
 
     class WindowManager:
@@ -1168,6 +1054,8 @@ def test_typed_selection_undo_replays_without_legacy_domain_loss():
     assert service.snapshot == subresource
     assert bootstrap._prev_selection_snapshot == subresource
     assert focus_requests == []
+    assert len(changes) == 3
+    assert all(change.record_history is False for change in changes)
 
 
 def test_scene_pick_reveals_through_navigation_without_activating_hierarchy():
@@ -1337,3 +1225,44 @@ def test_ui_editor_component_is_a_revision_cached_global_selection_projection(
 
     service.clear(record_history=False)
     assert panel._selected_element_comp is None
+
+
+def test_scene_selection_range_toggle_cross_view_and_asset_domain_switch():
+    service = SelectionService()
+    service.set_ordered_scene_objects("hierarchy", [1, 2, 3, 4, 5])
+    anchor = SelectionTarget.scene_object(2)
+    service.select(anchor, owner_id="scene_view")
+    service.range_select_scene_object(5, owner_id="hierarchy")
+    assert service.scene_object_ids() == (2, 3, 4, 5)
+    assert service.snapshot.anchor == anchor
+    assert service.snapshot.primary == SelectionTarget.scene_object(5)
+    assert service.snapshot.owner_id == "hierarchy"
+
+    service.toggle_scene_object(3, owner_id="scene_view")
+    assert service.scene_object_ids() == (2, 4, 5)
+    first = SelectionTarget.scene_object(1)
+    service.toggle(first, owner_id="hierarchy")
+    assert service.snapshot.targets == tuple(SelectionTarget.scene_object(value) for value in (2, 4, 5, 1))
+    assert service.snapshot.anchor == anchor and service.snapshot.primary == first
+
+    asset = SelectionTarget.asset("Assets/Test.mat")
+    service.select(asset, owner_id="project")
+    assert service.snapshot.domain is SelectionDomain.ASSET
+    assert service.snapshot.targets == (asset,) and service.snapshot.primary == asset
+
+
+def test_focus_request_acknowledgement_child_context_and_history_replay():
+    focus = FocusService()
+    changes = []
+    focus.add_change_listener(changes.append)
+    assert focus.request_panel_focus("project")
+    assert focus.consume_panel_focus_request("project")
+    assert not focus.consume_panel_focus_request("project")
+    assert focus.activate_panel("project", child_context_id="project.search", reason="project_click")
+    assert focus.snapshot.active_panel_id == "project"
+    assert focus.snapshot.child_context_id == "project.search"
+    assert not focus.activate_panel("project")
+    assert focus.snapshot.child_context_id == "project.search"
+    assert focus.apply_snapshot(FocusService().snapshot, reason="undo", record_history=False)
+    assert [change.reason for change in changes] == ["project_click", "undo"]
+    assert [change.record_history for change in changes] == [True, False]

@@ -19,21 +19,20 @@ def run_case(tmp_path, *args):
     assert 'UI_EDITOR_LIFECYCLE_OK' in result.stdout
 
 
-@pytest.mark.parametrize('world', ['active', 'additive'])
-@pytest.mark.parametrize('kind', ['UIImage', 'UIText'])
-@pytest.mark.parametrize('action', ['before', 'after_empty', 'reselect', 'remove', 'readd', 'unrelated', 'stable'])
+@pytest.mark.parametrize('world,kind,action', [
+    ('active', 'UIImage', action) for action in ('before', 'after_empty', 'reselect', 'remove', 'readd', 'unrelated', 'stable')
+] + [('active', 'UIText', 'readd'), ('additive', 'UIImage', 'remove'), ('additive', 'UIText', 'readd')])
 def test_selected_component_membership(tmp_path, world, kind, action):
     run_case(tmp_path, 'selection', kind, action, world)
 
 
-@pytest.mark.parametrize('kind', ['drag', 'resize', 'rotate'])
-@pytest.mark.parametrize('action', ['finish', 'hidden', 'disable', 'close_lifecycle', 'cancel'])
+@pytest.mark.parametrize('kind,action', [(kind, action) for kind in ('drag', 'resize', 'rotate')
+    for action in ('finish', 'cancel')] + [('drag', action) for action in ('hidden', 'disable', 'close_lifecycle')])
 def test_gesture_retirement_and_undo(tmp_path, kind, action):
     run_case(tmp_path, 'gesture', kind, action)
 
 
-@pytest.mark.parametrize('kind', ['pan', 'canvas', 'zoom'])
-@pytest.mark.parametrize('action', ['hidden', 'disable'])
+@pytest.mark.parametrize('kind,action', [('pan', 'hidden'), ('canvas', 'hidden'), ('zoom', 'hidden'), ('zoom', 'disable')])
 def test_view_gesture_retirement(tmp_path, kind, action):
     run_case(tmp_path, 'view', kind, action)
 

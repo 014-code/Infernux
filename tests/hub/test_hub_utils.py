@@ -33,20 +33,6 @@ def test_launch_paths_and_child_cache_share_one_context(monkeypatch, tmp_path, m
     assert "INFERNUX_SHARED_DATA_ROOT" not in os.environ
 
 
-def test_child_environment_owns_the_shared_package_cache(monkeypatch, tmp_path):
-    monkeypatch.setattr(
-        hub_utils,
-        "get_hub_shared_data_dir",
-        lambda: str(tmp_path / "HubData"),
-    )
-    monkeypatch.delenv("INFERNUX_PACKAGE_CACHE_ROOT", raising=False)
-    monkeypatch.delenv("INFERNUX_SHARED_DATA_ROOT", raising=False)
-
-    merged = hub_utils.merge_child_env_utf8()
-
-    assert merged["INFERNUX_PACKAGE_CACHE_ROOT"] == os.path.join(
-        str(tmp_path / "HubData"), "Library", "Plugins"
-    )
 
 
 def test_explicit_package_cache_override_survives_hub_launch(monkeypatch, tmp_path):

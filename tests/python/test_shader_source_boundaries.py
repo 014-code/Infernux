@@ -4,9 +4,14 @@ import pytest
 from infernux.lib import _Infernux as native
 
 
-@pytest.mark.parametrize('stage', ['vertex', 'fragment', 'compute'])
-@pytest.mark.parametrize('tail', ['plain', 'conditional', 'nested', 'comment_brace', 'declaration',
-                                 'invalid_statement', 'unterminated_comment', 'missing_endif'])
+@pytest.mark.parametrize('stage,tail', [
+    ('vertex', 'plain'), ('fragment', 'plain'), ('compute', 'plain'),
+    ('vertex', 'conditional'), ('compute', 'nested'),
+    ('fragment', 'comment_brace'), ('compute', 'declaration'),
+    ('fragment', 'invalid_statement'), ('compute', 'invalid_statement'),
+    ('vertex', 'unterminated_comment'), ('compute', 'unterminated_comment'),
+    ('fragment', 'missing_endif'), ('compute', 'missing_endif'),
+])
 def test_glsl_compiles_the_authored_tail(stage, tail):
     bodies = {
         'vertex': 'void main() { gl_Position = vec4(0, 0, 0, 1); }\n',

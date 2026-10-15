@@ -8,7 +8,7 @@ import types
 import pytest
 
 from infernux.engine.candidate_import import CandidateImportTransaction
-from test_candidate_import_transaction import candidate_project
+from test_candidate_import_transaction import candidate_project as candidate_project
 
 
 IMPORTS = {
@@ -29,11 +29,16 @@ def load_reference(name, path, source):
     return module
 
 
-@pytest.mark.parametrize('future', [False, True])
-@pytest.mark.parametrize('style', IMPORTS)
-@pytest.mark.parametrize('slots', [False, True])
-@pytest.mark.parametrize('frozen', [False, True])
-@pytest.mark.parametrize('live', [False, True])
+@pytest.mark.parametrize('future,style,slots,frozen,live', [
+    (False, 'named', False, False, False),
+    (True, 'named', True, True, True),
+    (True, 'aliases', False, True, True),
+    (False, 'aliases', True, False, False),
+    (True, 'qualified', True, False, True),
+    (False, 'qualified', False, True, False),
+    (True, 'named', False, False, False),
+    (False, 'aliases', True, True, True),
+])
 def test_candidate_dataclass_matches_standard_module(candidate_project, future, style, slots, frozen, live):
     imports, decorator, field, initvar, kwonly, classvar = IMPORTS[style]
     name = 'candidate_dataclass_rules'

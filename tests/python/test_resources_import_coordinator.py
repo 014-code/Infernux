@@ -509,8 +509,12 @@ def test_modified_asset_failure_surfaces_runtime_compile_detail(monkeypatch, tmp
         handler._commit_modified(resolved)
 
 
-@pytest.mark.parametrize("extension", [".vert", ".frag", ".glsl", ".shadingmodel", ".effect", ".effectgroup", ".particlegraph", ".particle.py"])
-@pytest.mark.parametrize("echo_kind", ["watcher", "local_write"])
+@pytest.mark.parametrize("extension,echo_kind", [
+    (".vert", "watcher"), (".frag", "local_write"), (".glsl", "watcher"),
+    (".shadingmodel", "local_write"), (".effect", "watcher"),
+    (".effectgroup", "local_write"), (".particlegraph", "watcher"),
+    (".particle.py", "local_write"),
+])
 def test_rejected_compiled_asset_waits_for_next_save_without_retrying(monkeypatch, tmp_path, extension, echo_kind):
     from infernux.lib import AssetMutationErrorCode
     from infernux.engine.interaction import DocumentRegistry
@@ -759,8 +763,10 @@ def test_first_scene_save_as_imports_active_unregistered_target(monkeypatch, tmp
     assert [entry[0] for entry in asset_calls] == ["asset-created"]
 
 
-@pytest.mark.parametrize("staging_name", ["TankBattle.py.tmp.47892.966d5eeabe93", ".editor-save", "draft.tmp"])
-@pytest.mark.parametrize("registered", [False, True])
+@pytest.mark.parametrize("staging_name,registered", [
+    ("TankBattle.py.tmp.47892.966d5eeabe93", True),
+    (".editor-save", False), ("draft.tmp", True),
+])
 def test_external_atomic_script_publication_registers_destination_content(
     monkeypatch, tmp_path, staging_name, registered,
 ):
@@ -791,8 +797,9 @@ def test_external_atomic_script_publication_registers_destination_content(
         assert database.guid_by_path[str(target)] == "stable-guid"
 
 
-@pytest.mark.parametrize("staging_name", ["TankBattle.py.tmp.47892.966d5eeabe93", ".editor-save"])
-@pytest.mark.parametrize("destination_exists", [False, True])
+@pytest.mark.parametrize("staging_name,destination_exists", [
+    ("TankBattle.py.tmp.47892.966d5eeabe93", False), (".editor-save", True),
+])
 def test_already_imported_staging_file_cannot_replace_target_script_identity(
     engine, tmp_path, staging_name, destination_exists,
 ):

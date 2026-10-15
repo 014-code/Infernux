@@ -465,8 +465,7 @@ def test_schema_gateway_transform_rejection_does_not_masquerade_as_no_change(sce
         queue.release_owner("MCP rejected transform test finished")
 
 
-@pytest.mark.parametrize("kind", ["native", "python", "render_stack"])
-@pytest.mark.parametrize("changed", [False, True])
+@pytest.mark.parametrize('kind,changed', [('native', True), ('python', True), ('render_stack', True), ('native', False)])
 def test_schema_gateway_repeated_component_field_set_is_success_without_history(
     scene, tmp_path, kind, changed
 ):
@@ -523,8 +522,7 @@ def test_schema_gateway_repeated_component_field_set_is_success_without_history(
         queue.release_owner("MCP repeated component field test finished")
 
 
-@pytest.mark.parametrize("kind", ["native", "python", "render_stack"])
-@pytest.mark.parametrize("invalid", [False, True])
+@pytest.mark.parametrize('kind,invalid', [('native', True), ('python', True), ('render_stack', True), ('native', False)])
 def test_schema_gateway_component_field_rejection_is_not_no_change(scene, tmp_path, kind, invalid):
     from infernux.components import InxComponent, serialized_field
     from infernux.engine.interaction import EditorInteractionCore

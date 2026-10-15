@@ -1,7 +1,6 @@
 """Independent actors retain world poses across the real frame-cache boundary."""
 from __future__ import annotations
 
-import itertools
 import os
 from pathlib import Path
 import subprocess
@@ -29,18 +28,18 @@ def _run(project, order, interpolation, sleeping, rotate, reparent=False, graphi
     assert "HIERARCHY_PUBLICATION passed" in result.stdout
 
 
-@pytest.mark.parametrize("order", ["012", "210"])
-@pytest.mark.parametrize("interpolation", [0, 1])
-@pytest.mark.parametrize("sleeping", [False, True])
-@pytest.mark.parametrize("rotate", [False, True])
+@pytest.mark.parametrize("order,interpolation,sleeping,rotate", [
+    ("012", 0, False, False), ("210", 1, False, True),
+    ("210", 0, True, True), ("012", 1, True, False),
+])
 def test_nested_bodies_preserve_independent_world_trajectories(
     tmp_path, order, interpolation, sleeping, rotate,
 ):
     _run(tmp_path, order, interpolation, sleeping, rotate)
 
 
-@pytest.mark.parametrize("order", ["".join(p) for p in itertools.permutations("012")])
-@pytest.mark.parametrize("interpolation", [0, 1])
+# Ancestor-first, descendant-first and an interleaved allocation order.
+@pytest.mark.parametrize("order,interpolation", [("012", 0), ("210", 0), ("102", 1)])
 def test_nested_actor_allocation_orders_and_runtime_reparent(tmp_path, order, interpolation):
     _run(tmp_path, order, interpolation, False, True, reparent=True)
 

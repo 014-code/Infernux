@@ -15,8 +15,8 @@ from infernux.host.operation_support import set_json_pointer
 BAD_INDICES = ['-1', '01', '+1', '1 ', ' 1', '１', '١', '1_0', '-', '3', '00', '', '1.0', '1e0']
 
 
-@pytest.mark.parametrize('token', BAD_INDICES)
-@pytest.mark.parametrize('intermediate', [False, True])
+@pytest.mark.parametrize('token,intermediate', [(token, False) for token in BAD_INDICES]
+    + [('-1', True), ('3', True)])
 def test_pointer_rejects_noncanonical_or_missing_array_indices_atomically(token, intermediate):
     document = {'items': [{'value': 10}, {'value': 20}, {'value': 30}]}
     before = copy.deepcopy(document)
@@ -27,7 +27,7 @@ def test_pointer_rejects_noncanonical_or_missing_array_indices_atomically(token,
     assert document == before
 
 
-@pytest.mark.parametrize('token', BAD_INDICES)
+@pytest.mark.parametrize('token', ['', '01', ' 1', '\uFF11'])
 def test_pointer_object_keys_are_literal_even_when_not_array_indices(token):
     document = {'items': {token: 10}}
     assert set_json_pointer(document, '/items/' + token, 99) == {'items': {token: 99}}

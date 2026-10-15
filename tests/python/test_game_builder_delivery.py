@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import importlib.machinery
+import importlib.util
+
 from test_game_builder import (
     BuildOutputDirectoryError,
     GameBuilder,
@@ -25,7 +28,6 @@ from test_game_builder import (
     build_catalog,
     forbidden_player_service_modules,
     game_builder_module,
-    importlib,
     json,
     logical_type_for_path,
     nuitka_builder_module,
@@ -36,7 +38,7 @@ from test_game_builder import (
     read_manifest,
     sys,
     write_pack,
-    _native_package_backend,
+    _native_package_backend as _native_package_backend,
 )
 
 def test_source_checkout_shader_keeps_identity_when_wheel_builds_project(

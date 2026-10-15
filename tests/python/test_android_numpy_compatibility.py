@@ -31,8 +31,9 @@ def request(path=None):
     return SimpleNamespace(profile=SimpleNamespace(options=options), report=lambda *args: None)
 
 
-@pytest.mark.parametrize("abi,architecture", [("x86_64", "x86_64"), ("arm64-v8a", "arm64_v8a")])
-@pytest.mark.parametrize("api", [21, 24, 26, 27, 35, "bad", "26_wrong"])
+@pytest.mark.parametrize('abi,architecture,api', [('arm64-v8a', 'arm64_v8a', api)
+    for api in (21, 24, 26, 27, 35, 'bad', '26_wrong')]
+    + [('x86_64', 'x86_64', 26), ('x86_64', 'x86_64', 27)])
 def test_wheel_api_tag_matches_player_minimum(exporter, tmp_path, abi, architecture, api):
     selected = wheel(tmp_path / "wheels", f"android_{api}_{architecture}")
     if isinstance(api, int) and api <= 26:

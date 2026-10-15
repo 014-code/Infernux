@@ -69,13 +69,7 @@ def _empty_scene_document(name: str) -> dict:
 def _get_scene_root_objects(scene):
     if scene is None:
         return []
-    if hasattr(scene, "get_root_objects"):
-        roots = scene.get_root_objects()
-        return roots if roots is not None else []
-    if hasattr(scene, "get_root_game_objects"):
-        roots = scene.get_root_game_objects()
-        return roots if roots is not None else []
-    return []
+    return scene.get_root_objects()
 
 
 # ---------------------------------------------------------------------------

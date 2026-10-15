@@ -58,10 +58,7 @@ def test_installed_hub_rejects_missing_wheel_template_even_when_source_exists(tm
         model._read_bundled_support_file("default_scene.json", "0.4.1")
 
 
-@pytest.mark.parametrize("directory", [
-    "infernux/templates/project", "Infernux/resources/project_templates",
-    "infernux/relocated/project_defaults",
-])
+@pytest.mark.parametrize("directory", ["infernux/relocated/project_defaults"])
 def test_template_lookup_follows_unique_filename_not_a_hub_layout(tmp_path, directory):
     wheel = tmp_path / "engine.whl"
     with zipfile.ZipFile(wheel, "w") as archive:

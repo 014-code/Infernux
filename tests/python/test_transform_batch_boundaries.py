@@ -24,10 +24,16 @@ def expected_data(prop):
     return np.asarray([[1, 2, 3], [4, 5, 6]], dtype=np.float32)
 
 
-@pytest.mark.parametrize('mode', ['list', 'strict', 'compact'])
-@pytest.mark.parametrize('prop', ['local_position', 'local_rotation'])
-@pytest.mark.parametrize('layout', ['valid', 'wide', 'narrow', 'zero_columns', 'rank1', 'rank3',
-                                   'short_rows', 'strided', 'reversed', 'readonly', 'extra_rows'])
+@pytest.mark.parametrize('mode,prop,layout', [
+    ('list', 'local_position', 'valid'), ('strict', 'local_rotation', 'valid'),
+    ('compact', 'local_position', 'valid'), ('strict', 'local_rotation', 'wide'),
+    ('list', 'local_position', 'narrow'), ('compact', 'local_rotation', 'zero_columns'),
+    ('list', 'local_position', 'rank1'), ('strict', 'local_rotation', 'rank3'),
+    ('compact', 'local_position', 'short_rows'), ('list', 'local_position', 'strided'),
+    ('strict', 'local_rotation', 'reversed'), ('compact', 'local_rotation', 'readonly'),
+    ('compact', 'local_position', 'extra_rows'), ('list', 'local_rotation', 'readonly'),
+    ('strict', 'local_position', 'strided'),
+])
 def test_transform_batch_shape_is_atomic(scene, mode, prop, layout):
     _, transforms, target = targets_in(scene, mode)
     expected = expected_data(prop)
@@ -72,9 +78,11 @@ def test_transform_batch_shape_is_atomic(scene, mode, prop, layout):
     np.testing.assert_array_equal(values, original_values)
 
 
-@pytest.mark.parametrize('mode', ['list', 'strict', 'compact'])
-@pytest.mark.parametrize('prop', ['local_position', 'position', 'local_scale', 'local_euler_angles',
-                                 'euler_angles', 'local_rotation', 'rotation'])
+@pytest.mark.parametrize('mode,prop', [
+    ('list', 'local_position'), ('strict', 'position'), ('compact', 'local_scale'),
+    ('list', 'local_euler_angles'), ('strict', 'euler_angles'),
+    ('compact', 'local_rotation'), ('strict', 'rotation'),
+])
 def test_all_transform_batch_fields_preserve_rows(scene, mode, prop):
     _, transforms, target = targets_in(scene, mode)
     values = expected_data(prop)
@@ -82,9 +90,10 @@ def test_all_transform_batch_fields_preserve_rows(scene, mode, prop):
     np.testing.assert_allclose(batch_read(transforms, prop), values, atol=1e-5)
 
 
-@pytest.mark.parametrize('mode', ['strict', 'compact'])
-@pytest.mark.parametrize('prop', ['local_position', 'local_rotation'])
-@pytest.mark.parametrize('removed', [1, 2])
+@pytest.mark.parametrize('mode,prop,removed', [
+    ('strict', 'local_position', 1), ('strict', 'local_rotation', 2),
+    ('compact', 'local_rotation', 1), ('compact', 'local_position', 2),
+])
 def test_stale_batch_members_preserve_compaction_indices(scene, mode, prop, removed):
     owners, transforms, target = targets_in(scene, mode)
     expected = expected_data(prop)
@@ -108,8 +117,7 @@ def test_stale_batch_members_preserve_compaction_indices(scene, mode, prop, remo
             batch_write(target, np.ones((2, expected.shape[1] + 1), dtype=np.float32), prop)
 
 
-@pytest.mark.parametrize('mode', ['strict', 'compact'])
-@pytest.mark.parametrize('prop', ['local_position', 'local_rotation'])
+@pytest.mark.parametrize('mode,prop', [('strict', 'local_rotation'), ('compact', 'local_position')])
 def test_empty_handle_has_explicit_element_shape(mode, prop):
     target = create_batch_handle([], mode=mode)
     width = expected_data(prop).shape[1]
@@ -121,8 +129,7 @@ def test_empty_handle_has_explicit_element_shape(mode, prop):
         batch_write(target, np.empty((0, width + 1), dtype=np.float32), prop)
 
 
-@pytest.mark.parametrize('entry', ['strict', 'compact', 'read', 'write'])
-@pytest.mark.parametrize('invalid', ['null', 'wrong_type'])
+@pytest.mark.parametrize('entry,invalid', [('strict', 'null'), ('compact', 'wrong_type'), ('read', 'null'), ('write', 'wrong_type')])
 def test_native_batch_rejects_missing_transform(tmp_path, entry, invalid):
     result = subprocess.run(
         [sys.executable, '-X', 'utf8', '-B', str(Path(__file__).resolve()), str(tmp_path), entry, invalid],

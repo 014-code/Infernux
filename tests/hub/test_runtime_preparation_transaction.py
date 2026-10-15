@@ -15,8 +15,8 @@ import embed_runtime_manager as module
 import private_python_runtime as runtime
 
 
-@pytest.mark.parametrize("error_code", [5, 32, 33])
-@pytest.mark.parametrize("phase", ["backup", "publish", "restore"])
+@pytest.mark.parametrize('error_code,phase', [(32, phase) for phase in ('backup', 'publish', 'restore')]
+    + [(5, 'publish'), (33, 'publish')])
 def test_windows_runtime_rename_waits_for_transient_handles(tmp_path, monkeypatch, error_code, phase):
     target = tmp_path / "python313"
     target.mkdir()
@@ -116,9 +116,9 @@ def select_source(source_kind, manager, source, monkeypatch):
         monkeypatch.setattr(manager, "bundled_runtime_dirs", lambda: [])
 
 
-@pytest.mark.parametrize("source_kind", ["directory", "zip", "archive"])
-@pytest.mark.parametrize("existing", [False, True])
-@pytest.mark.parametrize("success", [False, True])
+@pytest.mark.parametrize('source_kind,existing,success', [
+    (source, True, success) for source in ('directory', 'zip', 'archive') for success in (False, True)
+] + [('directory', False, False), ('directory', False, True)])
 def test_complete_preparation_precedes_publication(installation, monkeypatch, source_kind, existing, success):
     manager, target, source = installation
     if existing:

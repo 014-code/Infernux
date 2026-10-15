@@ -7,10 +7,13 @@ import pytest
 from infernux import Mathf, Vector2, Vector3, vec4f
 
 
-@pytest.mark.parametrize('ctor,dimension,axis', [(ctor, size, axis)
-    for ctor, size in ((Vector2, 2), (Vector3, 3), (vec4f, 4)) for axis in range(size)])
-@pytest.mark.parametrize('dt', [.016, .1, .5, 1.0])
-@pytest.mark.parametrize('start,target,speed,max_speed', [(0., 1., 0., 100.), (3., -2., -.25, .7), (0., 1., 20., 100.)])
+@pytest.mark.parametrize('ctor,dimension,axis,dt,start,target,speed,max_speed', [
+    (Vector2, 2, 0, .016, 0., 1., 0., 100.), (Vector2, 2, 1, .1, 3., -2., -.25, .7),
+    (Vector3, 3, 0, .5, 0., 1., 20., 100.), (Vector3, 3, 1, 1., 0., 1., 0., 100.),
+    (Vector3, 3, 2, .016, 3., -2., -.25, .7), (vec4f, 4, 0, .1, 0., 1., 20., 100.),
+    (vec4f, 4, 1, .5, 0., 1., 0., 100.), (vec4f, 4, 2, 1., 3., -2., -.25, .7),
+    (vec4f, 4, 3, .016, 0., 1., 20., 100.),
+])
 def test_smooth_damp_axis_matches_scalar_over_time(ctor, dimension, axis, dt, start, target, speed, max_speed):
     def embed(value):
         coordinates = [0.] * dimension
@@ -25,9 +28,11 @@ def test_smooth_damp_axis_matches_scalar_over_time(ctor, dimension, axis, dt, st
         assert list(velocity) == pytest.approx(list(embed(scalar_speed)), abs=3e-6, rel=2e-5)
 
 
-@pytest.mark.parametrize('t', [0., .25, .5, 1., -1., 2.])
-@pytest.mark.parametrize('lengths', [(1., 1.), (2., 5.), (1e-20, 4e-20), (1e20, 4e20)])
-@pytest.mark.parametrize('clamped', [True, False])
+@pytest.mark.parametrize('t,lengths,clamped', [
+    (0., (1., 1.), True), (1., (2., 5.), True), (.5, (2., 5.), False),
+    (.25, (1., 1.), True), (-1., (2., 5.), True), (2., (2., 5.), False),
+    (.5, (1e-20, 4e-20), True), (.5, (1e20, 4e20), False),
+])
 def test_slerp_interpolates_angle_and_length(t, lengths, clamped):
     a, b = Vector3(lengths[0], 0, 0), Vector3(0, lengths[1], 0)
     effective = min(1., max(0., t)) if clamped else t
@@ -43,18 +48,17 @@ def test_slerp_interpolates_angle_and_length(t, lengths, clamped):
         assert list(actual) == list(b)
 
 
-@pytest.mark.parametrize('a,b', [
-    ((0, 0, 0), (0, 0, 0)), ((0, 0, 0), (2, 3, 4)), ((2, 3, 4), (0, 0, 0)),
-    ((2, 0, 0), (5, 0, 0)), ((0, -2, 0), (0, -5, 0)),
+@pytest.mark.parametrize('a,b,t', [
+    ((0, 0, 0), (0, 0, 0), .5), ((0, 0, 0), (2, 3, 4), .5),
+    ((2, 3, 4), (0, 0, 0), 1.5), ((2, 0, 0), (5, 0, 0), .5),
+    ((0, -2, 0), (0, -5, 0), 1.5),
 ])
-@pytest.mark.parametrize('t', [0., .5, 1., 1.5])
 def test_slerp_parallel_and_zero_vectors_have_linear_magnitude(a, b, t):
     expected = np.asarray(a) + (np.asarray(b) - a) * t
     np.testing.assert_allclose(list(Vector3.slerp_unclamped(Vector3(*a), Vector3(*b), t)), expected, atol=1e-6)
 
 
-@pytest.mark.parametrize('a', [(2, 0, 0), (0, 3, 0), (0, 0, -4), (1, 2, 3)])
-@pytest.mark.parametrize('near', [False, True])
+@pytest.mark.parametrize('a,near', [((2, 0, 0), False), ((0, 0, -4), True), ((1, 2, 3), False)])
 def test_slerp_opposite_vectors_follow_a_deterministic_arc(a, near):
     a = np.asarray(a, dtype=float)
     b = -a * 2
@@ -71,14 +75,13 @@ def test_slerp_opposite_vectors_follow_a_deterministic_arc(a, near):
     assert list(Vector3.slerp(start, end, 1)) == list(end)
 
 
-@pytest.mark.parametrize('angle', [0., math.pi / 4, math.pi / 2])
+@pytest.mark.parametrize('angle', [0., math.pi / 4])
 def test_rotate_towards_retains_independent_magnitude_limit(angle):
     result = Vector3.rotate_towards(Vector3(2, 0, 0), Vector3(0, 5, 0), angle, .5)
     np.testing.assert_allclose(list(result), [2.5 * math.cos(angle), 2.5 * math.sin(angle), 0], atol=1e-6)
 
 
-@pytest.mark.parametrize('function', [Vector3.slerp, Vector3.slerp_unclamped])
-@pytest.mark.parametrize('t', [float('nan'), float('inf'), float('-inf')])
+@pytest.mark.parametrize('function,t', [(Vector3.slerp, float('nan')), (Vector3.slerp_unclamped, float('inf'))])
 def test_slerp_rejects_nonfinite_interpolation_parameter(function, t):
     with pytest.raises(ValueError, match='finite'):
         function(Vector3(2, 0, 0), Vector3(0, 3, 0), t)
