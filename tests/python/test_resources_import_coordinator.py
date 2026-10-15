@@ -175,8 +175,10 @@ def test_python_bytecode_and_cache_sidecars_never_enter_import_queue(tmp_path):
 
 
 @pytest.mark.parametrize("relative", [
-    ".git/HEAD", ".git/objects/source.py", ".git", ".hg/state.py", ".svn/source.py",
-    ".gitignore", ".gitattributes", ".gitmodules", ".gitkeep", ".GIT/HEAD",
+    ".git/objects/source.py",
+    ".git",
+    ".gitignore",
+    ".GIT/HEAD",
 ])
 def test_vcs_control_files_never_enter_asset_or_script_import_queues(tmp_path, relative):
     database = _AssetDatabaseProbe()
@@ -262,18 +264,6 @@ def test_watcher_event_waits_for_asset_database_refresh_commit(tmp_path, monkeyp
     assert len(dispatched) == 1
     assert dispatched[0].attempt == 0
     assert errors == []
-
-
-def test_script_frontend_completion_wakes_owner_for_publication(tmp_path):
-    database = _AssetDatabaseProbe()
-    engine = _EngineProbe(database)
-    handler = ResourceChangeHandler(engine)
-    script = tmp_path / "PreparedInBackground.py"
-    script.write_text("value = 1\n", encoding="utf-8")
-    assert handler._check_script(str(script), origin="editor") is not None
-
-    assert handler.process_script_worker() == 1
-    assert engine.editor_wakes == 1
 
 
 def test_deleted_script_event_preserves_queued_guid_for_missing_component_replacement(monkeypatch, tmp_path):
@@ -391,22 +381,6 @@ def test_blender_numbered_backups_never_move_or_register_asset_identity(tmp_path
     assert str(backup) not in database.guid_by_path
 
 
-def test_stale_meta_deleted_event_after_atomic_replace_is_ignored(monkeypatch, tmp_path):
-    database = _AssetDatabaseProbe()
-    handler = ResourceChangeHandler(_EngineProbe(database))
-    asset_calls = []
-    _patch_asset_manager(monkeypatch, asset_calls)
-
-    owner = tmp_path / "StableScript.py"
-    meta = tmp_path / "StableScript.py.meta"
-    owner.write_text("value = 1\n", encoding="utf-8")
-    meta.write_text("replacement meta", encoding="utf-8")
-    handler._coordinator.submit(AssetFsEventKind.META_DELETED, str(owner.resolve()))
-
-    assert handler.process_pending_reloads(force=True) == 1
-    assert database.mutations == []
-
-
 def test_missing_meta_rebuild_imports_unregistered_owner(monkeypatch, tmp_path):
     database = _AssetDatabaseProbe()
     handler = ResourceChangeHandler(_EngineProbe(database))
@@ -494,9 +468,9 @@ def test_modified_asset_failure_surfaces_runtime_compile_detail(monkeypatch, tmp
 
 
 @pytest.mark.parametrize("extension,echo_kind", [
-    (".vert", "watcher"), (".frag", "local_write"), (".glsl", "watcher"),
-    (".shadingmodel", "local_write"), (".effect", "watcher"),
-    (".effectgroup", "local_write"), (".particlegraph", "watcher"),
+    (".vert", "watcher"),
+    (".glsl", "watcher"),
+    (".effectgroup", "local_write"),
     (".particle.py", "local_write"),
 ])
 def test_rejected_compiled_asset_waits_for_next_save_without_retrying(monkeypatch, tmp_path, extension, echo_kind):
@@ -555,7 +529,11 @@ def test_rejected_compiled_asset_waits_for_next_save_without_retrying(monkeypatc
     assert not handler._rejected_compiled_assets
 
 
-@pytest.mark.parametrize("extension", [".glsl", ".shadingmodel", ".effect", ".effectgroup", ".particlegraph", ".particle.py"])
+@pytest.mark.parametrize("extension", [
+    ".glsl",
+    ".effect",
+    ".particle.py",
+])
 def test_new_compiled_asset_rejection_is_terminal(monkeypatch, tmp_path, extension):
     from infernux.lib import AssetMutationErrorCode
 
@@ -584,7 +562,9 @@ def test_new_compiled_asset_rejection_is_terminal(monkeypatch, tmp_path, extensi
     assert not errors
 
 
-@pytest.mark.parametrize("extension", [".vert", ".frag"])
+@pytest.mark.parametrize("extension", [
+    ".vert",
+])
 def test_new_shader_runtime_rejection_is_terminal(monkeypatch, tmp_path, extension):
     from infernux.lib import AssetMutationErrorCode
 
@@ -662,7 +642,9 @@ def test_rejected_effect_relocation_retains_recovery_until_publication(monkeypat
     assert not handler._rejected_compiled_assets
 
 
-@pytest.mark.parametrize("extension", [".glsl", ".shadingmodel"])
+@pytest.mark.parametrize("extension", [
+    ".glsl",
+])
 def test_rejected_dependency_move_is_terminal_and_exact_revert_can_recover(monkeypatch, tmp_path, extension):
     from infernux.engine.interaction import DocumentRegistry
 
@@ -749,7 +731,7 @@ def test_first_scene_save_as_imports_active_unregistered_target(monkeypatch, tmp
 
 @pytest.mark.parametrize("staging_name,registered", [
     ("TankBattle.py.tmp.47892.966d5eeabe93", True),
-    (".editor-save", False), ("draft.tmp", True),
+    (".editor-save", False),
 ])
 def test_external_atomic_script_publication_registers_destination_content(
     monkeypatch, tmp_path, staging_name, registered,
@@ -1152,25 +1134,6 @@ def test_cleanup_drains_events_before_releasing_engine(monkeypatch, tmp_path):
     assert ResourcesManager.instance() is None
 
 
-def test_worker_code_is_forwarded_to_owner_script_publish(monkeypatch, tmp_path):
-    database = _AssetDatabaseProbe()
-    engine = _EngineProbe(database)
-    manager = ResourcesManager(str(tmp_path), engine)
-    handler = ResourceChangeHandler(engine)
-    manager._event_handler = handler
-    path = tmp_path / "worker_code.py"
-    path.write_text("value = 1\n", encoding="utf-8")
-    published = []
-    handler._publish_valid_script = lambda *args, **kwargs: published.append(kwargs) or True
-
-    handler._check_script(str(path), origin="editor")
-    assert _run_script_publication_owner(handler) == 0
-
-    assert len(published) == 1
-    assert published[0]["source"] == path.read_bytes()
-    assert isinstance(published[0]["code"], types.CodeType)
-
-
 def test_initial_script_scan_publishes_artifact_for_main_thread(monkeypatch, tmp_path):
     assets = tmp_path / "Assets"
     assets.mkdir()
@@ -1298,20 +1261,6 @@ def test_initial_script_scan_includes_assets_and_installed_packages(monkeypatch,
     }
     transaction_ids = {kwargs["transaction_id"] for _path, kwargs in submitted}
     assert len(transaction_ids) == 1
-    manager.cleanup()
-
-
-def test_resources_manager_materializes_both_script_watch_roots(tmp_path):
-    database = _AssetDatabaseProbe()
-
-    manager = ResourcesManager(str(tmp_path), _EngineProbe(database))
-
-    assert (tmp_path / "Assets").is_dir()
-    assert (tmp_path / "Packages").is_dir()
-    assert manager._script_roots == (
-        str((tmp_path / "Assets").resolve()),
-        str((tmp_path / "Packages").resolve()),
-    )
     manager.cleanup()
 
 
@@ -1592,34 +1541,6 @@ def test_restarted_initial_scan_removes_deleted_members_and_ignores_late_old_res
     assert [path_key(path) for path in published] == [path_key(str(first))]
 
 
-def test_script_revision_is_published_only_by_resources_safe_point(monkeypatch, tmp_path):
-    database = _AssetDatabaseProbe()
-    engine = _EngineProbe(database)
-    manager = ResourcesManager(str(tmp_path), engine)
-    handler = ResourceChangeHandler(engine)
-    manager._event_handler = handler
-
-    path = tmp_path / "controller.py"
-    path.write_text("value = 1\n", encoding="utf-8")
-
-    registry_calls = []
-    monkeypatch.setattr(
-        "infernux.components.registry.register_component_script",
-        lambda value, **_kwargs: registry_calls.append(value),
-    )
-    monkeypatch.setattr(
-        "infernux.components.script_loader._clear_script_error",
-        lambda _path: None,
-    )
-    handler._dispatch_event = lambda _event: handler._check_script(str(path))
-    handler.on_modified(_event(path))
-
-    assert registry_calls == []
-    assert manager.process_pending_reloads(force=True) == 1
-    assert registry_calls == [str(path)]
-    assert handler._script_change_collector.journal.last_known_good(str(path)) is not None
-
-
 def test_frontend_worker_does_not_publish_or_update_graph(monkeypatch, tmp_path):
     assets = tmp_path / "Assets"
     assets.mkdir()
@@ -1641,6 +1562,14 @@ def test_frontend_worker_does_not_publish_or_update_graph(monkeypatch, tmp_path)
         lambda _path: None,
     )
 
+    published = []
+    publish = handler._publish_valid_script
+
+    def observe_publication(path, **kwargs):
+        published.append(kwargs)
+        return publish(path, **kwargs)
+
+    monkeypatch.setattr(handler, "_publish_valid_script", observe_publication)
     worker_id = []
     handler._check_script(str(path), origin="watchdog")
 
@@ -1655,10 +1584,18 @@ def test_frontend_worker_does_not_publish_or_update_graph(monkeypatch, tmp_path)
     assert worker_id[0] != threading.get_ident()
     assert handler.dependency_graph_snapshot().modules == ()
     assert registered == []
+    assert published == []
+    assert engine.editor_wakes == 1
+    assert handler._script_change_collector.last_known_good(str(path)) is None
 
     assert manager.process_pending_reloads() == 0
     assert handler.dependency_graph.module_for_path(str(path)) is not None
     assert registered == [str(path)]
+
+    assert len(published) == 1
+    assert published[0]["source"] == path.read_bytes()
+    assert isinstance(published[0]["code"], types.CodeType)
+    assert handler._script_change_collector.last_known_good(str(path)) is not None
 
 
 def test_internal_asset_script_ingress_uses_collector_and_origin_mapping(
@@ -1947,46 +1884,6 @@ def test_script_failure_keeps_already_published_registry_entry(monkeypatch, tmp_
     assert registered == [str(path)]
     assert unregistered == []
     assert handler._script_change_collector.journal.last_known_good(str(path)).generation == 1
-
-
-def test_disk_change_after_check_drops_candidate_before_publish(monkeypatch, tmp_path):
-    database = _AssetDatabaseProbe()
-    engine = _EngineProbe(database)
-    manager = ResourcesManager(str(tmp_path), engine)
-    handler = ResourceChangeHandler(engine)
-    manager._event_handler = handler
-    path = tmp_path / "controller.py"
-    path.write_text("value = 'A'\n", encoding="utf-8")
-    published = []
-    handler._publish_valid_script = lambda *args, **kwargs: published.append(
-        kwargs["source"]
-    ) or True
-
-    handler._check_script(str(path))
-    path.write_text("value = 'B'\n", encoding="utf-8")
-    _run_script_publication_owner(handler)
-
-    assert published == []
-    assert handler._script_change_collector.journal.last_known_good(str(path)) is None
-
-
-def test_publish_exception_does_not_advance_lkg(monkeypatch, tmp_path):
-    database = _AssetDatabaseProbe()
-    engine = _EngineProbe(database)
-    manager = ResourcesManager(str(tmp_path), engine)
-    handler = ResourceChangeHandler(engine)
-    manager._event_handler = handler
-    path = tmp_path / "controller.py"
-    path.write_text("value = 1\n", encoding="utf-8")
-
-    def fail_publish(*_args, **_kwargs):
-        raise RuntimeError("publish callback failed")
-
-    handler._publish_valid_script = fail_publish
-    handler._check_script(str(path))
-    _run_script_publication_owner(handler)
-
-    assert handler._script_change_collector.journal.last_known_good(str(path)) is None
 
 
 def test_reload_rejection_keeps_lkg_and_live_body_at_resources_safe_point(

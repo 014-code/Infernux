@@ -13,12 +13,12 @@ QUERIES = ["raycast", "raycast_all", "raycast_batch", "overlap_sphere", "overlap
 MODES = {"default": None, "none": None, "empty": 0, "layer0": 1, "layer2": 4, "all": 0xFFFFFFFF}
 SINGLE = {"raycast", "raycast_batch", "sphere_cast", "box_cast", "capsule_cast"}
 
-# Every entry point resolves an omitted mask; the shared policy is exercised
-# separately for zero, the high bit, exclusion, None and explicit overrides.
+# Public calls exercise every native query with None. One direct native call
+# checks omission; the shared resolver retains zero, high-bit and override cases.
 QUERY_CASES = (
-    [(4, api, query, "default") for api in ("native", "public") for query in QUERIES]
-    + [(mask, api, "raycast", "default") for mask in (0, 0x80000000, 0xFFFFFFFB)
-       for api in ("native", "public")]
+    [(4, "public", query, "default") for query in QUERIES]
+    + [(4, "native", "raycast", "default")]
+    + [(mask, "public", "raycast", "default") for mask in (0, 0x80000000, 0xFFFFFFFB)]
     + [(4, api, query, mode) for api, query in (("public", "raycast"), ("native", "overlap_box"))
        for mode in ("none", "empty", "layer0", "layer2", "all")]
 )

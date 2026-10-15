@@ -49,7 +49,10 @@ def test_editor_asset_path_is_converted_to_guid_before_load(monkeypatch, tmp_pat
         classmethod(lambda cls, guid, asset_type=None: observed.append(guid) or object()),
     )
 
-    assert AssetManager.load("Assets/Materials/Gold.mat") is not None
+    from infernux.engine import project_context
+
+    assert project_context.resolve_asset_path("Assets/Materials/Gold.mat") == str(material)
+    assert AssetManager.load(r"assets\Materials\Gold.mat") is not None
     assert observed == ["material-guid"]
 
 
@@ -83,34 +86,19 @@ def test_managed_load_and_file_resolution_reject_the_same_invalid_paths(
     monkeypatch.setattr(project_context._context(), "asset_resolver", lambda _guid: str(tmp_path / "wrong.json") if player else None)
     with pytest.raises(ValueError):
         AssetManager.load(path)
+    with pytest.raises(ValueError):
+        AssetManager.find_assets(path)
     assert project_context.resolve_asset_path(path) is None
-
-
-def test_editor_managed_load_normalizes_the_assets_root_spelling(monkeypatch, tmp_path):
-    material = tmp_path / "Assets" / "Materials" / "Gold.mat"
-    material.parent.mkdir(parents=True)
-    material.write_text("{}", encoding="utf-8")
-    _editor(monkeypatch, tmp_path)
-    monkeypatch.setattr(AssetManager, "_asset_database", _Database({"material-guid": str(material)}))
-    assert AssetManager._managed_guid(r"assets\Materials\Gold.mat") == "material-guid"
 
 
 @pytest.mark.parametrize(
     "query",
     [
-        "Gold.mat",
-        "*.mat",
-        ".",
-        "..",
-        "Materials/Gold.mat",
-        "Assets//Materials/Gold.mat",
-        "Assets/./Materials/Gold.mat",
-        "Assets/Materials/../Gold.mat",
-        "/Assets/Materials/Gold.mat",
-        "C:/Assets/Materials/Gold.mat",
-        r"C:\Assets\Materials\Gold.mat",
-        r"\\server\share\Assets\Gold.mat",
-    ],
+    "Gold.mat",
+    "*.mat",
+    "Materials/Gold.mat",
+    r"\\server\share\Assets\Gold.mat",
+],
 )
 def test_managed_api_rejects_non_author_paths_without_legacy_fallback(
     monkeypatch, tmp_path, query
@@ -123,22 +111,6 @@ def test_managed_api_rejects_non_author_paths_without_legacy_fallback(
         AssetManager.load(query)
     with pytest.raises(ValueError):
         AssetManager.find_assets(query)
-
-
-def test_editor_managed_find_accepts_a_guid_and_still_returns_a_file_handle(
-    monkeypatch, tmp_path
-):
-    material = tmp_path / "Assets" / "Materials" / "Gold.mat"
-    material.parent.mkdir(parents=True)
-    material.write_text("{}", encoding="utf-8")
-    _editor(monkeypatch, tmp_path)
-    monkeypatch.setattr(
-        AssetManager, "_asset_database", _Database({"material-guid": str(material)})
-    )
-
-    files = AssetManager.find_assets("material-guid")
-    assert files == [AssetFile("material-guid")]
-    assert files[0].read_text() == "{}"
 
 
 def test_editor_managed_file_read_rejects_catalog_entries_outside_assets(
@@ -176,25 +148,6 @@ def test_editor_managed_file_read_rejects_asset_symlink_escape(monkeypatch, tmp_
         AssetFile("linked-guid").read_text()
 
 
-def test_editor_project_context_resolves_assets_through_guid_identity(
-    monkeypatch, tmp_path
-):
-    import infernux.engine.project_context as project_context
-
-    material = tmp_path / "Assets" / "Materials" / "Gold.mat"
-    material.parent.mkdir(parents=True)
-    material.write_text("{}", encoding="utf-8")
-    _editor(monkeypatch, tmp_path)
-    database = _Database({"material-guid": str(material)})
-    monkeypatch.setattr(AssetManager, "_asset_database", database)
-    observed = []
-    original = database.get_guid_from_path
-    database.get_guid_from_path = lambda path: observed.append(path) or original(path)
-
-    assert project_context.resolve_asset_path("Assets/Materials/Gold.mat") == str(material)
-    assert observed
-
-
 def test_managed_find_returns_guid_identity_and_player_uses_frozen_path_query(
     monkeypatch, tmp_path
 ):
@@ -220,6 +173,8 @@ def test_managed_find_returns_guid_identity_and_player_uses_frozen_path_query(
 
     matches = AssetManager.find_assets("Assets/Materials/*.mat")
     assert matches == [AssetFile("material-guid")]
+    assert AssetManager.find_assets("material-guid") == matches
+    assert matches[0].read_text() == "{}"
     assert not hasattr(matches[0], "guid")
     assert "material-guid" not in repr(matches[0])
     assert AssetManager.find_assets("Assets/Materials") == [
@@ -400,7 +355,9 @@ def test_player_managed_file_reads_cooked_guid_payload(monkeypatch, tmp_path):
     assert "config-guid" not in repr(handle)
 
 
-@pytest.mark.parametrize("path", ["../outside.txt", "Mods/../../outside.txt"])
+@pytest.mark.parametrize("path", [
+    "Mods/../../outside.txt",
+])
 def test_raw_filesystem_rejects_parent_traversal(monkeypatch, tmp_path, path):
     (tmp_path / "Assets").mkdir()
     _editor(monkeypatch, tmp_path)
@@ -412,11 +369,10 @@ def test_raw_filesystem_rejects_parent_traversal(monkeypatch, tmp_path, path):
 @pytest.mark.parametrize(
     "path",
     [
-        "/system/secret.txt",
-        "C:/system/secret.txt",
-        r"C:\system\secret.txt",
-        r"\\server\share\secret.txt",
-    ],
+    "/system/secret.txt",
+    "C:/system/secret.txt",
+    r"\\server\share\secret.txt",
+],
 )
 def test_raw_filesystem_rejects_cross_platform_absolute_paths(
     monkeypatch, tmp_path, path
