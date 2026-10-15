@@ -287,8 +287,6 @@ class NodeGraphView:
 
         # Cached layouts
         self._layouts: Dict[str, _NodeLayout] = {}
-        # Test doubles predating request-driven capture do not expose the
-        # native property, so direct helper tests keep semantic behavior.
         self._semantic_capture_active: bool = True
 
         # Hovered link uid (for highlight)
@@ -520,9 +518,7 @@ class NodeGraphView:
     ) -> None:
         if not self._semantic_capture_active:
             return
-        recorder = getattr(ctx, "record_semantic_item", None)
-        if callable(recorder):
-            recorder(kind, label, enabled, self._semantic_id(suffix), **values)
+        ctx.record_semantic_item(kind, label, enabled, self._semantic_id(suffix), **values)
 
     def _record_semantic_rect(
         self,
@@ -538,9 +534,7 @@ class NodeGraphView:
     ) -> None:
         if not self._semantic_capture_active:
             return
-        recorder = getattr(ctx, "record_semantic_rect", None)
-        if callable(recorder):
-            recorder(kind, label, x, y, width, height, enabled, self._semantic_id(suffix))
+        ctx.record_semantic_rect(kind, label, x, y, width, height, enabled, self._semantic_id(suffix))
 
     def _submit_canvas_background_region(
         self, ctx: InxGUIContext, canvas_w: float, canvas_h: float
@@ -667,7 +661,7 @@ class NodeGraphView:
 
             self._origin_x = ctx.get_window_pos_x()
             self._origin_y = ctx.get_window_pos_y()
-            self._semantic_capture_active = bool(getattr(ctx, "semantic_capture_enabled", True))
+            self._semantic_capture_active = bool(ctx.semantic_capture_enabled)
 
         # Canvas interaction is handled by the explicit hit tests below. A
         # full-window InvisibleButton would acquire ImGui's ActiveID before
@@ -1225,12 +1219,12 @@ class NodeGraphView:
         )
 
     def _commit_inline_value(self, node: GraphNode, field_id: str, value) -> None:
-        previous = copy.deepcopy(node.data.get(field_id))
+        previous = node.data.get(field_id)
         value = preserve_ui_float_precision(value, previous)
         if previous == value:
             return
         if self.on_node_data_changed is not None:
-            self.on_node_data_changed(node.uid, field_id, previous, copy.deepcopy(value))
+            self.on_node_data_changed(node.uid, field_id, copy.deepcopy(previous), copy.deepcopy(value))
 
     def _draw_inline_fields(self, ctx) -> None:
         if self.graph is None:
@@ -1320,7 +1314,7 @@ class NodeGraphView:
     def _draw_inline_field(
         self, ctx, layout: _NodeLayout, field_def, row_y: float, *, detached: bool = False
     ) -> None:
-        value = copy.deepcopy(layout.node.data.get(field_def.id, field_def.default))
+        value = layout.node.data.get(field_def.id, field_def.default)
         value_shape_matches = True
         z = self.zoom
         font_scale = max(_TEXT_MIN_FONT / _INLINE_BASE_FONT, z * _INLINE_FONT_SCALE)
@@ -1417,14 +1411,8 @@ class NodeGraphView:
                     ctx.push_style_color(ImGuiCol.FrameBg, 0.0, 0.0, 0.0, 0.0)
                     ctx.push_style_color(ImGuiCol.FrameBgHovered, 0.0, 0.0, 0.0, 0.0)
                     ctx.push_style_color(ImGuiCol.FrameBgActive, 0.0, 0.0, 0.0, 0.0)
-                semantic_input = getattr(ctx, "input_int_semantic", None)
-                if callable(semantic_input):
-                    new_value = int(
-                        semantic_input("##value", int(scalar_value), semantic_id)
-                    )
-                    semantic_recorded_by_widget = True
-                else:
-                    new_value = int(ctx.input_int("##value", int(scalar_value)))
+                new_value = int(ctx.input_int_semantic("##value", int(scalar_value), semantic_id))
+                semantic_recorded_by_widget = True
                 if pin_value_box:
                     ctx.pop_style_color(3)
                     ctx.set_window_font_scale(font_scale)
@@ -1440,23 +1428,8 @@ class NodeGraphView:
                     ctx.push_style_color(ImGuiCol.FrameBg, 0.0, 0.0, 0.0, 0.0)
                     ctx.push_style_color(ImGuiCol.FrameBgHovered, 0.0, 0.0, 0.0, 0.0)
                     ctx.push_style_color(ImGuiCol.FrameBgActive, 0.0, 0.0, 0.0, 0.0)
-                semantic_input = getattr(ctx, "input_uint_semantic", None)
-                if callable(semantic_input):
-                    new_value = int(semantic_input("##value", current, semantic_id))
-                    semantic_recorded_by_widget = True
-                else:
-                    input_uint = getattr(ctx, "input_uint", None)
-                    if callable(input_uint):
-                        new_value = int(input_uint("##value", current))
-                    else:
-                        # Keep source-Python editor runs compatible with an older
-                        # native module while it is waiting to be rebuilt.  The
-                        # signed ImGui binding cannot accept values above INT_MAX.
-                        raw_value = ctx.text_input("##value", str(current), 11)
-                        try:
-                            new_value = int(str(raw_value).strip(), 10)
-                        except ValueError:
-                            new_value = current
+                new_value = int(ctx.input_uint_semantic("##value", current, semantic_id))
+                semantic_recorded_by_widget = True
                 new_value = max(0, min(0xFFFFFFFF, new_value))
                 if pin_value_box:
                     ctx.pop_style_color(3)
@@ -1473,25 +1446,10 @@ class NodeGraphView:
                     ctx.push_style_color(ImGuiCol.FrameBg, 0.0, 0.0, 0.0, 0.0)
                     ctx.push_style_color(ImGuiCol.FrameBgHovered, 0.0, 0.0, 0.0, 0.0)
                     ctx.push_style_color(ImGuiCol.FrameBgActive, 0.0, 0.0, 0.0, 0.0)
-                semantic_drag = getattr(ctx, "drag_float_semantic", None)
-                if callable(semantic_drag):
-                    new_value = float(
-                        semantic_drag(
-                            "##value",
-                            float(scalar_value or 0.0),
-                            0.05,
-                            -1.0e7,
-                            1.0e7,
-                            semantic_id,
-                        )
-                    )
-                    semantic_recorded_by_widget = True
-                else:
-                    new_value = float(
-                        ctx.drag_float(
-                            "##value", float(scalar_value or 0.0), 0.05, -1.0e7, 1.0e7
-                        )
-                    )
+                new_value = float(ctx.drag_float_semantic(
+                    "##value", float(scalar_value or 0.0), 0.05, -1.0e7, 1.0e7, semantic_id,
+                ))
+                semantic_recorded_by_widget = True
                 if pin_value_box:
                     ctx.pop_style_color(3)
                     ctx.set_window_font_scale(font_scale)
@@ -1629,7 +1587,9 @@ class NodeGraphView:
             # and the old property value disagree. Draw a projected value for
             # that frame, but never overwrite the document with the projection.
             if value_shape_matches:
-                self._commit_inline_value(layout.node, field_def.id, new_value)
+                new_value = preserve_ui_float_precision(new_value, value)
+                if new_value != value:
+                    self._commit_inline_value(layout.node, field_def.id, new_value)
         finally:
             ctx.pop_id()
 

@@ -10,8 +10,13 @@ import pytest
 
 
 @pytest.mark.parametrize("debug", [False, True])
-@pytest.mark.parametrize("failure", [False, True])
-def test_generated_boot_exits_without_finalizing_live_runtime(tmp_path, debug, failure):
+@pytest.mark.parametrize("outcome,exit_code", [
+    ("success", 0),
+    ("failure", 1),
+    ("sys-exit-int", 3),
+    ("sys-exit-message", 1),
+])
+def test_generated_boot_exits_without_finalizing_live_runtime(tmp_path, debug, outcome, exit_code):
     from infernux.engine.game_builder import GameBuilder
 
     # Generate the production entry without invoking asset cooking/toolchains.
@@ -46,8 +51,12 @@ lib = types.ModuleType("infernux.lib")
 lib.LogLevel = types.SimpleNamespace(Debug=0, Info=1)
 def run_player(**_kwargs):
     print("PLAYER_BOOT_BUFFERED_OUTPUT")
-    if sys.argv[4] == "1":
+    if sys.argv[4] == "failure":
         raise RuntimeError("PLAYER_BOOT_FAILURE_EXPECTED")
+    if sys.argv[4] == "sys-exit-int":
+        sys.exit(3)
+    if sys.argv[4] == "sys-exit-message":
+        sys.exit("PLAYER_BOOT_EXIT_MESSAGE")
 engine.run_player = run_player
 sys.modules.update({"infernux": public, "infernux.engine": engine, "infernux.lib": lib, "infernux.engine.platform_player_bootstrap": platform})
 runpy.run_path(sys.argv[1], run_name="__main__")
@@ -62,23 +71,25 @@ Path(sys.argv[3]).write_text("returned", encoding="utf-8")
         _INFERNUX_PLAYER_CONTROL_FILE=str(tmp_path / "managed-control"),
     )
     result = subprocess.run(
-        [sys.executable, "-X", "utf8", "-B", str(worker), str(boot), str(finalized), str(returned), "1" if failure else "0"],
+        [sys.executable, "-X", "utf8", "-B", str(worker), str(boot), str(finalized), str(returned), outcome],
         cwd=tmp_path, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=30,
     )
-    assert result.returncode == (1 if failure else 0), result.stdout + result.stderr
+    assert result.returncode == exit_code, result.stdout + result.stderr
     assert not returned.exists(), "The product entry must not return to its embedded interpreter"
     assert not finalized.exists(), "Live native runtime objects must not enter CPython finalization"
     logs = state_root / "Infernux" / "Players" / boot.stem / "Logs"
     log = (logs / "player.log").read_text(encoding="utf-8")
-    if failure:
+    if outcome == "failure":
         crash = (logs / "crash.log").read_text(encoding="utf-8")
         assert "RuntimeError: PLAYER_BOOT_FAILURE_EXPECTED" in crash
         assert "CRASH: " in log and "PLAYER_BOOT_FAILURE_EXPECTED" in log
     else:
         assert not (logs / "crash.log").exists()
-        assert "boot: run_player returned" in log
+        assert ("boot: run_player returned" in log) == (outcome == "success")
+        if outcome == "sys-exit-message":
+            assert "PLAYER_BOOT_EXIT_MESSAGE" in log
     if debug:
         diagnostics = (logs / (boot.stem + "_debug.log")).read_text(encoding="utf-8")
         assert "PLAYER_BOOT_BUFFERED_OUTPUT" in diagnostics
-        if failure:
+        if outcome == "failure":
             assert "PLAYER_BOOT_FAILURE_EXPECTED" in diagnostics

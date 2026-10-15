@@ -744,3 +744,149 @@ def test_supervisor_reaps_the_player_process_it_owns(tmp_path, monkeypatch):
     assert waited == [1.5]
     assert result["stopped"] is True
     assert result["player_running"] is False
+
+
+@pytest.mark.parametrize("entrypoint", ["operation", "supervisor"])
+def test_concurrent_player_launches_create_one_owner_and_process(tmp_path, monkeypatch, entrypoint):
+    from concurrent.futures import ThreadPoolExecutor
+    import subprocess
+    import sys
+    import threading
+    from types import SimpleNamespace
+
+    from infernux_mcp import player_operations
+
+    project = tmp_path / "ConcurrentPlayer"
+    supervisor = SupervisorSession(str(project), session_id="concurrent-player")
+    supervisor.prepare_project()
+    executable = _write_debug_player_output(tmp_path, project)
+    first_entered, second_entered, release = (threading.Event() for _ in range(3))
+    boundary_lock = threading.Lock()
+    boundary_calls = []
+    processes = []
+    original_popen = subprocess.Popen
+
+    def popen(_argv, **kwargs):
+        process = original_popen([
+            sys.executable, "-c",
+            "import os,time; from pathlib import Path; "
+            "Path(os.environ['_INFERNUX_READY_FILE']).write_text('ENGINE_LOADED\\n'); time.sleep(30)",
+        ], **kwargs)
+        processes.append(process)
+        return process
+
+    def pause_first():
+        with boundary_lock:
+            boundary_calls.append(True)
+            first = len(boundary_calls) == 1
+        if first:
+            first_entered.set()
+            assert release.wait(5.0)
+        else:
+            second_entered.set()
+
+    monkeypatch.setattr(supervisor_module.subprocess, "Popen", popen)
+    if entrypoint == "operation":
+        active = SimpleNamespace(project_root=str(project), session_id=supervisor.session_id,
+                                 build_profile="debug_feedback", mode="global_validation", editor_instance_id="test-host")
+        monkeypatch.setattr(player_operations.session, "current", lambda: active)
+        monkeypatch.setattr(player_operations, "_LOCAL_SUPERVISORS", {})
+
+        def attach(*_args, **_kwargs):
+            pause_first()
+            return SupervisorSession(str(project), session_id=supervisor.session_id)
+
+        monkeypatch.setattr(SupervisorSession, "attach_current_host", attach)
+        invoke = next(operation.handler for operation in player_operations.build_player_operations(str(project))
+                      if operation.schema.id == "infernux.player.validation.launch")
+        launch = lambda: invoke(executable_path=str(executable), timeout_seconds=3.0)
+    else:
+        validate = supervisor_module._validate_player_executable
+
+        def validate_launch(*args):
+            pause_first()
+            return validate(*args)
+
+        monkeypatch.setattr(supervisor_module, "_validate_player_executable", validate_launch)
+        launch = lambda: supervisor.launch_player(str(executable), wait_for_ready=False)
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as workers:
+            first = workers.submit(launch)
+            assert first_entered.wait(5.0)
+            second = workers.submit(launch)
+            second_entered.wait(1.0)
+            release.set()
+            results = [first.result(timeout=5.0), second.result(timeout=5.0)]
+        assert len(processes) == 1
+        assert len(boundary_calls) == 1
+        assert {result["player_pid"] for result in results} == {processes[0].pid}
+        assert sum(bool(result.get("already_running")) for result in results) == 1
+        owners = player_operations._LOCAL_SUPERVISORS.values() if entrypoint == "operation" else [supervisor]
+        assert all(owner._player_log_handle is None for owner in owners)
+    finally:
+        release.set()
+        for process in processes:
+            process.terminate()
+            process.wait(timeout=5.0)
+        if entrypoint == "operation":
+            for owner in player_operations._LOCAL_SUPERVISORS.values():
+                owner._close_player_log()
+        supervisor._close_player_log()
+
+
+def test_player_launch_waits_for_stop_to_reap_previous_process(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError
+    import subprocess
+    import sys
+    import threading
+
+    project = tmp_path / "PlayerLifecycle"
+    supervisor = SupervisorSession(str(project), session_id="player-lifecycle")
+    supervisor.prepare_project()
+    executable = _write_debug_player_output(tmp_path, project)
+    processes = []
+    original_popen = subprocess.Popen
+
+    def popen(_argv, **kwargs):
+        process = original_popen([sys.executable, "-c", "import time; time.sleep(30)"], **kwargs)
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(supervisor_module.subprocess, "Popen", popen)
+    original = supervisor.launch_player(str(executable), wait_for_ready=False)
+    previous = processes[0]
+    original_wait = previous.wait
+    stop_waiting, release_stop = threading.Event(), threading.Event()
+
+    def wait(*, timeout):
+        stop_waiting.set()
+        assert release_stop.wait(5.0)
+        previous.terminate()
+        return original_wait(timeout=timeout)
+
+    monkeypatch.setattr(previous, "wait", wait)
+    monkeypatch.setattr(supervisor, "_call_player_control", lambda *_args, **_kwargs: {"close_requested": True})
+    try:
+        with ThreadPoolExecutor(max_workers=2) as workers:
+            stopping = workers.submit(supervisor.stop_player, timeout_seconds=3.0)
+            assert stop_waiting.wait(5.0)
+            launching = workers.submit(supervisor.launch_player, str(executable), wait_for_ready=False)
+            try:
+                launching.result(timeout=1.0)
+            except TimeoutError:
+                pass
+            release_stop.set()
+            stopped, launched = stopping.result(timeout=5.0), launching.result(timeout=5.0)
+        assert stopped["stopped"] is True
+        assert len(processes) == 2
+        assert launched["player_pid"] != original["player_pid"]
+        assert launched["player_running"] is True
+        assert supervisor._player_process is processes[1]
+        assert supervisor._player_log_handle is None
+    finally:
+        release_stop.set()
+        for process in processes:
+            process.terminate()
+            process.wait(timeout=5.0)
+        supervisor._close_player_log()

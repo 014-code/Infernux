@@ -215,3 +215,34 @@ class TestEffectColorFieldsAllowHdr:
         meta = get_serialized_fields(BloomTint)["tint"]
         assert meta.field_type == FieldType.COLOR
         assert meta.hdr is True
+
+
+@pytest.mark.parametrize("storage", ["cds", "python", "data"])
+def test_serialized_vector_reads_are_values_for_each_storage_owner(storage):
+    from infernux import Vector2, Vector3, vec4f
+    from infernux.components import SerializableObject
+
+    owner_type = type("VectorValues_" + storage, (SerializableObject if storage == "data" else InxComponent,), {
+        "__module__": __name__,
+        "_uses_component_data_store": storage == "cds",
+        "point2": serialized_field(default=Vector2(1, 2)),
+        "point3": serialized_field(default=Vector3(1, 2, 3)),
+        "point4": serialized_field(default=vec4f(1, 2, 3, 4)),
+    })
+    owner = owner_type()
+    if storage != "data":
+        assert (owner._cds_slot is not None) == (storage == "cds")
+    for name, vector_type, expected in (
+        ("point2", Vector2, (1, 2)),
+        ("point3", Vector3, (1, 2, 3)),
+        ("point4", vec4f, (1, 2, 3, 4)),
+    ):
+        value = getattr(owner, name)
+        assert isinstance(value, vector_type)
+        value.x = 99
+        assert tuple(getattr(owner, name)) == expected
+        setattr(owner, name, value)
+        value.x = 100
+        assert tuple(getattr(owner, name)) == (99, *expected[1:])
+    owner.point3 += Vector3(1, 1, 1)
+    assert tuple(owner.point3) == (100, 3, 4)

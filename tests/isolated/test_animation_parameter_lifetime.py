@@ -18,10 +18,11 @@ if __name__ != "__main__":
         ("runtime", "trigger"),
         ("action", "bool"),
         ("action", "trigger"),
-        ("spirit", "bool"),
-        ("spirit", "trigger"),
+        ("sprite", "bool"),
+        ("sprite", "trigger"),
         ("skeletal", "bool"),
         ("skeletal", "trigger"),
+        *((kind, "restart") for kind in ("runtime", "action", "sprite", "skeletal")),
     ],
 )
 def test_parameter_lifetime_through_native_assets(tmp_path, kind, case):
@@ -30,7 +31,7 @@ def test_parameter_lifetime_through_native_assets(tmp_path, kind, case):
 
 @pytest.mark.parametrize("case", ["hot-bool", "hot-trigger"])
 def test_controller_hot_reload_preserves_parameter_kind(tmp_path, case):
-    run_case(tmp_path, "spirit", case)
+    run_case(tmp_path, "sprite", case)
 
 
 def run_case(tmp_path, kind, case):
@@ -60,7 +61,7 @@ def exercise(project, kind, case):
     from infernux.core.assets import AssetManager
     from infernux.core.asset_ref import AnimStateMachineRef, TimelineFSMRef
     from infernux.components.timeline_action import TimelineAction
-    from infernux.components.spirit_animator import SpiritAnimator
+    from infernux.components.sprite_animator import SpriteAnimator
     from infernux.components.skeletal_animator import SkeletalAnimator
     from infernux.components.builtin.sprite_renderer import SpriteRenderer
     from infernux.components.builtin.skinned_mesh_renderer import SkinnedMeshRenderer
@@ -103,7 +104,11 @@ def exercise(project, kind, case):
                     ],
                 )
             ]
-        mode = {"spirit": "2d", "skeletal": "3d"}.get(kind, "timeline")
+        if case == "restart":
+            states[0].loop = False
+            states[0].restart_same_clip = True
+            states[0].transitions = [AnimTransition(target_state="A")]
+        mode = {"sprite": "2d", "skeletal": "3d"}.get(kind, "timeline")
         fsm = AnimStateMachine(mode=mode, states=states, parameters=[powered, spare], default_state="A")
         guid = save(fsm, "Controller.timelinefsm" if mode == "timeline" else "Controller.animfsm")
         if kind == "runtime":
@@ -112,15 +117,22 @@ def exercise(project, kind, case):
             assert actor.play()
         else:
             owner = manager.get_active_scene().create_game_object("Animator")
-            if kind in {"spirit", "skeletal"}:
-                owner.add_component(SpriteRenderer if kind == "spirit" else SkinnedMeshRenderer)
+            if kind in {"sprite", "skeletal"}:
+                owner.add_component(SpriteRenderer if kind == "sprite" else SkinnedMeshRenderer)
             actor = owner.add_component(
-                {"action": TimelineAction, "spirit": SpiritAnimator, "skeletal": SkeletalAnimator}[kind]
+                {"action": TimelineAction, "sprite": SpriteAnimator, "skeletal": SkeletalAnimator}[kind]
             )
             actor.controller = TimelineFSMRef(guid=guid) if kind == "action" else AnimStateMachineRef(guid=guid)
             actor.awake()
             actor.start()
         assert actor.current_state == "A"
+        if case == "restart":
+            actor.update(1.0)
+            assert actor.current_state == "A" and actor.is_playing
+            assert actor.normalized_time == 0.0
+            actor.update(0.25)
+            assert actor.normalized_time == pytest.approx(0.25)
+            return
         if case in {"trigger", "overwrite-bool", "overwrite-value", "reset", "hot-trigger"}:
             actor.set_trigger("powered")
         if case in {"bool", "overwrite-bool", "unrelated", "hot-bool"}:

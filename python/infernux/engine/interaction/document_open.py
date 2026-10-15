@@ -129,7 +129,7 @@ class DocumentOpenService:
                         DocumentOpenStatus.FAILED,
                         message=str(exc),
                     )
-                if result.status is DocumentOpenStatus.FAILED:
+                if result.status is not DocumentOpenStatus.READY:
                     return result
             return DocumentOpenResult(DocumentOpenStatus.READY, document)
         return self.resolve_or_open(locator)

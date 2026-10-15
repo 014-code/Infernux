@@ -101,7 +101,7 @@ def _anim_as_number(value: Any) -> float:
 
 
 # Parsed-AST cache: transition conditions are authored once and evaluated every
-# frame by every animator (Spirit / Skeletal / Timeline FSM).  Re-parsing the
+# frame by every animator (Sprite / Skeletal / Timeline FSM).  Re-parsing the
 # source each frame dominated the runtime cost, so we memoize the parsed body
 # keyed on the (stripped) condition string.  ``None`` marks a string that failed
 # to parse so we don't re-attempt (and keep raising) every frame.
@@ -348,7 +348,7 @@ class AnimState:
     # 1.0 = must reach end of current clip segment (default; matches "play full clip then transition").
     exit_time_normalized: float = 1.0
     loop: bool = True         # whether to loop the clip in this state
-    # If True, SpiritAnimator.play(state) restarts the clip when already in that state.
+    # If True, SpriteAnimator.play(state) restarts the clip when already in that state.
     # If False, play() is a no-op while that state is already playing (e.g. safe to call every frame).
     restart_same_clip: bool = False
     transitions: List[AnimTransition] = field(default_factory=list)

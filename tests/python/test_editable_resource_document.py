@@ -626,3 +626,196 @@ def test_material_asset_and_inline_inspectors_share_one_native_document():
         assert document.view_ids == {"inspector"}
     finally:
         DocumentRegistry._instance = previous_registry
+
+
+def test_sprite_clip_inspector_and_editor_share_edits_history_and_save(engine, monkeypatch):
+    from pathlib import Path
+    from PIL import Image
+
+    from infernux.core.animation_clip import AnimationClip, AnimationFrame
+    from infernux.core.asset_types import (
+        SpriteFrame, TextureType, read_texture_import_settings, write_texture_import_settings,
+    )
+    from infernux.core.assets import AssetManager
+    from infernux.core.document_store import DocumentStore
+    from infernux.engine._bootstrap_selection import BootstrapSelectionMixin
+    from infernux.engine.interaction import (
+        AssetMutationService, CloseCoordinator, DocumentOpenService, DocumentOpenStatus,
+        ModalService, SelectionService,
+    )
+    from infernux.engine.ui.dirty_panel_confirmation import DirtyPanelConfirmationCoordinator
+    from infernux.engine.ui.animclip2d_editor_panel import AnimClip2DEditorPanel
+    from infernux.engine.ui.asset_details_renderer import (
+        AssetCategoryDef, _State, _apply_editable_resource_document, _bind_asset_document, _load_animclip,
+    )
+    from infernux.engine.ui.asset_execution_layer import AssetAccessMode, AssetExecutionLayer
+    from infernux.engine.ui import asset_details_renderer as inspector
+    from infernux.engine.ui.project_file_ops import on_asset_mutation
+    from infernux.debug import Debug
+
+    database = engine.get_asset_database()
+    monkeypatch.setattr(AssetManager, "_asset_database", database)
+    monkeypatch.setattr(AnimClip2DEditorPanel, "_get_native_engine", staticmethod(lambda: engine))
+    assets = Path(database.assets_root)
+    texture = assets / "shared-animation.png"
+    Image.new("RGBA", (16, 8), "white").save(texture)
+    imported = AssetManager.import_asset(str(texture), database=database)
+    assert imported, imported.error
+    settings = read_texture_import_settings(str(texture))
+    settings.texture_type = TextureType.SPRITE
+    settings.sprite_frames = [SpriteFrame(x=0, y=0, w=16, h=8)]
+    assert write_texture_import_settings(str(texture), settings)
+    DocumentStore.flush(str(texture) + ".meta")
+    category = AssetCategoryDef(
+        display_name="Animation Clip", access_mode=AssetAccessMode.READ_WRITE_RESOURCE,
+        load_fn=_load_animclip,
+    )
+    registry = DocumentRegistry.instance()
+    monkeypatch.setattr(AssetMutationService, "_instance", None)
+    mutations = AssetMutationService(registry, SelectionService.instance())
+    mutations.add_observer(on_asset_mutation)
+    observer_errors = []
+    monkeypatch.setattr(Debug, "log_suppressed", lambda context, error: observer_errors.append((context, str(error))))
+    confirmation = DirtyPanelConfirmationCoordinator(CloseCoordinator(registry), ModalService())
+    monkeypatch.setattr(DirtyPanelConfirmationCoordinator, "instance", classmethod(lambda cls: confirmation))
+    bootstrap = BootstrapSelectionMixin()
+    bootstrap.interaction_core = SimpleNamespace(documents=registry)
+    bootstrap.window_manager = SimpleNamespace(
+        open_window=lambda _panel_id: panel,
+    )
+    opener = DocumentOpenService(registry)
+    opener.register(
+        DocumentKind.ANIMATION_CLIP,
+        lambda locator: bootstrap._restore_panel_document(locator, panel_id="animclip2d_editor"),
+    )
+
+    def open_clip(path):
+        result = opener.open_resource(DocumentKind.ANIMATION_CLIP, str(path))
+        if result.status is DocumentOpenStatus.PENDING:
+            confirmation.choose_discard()
+            assert Path(registry.require(panel.document_id).resource_path) == path
+            opened_owner = panel._model
+            result = opener.open_resource(DocumentKind.ANIMATION_CLIP, str(path))
+            assert panel._model is opened_owner
+        assert result.status is DocumentOpenStatus.READY, result.message
+        assert panel.document_id == result.document.document_id
+
+    def bind_inspector():
+        assert state.load(str(path), "animclip", category)
+        state.exec_layer = AssetExecutionLayer("animclip", str(path), category.access_mode)
+        _bind_asset_document(state, category)
+
+    for inspector_first in (False, True):
+        manager = UndoManager()
+        path = assets / f"SharedClip-{inspector_first}.animclip2d"
+        source = AnimationClip(authoring_texture_guid=imported.guid, frames=[
+            AnimationFrame(sprite_frame_id=settings.sprite_frames[0].stable_id),
+        ])
+        assert source.save(str(path))
+        assert AssetManager.import_asset(str(path), database=database)
+        panel = AnimClip2DEditorPanel()
+        state = _State()
+        monkeypatch.setattr(inspector, "_state", state)
+        assert state.load(str(path), "animclip", category)
+        state.exec_layer = AssetExecutionLayer("animclip", str(path), category.access_mode)
+        if inspector_first:
+            bind_inspector()
+            document_id = state.document_id
+            draft = state.settings.serialize_document()
+            draft["fps"] = 18.0
+            assert _apply_editable_resource_document(state, draft, edit_key="fps", description="Inspector FPS")
+        open_clip(path)
+        bind_inspector()
+        assert state.document_id == panel.document_id
+        assert state.resource_controller is registry.require(panel.document_id).controller
+        assert registry.require(panel.document_id).view_ids == {"inspector", panel.window_id}
+        assert panel._apply_authoring_mutation("Empty sequence", panel._active_clip.frames.clear)
+        bind_inspector()
+        assert state.settings.frame_count == 0
+        manager.undo()
+        if inspector_first:
+            assert panel.document_id == document_id and panel._active_clip.fps == 18.0
+            manager.undo()
+            assert panel._active_clip.fps == 12.0
+            manager.redo()
+            assert panel._active_clip.fps == 18.0
+        assert panel._apply_authoring_mutation("Panel FPS", lambda: setattr(panel._active_clip, "fps", 24.0))
+        active_owner = panel._model
+        open_clip(path)
+        assert panel._model is active_owner and panel._active_clip.fps == 24.0
+        bind_inspector()
+        assert state.settings.fps == 24.0
+        draft = state.settings.serialize_document()
+        draft["fps"] = 30.0
+        assert _apply_editable_resource_document(state, draft, edit_key="fps", description="Inspector FPS")
+        assert panel._active_clip.fps == 30.0
+        manager.undo()
+        assert panel._active_clip.fps == 24.0
+        manager.redo()
+        assert panel._active_clip.fps == 30.0
+        AssetManager.flush_scheduled_saves(str(path), force=True)
+        DocumentStore.flush(str(path))
+        assert AnimationClip.load(str(path)).fps == (18.0 if inspector_first else 12.0)
+        assert registry.require(panel.document_id).is_dirty
+        document_id = panel.document_id
+        owner = panel._model
+        controller = registry.require(document_id).controller
+        with monkeypatch.context() as pending:
+            pending.setattr(controller, "poll_pending_writes", lambda: 0)
+            result = registry.request_save(document_id)
+            assert result.accepted, result.message
+            assert panel._new_clip_document_immediate()
+            assert panel._model is not owner
+            DocumentStore.flush(str(path))
+        registry.process_pending_saves()
+        assert not observer_errors, observer_errors
+        document = registry.require(document_id)
+        assert not document.is_dirty, controller.publication_error
+        assert panel._active_clip.name == "NewClip" and panel._active_clip.frames == []
+        bind_inspector()
+        assert state.settings is owner.resource
+        with monkeypatch.context() as closed_view:
+            def unexpected_gpu_access():
+                raise AssertionError("inactive document accessed the preview renderer")
+            closed_view.setattr(panel, "_get_native_engine", unexpected_gpu_access)
+            draft = state.settings.serialize_document()
+            draft["fps"] = 36.0
+            assert _apply_editable_resource_document(state, draft, edit_key="fps", description="Inactive clip FPS")
+            manager.undo()
+            assert owner.resource.fps == 30.0
+            manager.redo()
+            assert owner.resource.fps == 36.0
+            assert registry.request_save(document_id).accepted
+            DocumentStore.flush(str(path))
+            registry.process_pending_saves()
+        assert not registry.require(document_id).is_dirty
+        assert panel._active_clip.name == "NewClip" and panel._active_clip.frames == []
+        open_clip(path)
+        bind_inspector()
+        assert panel._model is owner
+        assert panel._active_clip.fps == state.settings.fps == AnimationClip.load(str(path)).fps == 36.0
+        assert state.settings.frames[0].stable_id == source.frames[0].stable_id
+        panel.on_disable()
+        panel.unbind_document()
+        import gc
+        import weakref
+
+        closed_panel = weakref.ref(panel)
+        panel = None
+        gc.collect()
+        assert closed_panel() is None
+        draft = state.settings.serialize_document()
+        draft["fps"] = 48.0
+        assert _apply_editable_resource_document(state, draft, edit_key="fps", description="Closed clip FPS")
+        manager.undo()
+        assert owner.resource.fps == 36.0
+        manager.redo()
+        assert owner.resource.fps == 48.0
+        assert registry.request_save(document_id).accepted
+        DocumentStore.flush(str(path))
+        registry.process_pending_saves()
+        assert not registry.require(document_id).is_dirty
+        assert AnimationClip.load(str(path)).fps == 48.0
+        registry.detach_view("inspector")
+        assert not observer_errors, observer_errors
+    mutations.shutdown()

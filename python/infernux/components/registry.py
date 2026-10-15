@@ -73,7 +73,7 @@ _engine_catalog_loaded = False
 _ENGINE_COMPONENT_MODULES = (
     "infernux.components.particle_system",
     "infernux.components.skeletal_animator",
-    "infernux.components.spirit_animator",
+    "infernux.components.sprite_animator",
     "infernux.components.timeline_action",
     "infernux.renderstack.render_stack",
     "infernux.ui.ui_canvas",

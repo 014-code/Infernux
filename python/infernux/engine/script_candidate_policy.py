@@ -29,20 +29,15 @@ class ScriptCandidatePolicyIssue:
 @dataclass(frozen=True, slots=True)
 class ScriptCandidatePolicyReport:
     blocked: tuple[ScriptCandidatePolicyIssue, ...] = ()
-    runtime_guard_required: tuple[ScriptCandidatePolicyIssue, ...] = ()
 
     @property
     def is_blocked(self) -> bool:
         return bool(self.blocked)
 
     @property
-    def requires_runtime_guard(self) -> bool:
-        return bool(self.runtime_guard_required)
-
-    @property
     def is_rejected(self) -> bool:
         """Whether candidate loading must stop before any import/execute step."""
-        return self.is_blocked or self.requires_runtime_guard
+        return self.is_blocked
 
 
 _BLOCKED_MODULE_WRITE = "NX-R1-STATIC-MODULE-WRITE"
@@ -152,7 +147,6 @@ class _PolicyVisitor(ast.NodeVisitor):
         self.imported_members: dict[str, tuple[str, str]] = {}
         self.path_bindings: set[str] = set()
         self.blocked: list[ScriptCandidatePolicyIssue] = []
-        self.runtime_guard_required: list[ScriptCandidatePolicyIssue] = []
 
     def _blocked(self, node: ast.AST, code: str, operation: str, message: str) -> None:
         self.blocked.append(_issue(node, code, operation, message))
@@ -381,7 +375,6 @@ class _PolicyVisitor(ast.NodeVisitor):
         key = lambda item: (item.line, item.column, item.code, item.operation)
         return ScriptCandidatePolicyReport(
             blocked=tuple(sorted(self.blocked, key=key)),
-            runtime_guard_required=tuple(sorted(self.runtime_guard_required, key=key)),
         )
 
 

@@ -180,6 +180,26 @@ def test_sprite_import_requires_unique_persisted_frame_identities(tmp_path):
         _load_strict_meta_root(str(meta))
 
 
+def test_sprite_grid_covers_every_pixel_and_preserves_existing_frame_identity():
+    from infernux.engine.ui.asset_details_renderer import _SpriteEditorState, _auto_slice
+
+    view = _SpriteEditorState()
+    view.tex_w, view.tex_h = 7, 5
+    view.slice_cols, view.slice_rows = 3, 2
+    settings = TextureImportSettings(texture_type=TextureType.SPRITE)
+    _auto_slice(settings, view)
+    pixels = [(x, y) for frame in settings.sprite_frames
+              for x in range(frame.x, frame.x + frame.w)
+              for y in range(frame.y, frame.y + frame.h)]
+    assert len(pixels) == 35
+    assert set(pixels) == {(x, y) for x in range(7) for y in range(5)}
+    settings.sprite_frames[-1].name = "last frame"
+    settings.sprite_frames[-1].pivot_x = 0.25
+    before = settings.to_dict()
+    _auto_slice(settings, view)
+    assert settings.to_dict() == before
+
+
 def test_audio_import_settings_roundtrip_copy_and_load_policy():
     defaults = AudioImportSettings()
     assert not defaults.force_mono and defaults.quality == 1

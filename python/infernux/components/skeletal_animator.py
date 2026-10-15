@@ -1,7 +1,7 @@
 """
 SkeletalAnimator — runtime 3D animation state machine controller.
 
-Mirrors :class:`SpiritAnimator` (2D) for skeletal assets: bridge from
+Mirrors :class:`SpriteAnimator` (2D) for skeletal assets: bridge from
 ``.animfsm`` / ``.animclip3d`` to :class:`SkinnedMeshRenderer`, advancing FSM
 state and publishing animation poses to the native GPU skinning path.
 """
@@ -121,10 +121,12 @@ class SkeletalAnimator(InxComponent):
     _current_clip: Optional[AnimationClip3D] = None
     _elapsed: float = 0.0
     _playing: bool = False
+    _playback_revision: int = 0
     _blend_from_clip: Optional[AnimationClip3D] = None
     _blend_from_take_name: str = ""
     _blend_from_elapsed: float = 0.0
     _blend_from_speed: float = 1.0
+    _blend_from_loop: bool = True
     _blend_elapsed: float = 0.0
     _blend_duration: float = 0.0
     _last_native_take_name: str = ""
@@ -180,6 +182,7 @@ class SkeletalAnimator(InxComponent):
 
         state = self._get_current_state()
         clip = self._current_clip
+        playback_revision = self._playback_revision
         speed = self.playback_speed * (state.speed if state else 1.0)
         previous_elapsed = self._elapsed
         self._elapsed += delta_time * speed
@@ -195,28 +198,36 @@ class SkeletalAnimator(InxComponent):
                 post_norm = post / duration
                 wrap_count = max(1, math.floor(self._elapsed / duration))
                 self._dispatch_clip_events_wrapped(clip, prev_norm, post_norm, wrap_count)
+                if self._playback_revision != playback_revision:
+                    return
                 self._prev_event_norm = post_norm
                 self._try_auto_transition()
-                if self._current_clip is clip and self._playing:
+                if self._playback_revision != playback_revision:
+                    return
+                if self._playing:
                     self._elapsed = post
             else:
                 self._elapsed = duration
                 self._dispatch_clip_events(clip, prev_norm, 1.0, False)
+                if self._playback_revision != playback_revision:
+                    return
                 self._prev_event_norm = 1.0
-                self._playing = False
                 self._sample_imported_curves(clip, 1.0)
                 self._try_auto_transition()
+                if self._playback_revision == playback_revision:
+                    self._playing = False
                 self._sync_native_runtime_playback()
                 return
         else:
             self._apply_imported_root_motion(clip, previous_elapsed, self._elapsed, _clip_should_loop(state, clip))
             curr_norm = (self._elapsed / duration) if duration > 0.0 else 0.0
             self._dispatch_clip_events(clip, prev_norm, curr_norm, False)
+            if self._playback_revision != playback_revision:
+                return
             self._prev_event_norm = curr_norm
 
         self._sample_imported_curves(clip, self.normalized_time)
 
-        self._apply_active_take()
         self._try_auto_transition()
         self._sync_native_runtime_playback()
 
@@ -330,6 +341,7 @@ class SkeletalAnimator(InxComponent):
         )
 
     def stop(self):
+        self._playback_revision += 1
         self._playing = False
         self._clear_blend_state()
         self._last_native_pose_key = None
@@ -388,6 +400,14 @@ class SkeletalAnimator(InxComponent):
         self._clear_blend_state()
 
     def _load_controller(self):
+        self.stop()
+        self._current_state_name = ""
+        self._current_clip = None
+        self._current_timeline = None
+        self._elapsed = 0.0
+        self._parameters = {}
+        self._curve_values = {}
+        self._pending_triggers = frozenset()
         self._fsm = None
         self._clip_cache = {}
         self._duration_cache = {}
@@ -468,6 +488,7 @@ class SkeletalAnimator(InxComponent):
         if tl is None or not self._playing:
             return
         state = self._get_current_state()
+        playback_revision = self._playback_revision
         # Looping is decided by the owning FSM state, not the timeline asset.
         loop = bool(state.loop) if state is not None else True
         if self._playing:
@@ -475,12 +496,10 @@ class SkeletalAnimator(InxComponent):
             self._elapsed += delta_time * speed
             dur = max(1e-6, float(tl.duration))
             if self._elapsed >= dur:
-                # Reached the end: hold the final pose and evaluate transitions
-                # while progress == 1.0 *before* wrapping, so a looping timeline
-                # can still leave via exit-time (fixes timeline->next stalls).
+                # Evaluate exit-time transitions at the final pose before wrapping.
                 self._apply_timeline(tl, dur)
                 self._try_auto_transition()
-                if self._current_timeline is tl and self._playing:
+                if self._playback_revision == playback_revision and self._playing:
                     if loop:
                         self._elapsed = self._elapsed % dur
                     else:
@@ -540,7 +559,8 @@ class SkeletalAnimator(InxComponent):
         if not take_a and not take_b:
             return False
         lerp = self._blend_state_lerp(state)
-        loop = _clip_should_loop(state, clip_a)
+        loop_a = _clip_should_loop(state, clip_a)
+        loop_b = _clip_should_loop(state, clip_b)
         t = float(self._elapsed)
         normalized = float(self.normalized_time)
 
@@ -548,15 +568,15 @@ class SkeletalAnimator(InxComponent):
         if not native_renderers:
             return False
         if take_a and take_b:
-            pose_key = ("stack", self._playing, take_a, source_a, take_b, source_b, t, lerp, loop,
+            pose_key = ("stack", self._playing, take_a, source_a, take_b, source_b, t, lerp, loop_a, loop_b,
                         tuple(_clip_bone_mask(clip_a)), tuple(_clip_bone_mask(clip_b)))
             if pose_key == self._last_native_pose_key:
                 return True
             layers = [
                 {"take_name": take_a, "source_model_guid": source_a,
-                 "time": t, "weight": 1.0 - lerp, "loop": loop},
+                 "time": t, "weight": 1.0 - lerp, "loop": loop_a},
                 {"take_name": take_b, "source_model_guid": source_b,
-                 "time": t, "weight": lerp, "loop": loop},
+                 "time": t, "weight": lerp, "loop": loop_b},
             ]
             for layer, clip in zip(layers, (clip_a, clip_b)):
                 mask = _clip_bone_mask(clip)
@@ -568,6 +588,7 @@ class SkeletalAnimator(InxComponent):
             self._last_native_pose_key = pose_key
             return True
 
+        loop = loop_a if take_a else loop_b
         pose_key = (
             "blend", self._playing, take_a or take_b, t, normalized,
             "", 0.0, 0.0, loop, source_a if take_a else source_b, "",
@@ -621,6 +642,7 @@ class SkeletalAnimator(InxComponent):
             if self._playing and self._current_state_name == state_name:
                 return True
 
+        self._playback_revision += 1
         # Timeline state: drives the owner transform instead of a skeletal clip.
         if getattr(state, "kind", "clip") == "timeline":
             self._clear_blend_state()
@@ -632,7 +654,6 @@ class SkeletalAnimator(InxComponent):
             self._playing = True
             self._capture_timeline_base()  # additive deltas apply on top of this
             self._last_timeline_pose = None
-            self._apply_active_take()  # clear skeletal take → bind pose
             if self._current_timeline is not None:
                 self._apply_timeline(self._current_timeline, 0.0)
             self._sync_native_runtime_playback()
@@ -650,7 +671,8 @@ class SkeletalAnimator(InxComponent):
             previous_duration = self._clip_duration(previous_clip)
             next_duration = self._clip_duration(clip)
             if previous_duration > 0.0 and next_duration > 0.0:
-                phase = (max(float(previous_elapsed), 0.0) % previous_duration) / previous_duration
+                phase = max(float(previous_elapsed), 0.0) / previous_duration
+                phase = phase % 1.0 if _clip_should_loop(previous_state, previous_clip) else min(phase, 1.0)
                 next_elapsed = phase * next_duration
         self._start_blend_if_needed(previous_clip, previous_elapsed, previous_speed, clip,
                                     fade_duration=fade_duration)
@@ -660,7 +682,6 @@ class SkeletalAnimator(InxComponent):
         self._prev_event_norm = (next_elapsed / self._clip_duration(clip)) if next_elapsed > 0.0 else 0.0
         self._playing = True
         self._sample_imported_curves(clip, self.normalized_time)
-        self._apply_active_take()
         self._sync_native_runtime_playback()
         return True
 
@@ -715,6 +736,7 @@ class SkeletalAnimator(InxComponent):
         self._blend_from_take_name = prev_take
         self._blend_from_elapsed = max(float(previous_elapsed), 0.0)
         self._blend_from_speed = float(previous_speed)
+        self._blend_from_loop = _clip_should_loop(self._get_current_state(), previous_clip)
         self._blend_elapsed = 0.0
         self._blend_duration = duration
 
@@ -723,6 +745,7 @@ class SkeletalAnimator(InxComponent):
         self._blend_from_take_name = ""
         self._blend_from_elapsed = 0.0
         self._blend_from_speed = 1.0
+        self._blend_from_loop = True
         self._blend_elapsed = 0.0
         self._blend_duration = 0.0
 
@@ -733,7 +756,10 @@ class SkeletalAnimator(InxComponent):
         self._blend_from_elapsed += max(float(delta_time), 0.0) * self._blend_from_speed
         prev_duration = self._clip_duration(self._blend_from_clip)
         if prev_duration > 0.0 and self._blend_from_elapsed >= prev_duration:
-            self._blend_from_elapsed %= prev_duration
+            if self._blend_from_loop:
+                self._blend_from_elapsed %= prev_duration
+            else:
+                self._blend_from_elapsed = prev_duration
         if self._blend_elapsed >= self._blend_duration:
             self._clear_blend_state()
 
@@ -794,13 +820,6 @@ class SkeletalAnimator(InxComponent):
         renderers = self._resolve_skinned_renderers(force=force)
         return renderers[0] if renderers else None
 
-    def _apply_active_take(self):
-        # The source model and take form one atomic native submission. Setting
-        # active_take_name first would briefly look the take up on the render
-        # model and recreate the old mesh/animation coupling. The following
-        # _sync_native_runtime_playback call performs the complete update.
-        return
-
     def _sync_native_runtime_playback(self) -> None:
         renderers = self._resolve_skinned_renderers()
         if not renderers:
@@ -842,17 +861,17 @@ class SkeletalAnimator(InxComponent):
         blend_mask = _clip_bone_mask(self._blend_from_clip) if blend_take else []
         pose_key = (
             "clip", self._playing, take_name, float(self._elapsed), normalized,
-            blend_take, blend_time, blend_weight, loop, source_guid, blend_source_guid,
+            blend_take, blend_time, blend_weight, loop, self._blend_from_loop, source_guid, blend_source_guid,
             tuple(current_mask), tuple(blend_mask),
         )
         if pose_key == self._last_native_pose_key:
             return
         for cpp in native_renderers:
-            if current_mask or blend_mask:
+            if blend_take or current_mask or blend_mask:
                 layers = []
                 if blend_take and blend_weight > 0.0:
                     layers.append({"take_name": blend_take, "source_model_guid": blend_source_guid,
-                                   "time": blend_time, "weight": blend_weight, "loop": loop,
+                                   "time": blend_time, "weight": blend_weight, "loop": self._blend_from_loop,
                                    "bone_mask": blend_mask})
                 if take_name:
                     layers.append({"take_name": take_name, "source_model_guid": source_guid,

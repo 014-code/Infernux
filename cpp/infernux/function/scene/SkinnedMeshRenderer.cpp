@@ -139,12 +139,7 @@ SkinnedMeshRenderer::LoadCompatibleAnimationSource(const std::string &guid, cons
 
     const SkinnedRuntimeAnimation *animation = nullptr;
     if (!takeName.empty()) {
-        for (const auto &candidate : source->animations) {
-            if (candidate.name == takeName) {
-                animation = &candidate;
-                break;
-            }
-        }
+        animation = source->FindAnimation(takeName);
         if (!animation)
             throw std::invalid_argument("animation take '" + takeName + "' was not found in source: " + guid);
     } else if (!source->animations.empty()) {

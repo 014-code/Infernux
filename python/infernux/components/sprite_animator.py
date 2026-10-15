@@ -1,5 +1,5 @@
 """
-SpiritAnimator — runtime 2D animation state machine controller.
+SpriteAnimator — runtime 2D animation state machine controller.
 
 Drives a :class:`SpriteRenderer` by evaluating an :class:`AnimStateMachine`
 every frame.  Loads the FSM from a ``.animfsm`` file, resolves each state's
@@ -8,7 +8,7 @@ SpriteRenderer.
 
 Usage::
 
-    animator = game_object.add_component(SpiritAnimator)
+    animator = game_object.add_component(SpriteAnimator)
     animator.controller = AnimStateMachineRef(guid="<controller asset GUID>")
 """
 
@@ -24,7 +24,7 @@ from infernux.components.builtin.sprite_renderer import SpriteRenderer
 from infernux.core.anim_state_machine import (
     AnimStateMachine, AnimState, AnimTransition,
 )
-from infernux.core.animation_clip import AnimationClip
+from infernux.core.animation_clip import AnimationClip, animation_frame_index
 from infernux.core.asset_ref import AnimStateMachineRef
 from infernux.debug import Debug
 from infernux.graph.types import ValueType
@@ -55,8 +55,8 @@ def _resolve_timeline_path(state: AnimState) -> Optional[str]:
 
 @require_component(SpriteRenderer)
 @disallow_multiple
-@add_component_menu("Animation/Spirit Animator")
-class SpiritAnimator(InxComponent):
+@add_component_menu("Animation/Sprite Animator")
+class SpriteAnimator(InxComponent):
     """Runtime controller that drives a SpriteRenderer from a 2D AnimStateMachine."""
 
     # ── Serialized fields (shown in Inspector) ──────────────────────
@@ -94,6 +94,7 @@ class SpiritAnimator(InxComponent):
     _current_clip: Optional[AnimationClip] = None
     _elapsed: float = 0.0
     _playing: bool = False
+    _playback_revision: int = 0
     _current_timeline = None
     _timeline_cache: Dict[str, object] = {}
     _timeline_base = None
@@ -121,7 +122,7 @@ class SpiritAnimator(InxComponent):
     def start(self):
         self._sprite_renderer = self.game_object.get_component(SpriteRenderer)
         if not self._sprite_renderer:
-            Debug.log_warning("[SpiritAnimator] No SpriteRenderer found on this GameObject.")
+            Debug.log_warning("[SpriteAnimator] No SpriteRenderer found on this GameObject.")
             return
 
         self._load_controller()
@@ -137,6 +138,7 @@ class SpiritAnimator(InxComponent):
             return
 
         state = self._get_current_state()
+        playback_revision = self._playback_revision
         speed = self.playback_speed * (state.speed if state else 1.0)
 
         # Advance elapsed time
@@ -160,16 +162,22 @@ class SpiritAnimator(InxComponent):
                     clip, prev_norm, post_norm, True,
                     wrap_count=int(self._elapsed / duration),
                 )
+                if self._playback_revision != playback_revision:
+                    return
                 self._prev_event_norm = post_norm
                 # Evaluate transitions at loop boundary while progress == 1.0,
                 # BEFORE wrapping elapsed (preserves exit-time gating).
                 self._try_auto_transition()
-                if self._current_clip is clip and self._playing:
+                if self._playback_revision != playback_revision:
+                    return
+                if self._playing:
                     self._elapsed = post
             else:
                 self._elapsed = duration
                 self._apply_current_clip_frame()
                 self._dispatch_clip_events(clip, prev_norm, 1.0, False)
+                if self._playback_revision != playback_revision:
+                    return
                 self._prev_event_norm = 1.0
                 self._playing = False
                 self._try_auto_transition()
@@ -177,6 +185,8 @@ class SpiritAnimator(InxComponent):
         else:
             curr_norm = (self._elapsed / duration) if duration > 0 else 0.0
             self._dispatch_clip_events(clip, prev_norm, curr_norm, False)
+            if self._playback_revision != playback_revision:
+                return
             self._prev_event_norm = curr_norm
 
         # Compute and apply the stable source-frame ID. Only touch the renderer when the
@@ -203,7 +213,7 @@ class SpiritAnimator(InxComponent):
                 self.game_object, events, prev_norm, curr_norm, looped, wrap_count=wrap_count,
             )
         except Exception as exc:
-            Debug.log_warning(f"[SpiritAnimator] event dispatch error: {exc}")
+            Debug.log_warning(f"[SpriteAnimator] event dispatch error: {exc}")
 
     # ── Public API ──────────────────────────────────────────────────
 
@@ -240,6 +250,7 @@ class SpiritAnimator(InxComponent):
 
     def stop(self):
         """Stop playback.  The current frame stays on screen."""
+        self._playback_revision += 1
         self._playing = False
 
     def set_parameter(self, name: str, value: object):
@@ -324,12 +335,11 @@ class SpiritAnimator(InxComponent):
     def _apply_current_clip_frame(self) -> None:
         clip = self._current_clip
         renderer = self._sprite_renderer
-        if clip is None or renderer is None or clip.frame_count <= 0 or clip.fps <= 0:
+        if clip is None or renderer is None:
             return
-        frame_index = min(
-            max(0, int(self._elapsed * clip.fps)),
-            clip.frame_count - 1,
-        )
+        frame_index = animation_frame_index(self._elapsed, clip.frame_count, clip.fps, False)
+        if frame_index is None:
+            return
         frame_id = clip.frames[frame_index].sprite_frame_id
         if frame_id == getattr(self, "_last_applied_frame", None):
             return
@@ -352,7 +362,7 @@ class SpiritAnimator(InxComponent):
         replacement = AnimationClip.load(asset_path)
         if replacement is None:
             Debug.log_error(
-                f"[SpiritAnimator] AnimationClip hot reload rejected; "
+                f"[SpriteAnimator] AnimationClip hot reload rejected; "
                 f"the previous runtime clip remains active: {asset_path}"
             )
             return True
@@ -379,7 +389,7 @@ class SpiritAnimator(InxComponent):
         replacement = AnimStateMachine.load(asset_path)
         if replacement is None:
             Debug.log_error(
-                f"[SpiritAnimator] controller hot reload rejected; "
+                f"[SpriteAnimator] controller hot reload rejected; "
                 f"the previous runtime controller remains active: {asset_path}"
             )
             return True
@@ -476,11 +486,18 @@ class SpiritAnimator(InxComponent):
                     self._reload_clip_asset(asset_guid, asset_path)
             except Exception as exc:
                 Debug.log_error(
-                    f"[SpiritAnimator] asset hot reload failed for '{asset_path}': {exc}"
+                    f"[SpriteAnimator] asset hot reload failed for '{asset_path}': {exc}"
                 )
 
     def _load_controller(self):
         """Load the AnimStateMachine from the *controller* asset reference."""
+        self.stop()
+        self._current_state_name = ""
+        self._current_clip = None
+        self._current_timeline = None
+        self._elapsed = 0.0
+        self._parameters = {}
+        self._pending_triggers = frozenset()
         self._fsm = None
         self._clip_cache = {}
         self._timeline_cache = {}
@@ -493,7 +510,7 @@ class SpiritAnimator(InxComponent):
 
         if fsm.mode != "2d":
             Debug.log_warning(
-                f"[SpiritAnimator] Controller is mode='{fsm.mode}', expected '2d'."
+                f"[SpriteAnimator] Controller is mode='{fsm.mode}', expected '2d'."
             )
         self._fsm = fsm
         self._seed_parameters_from_fsm(fsm)
@@ -531,12 +548,12 @@ class SpiritAnimator(InxComponent):
             clip = AnimationClip.load(clip_path)
             if clip is None:
                 Debug.log_warning(
-                    f"[SpiritAnimator] Failed to load clip for state '{state.name}': {clip_path}"
+                    f"[SpriteAnimator] Failed to load clip for state '{state.name}': {clip_path}"
                 )
         else:
             if state.clip_guid:
                 Debug.log_warning(
-                    f"[SpiritAnimator] Clip not found for state '{state.name}' "
+                    f"[SpriteAnimator] Clip not found for state '{state.name}' "
                     f"(guid='{state.clip_guid}')"
                 )
         self._clip_cache[key] = clip
@@ -554,7 +571,7 @@ class SpiritAnimator(InxComponent):
             tl = AnimationTimeline.load(path)
             if tl is None:
                 raise RuntimeError(
-                    f"SpiritAnimator could not load timeline for state "
+                    f"SpriteAnimator could not load timeline for state "
                     f"{state.name!r}: {path}"
                 )
         self._timeline_cache[key] = tl
@@ -566,6 +583,7 @@ class SpiritAnimator(InxComponent):
         if tl is None or not self._playing:
             return
         state = self._get_current_state()
+        playback_revision = self._playback_revision
         loop = bool(state.loop) if state is not None else True
         if self._playing:
             speed = self.playback_speed * (state.speed if state else 1.0)
@@ -574,7 +592,7 @@ class SpiritAnimator(InxComponent):
             if self._elapsed >= dur:
                 self._apply_timeline(tl, dur)
                 self._try_auto_transition()
-                if self._current_timeline is tl and self._playing:
+                if self._playback_revision == playback_revision and self._playing:
                     if loop:
                         self._elapsed = self._elapsed % dur
                     else:
@@ -633,13 +651,14 @@ class SpiritAnimator(InxComponent):
             return False
         state = self._fsm.get_state(state_name)
         if state is None:
-            Debug.log_warning(f"[SpiritAnimator] State not found: '{state_name}'")
+            Debug.log_warning(f"[SpriteAnimator] State not found: '{state_name}'")
             return False
 
         if not getattr(state, "restart_same_clip", False):
             if self._playing and self._current_state_name == state_name:
                 return True
 
+        self._playback_revision += 1
         if getattr(state, "kind", "clip") == "timeline":
             self._current_state_name = state_name
             self._current_clip = None

@@ -994,14 +994,14 @@ class AnimFSMEditorPanel(NodeGraphEditorPanel):
     def on_graph_diff_applied(self, _diff: GraphActionDiff) -> None:
         self._graph_selection.refresh()
 
-    def open_document_resource_immediate(self, file_path: str):
+    def open_document_resource_immediate(self, file_path: str) -> bool:
         """Load an .animfsm file into the editor."""
         normalized_path = self._normalize_fsm_path(file_path)
         target_path = normalized_path or file_path
         fsm = AnimStateMachine.load(target_path)
         if fsm is None:
             Debug.log_warning(f"Failed to load animfsm: {target_path}")
-            return
+            return False
         if self.document_id:
             self.unbind_document()
         self._fsm = fsm
@@ -1009,6 +1009,7 @@ class AnimFSMEditorPanel(NodeGraphEditorPanel):
         self._sync_graph_from_fsm()
         self._replace_fsm_document(resource_path=target_path, dirty=False)
         self._graph_selection.clear(record_history=False)
+        return True
 
     def can_new_fsm(self) -> bool:
         from infernux.engine.interaction import (
@@ -2850,11 +2851,11 @@ class AnimFSMEditorPanel(NodeGraphEditorPanel):
             scene = SceneManager.instance().get_active_scene()
             if not scene:
                 return
-            from infernux.components.spirit_animator import SpiritAnimator
+            from infernux.components.sprite_animator import SpriteAnimator
             from infernux.components.skeletal_animator import SkeletalAnimator
             from infernux.components.timeline_action import TimelineAction
             for go in scene.get_all_objects():
-                animator = go.get_component(SpiritAnimator)
+                animator = go.get_component(SpriteAnimator)
                 if animator and animator._fsm and same_path(
                         animator._fsm.file_path or "", fsm_path):
                     animator.reload_controller()

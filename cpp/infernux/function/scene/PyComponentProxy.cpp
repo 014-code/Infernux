@@ -166,16 +166,16 @@ PyComponentProxy::PyComponentProxy(py::object pyComponent)
 PyComponentProxy::~PyComponentProxy()
 {
     py::gil_scoped_acquire acquire;
-    // Note: OnDestroy is called explicitly before destruction by GameObject
-    // Clear reference to allow Python GC
-    m_callAwake = py::none();
-    m_callStart = py::none();
-    m_callOnEnable = py::none();
-    m_callOnDisable = py::none();
-    m_callOnDestroy = py::none();
-    m_callOnValidate = py::none();
-    m_callReset = py::none();
-    m_pyComponent = py::none();
+    // Release Python owners before the GIL scope ends. Member destructors
+    // run afterwards and must not retain even a reference to None.
+    m_callAwake = py::object();
+    m_callStart = py::object();
+    m_callOnEnable = py::object();
+    m_callOnDisable = py::object();
+    m_callOnDestroy = py::object();
+    m_callOnValidate = py::object();
+    m_callReset = py::object();
+    m_pyComponent = py::object();
 }
 
 void CallCachedLifecycleNoArg(py::object callable, std::string typeName, const char *displayName)

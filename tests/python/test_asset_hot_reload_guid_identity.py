@@ -3,7 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from infernux.components.builtin.sprite_renderer import SpriteRenderer
-from infernux.components.spirit_animator import SpiritAnimator
+from infernux.components.sprite_animator import SpriteAnimator
 from infernux.core.anim_state_machine import AnimStateMachine
 from infernux.core.asset_ref import AnimStateMachineRef
 from infernux.engine.interaction import AssetMutation, AssetMutationKind
@@ -65,8 +65,8 @@ def test_same_guid_move_then_modify_still_reloads_sprite(monkeypatch, tmp_path):
     assert calls == ["load", "uv", "color", "load", "uv", "color"]
 
 
-def test_spirit_controller_match_invalidates_reference_cache_and_uses_guid_path(monkeypatch, tmp_path):
-    from infernux.components import spirit_animator as animator_module
+def test_sprite_controller_match_invalidates_reference_cache_and_uses_guid_path(monkeypatch, tmp_path):
+    from infernux.components import sprite_animator as animator_module
 
     controller_guid = "9" * 32
     current_path = tmp_path / "moved" / "controller.animfsm"
@@ -80,7 +80,7 @@ def test_spirit_controller_match_invalidates_reference_cache_and_uses_guid_path(
     reference = AnimStateMachineRef(guid=controller_guid)
     stale_controller = object()
     reference._cached = stale_controller
-    animator = SpiritAnimator()
+    animator = SpriteAnimator()
     animator.controller = reference
     animator._fsm = AnimStateMachine(name="stale")
     reloads: list[str] = []

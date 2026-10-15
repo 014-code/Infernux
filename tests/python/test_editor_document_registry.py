@@ -88,11 +88,12 @@ def _document(
     *,
     dirty: bool = False,
     kind: DocumentKind = DocumentKind.PARTICLE_GRAPH,
+    document_id: str = "particle:smoke",
 ):
     document = registry.create(
         kind,
         "Smoke",
-        document_id="particle:smoke",
+        document_id=document_id,
         revision=1 if dirty else 0,
         saved_revision=0,
         capabilities=(DocumentCapability.SAVE | DocumentCapability.SAVE_AS | DocumentCapability.DISCARD),
@@ -551,7 +552,7 @@ def test_failed_scene_save_never_moves_the_registry_save_point():
 
 
 def test_focused_scene_save_queues_every_dirty_resident_scene():
-    from infernux.engine.interaction import EditorSaveService, FocusService
+    from infernux.engine.interaction import EditorSaveService, FocusService, PanelInteractionRegistry
     from infernux.engine.scene_manager import SceneFileManager
 
     registry = DocumentRegistry.instance()
@@ -583,13 +584,14 @@ def test_focused_scene_save_queues_every_dirty_resident_scene():
         },
     )()
     focus = FocusService()
+    registry.attach_view(documents[0].document_id, "scene_view")
     focus.activate_panel(
         "scene_view",
         view_id="scene_view",
         document_id=documents[0].document_id,
         record_history=False,
     )
-    saving = EditorSaveService(registry)
+    saving = EditorSaveService(registry, PanelInteractionRegistry())
     try:
         result = saving.save_focused()
         assert result.accepted
@@ -601,9 +603,87 @@ def test_focused_scene_save_queues_every_dirty_resident_scene():
         assert [controller.save_calls for controller in controllers] == [1, 1]
         assert all(not document.is_dirty for document in documents)
     finally:
+        saving.shutdown()
         EditorSaveService._instance = previous_saving
         FocusService._instance = previous_focus
         SceneFileManager._instance = previous_scene_files
+
+
+@pytest.fixture
+def primary_saving(monkeypatch):
+    from infernux.engine.interaction import EditorSaveService, FocusService, PanelInteractionRegistry
+
+    monkeypatch.setattr(FocusService, "_instance", None)
+    monkeypatch.setattr(EditorSaveService, "_instance", None)
+    registry = DocumentRegistry.instance()
+    focus = FocusService()
+    panels = PanelInteractionRegistry()
+    saving = EditorSaveService(registry, panels)
+    try:
+        yield registry, focus, panels, saving
+    finally:
+        saving.shutdown()
+
+
+def test_save_and_save_as_follow_primary_editor_through_auxiliary_focus(primary_saving):
+    from infernux.engine.interaction import PanelInteractionDescriptor
+
+    registry, focus, panels, saving = primary_saving
+    inspector_doc, inspector_controller = _document(
+        registry, dirty=True, kind=DocumentKind.MATERIAL, document_id="inspector-material",
+    )
+    registry.attach_view(inspector_doc.document_id, "inspector")
+    for view_id, kind in (
+        ("animclip2d_editor", DocumentKind.ANIMATION_CLIP),
+        ("animfsm_editor", DocumentKind.ANIMATION_FSM),
+        ("animtimeline_editor", DocumentKind.TIMELINE),
+        ("particle_graph_editor", DocumentKind.PARTICLE_GRAPH),
+        ("scene_view", DocumentKind.PREFAB),
+    ):
+        document, controller = _document(registry, dirty=True, kind=kind, document_id=view_id)
+        panels.register_type(view_id, PanelInteractionDescriptor(document_backed=kind is not DocumentKind.PREFAB))
+        registry.attach_view(document.document_id, view_id)
+        focus.activate_panel(view_id, view_id=view_id, document_id=document.document_id)
+        for auxiliary_view, save_as in (("project", False), ("inspector", True)):
+            focus.activate_panel(
+                auxiliary_view, view_id=auxiliary_view,
+                document_id=inspector_doc.document_id if auxiliary_view == "inspector" else "",
+            )
+            result = saving.save_focused(save_as=save_as)
+            assert result.accepted
+            assert result.document_id == document.document_id
+            assert result.panel_id == view_id
+            assert focus.snapshot.active_view_id == auxiliary_view
+            assert registry.process_deferred_saves() == (DocumentActionResult(DocumentActionStatus.APPLIED),)
+            assert controller.ticket.save_as is save_as
+        assert controller.save_calls == 2
+    assert inspector_controller.save_calls == 0
+
+
+def test_primary_save_resolves_rebound_view_and_rejects_detached_view(primary_saving):
+    from infernux.engine.interaction import PanelInteractionDescriptor
+
+    registry, focus, panels, saving = primary_saving
+    view_id = "animclip2d_editor"
+    panels.register_type(view_id, PanelInteractionDescriptor(document_backed=True))
+    original, original_controller = _document(registry, dirty=True, kind=DocumentKind.ANIMATION_CLIP)
+    registry.attach_view(original.document_id, view_id)
+    focus.activate_panel(view_id, view_id=view_id, document_id=original.document_id)
+    focus.activate_panel("project", view_id="project")
+    replacement, replacement_controller = _document(
+        registry, dirty=True, kind=DocumentKind.ANIMATION_CLIP, document_id="new-clip",
+    )
+    registry.attach_view(replacement.document_id, view_id)
+
+    assert saving.save_focused().document_id == replacement.document_id
+    registry.process_deferred_saves()
+    assert replacement_controller.save_calls == 1
+    assert original_controller.save_calls == 0
+    registry.detach_view(view_id)
+    result = saving.save_focused()
+    assert result.result.status is DocumentActionStatus.REJECTED
+    assert result.panel_id == view_id
+    assert registry.process_deferred_saves() == ()
 
 
 def test_guid_locator_follows_resource_rekey_and_a_replacement_live_entry(tmp_path):

@@ -46,6 +46,51 @@ def test_animation_clip_source_reference_survives_sprite_frame_reorder():
     assert _sprite_frame_by_id([other, referenced], animation_frame.sprite_frame_id) is referenced
 
 
+def test_inspector_preview_preserves_elapsed_pause_resume_and_nonloop_end(monkeypatch):
+    import time
+    from infernux.engine.ui import asset_details_renderer as inspector
+
+    clip = AnimationClip(frames=_frames(0, 1, 2, 3), fps=4.0, loop=False)
+    state = inspector._State()
+    state.extra["_animclip_pv"] = {
+        "tex_id": 1, "tex_w": 64, "tex_h": 16,
+        "frames": [SpriteFrame(stable_id=_source_id(index), x=index * 16, y=0, w=16, h=16)
+                   for index in range(4)],
+    }
+    clock = SimpleNamespace(now=10.0, click=False)
+    images = []
+    ctx = SimpleNamespace(
+        button=lambda _label: clock.click, same_line=lambda *_args: None,
+        push_style_color=lambda *_args: None, pop_style_color=lambda *_args: None,
+        label=lambda _text: None, get_content_region_avail_width=lambda: 240.0,
+        get_cursor_pos_x=lambda: 0.0, set_cursor_pos_x=lambda _x: None,
+        image=lambda *args: images.append(args),
+    )
+    monkeypatch.setattr(time, "perf_counter", lambda: clock.now)
+    monkeypatch.setattr(inspector, "_resolve_authoring_texture_path", lambda _clip: "texture.png")
+    monkeypatch.setattr(inspector, "_ensure_animclip_preview_texture", lambda *_args: True)
+
+    def render(now, *, click=False):
+        clock.now, clock.click = now, click
+        inspector._render_animclip_preview(ctx, clip, state)
+        return images[-1][3]
+
+    assert render(10.0, click=True) == 0.0
+    assert render(10.4) == 0.25
+    assert render(10.6) == 0.5
+    assert render(10.7, click=True) == 0.5
+    assert render(20.0) == 0.5
+    assert render(20.0, click=True) == 0.5
+    assert render(20.2) == 0.75
+    assert render(20.4) == 0.75
+    assert not state.extra["_animclip_pb"]["playing"]
+    assert render(30.0) == 0.75
+    assert render(30.0, click=True) == 0.0
+    clip.loop = True
+    assert render(31.3) == 0.25
+    assert state.extra["_animclip_pb"]["playing"]
+
+
 @pytest.fixture(autouse=True)
 def _isolate_animclip_panel_dirty_tracking():
     from infernux.engine.interaction import DocumentRegistry, FocusService
@@ -158,145 +203,117 @@ def test_animclip_frame_delete_restores_stable_identity_and_selection():
         AuthoringMutationService._instance = previous_service
 
 
-class _ClipInfoContext:
-    def __init__(self) -> None:
-        self.semantics = []
+def test_sprite_sheet_can_fill_undo_and_save_before_preview_is_ready(engine, monkeypatch):
+    from pathlib import Path
 
-    def label(self, _label):
-        pass
+    from PIL import Image
+    from infernux.core.asset_types import (
+        TextureType, read_texture_import_settings, write_texture_import_settings,
+    )
+    from infernux.core.assets import AssetManager
+    from infernux.core.document_store import DocumentStore
+    from infernux.engine.interaction import DocumentRegistry
+    from infernux.engine.undo import UndoManager
 
-    def same_line(self, *_args):
-        pass
+    database = engine.get_asset_database()
+    assets = Path(database.project_root) / "Assets"
+    assets.mkdir(exist_ok=True)
+    texture = assets / "animation-pending-preview.png"
+    Image.new("RGBA", (450, 384), "white").save(texture)
+    assert database.import_asset(str(texture))
+    settings = read_texture_import_settings(str(texture))
+    settings.texture_type = TextureType.SPRITE
+    settings.sprite_frames = [
+        SpriteFrame(name=f"frame_{index}", x=index % 3 * 150, y=index // 3 * 96, w=150, h=96)
+        for index in range(12)
+    ]
+    assert write_texture_import_settings(str(texture), settings)
+    DocumentStore.flush(str(texture) + ".meta")
+    monkeypatch.setattr(AssetManager, "_asset_database", database)
+    monkeypatch.setattr(AnimClip2DEditorPanel, "_get_native_engine", staticmethod(lambda: engine))
+    panel = AnimClip2DEditorPanel()
+    manager = UndoManager()
 
-    def set_next_item_width(self, _width):
-        pass
+    assert panel._load_texture(str(texture))
+    assert panel._tex.texture_id == 0
+    assert (panel._tex.tex_w, panel._tex.tex_h) == (450, 384)
+    assert len(panel._tex.frames) == 12
+    assert panel.command_fill_sequence()
+    original_ids = [frame.stable_id for frame in panel._active_clip.frames]
+    assert [frame.sprite_frame_id for frame in panel._active_clip.frames] == [
+        frame.stable_id for frame in settings.sprite_frames
+    ]
+    manager.undo()
+    assert panel._active_clip.frames == []
+    manager.redo()
+    assert [frame.stable_id for frame in panel._active_clip.frames] == original_ids
 
-    def text_input(self, _label, value, _size):
-        return value
-
-    def drag_float(self, _label, value, *_args):
-        return value
-
-    def checkbox(self, _label, value):
-        return value
-
-    def dummy(self, *_args):
-        pass
-
-    def push_style_color(self, *_args):
-        pass
-
-    def pop_style_color(self, *_args):
-        pass
-
-    def button(self, _label):
-        return False
-
-    def begin_disabled(self, _disabled):
-        pass
-
-    def end_disabled(self):
-        pass
-
-    def record_semantic_item(self, *args, **_kwargs):
-        self.semantics.append(args)
+    target = assets / "PendingPreview.animclip2d"
+    panel._replace_animclip_document(resource_path=str(target), dirty=True)
+    registry = DocumentRegistry.instance()
+    result = registry.request_save(panel.document_id)
+    assert result.accepted, result.message
+    DocumentStore.flush(str(target))
+    registry.process_pending_saves()
+    saved = AnimationClip.load(str(target))
+    assert saved is not None
+    assert len(saved.frames) == 12
+    assert saved.authoring_texture_guid == database.get_guid_from_path(str(texture))
+    assert registry.require(panel.document_id).is_dirty is False
 
 
-class _PaletteContext:
-    def __init__(self) -> None:
-        self.semantics = []
-        self.invisible_sizes = []
-        self.dummy_sizes = []
+def test_fill_sequence_retires_selection_and_undo_restores_original_frame():
+    from infernux.engine.interaction import EditorContextSnapshot, SelectionService
+    from infernux.engine.undo import UndoManager
 
-    def begin_child(self, *_args):
-        pass
+    selection = SelectionService()
+    manager = UndoManager()
+    manager.set_context_hooks(
+        lambda: EditorContextSnapshot(selection=selection.snapshot),
+        lambda context, phase: selection.apply_snapshot(
+            context.selection, reason=phase, record_history=False,
+        ) or True,
+    )
+    panel = AnimClip2DEditorPanel()
+    panel._tex = _TextureState(frames=[SpriteFrame(w=32, h=32)])
+    original = AnimationFrame(sprite_frame_id=panel._tex.frames[0].stable_id)
+    panel._active_clip.frames = [original]
+    target = panel._sequence_target(original)
+    selection.select(target, owner_id=panel.window_id, record_history=False)
 
-    def end_child(self):
-        pass
+    assert panel.command_fill_sequence()
+    replacement_id = panel._active_clip.frames[0].stable_id
+    assert replacement_id != original.stable_id
+    assert selection.snapshot.is_empty
+    manager.undo()
+    assert panel._active_clip.frames[0].stable_id == original.stable_id
+    assert selection.snapshot.primary == target
+    assert panel.can_delete_selected_frame()
+    manager.redo()
+    assert panel._active_clip.frames[0].stable_id == replacement_id
+    assert selection.snapshot.is_empty
 
-    def label(self, _label):
-        pass
 
-    def separator(self):
-        pass
+def test_nonloop_preview_resume_preserves_last_frame_subtime_until_finished():
+    from infernux.engine.ui.animclip2d_editor_panel import _PLAYBACK_PLAYING
 
-    def same_line(self, *_args):
-        pass
+    panel = AnimClip2DEditorPanel()
+    panel._active_clip.frames = _frames(0, 1, 2)
+    panel._active_clip.fps = 2.0
+    panel._active_clip.loop = False
+    panel._preview_frame_idx = 2
+    panel._preview_time = 1.1
+    panel._playback = _PLAYBACK_PLAYING
 
-    def dummy(self, width, height):
-        self.dummy_sizes.append((width, height))
-
-    def get_content_region_avail_height(self):
-        return 180.0
-
-    def get_content_region_avail_width(self):
-        return 180.0
-
-    def begin_table(self, *_args):
-        return True
-
-    def end_table(self):
-        pass
-
-    def table_next_column(self):
-        pass
-
-    def get_cursor_pos_x(self):
-        return 0.0
-
-    def get_cursor_pos_y(self):
-        return 0.0
-
-    def set_cursor_pos_x(self, _value):
-        pass
-
-    def set_cursor_pos_y(self, _value):
-        pass
-
-    def button(self, _label, **_kwargs):
-        return False
-
-    def invisible_button(self, _label, _width, _height):
-        self.invisible_sizes.append((_width, _height))
-
-    def is_item_clicked(self, _button=0):
-        return False
-
-    def record_semantic_item(self, *args, **_kwargs):
-        self.semantics.append(args)
-
-    def is_item_hovered(self):
-        return False
-
-    def get_item_rect_min_x(self):
-        return 0.0
-
-    def get_item_rect_min_y(self):
-        return 0.0
-
-    def get_item_rect_max_x(self):
-        return 50.0
-
-    def get_item_rect_max_y(self):
-        return 66.0
-
-    def image(self, *_args):
-        pass
-
-    def draw_text(self, *_args):
-        pass
-
-    def draw_filled_rect(self, *_args):
-        pass
-
-    def draw_rect(self, *_args):
-        pass
-
-    def draw_image_rect(self, *_args):
-        pass
-
-    def draw_text_aligned(self, *_args):
-        pass
+    assert panel.command_toggle_preview()  # Pause within the last frame.
+    assert panel.command_toggle_preview()
+    assert panel._preview_frame_idx == 2
+    assert panel._preview_time == 1.1
+    panel._preview_time = 1.5
+    panel.command_toggle_preview()
+    panel.command_toggle_preview()
+    assert panel._preview_frame_idx == 0
+    assert panel._preview_time == 0.0
 
 
 def test_open_panel_refreshes_sprite_slices_on_asset_change(monkeypatch, tmp_path):

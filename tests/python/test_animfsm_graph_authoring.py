@@ -45,9 +45,15 @@ def test_animfsm_disk_discard_reconciles_document_revision(tmp_path):
     target = tmp_path / "Saved.animfsm"
     assert AnimStateMachine(name="Saved").save(str(target))
     panel, _manager = _panel_with_history()
-    panel.open_document_resource_immediate(str(target))
+    assert panel._authoring_document_controller.open_resource_immediate(str(target))
     registry = DocumentRegistry.instance()
     document = registry.require(panel.document_id)
+    loaded_model = panel._fsm
+    assert not panel._authoring_document_controller.open_resource_immediate(
+        str(tmp_path / "Missing.animfsm")
+    )
+    assert panel._fsm is loaded_model
+    assert panel.document_id == document.document_id
     registry.mark_changed(document.document_id)
 
     result = registry.request_discard(document.document_id)

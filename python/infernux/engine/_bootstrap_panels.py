@@ -6,8 +6,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from infernux.engine.ui import (
+    AnimClip2DEditorPanel,
+    AnimFSMEditorPanel,
+    AnimTimelineEditorPanel,
+    BuildSettingsPanel,
+    EnvironmentSettingsPanel,
     SceneViewPanel,
     GameViewPanel,
+    HistoryPanel,
+    InxPackageImportPanel,
+    ParticleGraphEditorPanel,
+    PluginPanel,
+    PreferencesPanel,
     TagLayerSettingsPanel,
     PhysicsLayerMatrixPanel,
     UIEditorPanel,

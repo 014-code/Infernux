@@ -2899,21 +2899,20 @@ Infernux::QueryOrScheduleTexturePreview(const std::string &resourceKey, const st
             }
             const std::string textureName = BuildTexturePreviewTextureName(key);
             if (!pump) {
-                // A non-pumping query is a registration/probe operation. Never
-                // allocate an ImGui descriptor before the first normal preview
-                // pump; early-failure cleanup may otherwise run before the
-                // Vulkan backend has entered its first frame.
+                // Read the current publication without allocating a descriptor;
+                // the preview pump owns publication, including the first frame.
                 std::lock_guard<std::mutex> lock(m_previewResultMutex);
                 auto &state = m_texturePreviewStates[key];
                 state.textureName = textureName;
                 state.importedTextureGuid = guid;
                 state.importedGpuPending = true;
+                state.textureId = LiveImGuiTextureId(m_renderer.get(), textureName);
                 state.readyWidth = importedWidth;
                 state.readyHeight = importedHeight;
                 state.authoring = state.authoring || authoring;
                 m_hasPreviewPumpWork.store(true, std::memory_order_release);
                 m_renderer->RequestFullSpeedFrame();
-                return {0, 0, 0};
+                return {state.textureId, importedWidth, importedHeight};
             }
             const uint64_t importedId = m_renderer->QueryImportedTextureForImGui(textureName, guid);
             if (importedId != 0) {

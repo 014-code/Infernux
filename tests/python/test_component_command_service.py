@@ -24,7 +24,7 @@ def test_required_component_removal_is_rejected_before_journal_mutation(monkeypa
 def test_component_add_resolves_engine_python_and_native_targets(monkeypatch):
     import infernux.components.registry as component_registry
     import infernux.engine.undo as undo_module
-    from infernux.components.spirit_animator import SpiritAnimator
+    from infernux.components.sprite_animator import SpriteAnimator
     from infernux.engine.interaction import ComponentCommandService
 
     captured = []
@@ -59,16 +59,16 @@ def test_component_add_resolves_engine_python_and_native_targets(monkeypatch):
     monkeypatch.setattr(
         component_registry,
         "get_type",
-        lambda type_name: SpiritAnimator if type_name == "SpiritAnimator" else None,
+        lambda type_name: SpriteAnimator if type_name == "SpriteAnimator" else None,
     )
     service = ComponentCommandService()
     monkeypatch.setattr(service, "_execute", lambda *_args, **_kwargs: None)
     try:
-        python_component = service.add(FakeGameObject(), "SpiritAnimator")
+        python_component = service.add(FakeGameObject(), "SpriteAnimator")
         native_component = service.add(FakeGameObject(), "MeshRenderer")
 
-        assert isinstance(python_component, SpiritAnimator)
-        assert isinstance(captured[0][1], SpiritAnimator)
+        assert isinstance(python_component, SpriteAnimator)
+        assert isinstance(captured[0][1], SpriteAnimator)
         assert captured[1] == ("MeshRenderer", None)
         assert native_component is not None
     finally:

@@ -9,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import pytest
 import infernux.plugins.manager as plugin_manager_module
+import infernux.plugins._download as download_module
 import infernux.plugins.preload as preload_module
 import infernux.plugins.cache as plugin_cache_module
 from infernux.engine import player_package_native
@@ -982,11 +983,11 @@ def test_direct_local_github_git_and_http_sources_converge_on_same_inventory(tmp
             download_source,
         )
 
-        def retrieve(_url, destination):
+        def retrieve(_url, destination, *, progress=None):
             shutil.copy2(package, destination)
             _FakeInxPack.archives[str(Path(destination).resolve())] = dict(expected_archive)
 
-        monkeypatch.setattr(plugin_manager_module, "_download_url_package", retrieve)
+        monkeypatch.setattr(download_module, "download_file", retrieve)
         state = manager.install_source(descriptor, install_dependencies=False)
         assert state.reference == "vendor/distributed"
         record = manager.registry.installed_record("vendor/distributed")
@@ -1015,16 +1016,19 @@ def test_http_package_download_streams_and_preserves_destination_on_failure(tmp_
     def urlopen(request, *, timeout):
         observed["url"] = request.full_url
         observed["timeout"] = timeout
-        return Response((b"1234", b"5678", b"9"), content_length="999999999999")
+        return Response((b"1234", b"5678", b"9"), content_length="9")
 
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
     destination = tmp_path / "download.inxpkg"
-    plugin_manager_module._download_url_package(
+    updates = []
+    download_module.download_file(
         "https://packages.example/plugin.inxpkg",
         str(destination),
+        progress=lambda *update: updates.append(update),
     )
     assert observed == {"url": "https://packages.example/plugin.inxpkg", "timeout": 30}
     assert destination.read_bytes() == b"123456789"
+    assert updates[-1] == ("download_package", pytest.approx(0.30), "9 B / 9 B")
 
     class FailedResponse(Response):
         def read(self, _size):
@@ -1043,11 +1047,12 @@ def test_http_package_download_streams_and_preserves_destination_on_failure(tmp_
         interrupted,
     )
     with pytest.raises(OSError, match="connection lost"):
-        plugin_manager_module._download_url_package(
+        download_module.download_file(
             "https://packages.example/interrupted.inxpkg",
             str(destination),
         )
     assert destination.read_bytes() == b"123456789"
+    assert list(tmp_path.glob("*.part")) == []
 
 
 def test_uninstall_follows_guid_and_removes_plugin_owned_modification(tmp_path):

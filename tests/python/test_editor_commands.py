@@ -28,6 +28,48 @@ from infernux.engine.ui.core_panel_interactions import (
 )
 
 
+def test_fresh_editor_bootstrap_registers_builtin_menus_and_panel_commands(tmp_path):
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    source = str(Path(__file__).resolve().parents[2] / "python")
+    result = subprocess.run(
+        [sys.executable, "-", source, str(tmp_path)],
+        input="""
+import sys
+sys.path.insert(0, sys.argv[1])
+from infernux.engine.bootstrap import EditorBootstrap
+from infernux.engine.interaction import EditorInteractionCore
+from infernux.engine.ui.window_manager import WindowManager
+
+bootstrap = EditorBootstrap(sys.argv[2])
+bootstrap.interaction_core = EditorInteractionCore()
+bootstrap.window_manager = WindowManager(None, bootstrap.interaction_core.panels, lambda *_: None)
+bootstrap._register_window_types()
+bootstrap._register_core_editor_commands(bootstrap.window_manager, None)
+expected = {
+    "animclip2d_editor": "Animation", "animfsm_editor": "Animation",
+    "animtimeline_editor": "Animation", "particle_graph_editor": "Rendering",
+    "plugins": "Extensions", "build_settings": "", "environment_settings": "",
+    "inxpackage_import": "", "preferences": "", "physics_settings": "",
+    "toolbar": "", "console": "Window", "game_view": "Window",
+    "hierarchy": "Window", "history": "Window", "inspector": "Window",
+    "project": "Window", "scene_view": "Window", "tag_layer_settings": "Window",
+    "ui_editor": "Window",
+}
+actual = {key: info.menu_path for key, info in bootstrap.window_manager.get_registered_types().items()}
+assert actual == expected, actual
+assert bootstrap.interaction_core.commands.get("animclip2d.fill_sequence") is not None
+bootstrap.interaction_core.shutdown()
+""",
+        text=True,
+        capture_output=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 class _SceneCommandStub:
     def __init__(self, panel_getter):
         self._panel_getter = panel_getter

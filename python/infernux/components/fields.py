@@ -617,6 +617,8 @@ def resolve_runtime_field_value(value: Any, field_meta_or_type) -> Any:
 
     if field_type in _REFERENCE_FIELD_TYPES:
         return _resolve_single_reference(value, field_type)
+    if field_type in (FieldType.VEC2, FieldType.VEC3, FieldType.VEC4):
+        return normalize_runtime_field_value(value, field_meta_or_type)
 
     if field_type == FieldType.LIST and isinstance(value, list):
         if element_type in _REFERENCE_FIELD_TYPES:
@@ -1708,8 +1710,10 @@ def _merge_serialized_fields(component_class) -> Dict[str, FieldMetadata]:
     return fields
 
 
-def _compile_serialized_fields(cls, *, descriptors: bool = True) -> None:
-    """Compile the shared component/data-object declaration syntax once.
+def _compile_serialized_fields(
+    cls, *, descriptors: bool = True, reserved_attrs: frozenset[str] = frozenset()
+) -> None:
+    """Compile shared serialized declarations and owner-specific exclusions.
 
     Runtime storage stays with each owner: component descriptors may use CDS,
     while data objects store normalized values in their instance dictionary.
@@ -1717,7 +1721,7 @@ def _compile_serialized_fields(cls, *, descriptors: bool = True) -> None:
     # Always create a fresh dict for this class (don't inherit from parent)
     cls._serialized_fields_ = {}
     cls._non_serialized_fields_ = frozenset()
-    excluded = set()
+    excluded = set(reserved_attrs)
 
     def _runtime_default(name, annotation):
         inherited = _merge_serialized_fields(cls).get(name)
@@ -1758,7 +1762,7 @@ def _compile_serialized_fields(cls, *, descriptors: bool = True) -> None:
         return resolved_hints.get(name, own_annotations.get(name))
 
     def _is_class_var(annotation) -> bool:
-        if get_origin(annotation) is ClassVar:
+        if annotation is ClassVar or get_origin(annotation) is ClassVar:
             return True
         if isinstance(annotation, str):
             compact = annotation.replace(" ", "")
@@ -1767,6 +1771,8 @@ def _compile_serialized_fields(cls, *, descriptors: bool = True) -> None:
 
     # ── Pass 1: attributes with a class-level value ──────────────────
     for attr_name in list(cls.__dict__):
+        if attr_name in reserved_attrs:
+            continue
         # Raw attribute from class __dict__ (avoids descriptor protocol)
         attr = cls.__dict__[attr_name]
         if isinstance(attr, HiddenField):
@@ -1878,6 +1884,8 @@ def _compile_serialized_fields(cls, *, descriptors: bool = True) -> None:
 
     # ── Pass 2: annotation-only fields (no ``= value``) ─────────────
     for attr_name in own_annotations:
+        if attr_name in reserved_attrs:
+            continue
         if attr_name in cls.__dict__ or attr_name in cls._serialized_fields_:
             continue
         ann = _annotation_for(attr_name)

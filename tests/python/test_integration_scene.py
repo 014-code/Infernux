@@ -1422,12 +1422,14 @@ def test_scene_hierarchy_edit_query_and_destroy_workflow(scene):
     assert not scene.get_all_objects()
 
 
-def test_transform_authoring_writeback_and_document_restore(scene):
+def test_transform_authoring_value_assignment_and_document_restore(scene):
     owner = scene.create_game_object("TransformAuthoring")
     assert tuple(owner.transform.position) == (0, 0, 0)
     owner.transform.position = Vector3(1, 2, 3)
-    owner.transform.position.x += 4
-    owner.transform.position.y = 9
+    position = owner.transform.position
+    position.x += 4
+    position.y = 9
+    owner.transform.position = position
     assert tuple(owner.transform.position) == pytest.approx((5, 9, 3))
     owner.transform.position += Vector3(2, 3, 4)
     owner.transform.local_scale = Vector3(2, 3, 4)

@@ -186,7 +186,7 @@ __all__ = [
     "AudioListener",
     "AudioEngine",
     "SpriteRenderer",
-    "SpiritAnimator",
+    "SpriteAnimator",
     "SkeletalAnimator",
     "RuntimeAcceptanceRunner",
     # UI components

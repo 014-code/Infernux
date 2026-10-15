@@ -13,11 +13,12 @@ if __name__ != "__main__":
 
 
 CASES = [
-    *(f"timeline-{kind}-{mode}" for kind in ("spirit", "skeletal")
-      for mode in ("transition", "hold", "loop")),
+    *(f"timeline-{kind}-{mode}" for kind in ("sprite", "skeletal")
+      for mode in ("transition", "hold", "loop", "clear")),
     "sprite-shared", "sprite-distinct", "sprite-restart",
     "sprite-terminal-exact", "sprite-terminal-overshoot",
     "events-long", "events-partitioned", "events-boundary",
+    "events-reentrant-switch", "events-reentrant-terminal", "events-reentrant-restart",
 ]
 
 
@@ -38,7 +39,7 @@ def test_animator_playback_boundary(tmp_path, case):
 
 def exercise(project, case):
     from infernux.components import InxComponent
-    from infernux.components.spirit_animator import SpiritAnimator
+    from infernux.components.sprite_animator import SpriteAnimator
     from infernux.components.skeletal_animator import SkeletalAnimator
     from infernux.components.builtin.sprite_renderer import SpriteRenderer
     from infernux.components.builtin.skinned_mesh_renderer import SkinnedMeshRenderer
@@ -64,11 +65,11 @@ def exercise(project, case):
         assert handle and handle.guid
         return handle.guid
 
-    def attach(fsm, kind="spirit"):
+    def attach(fsm, kind="sprite"):
         guid = save("Controller", ".animfsm", fsm)
         owner = SceneManager.instance().get_active_scene().create_game_object("Animator")
-        owner.add_component(SpriteRenderer if kind == "spirit" else SkinnedMeshRenderer)
-        actor = owner.add_component(SpiritAnimator if kind == "spirit" else SkeletalAnimator)
+        owner.add_component(SpriteRenderer if kind == "sprite" else SkinnedMeshRenderer)
+        actor = owner.add_component(SpriteAnimator if kind == "sprite" else SkeletalAnimator)
         actor.controller = AnimStateMachineRef(guid=guid)
         actor.awake()
         actor.start()
@@ -91,8 +92,16 @@ def exercise(project, case):
             if mode == "transition":
                 first.transitions = [AnimTransition(target_state="B")]
             owner, actor = attach(AnimStateMachine(
-                mode="2d" if kind == "spirit" else "3d", default_state="A", states=[first, second],
+                mode="2d" if kind == "sprite" else "3d", default_state="A", states=[first, second],
             ), kind)
+            if mode == "clear":
+                actor.controller = None
+                actor.reload_controller()
+                assert actor.current_state == "" and not actor.is_playing
+                assert actor.normalized_time == 0.0
+                actor.update(2.0)
+                assert owner.transform.local_position.x == 0.0
+                return
             actor.update(0.5)
             assert actor.normalized_time == pytest.approx(0.5)
             assert owner.transform.local_position.x == pytest.approx(4.0)
@@ -128,6 +137,33 @@ def exercise(project, case):
                 frames=[AnimationFrame(sprite_frame_id=value) for value in frames],
                 fps=2.0, events=list(events),
             ))
+
+        if case.startswith("events-reentrant-"):
+            terminal = case.endswith("terminal")
+            restart = case.endswith("restart")
+            calls = []
+
+            class Receiver(InxComponent):
+                def on_animation_event(self, function, string_arg, number_arg):
+                    calls.append(function)
+                    if len(calls) == 1:
+                        assert actor.play("A" if restart else "B")
+
+            first = clip("First", [ids[0], ids[1]], events=[
+                AnimationEvent(1.0 if terminal else 0.25, "first"),
+            ])
+            second = clip("Second", [ids[1], ids[2]], events=[AnimationEvent(0.25, "second")])
+            owner, actor = attach(AnimStateMachine(default_state="A", states=[
+                AnimState(name="A", clip_guid=first, loop=not terminal, restart_same_clip=restart),
+                AnimState(name="B", clip_guid=second),
+            ]))
+            owner.add_component(Receiver)
+            actor.update(1.0 if terminal else 0.5)
+            assert actor.current_state == ("A" if restart else "B") and actor.is_playing
+            assert actor.normalized_time == 0.0
+            actor.update(0.3)
+            assert calls == ["first", "first" if restart else "second"]
+            return
 
         if case.startswith("events-"):
             calls = []

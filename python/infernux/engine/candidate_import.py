@@ -52,15 +52,12 @@ class CandidateImportTransaction:
     never exposed through ``sys.modules`` until ``commit`` is called.
     """
 
-    def __init__(self, *, trusted_modules: Iterable[str] = ()) -> None:
+    def __init__(self) -> None:
         self._specs: dict[str, CandidateModuleSpec] = {}
         self._modules: dict[str, types.ModuleType] = {}
         self._reused_lkg: dict[str, types.ModuleType] = {}
         self._roots = get_project_script_roots()
         self._external_roots: dict[str, bool] = {}
-        # Retain the old keyword for callers; installed imports no longer
-        # require registration in an engine-maintained allowlist.
-        del trusted_modules
         self._trusted_proxies: dict[str, types.ModuleType] = {}
         self._overlay_names: set[str] = set()
         self._parent_before: list[tuple[types.ModuleType, str, bool, object]] = []

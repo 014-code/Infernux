@@ -7,9 +7,11 @@ import sys
 
 
 import types
+from typing import Annotated, ClassVar
 
 
 import pytest
+from infernux.components.fields import NonSerialized
 
 
 from infernux.renderstack.injection_point import InjectionPoint
@@ -22,6 +24,7 @@ from infernux.renderstack.render_pass import RenderPass
 
 
 from infernux.renderstack.fullscreen_effect import FullScreenEffect
+from infernux.renderstack.render_pipeline import RenderPipeline
 
 
 def test_pipeline_file_callback_adopts_transactionally_published_module(monkeypatch):
@@ -133,3 +136,69 @@ def test_set_pipeline_replaces_runtime_pipeline_and_invalidates_graph_once(monke
     # their material/effect state without rebuilding the same graph twice.
     stack.set_pipeline("Pipeline B")
     assert invalidations == [True]
+
+
+@pytest.mark.parametrize("base", [RenderPipeline, FullScreenEffect])
+def test_render_parameters_share_typed_fields_and_round_trip(base):
+    from infernux.components.fields import get_field_schema, get_serialized_fields, serialized_field
+    from infernux.renderstack.render_stack import RenderStack
+
+    class Parameters(base):
+        name = "Shared parameter contract"
+        injection_point: ClassVar[str] = "final"
+        _reserved_attrs_ = frozenset({"route_metadata"})
+        route_metadata: list[str] = ["color"]
+        runtime_mode: ClassVar[int] = 7
+        runtime_tag: ClassVar = "runtime"
+        CONSTANT = 32
+        _private = serialized_field(default=8)
+        count: int = serialized_field(default=3, field_id="stable_count")
+        labels: list[str] = serialized_field(default=[])
+        computed: int
+        masked: int = 2
+        transient: int = 6
+
+    class Derived(Parameters):
+        _reserved_attrs_ = frozenset({"masked"})
+        masked = 9
+        count: int = serialized_field(default=4, field_id="stable_count")
+        transient: Annotated[int, NonSerialized] = 5
+
+    fields = get_serialized_fields(Derived)
+    assert set(fields) == {"count", "labels", "computed"}
+    assert get_serialized_fields(Parameters)["count"].default == 3
+    assert fields["count"].default == 4
+    assert get_field_schema(Derived, "count").attributes["field_id"] == "stable_count"
+    assert get_field_schema(Derived, "labels").attributes["element_type"] == "FieldType.STRING"
+    first, untouched, restored = Derived(), Derived(), Derived()
+    assert first.computed == 0 and first.runtime_mode == 7 and first.runtime_tag == "runtime"
+    assert first.masked == 9 and first.transient == 5
+    assert first.route_metadata == ["color"] and first._private == 8
+    first.count = 9
+    first.labels.append("authored")
+    assert untouched.labels == [] and fields["labels"].default == []
+
+    if base is FullScreenEffect:
+        document = first.get_params_dict()
+        restored.set_params_dict(document)
+    else:
+        stack = RenderStack()
+        stack.pipeline_class_name = first.name
+        stack._pipeline = first
+        stack._save_current_pipeline_params()
+        document = stack._encode_pipeline_params(first)
+        stack._restore_pipeline_params(restored)
+    assert document == {"count": 9, "labels": ["authored"], "computed": 0}
+    assert restored.count == 9 and restored.labels == ["authored"]
+
+
+@pytest.mark.parametrize("base", [RenderPipeline, FullScreenEffect])
+def test_render_parameter_ids_must_be_unique_across_inheritance(base):
+    from infernux.components.fields import serialized_field
+
+    class Parameters(base):
+        count = serialized_field(default=3, field_id="stable_count")
+
+    with pytest.raises(ValueError, match="duplicate field_id 'stable_count'"):
+        class Invalid(Parameters):
+            other = serialized_field(default=4, field_id="stable_count")

@@ -4,6 +4,8 @@ from test_model_animation_clips import model as model
 import json
 from pathlib import Path
 
+import pytest
+
 from infernux.components.skeletal_animator import SkeletalAnimator
 from infernux.core.animation_clip3d import AnimationClip3D
 from infernux.core.asset_ref import AnimationClip3DRef
@@ -20,7 +22,7 @@ def output(source):
     return json.loads(read_meta_file(str(source))["model_animations"])[0]
 
 
-def test_imported_clip_guid_picker_fsm_and_cook(model, tmp_path, monkeypatch):
+def test_imported_clip_guid_picker_fsm_and_cook(model, tmp_path, monkeypatch, scene):
     database, source, model_guid = model
     record = output(source)
     guid = record["guid"]
@@ -42,6 +44,20 @@ def test_imported_clip_guid_picker_fsm_and_cook(model, tmp_path, monkeypatch):
     assert clip.take_name == record["id"] and clip.source_model_guid == model_guid
     assert animator._resolve_clip_b(state).to_dict() == clip.to_dict()
     assert AnimationClip3DRef(guid=guid).resolve().to_dict() == clip.to_dict()
+
+    render_source = source.with_name("Render.fbx")
+    render_source.write_bytes(source.read_bytes())
+    imported_render = AssetManager.import_asset(str(render_source), database=database)
+    assert imported_render, imported_render.error
+    renderer = scene.create_game_object("Cross-model clip").add_component("SkinnedMeshRenderer")
+    renderer.set_source_model_guid(imported_render.guid)
+    assert renderer.get_animation_duration_seconds(clip.take_name, model_guid) == pytest.approx(record["duration"])
+    renderer.submit_animation_pose(
+        clip.take_name, 0.25, 0.5, animation_source_guid=model_guid,
+    )
+    assert renderer.animation_source_guid == model_guid
+    renderer.submit_pose_stack([{"take_name": clip.take_name, "source_model_guid": model_guid, "time": 0.25}])
+    assert renderer.active_take_name == clip.take_name
     assert not AssetManager.reimport_asset(virtual, database=database)
 
     database.flush_derived_index()

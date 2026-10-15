@@ -71,7 +71,7 @@ class ImportSettingsDraftCommand(UndoCommand):
 
 
 class EditableDocumentDraftCommand(UndoCommand):
-    """Replay an autosaved document through its stable controller."""
+    """Replay a resource document through its current controller."""
 
     marks_dirty = False
     _is_property_edit = True
@@ -91,7 +91,6 @@ class EditableDocumentDraftCommand(UndoCommand):
         from infernux.engine.interaction.documents import DocumentRegistry
 
         super().__init__(description)
-        self._controller = controller
         self._old_document = copy.deepcopy(old_document)
         self._new_document = copy.deepcopy(new_document)
         self._old_revision = int(old_revision)
@@ -102,7 +101,7 @@ class EditableDocumentDraftCommand(UndoCommand):
             self._document_id
         ).imported_disk_revision
 
-    def _require_current_external_revision(self) -> None:
+    def _current_controller(self):
         from infernux.engine.interaction.documents import DocumentRegistry
 
         document = DocumentRegistry.instance().require(self._document_id)
@@ -111,14 +110,13 @@ class EditableDocumentDraftCommand(UndoCommand):
                 "Cannot replay a whole-document edit after an external resource revision; "
                 "edit the current document instead"
             )
+        return document.controller
 
     def execute(self) -> None:
-        self._require_current_external_revision()
-        self._controller.restore_document(self._new_document, self._new_revision)
+        self._current_controller().restore_document(self._new_document, self._new_revision)
 
     def undo(self) -> None:
-        self._require_current_external_revision()
-        self._controller.restore_document(self._old_document, self._old_revision)
+        self._current_controller().restore_document(self._old_document, self._old_revision)
 
 
     def can_merge(self, other: UndoCommand) -> bool:

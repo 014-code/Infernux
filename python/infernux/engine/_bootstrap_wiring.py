@@ -834,6 +834,9 @@ class BootstrapWiringMixin:
                 'animclip2d.clear_sequence', 'Clear 2D Animation Sequence', 'Animation'
             ),
             _panel_entry(
+                'animclip2d.fill_sequence', 'Fill 2D Animation Sequence', 'Animation'
+            ),
+            _panel_entry(
                 'animclip2d.add_frame', 'Add 2D Animation Frame', 'Animation'
             ),
             _panel_entry(
