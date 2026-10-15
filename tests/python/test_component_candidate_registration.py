@@ -228,6 +228,8 @@ def candidate_environment(tmp_path, monkeypatch):
 
     probe = _CDSProbe()
     monkeypatch.setattr(_cds_bridge, "_class_registry", {})
+    # Retired slots belong to this probe's class-ID namespace too.
+    monkeypatch.setattr(_cds_bridge, "_retired_layouts", {})
     monkeypatch.setattr(_cds_bridge, "_get_lib", lambda: probe)
     monkeypatch.setattr(
         runtime_dispatch,
@@ -461,18 +463,21 @@ def test_owner_safe_point_rejection_precedes_every_live_and_schema_mutation(
     path = _write_candidate(assets, f"{name}.py", source)
     transaction = _stage_schema_reload(path, target, (instance,), source, guid)
 
-    monkeypatch.setattr(
-        runtime_dispatch,
-        "assert_runtime_dispatch_safe_point",
-        lambda: (_ for _ in ()).throw(
-            RuntimeError("runtime dispatch publication requires an owner safe point; active frame")
-        ),
-    )
+    with monkeypatch.context() as active_frame:
+        active_frame.setattr(
+            runtime_dispatch,
+            "assert_runtime_dispatch_safe_point",
+            lambda: (_ for _ in ()).throw(
+                RuntimeError("runtime dispatch publication requires an owner safe point; active frame")
+            ),
+        )
+        with pytest.raises(RuntimeError, match="owner safe point"):
+            transaction.commit()
 
-    with pytest.raises(RuntimeError, match="owner safe point"):
-        transaction.commit()
-
-    assert transaction.rolled_back
+    assert not transaction.committed
+    assert not transaction.rolled_back
+    assert not transaction.finalized
+    assert probe._transactions == {}
     assert snapshot_component_registry_state() == before_registry
     assert tuple(probe.class_keys) == before_class_keys
     assert instance._cds_class_id == old_class_id
@@ -480,6 +485,14 @@ def test_owner_safe_point_rejection_precedes_every_live_and_schema_mutation(
     assert instance.count == 64
     assert instance.update(0.0) == "old"
     assert "velocity" not in target.__dict__
+
+    transaction.commit()
+    assert transaction.committed
+    assert instance.velocity == 64.0
+    assert instance.update(0.0) == "new"
+    assert probe._cds_is_alive(old_class_id, old_slot)
+    transaction.finalize()
+    assert not probe._cds_is_alive(old_class_id, old_slot)
 
 
 def test_native_schema_commit_then_python_descriptor_failure_rolls_back_exactly(
