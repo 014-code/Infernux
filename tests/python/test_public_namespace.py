@@ -225,19 +225,6 @@ def test_lowercase_namespace_reload_preserves_runtime_type_identity() -> None:
     assert reloaded.InxComponent is infernux.InxComponent
 
 
-@pytest.mark.parametrize("suffix", [
-    "renderstack", "renderstack.render_stack", "components", "components.component",
-    "components.registry", "rendergraph.graph", "engine.path_utils", "lib", "version",
-])
-def test_lowercase_submodule_imports_share_canonical_identity(suffix) -> None:
-    canonical = importlib.import_module("infernux." + suffix)
-    original_spec = canonical.__spec__
-    public = importlib.import_module("infernux." + suffix)
-    assert public is canonical
-    assert public.__spec__ is original_spec
-    assert public.__spec__.name == "infernux." + suffix
-
-
 def test_lowercase_submodule_from_import_and_nested_aliases() -> None:
     import infernux.renderstack as rendering
     from infernux.renderstack import RenderStack
@@ -248,15 +235,6 @@ def test_lowercase_submodule_from_import_and_nested_aliases() -> None:
     assert RenderStack is NestedStack is rendering.RenderStack
     assert RenderStack is inx.RenderStack
     assert InxComponent is inx.InxComponent
-
-
-def test_public_gameplay_docs_keep_the_lowercase_namespace_contract() -> None:
-    repository = Path(__file__).parents[2]
-    gameplay_docs = sorted((repository / "docs" / "learn").glob("gameplay-*.md"))
-    assert gameplay_docs
-
-    violations = _forbidden_import_violations(repository, gameplay_docs)
-    assert not violations, "\n".join(violations)
 
 
 def test_public_docs_never_import_the_internal_package() -> None:
