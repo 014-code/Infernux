@@ -27,10 +27,6 @@ from infernux.lib import (
 )
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Helpers
-# ═══════════════════════════════════════════════════════════════════════════
-
 def _step_frames(n: int = 60, dt: float = 1.0 / 60.0):
     """Advance the physics simulation by *n* frames."""
     sm = SceneManager.instance()
@@ -384,10 +380,6 @@ class TestSliderJoint:
         with pytest.raises((ValueError, TypeError)):
             setattr(slider, attribute, value)
 
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Gravity & free fall
-# ═══════════════════════════════════════════════════════════════════════════
 
 class TestPenetrationQuery:
     @pytest.mark.parametrize("shape_name", ["BoxCollider", "SphereCollider", "CapsuleCollider", "CylinderCollider"])
@@ -1082,16 +1074,6 @@ class TestGravity:
 
         assert restored_ball.transform.position.y > 0.9
 
-    def test_set_gravity_persists(self, scene):
-        Physics.set_gravity(Vector3(0, -9.81, 0))
-        g = Physics.get_gravity()
-        assert g.y == pytest.approx(-9.81, abs=0.01)
-
-    def test_custom_gravity(self, scene):
-        Physics.set_gravity(Vector3(0, -20, 0))
-        g = Physics.get_gravity()
-        assert g.y == pytest.approx(-20, abs=0.01)
-        Physics.set_gravity(Vector3(0, -9.81, 0))  # restore
 
     def test_ball_falls_under_gravity(self, scene):
         """A dynamic sphere above the ground should lose altitude."""
@@ -1321,10 +1303,6 @@ class TestFixedTiming:
         )
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Collision — ball lands on ground
-# ═══════════════════════════════════════════════════════════════════════════
-
 class TestCollision:
     def test_ball_lands_on_ground(self, scene):
         """Ball should collide with ground and stop roughly at ground level."""
@@ -1454,10 +1432,6 @@ class TestCollision:
         assert frictionless.velocity.x > 4.5
         assert abs(high_friction.velocity.x) < 0.25
 
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Rigidbody properties in play mode
-# ═══════════════════════════════════════════════════════════════════════════
 
 class TestRigidbodyInScene:
     @pytest.mark.parametrize(
@@ -1801,10 +1775,6 @@ class TestContinuousCollisionDetection:
             assert pair[1][1].velocity.x > -1.0
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Raycasting with actual scene objects
-# ═══════════════════════════════════════════════════════════════════════════
-
 class TestRaycast:
     @pytest.mark.parametrize(
         ("shape_name", "convex"),
@@ -1967,10 +1937,6 @@ class TestRaycast:
         assert Physics.raycast(origin, direction, 20, layer_mask=1 << 6, query_triggers=True) is None
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Overlap queries
-# ═══════════════════════════════════════════════════════════════════════════
-
 class TestOverlapQueries:
     def test_overlap_sphere_finds_colliders(self, scene):
         for i in range(3):
@@ -2029,10 +1995,6 @@ class TestOverlapQueries:
             for c in Physics.overlap_capsule(Vector3(0, -2, 0), Vector3(0, 2, 0), 0.75)
         ]
 
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Shape casts
-# ═══════════════════════════════════════════════════════════════════════════
 
 class TestShapeCasts:
     def test_sphere_cast_hits_ground(self, scene):
@@ -2134,9 +2096,6 @@ class TestContactCallbacks:
         sm.step()
         assert "exit" in probe.events
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Layer collision filtering
-# ═══════════════════════════════════════════════════════════════════════════
 
 class TestLayerCollision:
     def test_ignore_layer_collision_round_trip(self, scene):

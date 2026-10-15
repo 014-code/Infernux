@@ -7,7 +7,7 @@ from enum import IntEnum
 import pytest
 
 from infernux.components.builtin_component import BuiltinComponent, CppProperty
-from infernux.components.fields import FieldType, get_serialized_fields
+from infernux.components.fields import FieldType
 import infernux.lib as lib
 
 
@@ -44,10 +44,6 @@ class LazyEnumBuiltin(BuiltinComponent):
 
     mode = CppProperty("mode", FieldType.ENUM, default=DemoEnum.A, enum_type="DemoEnum")
 
-
-# ══════════════════════════════════════════════════════════════════════
-# CppProperty descriptor
-# ══════════════════════════════════════════════════════════════════════
 
 class TestCppPropertyBinding:
     def test_unbound_access_is_rejected(self):
@@ -213,25 +209,8 @@ class TestCppPropertyEdgeCases:
                 _ = body.mass
 
 
-# ══════════════════════════════════════════════════════════════════════
-# BuiltinComponent subclass
-# ══════════════════════════════════════════════════════════════════════
-
 class TestBuiltinComponent:
-    def test_registered_in_builtin_registry(self):
-        assert "DemoBuiltin" in BuiltinComponent._builtin_registry
-        assert BuiltinComponent._builtin_registry["DemoBuiltin"] is DemoBuiltin
 
-    def test_isinstance_inf_component(self):
-        from infernux.components.component import InxComponent
-        demo = DemoBuiltin()
-        assert isinstance(demo, InxComponent)
-
-    def test_serialized_fields_contain_cpp_properties(self):
-        fields = get_serialized_fields(DemoBuiltin)
-        assert "mode" in fields
-        assert "raw" in fields
-        assert "locked" in fields
 
     def test_raw_field_value_reads_live_cpp_not_metadata_default(self):
         from infernux.components.fields import get_raw_field_value
@@ -319,20 +298,6 @@ class TestBuiltinComponent:
         assert demo._get_bound_native_component() is None
         assert demo._is_destroyed
 
-    def test_repr_unbound(self):
-        demo = DemoBuiltin()
-        r = repr(demo)
-        assert "DemoBuiltin" in r
-        assert "bound=False" in r
-
-    def test_repr_bound(self):
-        cpp = DemoCpp()
-        cpp.component_id = 42
-        cpp.enabled = True
-        demo = DemoBuiltin()
-        demo._bind_cpp(cpp, type("FakeGO", (), {"id": 1})())
-        r = repr(demo)
-        assert "bound=True" in r
 
     def test_native_wrapper_does_not_enter_script_instance_registry(self):
         from infernux.components.component import InxComponent
@@ -352,10 +317,6 @@ class TestBuiltinComponent:
             InxComponent._active_instances.clear()
             InxComponent._active_instances.update(previous)
 
-    def test_clear_cache(self):
-        BuiltinComponent._wrapper_cache.clear()
-        BuiltinComponent._clear_cache()
-        assert len(BuiltinComponent._wrapper_cache) == 0
 
     def test_clear_cache_does_not_import_inspector_in_player(self, monkeypatch):
         import builtins

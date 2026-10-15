@@ -235,34 +235,6 @@ def test_one_windows_query_path_can_be_observed_concurrently(tmp_path):
     assert probe() is None
 
 
-def test_current_query_and_publication_bypass_active_presentation(tmp_path):
-    path = tmp_path / "value.txt"
-    path.write_text("first", encoding="utf-8")
-    cache = FileReadCache()
-
-    def prepare(observed):
-        observed.watch(path)
-        return path.read_text(encoding="utf-8")
-
-    with read_model_frame():
-        assert cache.get("value", prepare) == "first"
-        path.write_text("modified", encoding="utf-8")
-        assert cache.get("value", prepare) == "first"
-        assert cache.get("value", prepare, current=True) == "modified"
-        cache.clear()
-        assert cache.get("value", prepare) == "modified"
-
-
-def test_registry_results_do_not_share_mutable_catalog_nodes(tmp_path):
-    registry = PluginRegistry(str(tmp_path))
-    value = registry.load()
-    value["packages"] = [{"reference": "team/plugin", "source": {"tags": ["original"]}}]
-    registry.save(value)
-    for result in (registry.available()[0], registry.find("team/plugin")):
-        result["source"]["tags"].append("caller edit")
-        assert registry.find("team/plugin")["source"]["tags"] == ["original"]
-
-
 @pytest.mark.parametrize("query", ["available", "find", "installed", "installed_metadata", "installed_record"])
 def test_all_registry_read_projections_detach_json_containers(tmp_path, query):
     registry = PluginRegistry(str(tmp_path))

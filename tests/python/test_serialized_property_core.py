@@ -482,21 +482,6 @@ def test_python_multi_edit_respects_readonly_on_every_target():
     assert (first.speed, second.speed) == (1.0, 2.0)
 
 
-def test_serialized_field_layer_has_no_editor_undo_or_dirty_hook():
-    import importlib
-    from pathlib import Path
-
-    module = importlib.import_module("infernux.components.fields")
-    bootstrap_module = importlib.import_module("infernux.engine.bootstrap")
-
-    serialized_source = Path(module.__file__).read_text(encoding="utf-8")
-    bootstrap_source = Path(bootstrap_module.__file__).read_text(encoding="utf-8")
-
-    assert "set_field_change_hooks" not in serialized_source
-    assert "_on_field_will_change" not in serialized_source
-    assert "_inject_field_change_hooks" not in bootstrap_source
-
-
 def test_multi_target_property_write_rolls_back_when_one_target_rejects():
     from infernux.engine.interaction import make_attribute_property_transaction
     from infernux.engine.undo import UndoManager

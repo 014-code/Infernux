@@ -181,6 +181,7 @@ def test_builtin_creator_owns_exact_path_through_import_and_history(engine, scen
             assert list(directory.iterdir()) == [external]
         else:
             command.execute()
+            assert tuple(command.result) == (True, command.result.detail)
             path = Path(command.created_path)
             assert path.parent == directory
             content = path.read_bytes() if kind != "folder" else None

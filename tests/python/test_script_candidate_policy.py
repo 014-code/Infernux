@@ -35,7 +35,6 @@ def test_common_imports_declarations_and_function_bodies_are_not_blocked(source)
 
 @pytest.mark.parametrize("imports, decorator", [
     ("import infernux as inx", "inx.jit.compile"),
-    ("import infernux as inx", "inx.jit.compile"),
     ("from infernux import jit as cpu", "cpu.compile"),
     ("import infernux.jit as cpu", "cpu.compile"),
     ("from infernux.jit import compile as optimize", "optimize"),
@@ -81,7 +80,6 @@ def test_decorator_factories_may_be_held_as_module_values():
 
 
 @pytest.mark.parametrize("imports, decorator", [
-    ("import infernux as inx", "inx.renderstack.geometry_buffer"),
     ("import infernux as inx", "inx.renderstack.geometry_buffer"),
     ("from infernux import renderstack as rendering", "rendering.geometry_buffer"),
     ("import infernux.renderstack as rendering", "rendering.geometry_buffer"),

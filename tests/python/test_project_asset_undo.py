@@ -79,42 +79,6 @@ def test_asset_manager_delete_does_not_evict_before_database_commit(monkeypatch)
     assert events == ["resolve-guid", "database-delete"]
 
 
-def test_project_asset_create_preserves_file_and_meta_identity(tmp_path):
-    assets = tmp_path / "Assets"
-    assets.mkdir()
-    asset = assets / "Created.mat"
-    meta = assets / "Created.mat.meta"
-
-    def create():
-        asset.write_text("material", encoding="utf-8")
-        meta.write_text("stable-guid", encoding="utf-8")
-        return AssetCreationResult(True, "", str(asset))
-
-    command = ProjectAssetCreateCommand(
-        str(assets),
-        create,
-        project_root=str(tmp_path),
-        backup_root=str(tmp_path / "Library" / "EditorUndo"),
-        delete_fn=_filesystem_delete,
-        import_fn=_successful_import,
-    )
-
-    command.execute()
-    assert command.created_path == str(asset.resolve())
-    assert tuple(command.result) == (True, "")
-    assert asset.read_text(encoding="utf-8") == "material"
-    assert meta.read_text(encoding="utf-8") == "stable-guid"
-
-    command.undo()
-    assert not asset.exists()
-    assert not meta.exists()
-
-    command.redo()
-    assert asset.read_text(encoding="utf-8") == "material"
-    assert meta.read_text(encoding="utf-8") == "stable-guid"
-    command.dispose()
-
-
 def test_project_asset_create_redo_refuses_external_destination(tmp_path):
     assets = tmp_path / "Assets"
     assets.mkdir()
@@ -259,40 +223,6 @@ def test_failed_asset_rename_undo_keeps_global_cursor_and_files(tmp_path):
     assert new_path.read_text(encoding="utf-8") == "original"
 
 
-def test_project_asset_delete_preserves_file_and_guid_meta_across_replay(tmp_path):
-    asset = tmp_path / "Assets" / "Smoke.mat"
-    asset.parent.mkdir()
-    asset.write_text("material", encoding="utf-8")
-    meta = asset.with_name(asset.name + ".meta")
-    meta.write_text('{"guid":"stable-guid"}', encoding="utf-8")
-    backup_root = tmp_path / "Library" / "EditorUndo"
-    changed = []
-    command = ProjectAssetDeleteCommand(
-        [str(asset)],
-        project_root=str(tmp_path),
-        backup_root=str(backup_root),
-        delete_fn=_filesystem_delete,
-        import_fn=_successful_import,
-        on_deleted=lambda: changed.append("deleted"),
-        on_restored=lambda: changed.append("restored"),
-    )
-
-    command.execute()
-    assert not asset.exists()
-    assert not meta.exists()
-
-    command.undo()
-    assert asset.read_text(encoding="utf-8") == "material"
-    assert meta.read_text(encoding="utf-8") == '{"guid":"stable-guid"}'
-
-    command.redo()
-    assert not asset.exists()
-    assert changed == ["deleted", "restored", "deleted"]
-
-    command.dispose()
-    assert not any(backup_root.glob("asset-delete-*"))
-
-
 def test_project_asset_delete_deduplicates_nested_selected_roots(tmp_path):
     folder = tmp_path / "Assets" / "Folder"
     nested = folder / "Nested.mat"
@@ -387,19 +317,34 @@ def test_project_asset_delete_restores_real_asset_database_guid(tmp_path, engine
     guid = database.import_asset(str(asset)).guid
     assert guid
 
+    content = asset.read_bytes()
+    meta = asset.with_name(asset.name + ".meta")
+    metadata = meta.read_bytes()
+    backup_root = tmp_path / "Library" / "EditorUndo"
+    changed = []
     command = ProjectAssetDeleteCommand(
         [str(asset)],
         project_root=str(tmp_path),
+        backup_root=str(backup_root),
         asset_database=database,
+        on_deleted=lambda: changed.append("deleted"),
+        on_restored=lambda: changed.append("restored"),
     )
 
     command.execute()
     assert not database.contains_guid(guid)
+    assert not asset.exists() and not meta.exists()
     command.undo()
 
     assert database.get_guid_from_path(str(asset)) == guid
     assert database.get_path_from_guid(guid)
+    assert asset.read_bytes() == content and meta.read_bytes() == metadata
+    command.redo()
+    assert not database.contains_guid(guid)
+    assert not asset.exists() and not meta.exists()
+    assert changed == ["deleted", "restored", "deleted"]
     command.dispose()
+    assert not any(backup_root.glob("asset-delete-*"))
 
 
 def test_project_asset_delete_restores_live_material_reference(tmp_path, engine, scene):

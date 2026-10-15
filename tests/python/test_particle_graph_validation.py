@@ -357,16 +357,6 @@ def test_particle_python_construction_cannot_bypass_schema_invariants():
         ParticleGraphAsset(emitters=(object(),))
 
 
-def test_particle_output_rejects_removed_material_property():
-    value = ParticleGraphAsset().to_dict()
-    output = value["emitters"][0]["stages"]["rendering"]["nodes"][1]["properties"]
-    output["material"] = AssetReference(guid="legacy-material").to_dict()
-
-    restored = ParticleGraphAsset.from_dict(value)
-    with pytest.raises(ParticleCompileError, match="unknown properties.*material"):
-        ParticleGraphCompiler().compile(restored)
-
-
 def test_mesh_emitter_shape_requires_an_asset_at_aot_compile_time():
     emitter = ParticleEmitterAsset(
         settings=EmitterSettings(shape=EmitterShape(kind="mesh"))

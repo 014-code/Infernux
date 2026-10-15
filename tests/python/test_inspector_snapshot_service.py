@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 import pytest
 
 from infernux.engine.runtime_change_journal import (
@@ -296,36 +295,10 @@ def test_immediate_transform_invalidation_targets_only_changed_objects() -> None
     assert service.snapshot(other).value_revision == other_before.value_revision
 
 
-def test_scene_rebuild_invalidates_all_projections_of_replaced_native_owners() -> None:
-    service = _service()
-    target = InspectorTarget.scene_object(61)
-    before = service.snapshot(target)
-
-    invalidate_rebuilt_scene()
-
-    after = service.snapshot(target)
-    assert after.schema_revision > before.schema_revision
-    assert after.value_revision > before.value_revision
-    assert after.target_revision > before.target_revision
-    assert after.preview_revision > before.preview_revision
-
-
-def test_scene_rebuild_drops_inspector_value_cache_and_structure() -> None:
+def test_repeated_scene_rebuild_retires_projections_and_values_without_resetting_cursors():
     from infernux.engine.ui import inspector_components as components_ui
     from infernux.engine.ui.inspector_support import get_component_structure_version
 
-    components_ui._COMPONENT_VALUE_CACHE[("builtin", "probe", 61)] = {
-        "values": {"intensity": 3.0},
-    }
-    before_structure = get_component_structure_version()
-
-    invalidate_rebuilt_scene()
-
-    assert components_ui._COMPONENT_VALUE_CACHE == {}
-    assert get_component_structure_version() > before_structure
-
-
-def test_scene_rebuild_releases_retired_revision_keys_without_resetting_cursors() -> None:
     service = _service()
     journal = RuntimeChangeJournal()
     cursor = journal.create_cursor("retired-components", start_at_current=False)
@@ -337,14 +310,18 @@ def test_scene_rebuild_releases_retired_revision_keys_without_resetting_cursors(
         service.consume_changes(journal.consume(cursor))
         before = service.component_snapshot(component)
         consumed = service.consumed_journal_revision()
+        components_ui._COMPONENT_VALUE_CACHE[("builtin", "probe", component.component_id)] = {
+            "values": {"intensity": 3.0},
+        }
+        structure = get_component_structure_version()
 
         invalidate_rebuilt_scene()
 
         assert service.consumed_journal_revision() == consumed
         after = service.snapshot(before.target)
         assert all(new > old for new, old in zip(after.token(), before.token()))
-        # Revision keys own no values, but retaining every retired runtime ID
-        # still leaks across repeated Play/Stop and native scene replacement.
+        assert components_ui._COMPONENT_VALUE_CACHE == {}
+        assert get_component_structure_version() > structure
         assert not service._component_targets
         assert not service._components
         assert not service._fields

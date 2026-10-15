@@ -233,61 +233,9 @@ def test_packaged_parallel_runtime_module_round_trip(tmp_path, monkeypatch):
     ) == b"Copyright llvmlite"
 
 
-def test_runtime_engine_fingerprint_ignores_generated_meta(tmp_path, monkeypatch):
+def test_player_compile_fingerprint_tracks_runtime_code_and_ignores_editor_artifacts(tmp_path, monkeypatch):
     import infernux
 
-    package_root = tmp_path / "infernux"
-    package_root.mkdir()
-    package_init = package_root / "__init__.py"
-    package_init.write_text("VALUE = 1\n", encoding="utf-8")
-    metadata = package_root / "shader.frag.meta"
-    metadata.write_text("first", encoding="utf-8")
-    package_lib = package_root / "lib"
-    package_lib.mkdir()
-    monkeypatch.setattr(infernux, "__file__", str(package_init))
-    monkeypatch.setattr(
-        NuitkaBuilder,
-        "_native_payload_dir",
-        staticmethod(lambda: package_lib),
-    )
-
-    builder = object.__new__(NuitkaBuilder)
-    builder._runtime_pack_dir = str(tmp_path / "runtime-packs")
-    builder._engine_fingerprint_cache = ""
-    first = builder._player_compile_input_fingerprint()
-    metadata.write_text("changed", encoding="utf-8")
-    builder._engine_fingerprint_cache = ""
-
-    assert builder._player_compile_input_fingerprint() == first
-
-
-def test_runtime_engine_fingerprint_ignores_editor_backups(tmp_path, monkeypatch):
-    package_root = tmp_path / "infernux"
-    package_root.mkdir()
-    (package_root / "__init__.py").write_text("", encoding="utf-8")
-    backup = package_root / "bindings.pyi.bak"
-    backup.write_text("old", encoding="utf-8")
-    package_lib = package_root / "lib"
-    package_lib.mkdir()
-    fake_package = SimpleNamespace(__file__=str(package_root / "__init__.py"))
-    monkeypatch.setitem(sys.modules, "infernux", fake_package)
-    monkeypatch.setattr(
-        NuitkaBuilder,
-        "_native_payload_dir",
-        staticmethod(lambda: package_lib),
-    )
-
-    builder = object.__new__(NuitkaBuilder)
-    builder._runtime_pack_dir = str(tmp_path / "runtime-packs")
-    builder._engine_fingerprint_cache = ""
-    first = builder._player_compile_input_fingerprint()
-    backup.write_text("changed", encoding="utf-8")
-    builder._engine_fingerprint_cache = ""
-
-    assert builder._player_compile_input_fingerprint() == first
-
-
-def test_player_compile_fingerprint_ignores_post_build_packaging_code(tmp_path, monkeypatch):
     package_root = tmp_path / "infernux"
     (package_root / "engine").mkdir(parents=True)
     package_init = package_root / "__init__.py"
@@ -300,8 +248,11 @@ def test_player_compile_fingerprint_ignores_post_build_packaging_code(tmp_path, 
     builder_source.write_text("BUILDER = 1\n", encoding="utf-8")
     compile_builder_source = package_root / "engine" / "nuitka_builder.py"
     compile_builder_source.write_text("COMPILE_RULE = 1\n", encoding="utf-8")
-    fake_package = SimpleNamespace(__file__=str(package_init))
-    monkeypatch.setitem(sys.modules, "infernux", fake_package)
+    metadata = package_root / "shader.frag.meta"
+    metadata.write_text("first", encoding="utf-8")
+    backup = package_root / "bindings.pyi.bak"
+    backup.write_text("old", encoding="utf-8")
+    monkeypatch.setattr(infernux, "__file__", str(package_init))
 
     builder = object.__new__(NuitkaBuilder)
     builder._runtime_pack_dir = str(tmp_path / "runtime-packs")
@@ -310,8 +261,13 @@ def test_player_compile_fingerprint_ignores_post_build_packaging_code(tmp_path, 
     native_dir.mkdir()
     builder._native_payload_dir = lambda: native_dir
     first = builder._player_compile_input_fingerprint()
+    metadata.write_text("changed", encoding="utf-8")
+    backup.write_text("changed", encoding="utf-8")
     audit_source.write_text("AUDIT = 2\n", encoding="utf-8")
     builder_source.write_text("BUILDER = 2\n", encoding="utf-8")
+    builder._engine_fingerprint_cache = ""
+    assert builder._player_compile_input_fingerprint() == first
+
     compile_builder_source.write_text("COMPILE_RULE = 2\n", encoding="utf-8")
     builder._engine_fingerprint_cache = ""
 
@@ -646,12 +602,21 @@ def test_player_build_tree_removal_uses_boot_required_stdlib(tmp_path):
     assert not tree.exists()
 
 
-def test_player_output_transaction_keeps_previous_product_until_commit(tmp_path):
+def test_player_output_transaction_can_abort_and_retry_without_replacing_the_previous_product(tmp_path):
     output = tmp_path / "已发布游戏"
     output.mkdir()
     previous = output / "TestGame.exe"
     previous.write_bytes(b"previous")
     builder = _make_builder(tmp_path, output)
+
+    builder._begin_output_transaction()
+    staging = Path(builder.output_dir)
+    (staging / "partial.bin").write_bytes(b"partial")
+    builder._abort_output_transaction()
+    assert previous.read_bytes() == b"previous"
+    assert not staging.exists()
+    assert builder.output_dir == str(output.resolve())
+    assert not Path(str(output) + ".infernux-build.lock").exists()
 
     builder._begin_output_transaction()
     staging = Path(builder.output_dir)
@@ -664,22 +629,6 @@ def test_player_output_transaction_keeps_previous_product_until_commit(tmp_path)
     assert published == output.resolve()
     assert (published / "TestGame.exe").read_bytes() == b"current"
     assert not Path(str(output) + ".infernux-build.lock").exists()
-
-
-def test_player_output_transaction_abort_removes_only_private_staging(tmp_path):
-    output = tmp_path / "Player"
-    output.mkdir()
-    (output / "TestGame.exe").write_bytes(b"previous")
-    builder = _make_builder(tmp_path, output)
-
-    builder._begin_output_transaction()
-    staging = Path(builder.output_dir)
-    (staging / "partial.bin").write_bytes(b"partial")
-    builder._abort_output_transaction()
-
-    assert (output / "TestGame.exe").read_bytes() == b"previous"
-    assert not staging.exists()
-    assert builder.output_dir == str(output.resolve())
 
 
 def test_player_output_transaction_restores_previous_product_on_publish_failure(

@@ -213,31 +213,30 @@ def test_reserving_document_ids_does_not_publish_live_objects(scene):
     assert scene.create_game_object("Next").id > max(objects)
 
 
-def test_prefab_awakens_only_the_configured_scene_instance(scene, tmp_path):
-    source = scene.create_game_object("AwakePrefab")
-    source.add_py_component(_PrefabAwakeRecorder())
-    path = tmp_path / "awake.prefab"
-    assert save_prefab(source, str(path))
-    _PrefabAwakeRecorder._placements.clear()
-    for x in (5.0, 8.0):
-        instance = instantiate_prefab(
-            file_path=str(path), scene=scene,
-            configure_created=lambda obj: setattr(obj.transform, "position", Vector3(x, 0.0, 0.0)),
-        )
-        assert instance is not None
-    assert _PrefabAwakeRecorder._placements == [5.0, 8.0]
-
-
-def test_prefab_instantiation_does_not_publish_a_template_scene(scene, tmp_path):
-    source = scene.create_game_object("CachedPrefab")
+def test_cold_and_cached_prefab_instances_awaken_after_configuration_without_template_worlds(scene, tmp_path):
+    source = scene.create_game_object("CachedAwakePrefab")
     source.add_py_component(_PrefabTargetComponent())
-    path = tmp_path / "cached.prefab"
+    source.add_py_component(_PrefabAwakeRecorder())
+    path = tmp_path / "cached-awake.prefab"
     assert save_prefab(source, str(path))
     manager = SceneManager.instance()
     before_worlds = [manager.get_scene_at(index).world_id for index in range(manager.scene_count)]
-    for _ in range(3):
-        instance = instantiate_prefab(file_path=str(path), scene=scene)
-        assert instance.get_py_component(_PrefabTargetComponent).value == 19
+    _PrefabAwakeRecorder._placements.clear()
+
+    first = instantiate_prefab(
+        file_path=str(path), scene=scene,
+        configure_created=lambda obj: setattr(obj.transform, "position", Vector3(5.0, 0.0, 0.0)),
+    )
+    assert first is not None and first.get_py_component(_PrefabTargetComponent).value == 19
+    assert _PrefabAwakeRecorder._placements == [5.0]
+    assert [manager.get_scene_at(index).world_id for index in range(manager.scene_count)] == before_worlds
+
+    second = instantiate_prefab(
+        file_path=str(path), scene=scene,
+        configure_created=lambda obj: setattr(obj.transform, "position", Vector3(8.0, 0.0, 0.0)),
+    )
+    assert second is not None and second.get_py_component(_PrefabTargetComponent).value == 19
+    assert _PrefabAwakeRecorder._placements == [5.0, 8.0]
     assert [manager.get_scene_at(index).world_id for index in range(manager.scene_count)] == before_worlds
 
 

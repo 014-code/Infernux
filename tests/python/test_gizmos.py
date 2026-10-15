@@ -1,6 +1,5 @@
 """Tests for infernux.gizmos — Gizmos drawing API and GizmosCollector."""
 
-import math
 from types import SimpleNamespace
 
 import pytest
@@ -152,149 +151,70 @@ def test_geometry_profile_counts_nested_helper_once(monkeypatch):
 # Per-frame state reset
 # ══════════════════════════════════════════════════════════════════════
 
-class TestFrameReset:
-    def test_begin_frame_resets_color(self):
-        Gizmos.color = (1, 0, 0)
-        Gizmos._begin_frame()
-        assert Gizmos.color == (1.0, 1.0, 1.0)
+def test_authored_frame_resets_color_transform_geometry_and_icons():
+    Gizmos._begin_frame()
+    Gizmos.color = (1, 0, 0)
+    Gizmos.matrix = list(Gizmos._identity_matrix)
+    Gizmos.draw_line((0, 0, 0), (1, 1, 1))
+    Gizmos.draw_icon((5, 5, 5), 42)
+    assert Gizmos._draw_batches and Gizmos._icon_entries
 
-    def test_begin_frame_resets_matrix(self):
-        Gizmos.matrix = [0] * 16
-        Gizmos._begin_frame()
-        assert Gizmos.matrix is None
-
-    def test_begin_frame_clears_batches(self):
-        Gizmos._draw_batches.append(("dummy",))
-        Gizmos._begin_frame()
-        assert len(Gizmos._draw_batches) == 0
-
-    def test_begin_frame_clears_icons(self):
-        Gizmos._icon_entries.append(("dummy",))
-        Gizmos._begin_frame()
-        assert len(Gizmos._icon_entries) == 0
+    Gizmos._begin_frame()
+    assert Gizmos.color == (1.0, 1.0, 1.0)
+    assert Gizmos.matrix is None
+    assert Gizmos._draw_batches == []
+    assert Gizmos._icon_entries == []
 
 
-# ══════════════════════════════════════════════════════════════════════
-# draw_line
-# ══════════════════════════════════════════════════════════════════════
+def test_line_and_ray_drawing_preserve_color_and_each_authored_transform():
+    Gizmos._begin_frame()
+    Gizmos.color = (1, 0, 0)
+    Gizmos.draw_line((0, 0, 0), (1, 1, 1))
+    vertices, indices, initial_matrix = Gizmos._draw_batches[0]
+    assert len(vertices) == 2 and indices == [0, 1]
+    assert vertices[0][3:6] == [1, 0, 0]
+    assert initial_matrix == Gizmos._identity_matrix
 
-class TestDrawLine:
-    def test_single_line(self):
-        Gizmos._begin_frame()
-        Gizmos.color = (1, 0, 0)
-        Gizmos.draw_line((0, 0, 0), (1, 1, 1))
-        assert len(Gizmos._draw_batches) == 1
-        verts, indices, matrix = Gizmos._draw_batches[0]
-        assert len(verts) == 2
-        assert indices == [0, 1]
-        # Verify color embedded in vertices
-        assert verts[0][3:6] == [1, 0, 0]
+    matrix = [2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1]
+    Gizmos.matrix = matrix
+    Gizmos.draw_ray((1, 2, 3), (10, 0, 0))
+    ray_vertices, _, ray_matrix = Gizmos._draw_batches[1]
+    assert ray_vertices[1][:3] == pytest.approx((11, 2, 3))
+    assert ray_matrix == matrix
 
-    def test_uses_identity_matrix_by_default(self):
-        Gizmos._begin_frame()
-        Gizmos.draw_line((0, 0, 0), (1, 0, 0))
-        _, _, matrix = Gizmos._draw_batches[0]
-        assert matrix == Gizmos._identity_matrix
-
-
-# ══════════════════════════════════════════════════════════════════════
-# draw_ray
-# ══════════════════════════════════════════════════════════════════════
-
-class TestDrawRay:
-    def test_ray_endpoint(self):
-        Gizmos._begin_frame()
-        Gizmos.draw_ray((1, 2, 3), (10, 0, 0))
-        verts, _, _ = Gizmos._draw_batches[0]
-        # End = origin + direction
-        assert verts[1][0] == pytest.approx(11.0)
-        assert verts[1][1] == pytest.approx(2.0)
-        assert verts[1][2] == pytest.approx(3.0)
+    matrix[12] = 5.0
+    Gizmos.draw_line((0, 1, 0), (1, 1, 0))
+    assert ray_matrix[12] == 0.0
+    assert Gizmos._draw_batches[2][2][12] == 5.0
 
 
-# ══════════════════════════════════════════════════════════════════════
-# draw_icon
-# ══════════════════════════════════════════════════════════════════════
-
-class TestDrawIcon:
-    def test_icon_entry(self):
-        Gizmos._begin_frame()
-        Gizmos.color = (0, 1, 0)
-        Gizmos.draw_icon((5, 5, 5), 42)
-        assert len(Gizmos._icon_entries) == 1
-        pos, obj_id, color, icon_kind = Gizmos._icon_entries[0]
-        assert pos == (5, 5, 5)
-        assert obj_id == 42
-        assert color == (0, 1, 0)
-        assert icon_kind == 0  # ICON_KIND_DEFAULT
-
-    def test_icon_custom_color(self):
-        Gizmos._begin_frame()
-        Gizmos.draw_icon((0, 0, 0), 1, color=(1, 0, 0))
-        _, _, color, _ = Gizmos._icon_entries[0]
-        assert color == (1, 0, 0)
+def test_icons_keep_owner_position_and_per_icon_color_override():
+    Gizmos._begin_frame()
+    Gizmos.color = (0, 1, 0)
+    Gizmos.draw_icon((5, 5, 5), 42)
+    Gizmos.draw_icon((0, 0, 0), 1, color=(1, 0, 0))
+    assert Gizmos._icon_entries == [
+        ((5, 5, 5), 42, (0, 1, 0), 0),
+        ((0, 0, 0), 1, (1, 0, 0), 0),
+    ]
 
 
-# ══════════════════════════════════════════════════════════════════════
-# draw_wire_cube
-# ══════════════════════════════════════════════════════════════════════
-
-class TestDrawWireCube:
-    def test_produces_8_verts_24_indices(self):
-        Gizmos._begin_frame()
-        Gizmos.draw_wire_cube((0, 0, 0), (2, 2, 2))
-        verts, indices, _ = Gizmos._draw_batches[0]
-        assert len(verts) == 8
-        assert len(indices) == 24  # 12 edges × 2 indices
+def test_wire_cube_has_eight_vertices_and_twelve_edges():
+    Gizmos._begin_frame()
+    Gizmos.draw_wire_cube((0, 0, 0), (2, 2, 2))
+    vertices, indices, _ = Gizmos._draw_batches[0]
+    assert len(vertices) == 8
+    assert len(indices) == 24
 
 
-# ══════════════════════════════════════════════════════════════════════
-# draw_wire_sphere (Python fallback)
-# ══════════════════════════════════════════════════════════════════════
-
-class TestDrawWireSphere:
-    def test_generates_geometry(self):
-        Gizmos._begin_frame()
-        Gizmos.draw_wire_sphere((0, 0, 0), 1.0, segments=12)
-        assert len(Gizmos._draw_batches) >= 1
-        verts, indices, _ = Gizmos._draw_batches[0]
-        assert len(verts) > 0
-        assert len(indices) > 0
-
-    def test_respects_current_color(self):
-        Gizmos._begin_frame()
-        Gizmos.color = (0.5, 0.5, 0.5)
-        Gizmos.draw_wire_sphere((0, 0, 0), 1.0, segments=8)
-        verts, _, _ = Gizmos._draw_batches[0]
-        # Color channels in vertex data
-        assert verts[0][3] == pytest.approx(0.5)
-
-
-# ══════════════════════════════════════════════════════════════════════
-# Custom matrix
-# ══════════════════════════════════════════════════════════════════════
-
-class TestCustomMatrix:
-    def test_custom_matrix_used(self):
-        Gizmos._begin_frame()
-        custom = [2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1]
-        Gizmos.matrix = custom
-        Gizmos.draw_line((0, 0, 0), (1, 0, 0))
-        _, _, matrix = Gizmos._draw_batches[0]
-        assert matrix == custom
-
-    def test_custom_matrix_is_snapshotted_between_draws(self):
-        Gizmos._begin_frame()
-        matrix = list(Gizmos._identity_matrix)
-        Gizmos.matrix = matrix
-        Gizmos.draw_line((0, 0, 0), (1, 0, 0))
-        matrix[12] = 5.0
-        Gizmos.draw_line((0, 1, 0), (1, 1, 0))
-
-        _, _, first = Gizmos._draw_batches[0]
-        _, _, second = Gizmos._draw_batches[1]
-        assert first[12] == 0.0
-        assert second[12] == 5.0
+def test_wire_sphere_emits_geometry_with_the_authored_color():
+    Gizmos._begin_frame()
+    Gizmos.color = (0.5, 0.5, 0.5)
+    Gizmos.draw_wire_sphere((0, 0, 0), 1.0, segments=8)
+    assert Gizmos._draw_batches
+    vertices, indices, _ = Gizmos._draw_batches[0]
+    assert len(vertices) > 0 and len(indices) > 0
+    assert vertices[0][3:6] == pytest.approx((0.5, 0.5, 0.5))
 
 
 class TestParticleEmitterShapes:

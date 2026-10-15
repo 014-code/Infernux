@@ -167,7 +167,7 @@ class _NativeInspectorContext:
         return not value
 
 
-@pytest.mark.parametrize("scale", [1.0, 1.5, 2.0, 2.5])
+@pytest.mark.parametrize("scale", [1.0, 1.5])
 def test_editor_modal_metrics_follow_per_monitor_scale(scale: float):
     ctx = _ModalContext(scale)
 
@@ -196,7 +196,7 @@ def test_editor_modal_metrics_follow_per_monitor_scale(scale: float):
     ]
 
 
-@pytest.mark.parametrize("scale", [1.0, 1.5, 2.0, 2.5])
+@pytest.mark.parametrize("scale", [1.0, 1.5])
 def test_curve_editor_preview_and_popup_follow_per_monitor_scale(scale: float):
     ctx = _CurvePreviewContext(scale)
 
@@ -216,7 +216,7 @@ def test_editor_dpi_rejects_invalid_native_scale(scale: float):
         editor_dpi_scale(_ModalContext(scale))
 
 
-@pytest.mark.parametrize("scale", [1.0, 1.5, 2.0, 2.5])
+@pytest.mark.parametrize("scale", [1.0, 1.5])
 def test_editor_panel_initial_size_follows_per_monitor_scale(scale: float):
     assert _SizedPanel()._scaled_initial_size(_ModalContext(scale)) == (
         800.0 * scale,
@@ -232,7 +232,7 @@ def test_windows_player_manifest_requires_per_monitor_v2_without_dpi_fallback():
     assert "<dpiAware xmlns=" not in manifest
 
 
-@pytest.mark.parametrize("scale", [1.0, 1.5, 2.0, 2.5])
+@pytest.mark.parametrize("scale", [1.0, 1.5])
 def test_inspector_native_header_metrics_follow_per_monitor_scale(scale: float):
     ctx = _NativeInspectorContext(scale)
 

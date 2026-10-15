@@ -295,12 +295,6 @@ class TestPublicJitCompile:
             jit.warmup(fail, values)
         np.testing.assert_array_equal(values, [0.0, 0.0])
 
-    def test_legacy_numba_decorator_is_not_public(self):
-        import infernux as inx
-
-        assert not hasattr(jit, "njit")
-        assert not hasattr(jit, "prange")
-        assert not hasattr(inx, "njit")
 
     def test_defaults_to_engine_auto_parallel_policy(self, monkeypatch):
         calls = []
@@ -687,21 +681,6 @@ class TestAutoParallelNjit:
         assert rewritten(5) == 10
         assert used["prange"] is True
 
-    def test_public_compile_embedded_source_supplies_parallel_impl_without_sidecar(self):
-        source = (
-            "from infernux import jit\n"
-            "@jit.compile\n"
-            "def burn(n):\n"
-            "    total = 0\n"
-            "    for i in range(n):\n"
-            "        total += i\n"
-            "    return total\n"
-        )
-        embedded = jit_kernels.build_auto_parallel_embedded_source(source)
-        assert embedded is not None
-        assert "__infernux_parallel_burn_" in embedded
-        assert "_parallel_impl=" in embedded
-        assert "__infernux_prange" in embedded
 
     @pytest.mark.parametrize(("imports", "decorator"), [
         ("import infernux as inx", "inx.jit.compile"),

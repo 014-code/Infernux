@@ -7,7 +7,6 @@ import numpy as np
 import pytest
 
 import infernux as inx
-from infernux import jit
 from infernux import _jit_kernels as kernels
 
 
@@ -1453,24 +1452,6 @@ def test_compiled_gpu_launch_preparation_is_reused_for_stable_parameters(monkeyp
     assert artifact.argument_calls == 2
     assert len(changed_updates) == 1
     assert changed_dispatches is not first_dispatches
-
-
-def test_public_compute_surface_has_one_gpu_execution_model():
-    import infernux
-
-    assert infernux.compute is inx.compute
-    assert not callable(inx.compute)
-    assert not hasattr(jit, "compute")
-    for removed in ("hpc", "resident", "Resident", "batch", "nn"):
-        assert not hasattr(inx.compute, removed)
-
-
-def test_compute_has_no_in_process_installer_or_second_device_array_api():
-    assert not hasattr(jit, "ensure_jit_runtime")
-    assert not hasattr(jit, "_install_numba")
-    assert not hasattr(jit, "create_array")
-    from infernux.core import parallel_backend
-    assert not hasattr(parallel_backend, "ResidentArray")
 
 
 @pytest.mark.parametrize("imports,decorator", [

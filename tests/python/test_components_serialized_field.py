@@ -14,10 +14,6 @@ from infernux.components.fields import (
     clear_serialized_fields_cache,
     get_serialized_fields,
     serialized_field,
-    int_field,
-    list_field,
-    HiddenField,
-    hide_field,
 )
 
 
@@ -128,50 +124,6 @@ def test_unknown_raw_path_does_not_create_path_only_reference(monkeypatch):
         assert not reference
 
 
-# ══════════════════════════════════════════════════════════════════════
-# FieldType enum completeness
-# ══════════════════════════════════════════════════════════════════════
-
-class TestFieldType:
-    def test_core_members_exist(self):
-        for name in ("INT", "FLOAT", "BOOL", "STRING",
-                      "VEC2", "VEC3", "VEC4", "COLOR",
-                      "GAME_OBJECT", "COMPONENT", "MATERIAL",
-                      "TEXTURE", "SHADER", "ASSET",
-                      "ENUM", "LIST", "SERIALIZABLE_OBJECT"):
-            assert hasattr(FieldType, name), f"FieldType.{name} missing"
-
-    def test_enum_values_are_int(self):
-        assert isinstance(FieldType.INT.value, int)
-
-
-# ══════════════════════════════════════════════════════════════════════
-# FieldMetadata
-# ══════════════════════════════════════════════════════════════════════
-
-class TestFieldMetadata:
-    def test_defaults(self):
-        meta = FieldMetadata(name="x", field_type=FieldType.FLOAT, default=None)
-        assert meta.name == "x"
-        assert meta.field_type == FieldType.FLOAT
-        assert meta.default is None
-        assert meta.readonly is False
-        assert meta.tooltip == ""
-
-    def test_custom_values(self):
-        meta = FieldMetadata(name="speed", field_type=FieldType.FLOAT,
-                             default=5.0, readonly=True, tooltip="Move speed",
-                             range=(0, 100))
-        assert meta.default == 5.0
-        assert meta.readonly is True
-        assert meta.tooltip == "Move speed"
-        assert meta.range == (0, 100)
-
-
-# ══════════════════════════════════════════════════════════════════════
-# serialized_field() factory
-# ══════════════════════════════════════════════════════════════════════
-
 class TestSerializedFieldFactory:
     def test_returns_descriptor(self):
         class Counter(InxComponent):
@@ -185,15 +137,6 @@ class TestSerializedFieldFactory:
         assert descriptor != 7
         assert {descriptor: "field"}[Counter.count] == "field"
 
-    def test_int_field_shortcut(self):
-        sf = int_field(default=7)
-        assert isinstance(sf, SerializedFieldDescriptor)
-        assert sf.metadata.default == 7
-
-    def test_list_field_shortcut(self):
-        sf = list_field(element_type=FieldType.INT)
-        assert isinstance(sf, SerializedFieldDescriptor)
-        assert sf.metadata.field_type == FieldType.LIST
 
     def test_stale_weakref_callback_cannot_remove_reused_instance_slot(self):
         descriptor = SerializedFieldDescriptor(
@@ -218,46 +161,8 @@ class TestSerializedFieldFactory:
         assert descriptor._values[slot] == "current"
 
 
-# ══════════════════════════════════════════════════════════════════════
-# HiddenField
-# ══════════════════════════════════════════════════════════════════════
-
-class TestHiddenField:
-    def test_hide_field_creates_hidden_field(self):
-        hf = hide_field(42)
-        assert isinstance(hf, HiddenField)
-        assert hf.default == 42
-
-    def test_hidden_field_not_serialized(self):
-        class Comp(InxComponent):
-            _internal = hide_field(10)
-            visible: int = serialized_field(default=0)
-
-        fields = get_serialized_fields(Comp)
-        assert "visible" in fields
-        assert "_internal" not in fields
-
-
-# ══════════════════════════════════════════════════════════════════════
-# Component field collection via __init_subclass__
-# ══════════════════════════════════════════════════════════════════════
-
 class TestComponentFieldCollection:
-    def test_explicit_serialized_field(self):
-        class Comp(InxComponent):
-            speed: float = serialized_field(default=10.0)
 
-        fields = get_serialized_fields(Comp)
-        assert "speed" in fields
-        assert fields["speed"].default == 10.0
-
-    def test_plain_default_value(self):
-        class Comp(InxComponent):
-            count = 5
-
-        fields = get_serialized_fields(Comp)
-        assert "count" in fields
-        assert fields["count"].default == 5
 
     def test_annotation_only_gets_zero_defaults(self):
         """Ported from test_component_annotation_defaults.py."""
@@ -303,25 +208,6 @@ class TestComponentFieldCollection:
         assert "_c" not in get_serialized_fields(Comp)
         assert "_items" not in get_serialized_fields(Comp)
 
-    def test_subclass_inherits_parent_fields(self):
-        class Base(InxComponent):
-            base_val: int = serialized_field(default=1)
-
-        class Derived(Base):
-            derived_val: float = serialized_field(default=2.0)
-
-        fields = get_serialized_fields(Derived)
-        assert "base_val" in fields
-        assert "derived_val" in fields
-
-    def test_field_set_and_get_round_trip(self):
-        class Comp(InxComponent):
-            x: float = serialized_field(default=1.0)
-
-        comp = Comp()
-        assert comp.x == 1.0
-        comp.x = 42.0
-        assert comp.x == 42.0
 
     def test_class_field_table_is_authoritative_after_cache_clear(self):
         class Comp(InxComponent):

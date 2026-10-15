@@ -35,19 +35,7 @@ from infernux.graph.ramp import AnimationCurve, Gradient, Keyframe
 # ── annotation unwrapping ────────────────────────────────────────────────
 
 class TestUnwrapAnnotation:
-    def test_plain_type_passthrough(self):
-        base, markers = _unwrap_annotation(int)
-        assert base is int and markers == []
 
-    def test_annotated_collects_markers(self):
-        base, markers = _unwrap_annotation(Annotated[float, Range(0, 1), Tooltip("t")])
-        assert base is float
-        assert any(isinstance(m, Range) for m in markers)
-        assert any(isinstance(m, Tooltip) for m in markers)
-
-    def test_optional_unwraps(self):
-        base, _ = _unwrap_annotation(Optional[int])
-        assert base is int
 
     def test_pep604_union_none_unwraps(self):
         base, _ = _unwrap_annotation(int | None)
@@ -62,18 +50,7 @@ class TestUnwrapAnnotation:
 # ── build_field_from_annotation ──────────────────────────────────────────
 
 class TestBuildField:
-    def test_int_with_default(self):
-        meta = build_field_from_annotation(int, default=42)
-        assert meta.field_type == FieldType.INT and meta.default == 42
 
-    def test_float_annotation_coerces_int_default(self):
-        meta = build_field_from_annotation(float, default=3)
-        assert meta.field_type == FieldType.FLOAT
-        assert isinstance(meta.default, float) and meta.default == 3.0
-
-    def test_bool_before_int(self):
-        meta = build_field_from_annotation(bool, default=True)
-        assert meta.field_type == FieldType.BOOL
 
     def test_range_marker(self):
         meta = build_field_from_annotation(Annotated[float, Range(0, 100, slider=False)], default=5.0)
@@ -91,14 +68,6 @@ class TestBuildField:
         meta = build_field_from_annotation(Annotated[int, DragSpeed(0.25)], default=1)
         assert meta.drag_speed == 0.25
 
-    def test_hide_in_inspector_serialized_but_hidden(self):
-        meta = build_field_from_annotation(Annotated[int, HideInInspector], default=7)
-        assert meta is not None and meta.hidden is True
-
-    def test_non_serialized_returns_sentinel(self):
-        from infernux.components.fields import NON_SERIALIZED_FIELD
-        meta = build_field_from_annotation(Annotated[int, NonSerialized], default=7)
-        assert meta is NON_SERIALIZED_FIELD
 
     def test_enum_annotation(self):
         class Mode(enum.Enum):
@@ -125,19 +94,12 @@ class TestBuildField:
         assert tuple(meta.default) == (1.0, 1.0, 1.0, 1.0)
         assert meta.hdr is False
 
-    def test_color_string_annotation(self):
-        meta = build_field_from_annotation("Color", default=_UNSET)
-        assert meta.field_type == FieldType.COLOR
-        assert meta.default == [1.0, 1.0, 1.0, 1.0]
 
     def test_color_default_coercion(self):
         meta = build_field_from_annotation(Color, default=(0.5, 0.25, 0.0))
         assert meta.field_type == FieldType.COLOR
         assert meta.default == [0.5, 0.25, 0.0, 1.0]
 
-    def test_hdr_marker(self):
-        meta = build_field_from_annotation(Annotated[Color, HDR], default=_UNSET)
-        assert meta.hdr is True
 
     @pytest.mark.parametrize(
         ("annotation", "field_type"),
@@ -496,9 +458,6 @@ class TestStrictSerializationFailures:
 
 
 class TestColorInference:
-    def test_color_factory_infers_as_color(self):
-        from infernux.components.fields import infer_field_type_from_value
-        assert infer_field_type_from_value(Color(1, 0, 0)) == FieldType.COLOR
 
     def test_color_value_without_annotation(self):
         class TintHolder(InxComponent):

@@ -109,24 +109,6 @@ def test_enum_and_nested_data_declarations_preserve_current_codec_identities():
     assert FieldSchema.from_document(json.loads(json.dumps(nested.to_document()))) == nested
 
 
-@pytest.mark.parametrize("kind,default,options", [
-    ("INT", 3, {}), ("FLOAT", 2.5, {}), ("BOOL", True, {}), ("STRING", "中文", {}),
-    ("COLOR", [0.1, 0.2, 0.3, 1.0], {}),
-    ("GAME_OBJECT", None, {}), ("COMPONENT", None, {"component_type": "Camera"}),
-    ("MATERIAL", None, {}), ("TEXTURE", None, {}), ("SHADER", None, {}),
-])
-def test_declaration_defaults_use_the_existing_value_codec(kind, default, options):
-    from infernux.components.fields import FieldMetadata, FieldType, normalize_runtime_field_value
-    from infernux.components.field_schema_compiler import compile_field_schema
-    from infernux.components.value_codec import VALUE_CODECS
-
-    metadata = FieldMetadata("value", FieldType[kind], default, **options)
-    schema = compile_field_schema(metadata, "Probe.value")
-    expected = VALUE_CODECS.encode(normalize_runtime_field_value(default, metadata))
-    assert schema.to_document()["attributes"]["default"] == expected
-    assert FieldSchema.from_document(json.loads(json.dumps(schema.to_document()))) == schema
-
-
 @pytest.mark.parametrize("kind,default,options,code", [
     ("UNKNOWN", object(), {}, "unsupported_value_kind"),
     ("LIST", [], {}, "invalid_element_type"),
@@ -170,36 +152,28 @@ def test_schema_read_and_metadata_cache_invalidation_never_recompile(monkeypatch
 @pytest.mark.parametrize("native_storage", [False, True])
 def test_compiled_default_matches_the_actual_component_default(native_storage):
     from infernux.components import InxComponent, serialized_field
-    from infernux.components.fields import get_field_schema
+    from infernux.components.fields import FieldType, get_field_schema, list_field
+    from infernux.math import Vector3
 
     class Defaults(InxComponent):
         _uses_component_data_store = native_storage
         speed: float = serialized_field(default=8.0, range=(0.0, 5.0))
+        offset: Vector3 = serialized_field(default=Vector3(1, 2, 3))
+        samples: list = list_field(element_type=FieldType.INT, default=[2, 4])
 
     component = Defaults()
     try:
         assert component.speed == get_field_schema(Defaults, "speed").attributes["default"] == 5.0
+        offset_default = get_field_schema(Defaults, "offset").attributes["default"]
+        samples_default = get_field_schema(Defaults, "samples").attributes["default"]
+        assert tuple(component.offset) == offset_default == (1, 2, 3)
+        assert tuple(component.samples) == samples_default == (2, 4)
+        component.offset = Vector3(9, 8, 7)
+        component.samples.append(6)
+        assert offset_default == (1, 2, 3)
+        assert samples_default == (2, 4)
     finally:
         component._call_on_destroy()
-
-
-@pytest.mark.parametrize("kind", ["VEC2", "VEC3", "VEC4", "ANIMATION_CURVE", "GRADIENT", "ASSET", "LIST"])
-def test_structured_default_schema_roundtrip(kind):
-    from infernux import lib
-    from infernux.components.fields import FieldMetadata, FieldType
-    from infernux.components.field_schema_compiler import compile_field_schema
-    from infernux.graph.ramp import AnimationCurve, Gradient
-
-    defaults = {
-        "VEC2": lib.Vector2(1, 2), "VEC3": lib.Vector3(1, 2, 3),
-        "VEC4": lib.vec4f(1, 2, 3, 4), "ANIMATION_CURVE": AnimationCurve(),
-        "GRADIENT": Gradient(), "ASSET": None, "LIST": [1, 2, 3],
-    }
-    options = {"asset_type": "AudioClip"} if kind == "ASSET" else {}
-    if kind == "LIST":
-        options["element_type"] = FieldType.INT
-    schema = compile_field_schema(FieldMetadata("value", FieldType[kind], defaults[kind], **options), "Probe.value")
-    assert FieldSchema.from_document(json.loads(json.dumps(schema.to_document()))) == schema
 
 
 def test_engine_python_component_catalog_has_compilable_field_declarations():

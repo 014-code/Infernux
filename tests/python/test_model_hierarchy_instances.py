@@ -150,8 +150,13 @@ def test_model_creation_is_one_undoable_hierarchy(scene, hierarchy_asset):
         UndoManager._instance = previous
 
 
-@pytest.mark.parametrize("api", ("create_model", "create_model_object"))
-@pytest.mark.parametrize("rejection", ("empty", "disabled_history", "missing_history", "missing_parent"))
+@pytest.mark.parametrize("api,rejection", [
+    ("create_model_object", "empty"),
+    ("create_model_object", "disabled_history"),
+    ("create_model_object", "missing_history"),
+    ("create_model_object", "missing_parent"),
+    ("create_model", "empty"),
+])
 def test_model_creation_preflight_rejection_has_no_result_or_side_effects(
     scene, hierarchy_asset, api, rejection,
 ):

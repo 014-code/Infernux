@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import inspect
 import json
 import os
 import threading
@@ -406,21 +405,6 @@ def test_stale_meta_deleted_event_after_atomic_replace_is_ignored(monkeypatch, t
 
     assert handler.process_pending_reloads(force=True) == 1
     assert database.mutations == []
-
-
-def test_asset_manager_delete_preserves_serialized_reference_identity(monkeypatch, tmp_path):
-    database = _AssetDatabaseProbe()
-    calls = []
-    _patch_asset_manager(monkeypatch, calls)
-    asset = tmp_path / "RaceDust.particlegraph"
-    asset.write_text("{}", encoding="utf-8")
-    path = str(asset.resolve())
-    database.guid_by_path[path] = "race-dust-guid"
-    assert AssetManager.delete_asset(path, database=database)
-
-    assert [entry[0] for entry in database.mutations] == ["deleted"]
-    source = inspect.getsource(AssetManager.delete_asset)
-    assert "_clear_deleted_live_references" not in source
 
 
 def test_missing_meta_rebuild_imports_unregistered_owner(monkeypatch, tmp_path):

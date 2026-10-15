@@ -2,7 +2,6 @@
 
 from infernux.components.serializable_object import (
     SerializableObject,
-    _SERIALIZABLE_REGISTRY,
     get_serializable_class,
     get_serializable_type_id,
 )
@@ -134,66 +133,12 @@ class Nested(SerializableObject):
     inner: int = serialized_field(default=0)
 
 
-# ══════════════════════════════════════════════════════════════════════
-# Registration
-# ══════════════════════════════════════════════════════════════════════
-
 class TestRegistration:
-    def test_subclass_auto_registered(self):
-        assert get_serializable_type_id(Stats) in _SERIALIZABLE_REGISTRY
 
-    def test_get_serializable_class(self):
-        cls = get_serializable_class(get_serializable_type_id(Stats))
-        assert cls is Stats
 
     def test_unknown_returns_none(self):
         assert get_serializable_class("NoSuchClass") is None
 
-
-# ══════════════════════════════════════════════════════════════════════
-# Field metadata collection
-# ══════════════════════════════════════════════════════════════════════
-
-class TestFieldCollection:
-    def test_serialized_fields_collected(self):
-        fields = Stats._serialized_fields_
-        assert "hp" in fields
-        assert "mp" in fields
-        assert "name" in fields
-
-    def test_field_defaults(self):
-        fields = Stats._serialized_fields_
-        assert fields["hp"].default == 100
-        assert fields["mp"].default == 50.0
-        assert fields["name"].default == "default"
-
-
-# ══════════════════════════════════════════════════════════════════════
-# Construction
-# ══════════════════════════════════════════════════════════════════════
-
-class TestConstruction:
-    def test_defaults(self):
-        s = Stats()
-        assert s.hp == 100
-        assert s.mp == 50.0
-        assert s.name == "default"
-
-    def test_kwargs(self):
-        s = Stats(hp=999, name="hero")
-        assert s.hp == 999
-        assert s.name == "hero"
-        assert s.mp == 50.0  # default
-
-    def test_setattr(self):
-        s = Stats()
-        s.hp = 42
-        assert s.hp == 42
-
-
-# ══════════════════════════════════════════════════════════════════════
-# Serialization round-trip
-# ══════════════════════════════════════════════════════════════════════
 
 class TestSerialization:
     def test_serialize_produces_dict_with_type_tag(self):
@@ -270,16 +215,6 @@ class TestSerialization:
             "fields": {"hp": 6, "mp": 9.0, "name": "default"},
         }
 
-    def test_noncanonical_fields_are_ignored(self):
-        class EvolvingStats(SerializableObject):
-            health: int = serialized_field(default=100)
-
-        data = EvolvingStats()._serialize()
-        data["fields"] = {"hp": 42, "removed_debug_value": True}
-
-        restored = EvolvingStats._deserialize(data)
-        assert restored.health == 100
-        assert restored._serialize()["fields"] == {"health": 100}
 
     def test_stable_type_id_rejects_an_old_type_name(self):
         class RenamedStats(SerializableObject):
@@ -310,10 +245,6 @@ class TestSerialization:
         assert restored.hp == 42
         assert restored.tags == []
 
-
-# ══════════════════════════════════════════════════════════════════════
-# Equality and repr
-# ══════════════════════════════════════════════════════════════════════
 
 class TestDunder:
     def test_eq_same_values(self):

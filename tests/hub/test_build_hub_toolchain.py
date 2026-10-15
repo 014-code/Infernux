@@ -223,7 +223,11 @@ def test_hub_build_embeds_the_private_runtime_bundle(
     build_dir = tmp_path / "build"
     captured: list[list[str]] = []
 
-    monkeypatch.setattr(build_hub, "_common_nuitka_command", lambda *args, **kwargs: ["nuitka"])
+    def build_command(*args, **kwargs):
+        assert kwargs["product_name"] == "Infernux"
+        return ["nuitka"]
+
+    monkeypatch.setattr(build_hub, "_common_nuitka_command", build_command)
     monkeypatch.setattr(build_hub, "_project_version", lambda _root: "0.2.9")
     monkeypatch.setattr(build_hub, "_validate_msvc_reports", lambda _root: [])
     monkeypatch.setattr(build_hub, "_validate_windows_payload", lambda *args: None)
@@ -333,7 +337,11 @@ def test_installer_build_resolves_only_its_source_modules(tmp_path, monkeypatch)
     package = tmp_path / "package"
     (package / "hub").mkdir(parents=True)
     monkeypatch.setattr(build_hub, "create_payload_archive", lambda *args: tmp_path / "payload.zip")
-    monkeypatch.setattr(build_hub, "_common_nuitka_command", lambda *args, **kwargs: ["nuitka"])
+    def build_command(*args, **kwargs):
+        assert kwargs["product_name"] == "Infernux"
+        return ["nuitka"]
+
+    monkeypatch.setattr(build_hub, "_common_nuitka_command", build_command)
     monkeypatch.setattr(build_hub, "_validate_msvc_reports", lambda *args: [])
     monkeypatch.setattr(build_hub, "_validate_windows_pe", lambda *args: None)
     monkeypatch.setattr(build_hub, "_project_version", lambda *args: "0.4.1")
@@ -421,9 +429,3 @@ def test_project_versions_are_valid_windows_file_versions(
 def test_invalid_windows_file_version_is_rejected():
     with pytest.raises(RuntimeError, match="Windows file version"):
         build_hub._windows_file_version("preview")
-
-
-def test_official_hub_artifacts_use_the_signpath_project_name():
-    source = Path(build_hub.__file__).read_text(encoding="utf-8")
-
-    assert source.count('product_name="Infernux",') == 2
