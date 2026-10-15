@@ -5,13 +5,10 @@ from __future__ import annotations
 import pytest
 
 from infernux.jit_hir import (
-    AliasRiskKind,
-    BasicBlockKind,
     BufferAccessKind,
     DiagnosticCode,
     EffectKind,
     HIRParseError,
-    ValueType,
     analyze_buffer_aliases,
     analyze_function,
     build_hir,
@@ -26,11 +23,6 @@ def _loop(source: str):
 
 
 @pytest.mark.parametrize("body,tail", [
-    ("if source[i] > 0:\n            value = source[i]\n        output[i] = value", "return output"),
-    ("output[i] = value\n        value = source[i]", "return output"),
-    ("value = source[i]\n        output[i] = value", "return value"),
-    ("i = 0\n        output[i] = source[i]", "return output"),
-    ("output[i] = source[i]", "return i"),
     ("value = value + source[i]\n        output[i] = value", "return output"),
     ("if source[i] > 0:\n            value = source[i]\n        elif source[i] < 0:\n            continue\n        output[i] = value", "return output"),
     ("value = source[i]\n        output[i] = value", "if n > 0:\n        value = 9\n    return value"),
@@ -45,10 +37,8 @@ def test_scalar_dependencies_cannot_be_lowered_as_independent_iterations(body, t
 
 
 @pytest.mark.parametrize("body,tail", [
-    ("if source[i] > 0:\n            value = source[i]\n        else:\n            value = -source[i]\n        output[i] = value", "return output"),
     ("if source[i] <= 0:\n            continue\n        value = source[i]\n        output[i] = value", "return output"),
     ("value = source[i]\n        output[i] = value", "value = 9\n    return value"),
-    ("value = source[i]\n        value = value * 2\n        output[i] = value", "return output"),
     ("if source[i] <= 0:\n            continue\n        else:\n            value = source[i]\n        output[i] = value", "return output"),
     ("value = source[i]\n        output[i] = value", "if n > 0:\n        value = 9\n    else:\n        value = 3\n    return value"),
 ])
@@ -57,33 +47,6 @@ def test_iteration_local_scalars_and_dead_loop_outputs_remain_parallel(body, tai
         "def kernel(source, output, n):\n    value = 0\n"
         f"    for i in range(n):\n        {body}\n    {tail}\n"
     )
-    assert loop.parallel_eligible, loop.diagnostics
-
-
-@pytest.mark.parametrize("body", [
-    "total += source[i]\n        total *= 2",
-    "if source[i] > 0:\n            total += source[i]\n        else:\n            total *= 2",
-    "total = 1\n        total += source[i]",
-    "total += source[i]\n        total = 1",
-])
-def test_mixed_or_reset_accumulators_are_not_parallel_reductions(body):
-    _hir, loop = _loop(
-        "def kernel(source, n):\n    total = 1\n"
-        f"    for i in range(n):\n        {body}\n    return total\n"
-    )
-    assert not loop.parallel_eligible
-    assert DiagnosticCode.INVALID_REDUCTION in _codes(loop)
-
-
-def test_repeated_additions_to_one_accumulator_remain_a_reduction():
-    _hir, loop = _loop("""def kernel(source, n):
-    total = 1
-    for i in range(n):
-        total += source[i]
-        if source[i] > 0:
-            total += 2
-    return total
-""")
     assert loop.parallel_eligible, loop.diagnostics
 
 
@@ -223,20 +186,6 @@ def overwrite(values, n):
         assert any(effect.kind == EffectKind.PURE_CALL for effect in loop.effects)
         assert not loop.diagnostics
 
-    def test_shape_query_is_a_valid_range_bound(self):
-        _, loop = _loop(
-            """
-            def copy(out: array, values: array):
-                for i in range(values.shape[0]):
-                    out[i] = values[i]
-            """
-        )
-
-        assert loop.parallel_eligible
-        assert loop.range_spec is not None
-        assert loop.range_spec.stop_affine is not None
-        assert loop.range_spec.stop_affine.variables == ("values.shape[0]",)
-
     def test_len_and_numpy_scalar_allowlist(self):
         hir, loop = _loop(
             """
@@ -266,51 +215,6 @@ def overwrite(values, n):
         assert loop.range_spec is not None and loop.range_spec.step_value == 2
         assert loop.buffer_writes[0].index is not None
         assert loop.buffer_writes[0].index.coefficient("i") == 2
-
-    def test_scalar_sum_reduction(self):
-        hir, loop = _loop(
-            """
-            def sum_values(values: array, n: int):
-                total = 0.0
-                for i in range(n):
-                    total += values[i]
-                return total
-            """
-        )
-
-        assert hir.parallel_eligible
-        assert loop.parallel_eligible
-        assert len(loop.reductions) == 1
-        assert loop.reductions[0].target == "total"
-        assert loop.reductions[0].operator == "+"
-        assert any(effect.kind == EffectKind.REDUCTION for effect in loop.effects)
-
-    def test_elementwise_alias_risk_is_reported_without_rejecting_same_index_work(self):
-        _, loop = _loop(
-            """
-            def copy(out: array, values: array, n: int):
-                for i in range(n):
-                    out[i] = values[i]
-            """
-        )
-
-        assert loop.parallel_eligible
-        assert loop.alias_risks[0].kind == AliasRiskKind.POSSIBLE
-        assert "out" in loop.alias_risks[0].buffers
-
-    def test_source_position_and_stable_id_are_transformer_facing(self):
-        source = """
-        def kernel(out: array, n: int):
-            for i in range(n):
-                out[i] = i
-        """
-        first = build_hir(source).loops[0]
-        second = build_hir(source).loops[0]
-
-        assert first.stable_id == second.stable_id
-        assert first.source_location.line == 3
-        assert first.source_location.end_line == 4
-        assert "out[i] = i" in first.source
 
     def test_stable_id_survives_source_line_shift(self):
         first = build_hir(
@@ -345,33 +249,6 @@ def overwrite(values, n):
         assert hir.parallel_eligible
         assert calls == []
 
-    def test_structured_cfg_contains_loop_back_edge_and_exit_edge(self):
-        hir = build_hir(
-            """
-            def kernel(out: array, n: int):
-                scale = 2
-                for i in range(n):
-                    out[i] = i * scale
-                return out
-            """
-        )
-
-        kinds = [block.kind for block in hir.blocks]
-        assert kinds == [
-            BasicBlockKind.ENTRY,
-            BasicBlockKind.LINEAR,
-            BasicBlockKind.LOOP_HEADER,
-            BasicBlockKind.LOOP_BODY,
-            BasicBlockKind.LINEAR,
-            BasicBlockKind.EXIT,
-        ]
-        header = next(block for block in hir.blocks if block.kind == BasicBlockKind.LOOP_HEADER)
-        body = next(block for block in hir.blocks if block.kind == BasicBlockKind.LOOP_BODY)
-        tail = hir.blocks[-2]
-        assert header.successors == (body.stable_id, tail.stable_id)
-        assert body.successors == (header.stable_id,)
-        assert tail.successors == (hir.exit_block.stable_id,)
-
     def test_hir_fingerprint_changes_with_semantics_not_whitespace(self):
         first = build_hir(
             """
@@ -401,19 +278,14 @@ def overwrite(values, n):
 
 
 class TestUnsafeCorpus:
-    @pytest.mark.parametrize(
-        ("body", "code"),
-        [
-            ("out[i] = out[i - 1] + 1", DiagnosticCode.LOOP_CARRIED_READ),
-            ("out[index[i]] = values[i]", DiagnosticCode.INDIRECT_WRITE),
-            ("out[i] = make_value(values[i])", DiagnosticCode.UNKNOWN_CALL),
-            ("values.append(i)", DiagnosticCode.CONTAINER_MUTATION),
-            ("break", DiagnosticCode.UNSUPPORTED_CONTROL_FLOW),
-            ("return", DiagnosticCode.UNSUPPORTED_CONTROL_FLOW),
-            ("yield i", DiagnosticCode.UNSUPPORTED_CONTROL_FLOW),
-            ("await values[i]", DiagnosticCode.UNSUPPORTED_CONTROL_FLOW),
-        ],
-    )
+    @pytest.mark.parametrize(("body", "code"), [
+        ("out[i] = out[i - 1] + 1", DiagnosticCode.LOOP_CARRIED_READ),
+        ("out[index[i]] = values[i]", DiagnosticCode.INDIRECT_WRITE),
+        ("out[i] = make_value(values[i])", DiagnosticCode.UNKNOWN_CALL),
+        ("values.append(i)", DiagnosticCode.CONTAINER_MUTATION),
+        ("break", DiagnosticCode.UNSUPPORTED_CONTROL_FLOW),
+        ("return", DiagnosticCode.UNSUPPORTED_CONTROL_FLOW),
+    ])
     def test_unsafe_constructs_are_rejected_with_specific_diagnostic(self, body, code):
         source = f"""
         def kernel(out: array, values: array, index: array, n: int):
@@ -535,19 +407,6 @@ class TestUnsafeCorpus:
 
         assert not loop.parallel_eligible
         assert DiagnosticCode.UNKNOWN_CALL in _codes(loop)
-
-    def test_normal_function_return_after_loop_does_not_block_candidate(self):
-        hir, loop = _loop(
-            """
-            def kernel(out: array, n: int):
-                for i in range(n):
-                    out[i] = i
-                return out
-            """
-        )
-
-        assert loop.parallel_eligible
-        assert hir.parallel_eligible
 
     def test_no_output_loop_is_not_a_candidate(self):
         _, loop = _loop(

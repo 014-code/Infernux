@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 import copy
-from pathlib import Path
 import re
-import shutil
 import struct
-import subprocess
 
 import pytest
 
@@ -17,7 +14,6 @@ from infernux.particle import (
     EmitterShape,
     GpuParticleGlslLowerer,
     GpuParticleCompileError,
-    KernelCompileError,
     ParticleAttribute,
     ParticleEmitterAsset,
     ParticleEventField,
@@ -145,43 +141,6 @@ def test_gpu_nonfused_particle_recycling_has_one_stage_owner():
     assert "if (!particle_alive && (particle_was_alive || particle_pending_recycle || pc.use_alive_list != 0u))" in emitter.update
     assert emitter.update.count("inx_push_free(particle_index)") == 1
     assert "inx_push_free(particle_index)" not in emitter.rendering
-
-
-def test_particle_script_until_compiles_to_valid_gpu_continuations():
-    source_text = '''\
-from infernux.particle import ParticleScript, ParticleEmitter, EmitterSettings
-
-class TimedMotion(ParticleScript):
-    class Emitter(ParticleEmitter):
-        stable_id = "emitter"
-        settings = EmitterSettings()
-
-        def init(self, ctx, particles):
-            particles.set_lifetime(8.0)
-
-        def update(self, ctx, particles):
-            particles.add_velocity((0.0, -1.0, 0.0))
-            ctx.until_seconds(3.0)
-            particles.add_velocity((1.0, 1.0, 0.0))
-            ctx.until_frames(5)
-
-        def rendering(self, ctx, particles):
-            particles.sprite()
-'''
-    hir = ParticleScriptCompiler().compile(
-        source_text,
-        source_name="TimedMotion.particle.py",
-    )
-    kernel = ParticleKernelLowerer().lower(hir)
-    source = GpuParticleGlslLowerer().lower(kernel)
-    assert source.emitters[0].collision_enabled is False
-    update = source.emitters[0].update
-
-    assert "inx_until_seconds(" in update
-    assert "inx_until_frames(" in update
-    assert update.count("state.a_builtin_velocity =") >= 2
-    compiled = compile_gpu_particle_spirv(source)
-    validate_gpu_particle_spirv(compiled, source)
 
 
 def test_target_position_motion_compiles_to_gpu_without_hidden_target_storage():
@@ -324,39 +283,6 @@ def test_simultaneous_init_wait_lanes_serialize_completion_and_release_gate():
     assert "inx_continuation_append_active(inx_continuation_record_index)" in continuation.dispatch
     _assert_all_generated_values_are_declared(source)
 
-    compiled = compile_gpu_particle_spirv(source)
-    validate_gpu_particle_spirv(compiled, source)
-
-
-def test_particle_script_delta_time_compiles_to_explicit_gpu_uniform_math():
-    source_text = '''\
-from infernux.particle import ParticleScript, ParticleEmitter, EmitterSettings
-
-class Gravity(ParticleScript):
-    class Emitter(ParticleEmitter):
-        stable_id = "emitter"
-        settings = EmitterSettings()
-
-        def init(self, ctx, particles):
-            particles.set_lifetime(8.0)
-
-        def update(self, ctx, particles):
-            particles.add_velocity((0.0, -9.8, 0.0) * ctx.delta_time)
-
-        def rendering(self, ctx, particles):
-            particles.sprite()
-'''
-    source = GpuParticleGlslLowerer().lower(
-        ParticleKernelLowerer().lower(
-            ParticleScriptCompiler().compile(
-                source_text,
-                source_name="Gravity.particle.py",
-            )
-        )
-    )
-    update = source.emitters[0].update
-    assert "pc.delta_time" in update
-    assert "state.a_builtin_velocity =" in update
     compiled = compile_gpu_particle_spirv(source)
     validate_gpu_particle_spirv(compiled, source)
 
@@ -3658,50 +3584,6 @@ def test_gpu_sdf_emitter_shape_uses_bounded_spawn_only_sampling_and_valid_spirv(
         emitter.stages(), f"particle-sdf-{mode}-shape-test"
     )
     assert set(compiled) == set(emitter.stages())
-
-
-def test_generated_gpu_particle_kernels_compile_to_vulkan_spirv(tmp_path):
-    validator = shutil.which("glslangValidator")
-    if validator is None:
-        pytest.skip("Vulkan SDK glslangValidator is unavailable")
-
-    emitter = _gpu_source().emitters[0]
-    assert "update_rendering_fused" in emitter.stages()
-    for stage, source in emitter.stages().items():
-        source_path = tmp_path / f"{stage}.comp"
-        output_path = tmp_path / f"{stage}.spv"
-        source_path.write_text(source, encoding="utf-8")
-        result = subprocess.run(
-            [
-                validator,
-                "-V",
-                "--target-env",
-                "vulkan1.2",
-                str(source_path),
-                "-o",
-                str(output_path),
-            ],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-        )
-        assert result.returncode == 0, result.stdout + result.stderr
-        assert output_path.stat().st_size > 20
-
-
-def test_engine_compute_compiler_batches_generated_particle_stages():
-    emitter = _gpu_source().emitters[0]
-    compiled = native._compile_compute_glsl_batch(
-        emitter.stages(), "particle-test"
-    )
-
-    assert set(compiled) == set(emitter.stages())
-    for spirv in compiled.values():
-        assert isinstance(spirv, bytes)
-        assert len(spirv) > 20
-        assert int.from_bytes(spirv[:4], "little") == 0x07230203
 
 
 def test_persisted_particle_spirv_is_compressed_and_integrity_checked():

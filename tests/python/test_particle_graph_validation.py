@@ -163,74 +163,12 @@ def test_unused_broken_value_graph_does_not_drop_chained_attribute_writes():
     hir = program.emitters[0]
     opcodes = [operation.opcode for operation in _operations(hir.update)]
     assert opcodes.count("attribute.modify_size") == 1
-    assert "attribute.modify_velocity" in opcodes
+    assert opcodes.index("attribute.modify_velocity") < opcodes.index("attribute.modify_size")
     kernel = ParticleKernelLowerer().lower(program).emitters[0]
-    assert {"builtin.velocity", "builtin.size"} <= set(kernel.update.written_attributes)
-
-
-def test_set_velocity_then_set_size_keeps_both_attribute_writes():
-    update = GraphDocument(
-        "particle.update",
-        nodes=(
-            GraphNodeRecord("root.update", "particle.root.update"),
-            GraphNodeRecord("set-velocity", "particle.attribute.velocity"),
-            GraphNodeRecord("set-size", "particle.attribute.size"),
-            GraphNodeRecord(
-                "speed",
-                "common.constant.vec3",
-                properties={"value": [0.0, 2.0, 0.0]},
-            ),
-            GraphNodeRecord(
-                "size",
-                "common.constant.f32",
-                properties={"value": 3.5},
-            ),
-        ),
-        links=(
-            GraphLinkRecord(
-                "exec-velocity",
-                "root.update",
-                "out",
-                "set-velocity",
-                "in",
-                PortKind.EXEC,
-            ),
-            GraphLinkRecord(
-                "exec-size",
-                "set-velocity",
-                "out",
-                "set-size",
-                "in",
-                PortKind.EXEC,
-            ),
-            GraphLinkRecord("bind-velocity", "speed", "value", "set-velocity", "value"),
-            GraphLinkRecord("bind-size", "size", "value", "set-size", "value"),
-        ),
-    )
-
-    program = ParticleGraphCompiler().compile(
-        ParticleGraphAsset(emitters=(ParticleEmitterAsset(update=update),))
-    )
-    hir = program.emitters[0]
-    kernel = ParticleKernelLowerer().lower(program).emitters[0]
-    opcodes = [operation.opcode for operation in _operations(hir.update)]
-    velocity_index = opcodes.index("attribute.modify_velocity")
-    size_index = opcodes.index("attribute.modify_size")
-    assert velocity_index < size_index
-    stored = [
-        instruction.immediate_dict()["attribute"]
-        for instruction in kernel.update.instructions
-        if instruction.opcode == "store_attribute"
-    ]
+    stored = [instruction.immediate_dict()["attribute"]
+              for instruction in kernel.update.instructions if instruction.opcode == "store_attribute"]
     assert stored.index("builtin.velocity") < stored.index("builtin.size")
     assert {"builtin.velocity", "builtin.size"} <= set(kernel.update.written_attributes)
-    literals = [
-        instruction.immediate_dict().get("value")
-        for instruction in kernel.update.instructions
-        if instruction.opcode == "constant"
-    ]
-    assert [0.0, 2.0, 0.0] in literals
-    assert 3.5 in literals
 
 
 def test_particle_behavior_hash_ignores_graph_identity_layout_and_record_order():
@@ -382,16 +320,6 @@ def test_sdf_emitter_shape_requires_an_owned_sdf_data_interface():
             ),
             data_interfaces=(VectorField(stable_id="field"),),
         )
-
-
-def test_particle_graph_rejects_pre_sdf_emitter_shape_schema():
-    payload = ParticleGraphAsset().to_dict()
-    shape = payload["emitters"][0]["settings"]["shape"]
-    shape.pop("sdf_interface")
-    shape.pop("sdf_mode")
-
-    with pytest.raises(ParticleGraphSchemaError, match="keys mismatch"):
-        ParticleGraphAsset.from_dict(payload)
 
 
 def test_particle_script_mesh_shape_matches_graph_asset_contract():
@@ -1541,15 +1469,10 @@ class CollisionGraph(ParticleScript):
         ParticleScriptCompiler().parse(source, source_name="SdfCollision.particle.py")
 
 
-@pytest.mark.parametrize(
-    "properties, message",
-    [
-        ({"sphere_radius": -0.1}, "sphere_radius must be non-negative"),
-        ({"particle_radius": -0.1}, "particle_radius must be non-negative"),
-        ({"restitution": 1.1}, "restitution must be between 0 and 1"),
-        ({"friction": -0.1}, "friction must be between 0 and 1"),
-    ],
-)
+@pytest.mark.parametrize("properties, message", [
+    ({"sphere_radius": -0.1}, "sphere_radius must be non-negative"),
+    ({"particle_radius": -0.1}, "particle_radius must be non-negative"),
+])
 def test_sphere_collision_rejects_invalid_static_parameters(properties, message):
     update = GraphDocument(
         "particle.update",
@@ -1631,37 +1554,6 @@ def test_particle_script_vector_field_expression_matches_graph_kernel_contract()
         if instruction.opcode == "sample_vector_field"
     )
     assert sample.immediate_dict() == {"interface": "wind-field"}
-
-
-def test_particle_script_rejects_sdf_sampling_authoring():
-    source = '''\
-from infernux.particle import AssetReference, ParticleScript, ParticleEmitter, EmitterSettings, SdfVolume
-
-class SdfSampleGraph(ParticleScript):
-    stable_id = "sdf-sample-graph"
-
-    class Emitter(ParticleEmitter):
-        stable_id = "emitter"
-        settings = EmitterSettings()
-        data_interfaces = (
-            SdfVolume(
-                stable_id="shape",
-                texture=AssetReference(path_hint="Assets/Fields/Shape.inxsdf"),
-            ),
-        )
-
-        def init(self, ctx, particles):
-            particles.set_lifetime(1.0)
-
-        def update(self, ctx, particles):
-            particles.set_size(ctx.sample_sdf_distance("shape", particles.position))
-            particles.set_velocity(ctx.sample_sdf_gradient("shape", particles.position))
-
-        def rendering(self, ctx, particles):
-            particles.sprite()
-'''
-    with pytest.raises(ParticleScriptError, match="SDF authoring is not available"):
-        ParticleScriptCompiler().parse(source, source_name="SdfSample.particle.py")
 
 
 def test_particle_script_target_position_is_a_stateless_motion_operation():

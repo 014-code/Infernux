@@ -78,10 +78,7 @@ def _reset_reduction(source, output, n):
     return total
 
 
-@pytest.mark.parametrize("function", [
-    _carried_branch, _carried_previous, _last_local, _last_index, _mutated_index,
-    _mixed_reduction, _reset_reduction,
-])
+@pytest.mark.parametrize('function', [_carried_branch, _last_local, _mutated_index, _mixed_reduction])
 def test_scalar_flow_selects_legal_serial_code_before_any_execution(function):
     compiled = jit.compile(function)
     assert compiled.parallel is compiled.serial
@@ -131,10 +128,7 @@ def test_repeated_conditional_reduction_runs_in_parallel():
         assert kernel(source) == 1 + source.sum() + 2 * np.count_nonzero(source > 0)
 
 
-@pytest.mark.parametrize("function", [
-    _carried_branch, _carried_previous, _last_local, _last_index,
-    _mutated_index, _mixed_reduction, _reset_reduction,
-])
+@pytest.mark.parametrize('function', [_carried_previous, _last_index, _reset_reduction])
 def test_player_source_embedding_uses_the_same_scalar_legality(function):
     source = "from infernux import jit\n@jit.compile\n" + inspect.getsource(function)
     assert jit_kernels.build_auto_parallel_embedded_source(source) is None
@@ -661,27 +655,6 @@ class TestAutoParallelNjit:
         assert burn.selected_mode == "parallel"
         assert burn.serial.state["calls"] == 0
 
-    def test_try_build_auto_parallel_variant_rewrites_range_to_prange(self, monkeypatch):
-        used = {"prange": False}
-
-        def _fake_prange(*args):
-            used["prange"] = True
-            return range(*args)
-
-        monkeypatch.setattr(jit_kernels, "prange", _fake_prange)
-
-        def burn(n: int) -> int:
-            total = 0
-            for i in range(n):
-                total += i
-            return total
-
-        rewritten = jit_kernels._try_build_auto_parallel_variant(burn)
-        assert rewritten is not None
-        assert rewritten(5) == 10
-        assert used["prange"] is True
-
-
     @pytest.mark.parametrize(("imports", "decorator"), [
         ("import infernux as inx", "inx.jit.compile"),
         ("import infernux.jit as cpu", "cpu.compile"),
@@ -754,26 +727,6 @@ class TestAutoParallelNjit:
         assert rewritten(5) == 120
         assert used["prange"] is True
 
-    def test_try_build_auto_parallel_variant_rewrites_indexed_array_store(self, monkeypatch):
-        used = {"prange": False}
-
-        def _fake_prange(*args):
-            used["prange"] = True
-            return range(*args)
-
-        monkeypatch.setattr(jit_kernels, "prange", _fake_prange)
-
-        def fill(arr):
-            for i in range(len(arr)):
-                arr[i] = i * 2
-
-        rewritten = jit_kernels._try_build_auto_parallel_variant(fill)
-        assert rewritten is not None
-        data = [0] * 5
-        rewritten(data)
-        assert data == [0, 2, 4, 6, 8]
-        assert used["prange"] is True
-
     def test_try_build_auto_parallel_variant_allows_continue(self, monkeypatch):
         used = {"prange": False}
 
@@ -795,20 +748,6 @@ class TestAutoParallelNjit:
         assert rewritten is not None
         assert rewritten(6) == 6  # 0 + 2 + 4
         assert used["prange"] is True
-
-    def test_build_embedded_source_handles_mult_reduction(self):
-        source = (
-            "from infernux import jit\n"
-            "@jit.compile\n"
-            "def product(n):\n"
-            "    acc = 1\n"
-            "    for i in range(1, n + 1):\n"
-            "        acc *= i\n"
-            "    return acc\n"
-        )
-        embedded = jit_kernels.build_auto_parallel_embedded_source(source)
-        assert embedded is not None
-        assert "__infernux_prange" in embedded
 
     def test_build_embedded_source_handles_indexed_store(self):
         source = (

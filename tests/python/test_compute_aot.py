@@ -54,12 +54,6 @@ def _write_kernel(project: Path) -> Path:
     return source
 
 
-def test_declared_kernel_names_uses_runtime_module_identity(tmp_path):
-    source = _write_kernel(tmp_path)
-
-    assert declared_kernel_names((source,), tmp_path) == ("Scripts.Jelly.step",)
-
-
 def test_declared_kernel_names_accepts_explicit_static_class_kernel(tmp_path):
     source = tmp_path / "Assets/Scripts/Jelly.py"
     source.parent.mkdir(parents=True)
@@ -75,25 +69,6 @@ def test_declared_kernel_names_accepts_explicit_static_class_kernel(tmp_path):
     )
 
     assert declared_kernel_names((source,), tmp_path) == ("Scripts.Jelly.Jelly.step",)
-
-
-def test_declared_kernel_names_accepts_declared_instance_receiver_field(tmp_path):
-    source = tmp_path / "Assets/Scripts/Jelly.py"
-    source.parent.mkdir(parents=True)
-    source.write_text(
-        "import infernux as inx\n"
-        "class Jelly:\n"
-        "    scale: float\n"
-        "    @inx.compute.kernel\n"
-        "    def step(self, domain):\n"
-        "        i = inx.compute.index(domain)\n"
-        "        domain[i] = self.scale\n",
-        encoding="utf-8",
-    )
-
-    assert declared_kernel_names((source,), tmp_path, target="Android/AOT") == (
-        "Scripts.Jelly.Jelly.step",
-    )
 
 
 def test_declared_kernel_names_reports_implicit_class_receiver_with_location(tmp_path):

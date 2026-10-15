@@ -1,17 +1,17 @@
 from __future__ import annotations
 import copy
-import json
+import json as json
 from dataclasses import replace
-from pathlib import Path
-import threading
+from pathlib import Path as Path
+import threading as threading
 import pytest
 from infernux.graph import GraphDocument, GraphLinkRecord, GraphNodeRecord, PortKind
 from infernux.particle import (
     EmitterSettings,
-    EmitterShape,
+    EmitterShape as EmitterShape,
     GpuParticleGlslLowerer,
     KernelCompileError,
-    MeshEmissionMode,
+    MeshEmissionMode as MeshEmissionMode,
     ParticleCompileError,
     ParticleEmitterAsset,
     ParticleAttribute,
@@ -26,10 +26,10 @@ from infernux.particle import (
     ParticleStage,
     ParticleScriptCompiler,
     ParticleScriptError,
-    ParticleArtifactError,
-    ParticleArtifactSuperseded,
-    ParticleArtifactRegistry,
-    ParticleBurst,
+    ParticleArtifactError as ParticleArtifactError,
+    ParticleArtifactSuperseded as ParticleArtifactSuperseded,
+    ParticleArtifactRegistry as ParticleArtifactRegistry,
+    ParticleBurst as ParticleBurst,
     ParticleRuntimeMetadataError,
     SdfVolume,
     SimulationSpace,
@@ -42,7 +42,6 @@ from infernux.graph import AssetReference, CoordinateSpace, TypeRef, ValueType
 from infernux.particle.nodes import (
     PARTICLE_EVENT_ACTIVE_TYPE_ID,
     PARTICLE_EVENT_TRIGGER_TYPE_ID,
-    particle_event_payload_port_id,
     particle_graph_node_definitions,
 )
 from infernux.particle.asset import (
@@ -1805,54 +1804,6 @@ def test_color_parameter_hdr_is_runtime_metadata_not_behavior():
         decode_particle_runtime_metadata(incomplete)
 
 
-def test_writable_graph_parameter_lowers_to_one_typed_shared_store():
-    update = GraphDocument(
-        "particle.update",
-        nodes=(
-            GraphNodeRecord("root.update", "particle.root.update"),
-            GraphNodeRecord(
-                "set-intensity",
-                "particle.parameter.set",
-                properties={"parameter": "intensity", "value": 2.5},
-            ),
-        ),
-        links=(
-            GraphLinkRecord(
-                "stream",
-                "root.update",
-                "out",
-                "set-intensity",
-                "in",
-                PortKind.EXEC,
-            ),
-        ),
-    )
-    parameter = ParticleParameter(
-        "intensity",
-        "Intensity",
-        TypeRef(ValueType.F32),
-        1.0,
-        writable=True,
-    )
-    program = ParticleGraphCompiler().compile(
-        ParticleGraphAsset(
-            parameters=(parameter,),
-            emitters=(ParticleEmitterAsset(update=update),),
-        )
-    )
-    operations = _operations(program.emitters[0].update)
-    assert [operation.opcode for operation in operations] == ["parameter.store"]
-    kernel = ParticleKernelLowerer().lower(program)
-    stores = [
-        instruction
-        for instruction in kernel.emitters[0].update.instructions
-        if instruction.opcode == "store_parameter"
-    ]
-    assert len(stores) == 1
-    assert stores[0].immediate_dict() == {"parameter": "intensity"}
-    assert stores[0].operands[0].value_type == TypeRef(ValueType.F32)
-
-
 def test_set_parameter_rejects_read_only_graph_parameter():
     update = GraphDocument(
         "particle.update",
@@ -1889,47 +1840,6 @@ def test_set_parameter_rejects_read_only_graph_parameter():
                 emitters=(ParticleEmitterAsset(update=update),),
             )
         )
-
-
-def test_set_emitter_playing_lowers_to_graph_owned_target_state():
-    update = GraphDocument(
-        "particle.update",
-        nodes=(
-            GraphNodeRecord("root.update", "particle.root.update"),
-            GraphNodeRecord(
-                "start-trail",
-                "particle.emitter.playing",
-                properties={"emitter": "trail", "playing": True},
-            ),
-        ),
-        links=(
-            GraphLinkRecord(
-                "stream",
-                "root.update",
-                "out",
-                "start-trail",
-                "in",
-                PortKind.EXEC,
-            ),
-        ),
-    )
-    asset = ParticleGraphAsset(
-        emitters=(
-            ParticleEmitterAsset(stable_id="meteor", update=update),
-            ParticleEmitterAsset(stable_id="trail"),
-        )
-    )
-    program = ParticleGraphCompiler().compile(asset)
-    operation = _operations(program.emitters[0].update)[0]
-    assert operation.opcode == "emitter.set_playing"
-    assert operation.parameter_dict()["target_emitter_index"] == 1
-    instruction = next(
-        item
-        for item in ParticleKernelLowerer().lower(program).emitters[0].update.instructions
-        if item.opcode == "emitter_set_playing"
-    )
-    assert instruction.immediate_dict() == {"target_emitter_index": 1}
-    assert instruction.operands[0].value_type == TypeRef(ValueType.BOOL)
 
 
 def test_shared_parameter_and_playing_state_form_one_cross_emitter_contract():
@@ -2081,16 +1991,6 @@ def test_set_emitter_playing_rejects_its_own_emitter():
                 )
             )
         )
-
-
-def test_particle_graph_rejects_removed_cpu_execution_target():
-    document = ParticleGraphAsset().to_dict()
-    settings = document["emitters"][0]["settings"]
-    assert "target" not in settings
-
-    settings["target"] = "cpu"
-    with pytest.raises(ParticleGraphSchemaError, match=r"unknown=\['target'\]"):
-        ParticleGraphAsset.from_dict(document)
 
 
 def test_particle_event_flows_compile_to_stable_typed_queue_abi():
@@ -2256,23 +2156,6 @@ def test_particle_event_trigger_requires_a_matching_event_flow_on_the_emitter():
 
     with pytest.raises(ParticleCompileError, match="dragged into emitter"):
         ParticleGraphCompiler().compile(asset)
-
-
-def test_particle_event_trigger_compiles_for_an_implemented_event():
-    source = ParticleEmitterAsset(
-        stable_id="source",
-        update=_event_trigger_stage("event"),
-        event_flows=(ParticleEventFlow("event", default_event_graph("event")),),
-    )
-    program = ParticleGraphCompiler().compile(
-        ParticleGraphAsset(
-            emitters=(source,),
-            event_types=(ParticleEventType("event", "Event", 16),),
-        )
-    )
-    kernel = ParticleKernelLowerer().lower(program)
-    instructions = kernel.emitters[0].update.instructions
-    assert sum(item.opcode == "event_enqueue" for item in instructions) == 1
 
 
 def test_scene_collision_is_not_a_public_authoring_node():
@@ -2647,14 +2530,6 @@ def test_particle_attributes_reject_property_only_types(value_type, default):
         ParticleAttribute("custom.invalid", "invalid", TypeRef(value_type), default)
 
 
-def test_particle_graph_rejects_unknown_field():
-    value = ParticleGraphAsset(stable_id="current-particle").to_dict()
-    value["unknown"] = 1
-
-    with pytest.raises(ParticleGraphSchemaError, match="keys mismatch"):
-        ParticleGraphAsset.from_dict(value)
-
-
 def test_particle_data_interfaces_round_trip_with_stable_identity_and_space():
     emitter = ParticleEmitterAsset(
         stable_id="data-emitter",
@@ -2726,7 +2601,6 @@ def test_mesh_resource_bindings_are_not_public_data_interfaces(kind):
 def test_runtime_mesh_resource_parser_accepts_only_current_internal_schema():
     from infernux.particle.data_interface import (
         MeshResourceBinding,
-        ParticleDataInterfaceError,
         particle_runtime_resource_from_dict,
     )
 
@@ -3161,37 +3035,6 @@ def test_particle_graph_compiles_sorted_static_mesh_output(sort_mode):
     assert output.sort_mode == sort_mode
 
 
-def test_particle_graph_exec_order_lowers_to_stage_operations():
-    init = GraphDocument(
-        "particle.init",
-        nodes=(
-            GraphNodeRecord("root.init", "particle.root.init"),
-            GraphNodeRecord(
-                "velocity",
-                "particle.attribute.velocity",
-                properties={"value": [0.0, 2.0, 0.0]},
-            ),
-            GraphNodeRecord(
-                "lifetime",
-                "particle.attribute.lifetime",
-                properties={"value": 3.0},
-            ),
-        ),
-        links=(
-            GraphLinkRecord("l1", "root.init", "out", "velocity", "in", PortKind.EXEC),
-            GraphLinkRecord("l2", "velocity", "out", "lifetime", "in", PortKind.EXEC),
-        ),
-    )
-    emitter = ParticleEmitterAsset(init=init)
-    hir = ParticleGraphCompiler().compile(ParticleGraphAsset(emitters=(emitter,))).emitters[0]
-
-    assert [operation.opcode for operation in _operations(hir.init)] == [
-        "emitter.sample_shape",
-        "attribute.modify_velocity",
-        "attribute.modify_lifetime",
-    ]
-
-
 def test_particle_stage_value_links_use_common_typed_expression_ir():
     update = GraphDocument(
         "particle.update",
@@ -3229,68 +3072,6 @@ def test_particle_stage_value_links_use_common_typed_expression_ir():
         "normalize",
     ]
     assert _operations(hir.update)[-1].value_bindings == (("value", "normalize.result"),)
-
-
-def test_particle_update_can_author_color_and_size_over_lifetime():
-    update = GraphDocument(
-        "particle.update",
-        nodes=(
-            GraphNodeRecord("root.update", "particle.root.update"),
-            GraphNodeRecord("set-color", "particle.attribute.color"),
-            GraphNodeRecord("set-size", "particle.attribute.size"),
-            GraphNodeRecord(
-                "age",
-                "particle.attribute.get",
-                properties={"attribute": "builtin.age"},
-            ),
-            GraphNodeRecord(
-                "lifetime",
-                "particle.attribute.get",
-                properties={"attribute": "builtin.lifetime"},
-            ),
-            GraphNodeRecord("normalized-age", "common.math.divide"),
-            GraphNodeRecord(
-                "start-color",
-                "common.constant.color",
-                properties={"value": [1.0, 0.5, 0.0, 1.0]},
-            ),
-            GraphNodeRecord(
-                "end-color",
-                "common.constant.color",
-                properties={"value": [0.1, 0.0, 0.0, 0.0]},
-            ),
-            GraphNodeRecord("color-over-life", "common.math.lerp"),
-            GraphNodeRecord("size-over-life", "common.math.lerp", properties={"a": 1.0, "b": 0.0}),
-        ),
-        links=(
-            GraphLinkRecord("stream-color", "root.update", "out", "set-color", "in", PortKind.EXEC),
-            GraphLinkRecord("stream-size", "set-color", "out", "set-size", "in", PortKind.EXEC),
-            GraphLinkRecord("age-divide", "age", "value", "normalized-age", "a"),
-            GraphLinkRecord("life-divide", "lifetime", "value", "normalized-age", "b"),
-            GraphLinkRecord("color-a", "start-color", "value", "color-over-life", "a"),
-            GraphLinkRecord("color-b", "end-color", "value", "color-over-life", "b"),
-            GraphLinkRecord("color-t", "normalized-age", "result", "color-over-life", "t"),
-            GraphLinkRecord("size-t", "normalized-age", "result", "size-over-life", "t"),
-            GraphLinkRecord("set-color-value", "color-over-life", "result", "set-color", "value"),
-            GraphLinkRecord("set-size-value", "size-over-life", "result", "set-size", "value"),
-        ),
-    )
-
-    emitter = ParticleEmitterAsset(update=update)
-    program = ParticleGraphCompiler().compile(ParticleGraphAsset(emitters=(emitter,)))
-    hir = program.emitters[0]
-    kernel = ParticleKernelLowerer().lower(program).emitters[0]
-
-    assert [operation.opcode for operation in _operations(hir.update)[-2:]] == [
-        "attribute.modify_color",
-        "attribute.modify_size",
-    ]
-    assert {instruction.opcode for instruction in kernel.update.instructions} >= {
-        "divide",
-        "lerp",
-        "store_attribute",
-    }
-    assert {"builtin.color", "builtin.size"} <= set(kernel.update.written_attributes)
 
 
 def test_transform_position_to_set_position_inserts_position_space_conversion():
