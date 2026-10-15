@@ -175,12 +175,12 @@ class ComponentBodyReloadTransaction:
             raise ScriptReloadRejected("reload transaction has already been rolled back")
         if self._committed:
             return dict(self._result)
-        try:
-            from infernux.engine.runtime_dispatch import assert_runtime_dispatch_safe_point
+        from infernux.engine.runtime_dispatch import assert_runtime_dispatch_safe_point
 
-            # Guard before registry/class mutation.  A later publication
-            # failure must never leave a body patch visible in an active frame.
-            assert_runtime_dispatch_safe_point()
+        # A rejected precondition has not started publication and must not
+        # restore the component registry while a runtime frame is active.
+        assert_runtime_dispatch_safe_point()
+        try:
             with self._candidate_import.serializable_type_scope():
                 _prepare_transaction_schema_state(self)
             self._result = _apply_component_body_patch_plans(self.plans)

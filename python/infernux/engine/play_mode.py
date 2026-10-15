@@ -255,8 +255,8 @@ class _MissingScriptRecoveryTransaction:
             return {}
         from infernux.engine.runtime_dispatch import assert_runtime_dispatch_safe_point
 
+        assert_runtime_dispatch_safe_point()
         try:
-            assert_runtime_dispatch_safe_point()
             changed_by_type = self.body_transaction.commit()
             self._prepare_replacements()
             for member, instance in self._prepared:
@@ -383,13 +383,10 @@ class ScriptDeleteBatch:
             raise RuntimeError("script delete batch has been rolled back")
         if self._committed:
             return len(self._replaced)
-        try:
-            from infernux.engine.runtime_dispatch import assert_runtime_dispatch_safe_point
+        from infernux.engine.runtime_dispatch import assert_runtime_dispatch_safe_point
 
-            # Reject before replacing the first live component.  Waiting
-            # until dispatch retirement would expose a half-deleted scene to
-            # an active lifecycle frame before the compensating rollback.
-            assert_runtime_dispatch_safe_point()
+        assert_runtime_dispatch_safe_point()
+        try:
             for member in self.members:
                 obj = self.manager._find_runtime_object_for_script_reload(
                     member.object_id

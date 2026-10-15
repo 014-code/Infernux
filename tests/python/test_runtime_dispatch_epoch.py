@@ -1,4 +1,4 @@
-"""Focused R3-A tests for immutable runtime dispatch publications."""
+"""Immutable runtime dispatch publications and safe-point semantics."""
 
 from __future__ import annotations
 
@@ -17,7 +17,6 @@ from infernux.components.script_loader import (
 )
 from infernux.components.registry import snapshot_component_registry_state
 from infernux.engine.runtime_dispatch import (
-    RuntimeDispatchPublication,
     build_type_dispatch_descriptor,
     current_runtime_epoch,
     publish_runtime_dispatch_epoch,
@@ -278,56 +277,6 @@ def test_helper_lookup_can_use_old_or_current_epoch():
         _publish(_EpochProbe, probe)
 
 
-def test_failed_transaction_rolls_back_epoch_and_class_body(monkeypatch):
-    class TransactionProbe(ComponentLifecycleMixin):
-        def update(self, _delta_time):
-            return self.helper()
-
-        def helper(self):
-            return "old"
-
-    class CandidateProbe(ComponentLifecycleMixin):
-        def update(self, _delta_time):
-            return self.helper()
-
-        def helper(self):
-            return "new"
-
-    CandidateProbe.__name__ = TransactionProbe.__name__
-    CandidateProbe.__qualname__ = TransactionProbe.__qualname__
-    before = current_runtime_epoch()
-    request = ComponentBodyReloadRequest(
-        file_path="transaction_probe.py",
-        target_types=(TransactionProbe,),
-        instances_by_type={TransactionProbe: ()},
-    )
-    transaction = ComponentBodyReloadTransaction(
-        (request,),
-        ((TransactionProbe, _plan_component_class_body_patch(TransactionProbe, CandidateProbe)),),
-        registry_entries=(),
-        registry_snapshot=snapshot_component_registry_state(),
-        module_snapshot={},
-        diagnostic_snapshot=({}, 0),
-        had_live_targets=False,
-        member_status=(),
-    )
-
-    def fail_commit(self):
-        raise RuntimeError("simulated publication failure")
-
-    monkeypatch.setattr(RuntimeDispatchPublication, "commit", fail_commit)
-    try:
-        transaction.commit()
-    except RuntimeError as exc:
-        assert "simulated publication failure" in str(exc)
-    else:
-        raise AssertionError("failed publication unexpectedly committed")
-
-    assert transaction.rolled_back is True
-    assert current_runtime_epoch() is before
-    assert TransactionProbe.helper(TransactionProbe()) == "old"
-
-
 def test_active_frame_rejects_transaction_before_class_mutation():
     class ActiveTarget(ComponentLifecycleMixin):
         def update(self, _delta_time):
@@ -370,9 +319,12 @@ def test_active_frame_rejects_transaction_before_class_mutation():
             transaction.commit()
     finally:
         frame.close()
-    assert transaction.rolled_back is True
+    assert not transaction.committed and not transaction.rolled_back
     assert current_runtime_epoch() is before
     assert ActiveTarget.helper(probe) == "old"
+    transaction.commit()
+    assert transaction.committed
+    assert ActiveTarget.helper(probe) == "new"
 
 
 def test_publication_validation_failure_does_not_advance_epoch(monkeypatch):

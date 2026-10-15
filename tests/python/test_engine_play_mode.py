@@ -691,7 +691,26 @@ class TestPlayModeManager:
                 return script_guid
 
         manager.set_asset_database(_AssetDatabase())
-        manager.reload_components_from_script_result(str(script))
+        from infernux.components._component_lifecycle import RuntimeExecutionScheduler
+        from infernux.engine.play_mode import ScriptReloadBatchInput
+        from infernux.engine.runtime_dispatch import current_runtime_epoch
+
+        batch = manager.prepare_script_reload_batch((
+            ScriptReloadBatchInput(str(script), script_guid),
+        ))
+        before_epoch = current_runtime_epoch()
+        scheduler = RuntimeExecutionScheduler()
+        frame = scheduler.begin_frame()
+        try:
+            with pytest.raises(RuntimeError, match="safe point"):
+                batch.commit()
+            assert not batch.committed and not batch.rolled_back
+            assert game_object.components[0] is missing
+            assert current_runtime_epoch() is before_epoch
+        finally:
+            frame.close()
+        assert manager.commit_script_reload_batch(batch).success
+        manager.finalize_script_reload_batch(batch)
 
         restored = game_object.components[0]
         assert not isinstance(restored, MissingScript)

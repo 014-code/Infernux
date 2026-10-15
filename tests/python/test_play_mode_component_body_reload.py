@@ -360,7 +360,7 @@ def test_reload_publishes_edit_mode_flag_to_live_native_mirror(
 def test_direct_body_patch_updates_edit_mode_gate_and_rolls_it_back(
     component_script, monkeypatch, scene, edit_mode, rollback,
 ):
-    from infernux.engine.runtime_dispatch import RuntimeDispatchPublication
+    from infernux.engine.runtime_dispatch import RuntimeDispatchPublication, current_runtime_epoch
 
     source = '''
         import infernux as inx
@@ -382,6 +382,7 @@ def test_direct_body_patch_updates_edit_mode_gate_and_rolls_it_back(
     component = component_type()
     scene.create_game_object("DirectEditModeOwner").add_py_component(component)
     native = component._cpp_component
+    before_epoch = current_runtime_epoch()
     with monkeypatch.context() as patch:
         if rollback:
             def reject(_publication):
@@ -394,6 +395,8 @@ def test_direct_body_patch_updates_edit_mode_gate_and_rolls_it_back(
     expected = before if rollback else edit_mode
     assert component_type._execute_in_edit_mode_ is expected
     assert component._execute_in_edit_mode is expected
+    if rollback:
+        assert current_runtime_epoch() is before_epoch
     component._execute_in_edit_mode = None
     native.refresh_python_lifecycle_dispatch()
     assert component._execute_in_edit_mode is expected
@@ -441,11 +444,13 @@ def test_reload_rebinds_unchanged_field_types_to_published_declarations(
 
     if reject_publication:
         from infernux.engine.candidate_import import CandidateImportTransaction
+        from infernux.engine.runtime_dispatch import current_runtime_epoch
 
         original_values = (first.mode, first.modes, first.stats, first.members)
         original_slot = first._cds_slot
         original_class_id = first._cds_class_id
         original_module = sys.modules[owner.__module__]
+        original_epoch = current_runtime_epoch()
 
         def reject(_transaction):
             raise RuntimeError("simulated module publication failure")
@@ -454,6 +459,7 @@ def test_reload_rebinds_unchanged_field_types_to_published_declarations(
             patch.setattr(CandidateImportTransaction, "commit", reject)
             rejected = manager.reload_components_from_script_result(str(path))
         assert not rejected.success and "simulated module publication failure" in rejected.error
+        assert current_runtime_epoch() is original_epoch
         assert first.declarations() == (old_mode, old_stats, "old")
         assert first.counter == 17 and second.counter == 7
         assert all(value is original for value, original in zip(
