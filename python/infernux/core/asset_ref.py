@@ -50,7 +50,7 @@ class AssetRefBase:
 
     @property
     def path_hint(self) -> str:
-        """Current editor path when known, otherwise the serialized fallback."""
+        """Current editor path when known, otherwise the authoring hint."""
         if self._guid:
             try:
                 from infernux.engine.interaction import AssetMutationService
@@ -107,13 +107,12 @@ class AssetRefBase:
     @classmethod
     def from_dict(cls, d: dict) -> "AssetRefBase":
         if type(d) is not dict:
-            return cls()
-        # Old path-only fields and unrelated legacy keys carry no runtime
-        # identity.  A persisted hint without its GUID is ignored rather than
-        # becoming a stale display value or a recovery request.
-        guid = d.get("guid", "")
-        guid = guid if type(guid) is str else ""
-        return cls(guid=guid)
+            raise TypeError("asset reference document must be an object")
+        if "guid" not in d:
+            raise ValueError("asset reference document requires guid")
+        if type(d["guid"]) is not str:
+            raise TypeError("asset reference guid must be a string")
+        return cls(guid=d["guid"])
 
     # ── Display ────────────────────────────────────────────────────────
 

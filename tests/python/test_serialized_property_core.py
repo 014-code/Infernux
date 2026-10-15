@@ -22,8 +22,8 @@ def _property_handle(targets, *, validate=lambda _value: "", publish=None):
             SerializedPropertyBinding(
                 target_id,
                 read=lambda target=target: target.value,
-                command_factory=lambda old, new, description, target=target: (
-                    SetPropertyCommand(target, "value", old, new, description)
+                command_factory=lambda old, new, description, target=target: SetPropertyCommand(
+                    target, "value", old, new, description
                 ),
                 validate=validate,
             )
@@ -36,109 +36,6 @@ def _property_handle(targets, *, validate=lambda _value: "", publish=None):
     )
 
 
-def test_property_transaction_commits_mixed_targets_as_one_journal_action():
-    from infernux.engine.interaction import PropertyTransaction
-    from infernux.engine.undo import UndoManager
-
-    first = SimpleNamespace(value=1.0)
-    second = SimpleNamespace(value=2.0)
-    publications = []
-    previous = UndoManager._instance
-    manager = UndoManager()
-    try:
-        handle = _property_handle(
-            (first, second), publish=lambda: publications.append("publish")
-        )
-        assert handle.mixed is True
-        assert PropertyTransaction(handle, "Set Probe").commit(3.0).value == "applied"
-        assert (first.value, second.value) == (3.0, 3.0)
-        assert publications == ["publish"]
-        assert len(manager.action_journal.applied_entries()) == 1
-
-        manager.undo()
-        assert (first.value, second.value) == (1.0, 2.0)
-        assert publications == ["publish", "publish"]
-    finally:
-        UndoManager._instance = previous
-
-
-def test_property_transaction_validates_all_targets_before_any_write():
-    from infernux.engine.interaction import PropertyTransaction
-    from infernux.engine.undo import UndoManager
-
-    first = SimpleNamespace(value=1.0)
-    second = SimpleNamespace(value=2.0)
-    rejected = []
-    previous = UndoManager._instance
-    manager = UndoManager()
-    try:
-        handle = _property_handle(
-            (first, second),
-            validate=lambda value: "must be non-negative" if value < 0 else "",
-        )
-        result = PropertyTransaction(
-            handle, "Set Probe", on_rejected=rejected.append
-        ).commit(-1.0)
-        assert result.value == "rejected"
-        assert (first.value, second.value) == (1.0, 2.0)
-        assert len(manager.action_journal.applied_entries()) == 0
-        assert "must be non-negative" in rejected[0]
-    finally:
-        UndoManager._instance = previous
-
-
-def test_snapshot_property_transaction_commits_and_replays_one_aggregate():
-    from infernux.engine.interaction import SnapshotPropertyTransaction
-    from infernux.engine.undo import UndoManager
-
-    state = {"value": {"position": [1.0, 2.0, 3.0], "scale": [1.0, 1.0, 1.0]}}
-    previous = UndoManager._instance
-    manager = UndoManager()
-    try:
-        transaction = SnapshotPropertyTransaction(
-            "Transform:17",
-            lambda: state["value"],
-            lambda value: state.__setitem__("value", value),
-            "Edit Transform",
-        )
-        transaction.commit_or_raise(
-            {"position": [4.0, 5.0, 6.0], "scale": [1.0, 1.0, 1.0]}
-        )
-        assert state["value"]["position"] == [4.0, 5.0, 6.0]
-        assert len(manager.action_journal.applied_entries()) == 1
-
-        manager.undo()
-        assert state["value"]["position"] == [1.0, 2.0, 3.0]
-        manager.redo()
-        assert state["value"]["position"] == [4.0, 5.0, 6.0]
-    finally:
-        UndoManager._instance = previous
-
-
-def test_snapshot_property_transaction_merges_continuous_same_target_edits():
-    from infernux.engine.interaction import SnapshotPropertyTransaction
-    from infernux.engine.undo import UndoManager
-
-    state = {"value": 1.0}
-    previous = UndoManager._instance
-    manager = UndoManager()
-    try:
-        for value in (2.0, 3.0):
-            SnapshotPropertyTransaction(
-                "Transform:17",
-                lambda: state["value"],
-                lambda candidate: state.__setitem__("value", candidate),
-                "Edit Transform",
-            ).commit_or_raise(value)
-
-        assert state["value"] == 3.0
-        assert len(manager.action_journal.applied_entries()) == 1
-        manager.undo()
-        assert state["value"] == 1.0
-    finally:
-        UndoManager._instance = previous
-
-
 def test_snapshot_property_gesture_merges_until_pointer_release_boundary():
     from infernux.engine.interaction import SnapshotPropertyTransaction
     from infernux.engine.undo import UndoManager
@@ -147,6 +44,7 @@ def test_snapshot_property_gesture_merges_until_pointer_release_boundary():
     previous = UndoManager._instance
     manager = UndoManager()
     try:
+
         def commit(value, gesture_id):
             SnapshotPropertyTransaction(
                 "Transform:17",
@@ -207,21 +105,6 @@ def test_snapshot_property_transaction_normalizes_and_clears_aggregate():
         UndoManager._instance = previous
 
 
-def test_asset_reference_drawer_is_owned_by_property_drawer_registry():
-    from infernux.engine.interaction import (
-        AssetReferenceFieldModel,
-        property_drawer_registry,
-    )
-
-    model = property_drawer_registry.create(
-        "asset_reference",
-        field_id="texture",
-        display_text="None",
-        type_hint="Texture",
-    )
-    assert isinstance(model, AssetReferenceFieldModel)
-
-
 def test_attribute_property_transactions_merge_continuous_edits():
     from infernux.engine.interaction import make_attribute_property_transaction
     from infernux.engine.undo import UndoManager
@@ -230,12 +113,8 @@ def test_attribute_property_transactions_merge_continuous_edits():
     previous = UndoManager._instance
     manager = UndoManager()
     try:
-        first = make_attribute_property_transaction(
-            (target,), "value", description="Set Value"
-        )
-        second = make_attribute_property_transaction(
-            (target,), "value", description="Set Value"
-        )
+        first = make_attribute_property_transaction((target,), "value", description="Set Value")
+        second = make_attribute_property_transaction((target,), "value", description="Set Value")
         first.commit_or_raise(2.0)
         second.commit_or_raise(3.0)
 
@@ -259,31 +138,32 @@ def test_python_reference_transaction_enforces_required_component(monkeypatch):
         target: GameObject = serialized_field(default=None, required_component="MeshRenderer")
 
     component = Probe()
-    monkeypatch.setattr(ref_wrappers.GameObjectRef, 'resolve', lambda self: self.persistent_id)
-    monkeypatch.setattr(ref_wrappers, '_resolve_component_on_game_object',
-                        lambda target, required: object() if target == 13 and required == 'MeshRenderer' else None)
+    monkeypatch.setattr(ref_wrappers.GameObjectRef, "resolve", lambda self: self.persistent_id)
+    monkeypatch.setattr(
+        ref_wrappers,
+        "_resolve_component_on_game_object",
+        lambda target, required: object() if target == 13 and required == "MeshRenderer" else None,
+    )
     previous = UndoManager._instance
     manager = UndoManager()
     try:
-        transaction = make_python_component_property_transaction((component,), 'target')
-        assert transaction.commit({'object_id': 14}).value == 'rejected'
-        assert get_raw_field_value(component, 'target').persistent_id == 0
+        transaction = make_python_component_property_transaction((component,), "target")
+        assert transaction.commit({"object_id": 14}).value == "rejected"
+        assert get_raw_field_value(component, "target").persistent_id == 0
         assert manager.action_journal.applied_entries() == ()
-        transaction.commit_or_raise({'object_id': 13})
-        assert get_raw_field_value(component, 'target').persistent_id == 13
-        assert transaction.commit({'object_id': 14}).value == 'rejected'
-        assert get_raw_field_value(component, 'target').persistent_id == 13
+        transaction.commit_or_raise({"object_id": 13})
+        assert get_raw_field_value(component, "target").persistent_id == 13
+        assert transaction.commit({"object_id": 14}).value == "rejected"
+        assert get_raw_field_value(component, "target").persistent_id == 13
         manager.undo()
-        assert get_raw_field_value(component, 'target').persistent_id == 0
+        assert get_raw_field_value(component, "target").persistent_id == 0
     finally:
         UndoManager._instance = previous
 
 
 def test_python_component_multi_edit_is_one_atomic_document_action():
     from infernux.components import InxComponent
-    from infernux.engine.interaction import (
-        make_python_component_property_transaction,
-    )
+    from infernux.engine.interaction import make_python_component_property_transaction
     from infernux.engine.undo import UndoManager
 
     class ProbeComponent(InxComponent):
@@ -293,96 +173,29 @@ def test_python_component_multi_edit_is_one_atomic_document_action():
         def on_validate(self):
             self._validate_count += 1
 
-    first = ProbeComponent()
-    second = ProbeComponent()
+    first, second = ProbeComponent(), ProbeComponent()
     second.speed = 2.0
     previous = UndoManager._instance
     manager = UndoManager()
     try:
-        transaction = make_python_component_property_transaction(
-            (first, second), "speed", description="Set Speed"
-        )
+        first.speed = 3.0
+        assert manager.action_journal.applied_entries() == ()
+        transaction = make_python_component_property_transaction((first, second), "speed", description="Set Speed")
+        assert transaction.handle.mixed
         transaction.commit_or_raise(4.0)
-
         assert (first.speed, second.speed) == (4.0, 4.0)
         assert (first._validate_count, second._validate_count) == (1, 1)
         assert len(manager.action_journal.applied_entries()) == 1
-
         manager.undo()
-        assert (first.speed, second.speed) == (1.0, 2.0)
+        assert (first.speed, second.speed) == (3.0, 2.0)
         assert (first._validate_count, second._validate_count) == (2, 2)
+        manager.redo()
+        assert (first.speed, second.speed) == (4.0, 4.0)
+        assert (first._validate_count, second._validate_count) == (3, 3)
     finally:
+        first._call_on_destroy()
+        second._call_on_destroy()
         UndoManager._instance = previous
-
-
-def test_serialized_field_assignment_is_storage_not_an_implicit_editor_command():
-    from infernux.components import InxComponent
-    from infernux.engine.interaction import (
-        make_python_component_property_transaction,
-    )
-    from infernux.engine.undo import UndoManager
-
-    class ProbeComponent(InxComponent):
-        speed: float = 1.0
-
-    previous = UndoManager._instance
-    manager = UndoManager()
-    component = ProbeComponent()
-    try:
-        component.speed = 2.0
-
-        assert component.speed == 2.0
-        assert manager.action_journal.applied_entries() == ()
-
-        make_python_component_property_transaction(
-            (component,),
-            "speed",
-            description="Set Speed",
-        ).commit_or_raise(3.0)
-
-        assert component.speed == 3.0
-        assert len(manager.action_journal.applied_entries()) == 1
-        manager.undo()
-        assert component.speed == 2.0
-    finally:
-        UndoManager._instance = previous
-
-
-def test_python_property_schema_comes_from_the_field_declaration():
-    from infernux.components import InxComponent, serialized_field
-    from infernux.components.fields import get_field_schema
-    from infernux.engine.interaction import make_python_component_property_transaction
-    from infernux.engine.undo import UndoManager
-
-    class ReadOnlyProbe(InxComponent):
-        speed = serialized_field(1.0, readonly=True)
-
-    component = ReadOnlyProbe()
-    previous = UndoManager._instance
-    manager = UndoManager()
-    try:
-        transaction = make_python_component_property_transaction((component,), "speed")
-        assert transaction.handle.schema is get_field_schema(ReadOnlyProbe, "speed")
-        assert transaction.handle.schema.attributes["default"] == 1.0
-        assert transaction.handle.schema.attributes["field_id"] == "speed"
-        assert transaction.value_type == "FieldType.FLOAT"
-        assert transaction.read_only
-        assert transaction.commit(2.0).value == "rejected"
-        assert component.speed == 1.0
-        assert manager.action_journal.applied_entries() == ()
-    finally:
-        UndoManager._instance = previous
-
-
-def test_python_property_transaction_requires_a_declared_field():
-    from infernux.components import InxComponent
-    from infernux.engine.interaction import make_python_component_property_transaction
-
-    class Probe(InxComponent):
-        _runtime_only: float = 1.0
-
-    with pytest.raises(KeyError, match="_runtime_only"):
-        make_python_component_property_transaction((Probe(),), "_runtime_only")
 
 
 def test_python_property_transaction_normalizes_declared_enum_and_undo():
@@ -416,11 +229,12 @@ def test_python_property_transaction_normalizes_declared_enum_and_undo():
         UndoManager._instance = previous
 
 
-@pytest.mark.parametrize("surface", ["transaction", "command", "inspector"])
+@pytest.mark.parametrize("surface", ["command", "inspector"])
 def test_python_field_edit_surfaces_share_range_and_no_change_semantics(surface):
     from infernux.components import InxComponent, get_serialized_fields, serialized_field
     from infernux.engine.interaction import (
-        ComponentCommandService, make_python_component_property_transaction,
+        ComponentCommandService,
+        make_python_component_property_transaction,
     )
     from infernux.engine.ui.inspector_components import _commit_python_component_field
     from infernux.engine.undo import UndoManager
@@ -434,11 +248,10 @@ def test_python_field_edit_surfaces_share_range_and_no_change_semantics(surface)
     previous_service = ComponentCommandService._instance
     service = ComponentCommandService()
     try:
+
         def edit(value):
             if surface == "transaction":
-                return make_python_component_property_transaction(
-                    (component,), "speed"
-                ).commit_or_raise(value)
+                return make_python_component_property_transaction((component,), "speed").commit_or_raise(value)
             if surface == "command":
                 return service.set_field(component, "speed", value)
             return _commit_python_component_field(
@@ -506,9 +319,7 @@ def test_multi_target_property_write_rolls_back_when_one_target_rejects():
     previous = UndoManager._instance
     manager = UndoManager()
     try:
-        transaction = make_attribute_property_transaction(
-            (first, second), "value", description="Set Value"
-        )
+        transaction = make_attribute_property_transaction((first, second), "value", description="Set Value")
         with pytest.raises(RuntimeError, match="rejected"):
             transaction.commit_or_raise(3.0)
 

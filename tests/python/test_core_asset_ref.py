@@ -33,8 +33,6 @@ def test_asset_reference_documents_persist_guid_and_ignore_display_paths():
         "guid": "asset-guid", "path_hint": "Assets/Obsolete.png", "path": "old",
     })
     assert restored.guid == reference.guid and restored.path_hint == ""
-    assert AssetRefBase.from_dict(None).guid == ""
-    assert AssetRefBase.from_dict({"guid": 7, "path_hint": "old"}).guid == ""
     assert reference.display_name == "Display.png"
     assert "GUID:" in AssetRefBase(guid="abcdefgh1234").display_name
 

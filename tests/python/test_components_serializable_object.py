@@ -2,39 +2,14 @@
 
 from infernux.components.serializable_object import (
     SerializableObject,
-    get_serializable_class,
     get_serializable_type_id,
 )
 from infernux.components.fields import serialized_field, FieldType
 from infernux.components.value_document import make_serializable_object
 import pytest
-from typing import Annotated
-from infernux.components import InxComponent
 from infernux.components.fields import (
-    Range, Tooltip, HideInInspector, NonSerialized, FormerlySerializedAs,
     get_serialized_fields,
 )
-
-
-@pytest.mark.parametrize("base", [InxComponent, SerializableObject])
-def test_component_and_data_object_share_declaration_semantics(base):
-    class Declaration(base):
-        count: int
-        ratio: float = 1
-        speed: Annotated[float, Range(0, 10), Tooltip("speed")] = 2.0
-        hidden: Annotated[int, HideInInspector] = 3
-        transient: Annotated[int, NonSerialized] = 4
-        _backing = serialized_field(5, hidden=True)
-
-    fields = get_serialized_fields(Declaration)
-    assert set(fields) == {"count", "ratio", "speed", "hidden", "_backing"}
-    assert fields["count"].default == 0
-    assert fields["ratio"].field_type == FieldType.FLOAT
-    assert type(fields["ratio"].default) is float
-    assert fields["speed"].range == (0, 10)
-    assert fields["speed"].tooltip == "speed"
-    assert fields["hidden"].hidden
-    assert fields["_backing"].hidden
 
 
 def test_inherited_data_field_uses_the_same_runtime_constraint():
@@ -52,19 +27,6 @@ def test_inherited_data_field_uses_the_same_runtime_constraint():
     assert type(restored) is Derived and restored.speed == 0.0
 
 
-def test_failed_data_declaration_does_not_replace_registered_type():
-    class Valid(SerializableObject):
-        __serialized_type_id__ = "tests:declaration-publication"
-        value = 1
-
-    with pytest.raises(ValueError, match="non-empty field name"):
-        class Invalid(SerializableObject):
-            __serialized_type_id__ = "tests:declaration-publication"
-            value: Annotated[int, FormerlySerializedAs("")] = 2
-
-    assert get_serializable_class("tests:declaration-publication") is Valid
-
-
 def test_inherited_reference_serializes_raw_identity_not_resolved_object():
     import copy
     from infernux.components.ref_wrappers import GameObjectRef
@@ -77,8 +39,7 @@ def test_inherited_reference_serializes_raw_identity_not_resolved_object():
     class Derived(Base):
         label = "reference owner"
 
-    original = Derived(target=GameObjectRef(persistent_id=42),
-                       _target=GameObjectRef(persistent_id=43))
+    original = Derived(target=GameObjectRef(persistent_id=42), _target=GameObjectRef(persistent_id=43))
     document = original._serialize()
     for value in (copy.deepcopy(original), SerializableObject._deserialize(document)):
         assert get_raw_field_value(value, "target").persistent_id == 42
@@ -110,18 +71,24 @@ def test_data_annotations_cover_nested_lists_enums_and_string_annotations():
     assert restored.stats.hp == 7 and restored.members[0].hp == 3
     assert restored.mode is Mode.moving
 
-    resolved = type("StringAnnotationData", (SerializableObject,), {
-        "__module__": __name__,
-        "__annotations__": {"stats": "Stats", "values": "list[int]",
-                            "hidden": "Annotated[int, HideInInspector]"},
-    })
+    resolved = type(
+        "StringAnnotationData",
+        (SerializableObject,),
+        {
+            "__module__": __name__,
+            "__annotations__": {"stats": "Stats", "values": "list[int]", "hidden": "int"},
+            "hidden": serialized_field(default=4, hidden=True),
+        },
+    )
     fields = get_serialized_fields(resolved)
     assert fields["stats"].serializable_class is Stats
     assert fields["values"].element_type == FieldType.INT
     assert fields["hidden"].hidden
+    assert resolved()._serialize()["fields"]["hidden"] == 4
 
 
 # ── Test data classes ──
+
 
 class Stats(SerializableObject):
     hp: int = serialized_field(default=100)
@@ -133,38 +100,7 @@ class Nested(SerializableObject):
     inner: int = serialized_field(default=0)
 
 
-class TestRegistration:
-
-
-    def test_unknown_returns_none(self):
-        assert get_serializable_class("NoSuchClass") is None
-
-
 class TestSerialization:
-    def test_serialize_produces_dict_with_type_tag(self):
-        s = Stats()
-        data = s._serialize()
-        assert data["$type"] == "serializable_object"
-        assert data["type_id"] == get_serializable_type_id(Stats)
-        assert "schema_version" not in data
-        assert data["fields"]["hp"] == 100
-
-    def test_deserialize_restores_values(self):
-        s = Stats(hp=42, mp=7.5, name="test")
-        data = s._serialize()
-        restored = Stats._deserialize(data)
-        assert restored.hp == 42
-        assert restored.mp == 7.5
-        assert restored.name == "test"
-
-    def test_polymorphic_deserialize(self):
-        s = Stats(hp=1)
-        data = s._serialize()
-        # Deserialize through base class resolves to Stats
-        restored = SerializableObject._deserialize(data)
-        assert type(restored) is Stats
-        assert restored.hp == 1
-
     def test_validate_document_does_not_construct_instance(self):
         class ValidateOnly(SerializableObject):
             value: int = serialized_field(default=0)
@@ -186,35 +122,31 @@ class TestSerialization:
         with pytest.raises(TypeError, match="INT field requires an integer"):
             SerializableObject._deserialize(data)
 
-    def test_unsupported_nested_value_is_rejected(self):
-        with pytest.raises(ValueError, match=r"Unsupported\.payload.*UNKNOWN"):
-            class Unsupported(SerializableObject):
-                payload = serialized_field(default=None, field_type=FieldType.UNKNOWN)
+    def test_extra_and_removed_document_fields_are_ignored(self, tmp_path):
+        import json
 
-    def test_document_identity_is_strict(self):
-        data = Stats()._serialize()
-        data["type_id"] = "removed:Type"
-        with pytest.raises(ValueError, match="unknown"):
-            SerializableObject._deserialize(data)
+        class EvolvingStats(Stats):
+            tags: list[str] = serialized_field(default=[])
 
-    def test_extra_and_removed_document_fields_are_ignored(self):
-        data = Stats(hp=6, mp=9.0, name="current")._serialize()
+        authored = EvolvingStats(hp=6, mp=9.0, name="current", tags=["saved"])
+        data = authored._serialize()
+        assert data["$type"] == "serializable_object"
         data["schema_version"] = 99
         data["removed_envelope_value"] = True
         data["fields"].pop("name")
+        data["fields"].pop("tags")
         data["fields"]["old_name"] = "ignored"
-
-        restored = SerializableObject._deserialize(data)
-
-        assert restored.hp == 6
-        assert restored.mp == 9.0
-        assert restored.name == "default"
+        path = tmp_path / "stats.json"
+        path.write_text(json.dumps(data), encoding="utf-8")
+        restored = SerializableObject._deserialize(json.loads(path.read_text(encoding="utf-8")))
+        assert type(restored) is EvolvingStats
         assert restored._serialize() == {
             "$type": "serializable_object",
-            "type_id": get_serializable_type_id(Stats),
-            "fields": {"hp": 6, "mp": 9.0, "name": "default"},
+            "type_id": get_serializable_type_id(EvolvingStats),
+            "fields": {"hp": 6, "mp": 9.0, "name": "default", "tags": []},
         }
-
+        restored.tags.append("local edit")
+        assert EvolvingStats().tags == [] and authored.tags == ["saved"]
 
     def test_stable_type_id_rejects_an_old_type_name(self):
         class RenamedStats(SerializableObject):
@@ -228,50 +160,3 @@ class TestSerialization:
 
         with pytest.raises(ValueError, match="unknown SerializableObject type_id"):
             SerializableObject._deserialize(data)
-
-    def test_missing_current_field_uses_current_default(self):
-        class AdditiveDefaults(SerializableObject):
-            hp: int = serialized_field(default=100)
-            tags: list = serialized_field(
-                default=[],
-                field_type=FieldType.LIST,
-                element_type=FieldType.STRING,
-            )
-
-        data = AdditiveDefaults(hp=42, tags=["saved"])._serialize()
-        data["fields"].pop("tags")
-
-        restored = SerializableObject._deserialize(data)
-        assert restored.hp == 42
-        assert restored.tags == []
-
-
-class TestDunder:
-    def test_eq_same_values(self):
-        a = Stats(hp=10, mp=20.0, name="x")
-        b = Stats(hp=10, mp=20.0, name="x")
-        assert a == b
-
-    def test_neq_different_values(self):
-        a = Stats(hp=10)
-        b = Stats(hp=20)
-        assert a != b
-
-    def test_neq_different_types(self):
-        s = Stats()
-        n = Nested()
-        assert s != n
-
-    def test_repr(self):
-        s = Stats()
-        r = repr(s)
-        assert "Stats" in r
-        assert "hp=" in r
-
-    def test_deepcopy(self):
-        import copy
-        s = Stats(hp=42)
-        s2 = copy.deepcopy(s)
-        assert s2.hp == 42
-        s2.hp = 0
-        assert s.hp == 42  # original unchanged

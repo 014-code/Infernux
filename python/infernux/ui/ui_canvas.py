@@ -55,7 +55,7 @@ class UICanvas(InxUIComponent):
         render_mode: ScreenOverlay or CameraOverlay.
         sort_order: Rendering order (lower draws first).
         target_camera: Camera GameObject reference (CameraOverlay mode only).
-        target_camera_id: Compatibility access to the reference's runtime ID.
+        target_camera_id: Runtime ID access to the camera reference.
     """
 
     render_mode: RenderMode = serialized_field(default=RenderMode.ScreenOverlay)
@@ -80,17 +80,6 @@ class UICanvas(InxUIComponent):
         if value < 0:
             raise ValueError("Canvas target_camera_id must not be negative")
         self.target_camera = GameObjectRef(persistent_id=int(value)) if value else None
-
-    def _deserialize_fields_document(self, data, **kwargs):
-        if isinstance(data, dict) and "target_camera_id" in data:
-            if "target_camera" in data:
-                raise ValueError("Canvas document declares both target_camera and target_camera_id")
-            data = dict(data)
-            legacy_id = data.pop("target_camera_id")
-            if isinstance(legacy_id, bool) or not isinstance(legacy_id, Integral) or legacy_id < 0:
-                raise ValueError("Legacy Canvas target_camera_id must be a nonnegative runtime ID")
-            data["target_camera"] = {"$type": "game_object_ref", "object_id": int(legacy_id)}
-        return super()._deserialize_fields_document(data, **kwargs)
 
     # Design reference resolution (serialized, user-editable)
     reference_width: int = int_field(1920, range=(1, 8192), tooltip="Design reference width", slider=False)

@@ -17,14 +17,11 @@ def test_sprite_renderer_structured_path_hint_does_not_recover_guid():
         )
 
 
-def test_asset_ref_from_dict_ignores_path_only_document():
+def test_asset_ref_from_dict_rejects_path_only_document():
     from infernux.core.asset_ref import TextureRef
 
-    reference = TextureRef.from_dict({"path_hint": "Assets/Textures/legacy.png"})
-
-    assert reference.guid == ""
-    assert reference.path_hint == ""
-    assert not reference
+    with pytest.raises(ValueError, match="requires guid"):
+        TextureRef.from_dict({"path_hint": "Assets/Textures/legacy.png"})
 
 
 def test_asset_ref_persistence_drops_display_path():
@@ -36,6 +33,7 @@ def test_asset_ref_persistence_drops_display_path():
     )
 
     assert reference.to_dict() == {"guid": "texture-guid"}
+    assert TextureRef.from_dict(reference.to_dict()) == reference
     assert VALUE_CODECS.encode(reference) == {
         "$type": "asset_ref",
         "asset_type": "Texture",

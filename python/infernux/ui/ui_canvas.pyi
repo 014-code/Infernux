@@ -21,7 +21,7 @@ class UICanvas(InxUIComponent):
         render_mode: ``ScreenOverlay`` or ``CameraOverlay``.
         sort_order: Rendering order (lower draws first).
         target_camera: Camera GameObject reference (CameraOverlay mode only).
-        target_camera_id: Compatibility access to the reference's runtime ID.
+        target_camera_id: Runtime ID access to the camera reference.
         reference_width: Design reference width in pixels (default 1920).
         reference_height: Design reference height in pixels (default 1080).
         ui_scale_mode: Canvas scaler mode.

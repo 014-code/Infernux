@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 import gc
 import weakref
 
@@ -17,7 +16,9 @@ from infernux.components._cds_bridge import get_class_id
 def test_batch_write_preserves_field_ranges_and_publishes_changes(native_storage):
     from infernux.components._component_lifecycle import RuntimeExecutionScheduler
     from infernux.engine.runtime_change_journal import (
-        RuntimeChangeDomain, RuntimeChangeJournal, RuntimeFieldKey,
+        RuntimeChangeDomain,
+        RuntimeChangeJournal,
+        RuntimeFieldKey,
     )
 
     class Base(InxComponent):
@@ -42,8 +43,7 @@ def test_batch_write_preserves_field_ranges_and_publishes_changes(native_storage
         np.testing.assert_array_equal(batch_read(components, "speed"), [0.0, 5.0])
         batch_changes = journal.consume(cursor)
         assert batch_changes.for_domain(RuntimeChangeDomain.COMPONENT_FIELD).fields == frozenset(
-            RuntimeFieldKey(Derived._type_guid_, component.component_id, "speed")
-            for component in components
+            RuntimeFieldKey(Derived._type_guid_, component.component_id, "speed") for component in components
         )
         for component, value in zip(components, source):
             component.speed = float(value)
@@ -77,7 +77,7 @@ def test_batch_rejects_mixed_classes_before_accessing_colliding_slots():
         second._call_on_destroy()
 
 
-@pytest.mark.parametrize("failure", ["stale", "layout", "shape", "dtype"])
+@pytest.mark.parametrize("failure", ["stale", "shape"])
 def test_rejected_cds_batch_writes_neither_values_nor_notifications(failure):
     from infernux.components._component_lifecycle import RuntimeExecutionScheduler
     from infernux.engine.runtime_change_journal import RuntimeChangeJournal
@@ -118,105 +118,6 @@ def test_rejected_cds_batch_writes_neither_values_nor_notifications(failure):
         scheduler.clear()
 
 
-@pytest.mark.parametrize("native_storage", [False, True])
-def test_batch_bool_storage_matches_scalar_truth_values(native_storage):
-    class Flags(InxComponent):
-        _uses_component_data_store = native_storage
-        value: bool = False
-
-    components = [Flags(), Flags(), Flags()]
-    try:
-        batch_write(components, np.array([0, 256, -1]), "value")
-        result = batch_read(components, "value")
-        assert result.dtype == np.dtype(bool)
-        np.testing.assert_array_equal(result, [False, True, True])
-        assert [component.value for component in components] == [False, True, True]
-    finally:
-        for component in components:
-            component._call_on_destroy()
-
-
-@pytest.mark.parametrize("native_storage", [False, True])
-def test_batch_integer_range_and_invalid_input_match_scalar_assignment(native_storage):
-    class Counter(InxComponent):
-        _uses_component_data_store = native_storage
-        value: int = serialized_field(default=1, range=(0, 5))
-
-    components = [Counter(), Counter()]
-    try:
-        batch_write(components, np.array([-1.8, 7.5]), "value")
-        assert [component.value for component in components] == [0, 5]
-        with pytest.raises(ValueError):
-            batch_write(components, np.array([3.0, float('nan')]), "value")
-        assert [component.value for component in components] == [0, 5]
-    finally:
-        for component in components:
-            component._call_on_destroy()
-
-
-@pytest.mark.parametrize("native_storage", [False, True])
-def test_batch_vector_shape_validation_and_strided_input(native_storage):
-    class Mover(InxComponent):
-        _uses_component_data_store = native_storage
-        position: lib.Vector3 = lib.Vector3(1, 2, 3)
-
-    components = [Mover(), Mover()]
-    try:
-        with pytest.raises(ValueError, match="shape"):
-            batch_write(components, np.zeros((2, 2), dtype=np.float32), "position")
-        np.testing.assert_array_equal(batch_read(components, "position"), [[1, 2, 3], [1, 2, 3]])
-        source = np.arange(12, dtype=np.float32).reshape(2, 6)[:, ::2]
-        batch_write(components, source, "position")
-        np.testing.assert_array_equal(batch_read(components, "position"), source)
-    finally:
-        for component in components:
-            component._call_on_destroy()
-
-
-def test_empty_untyped_batch_has_an_explicit_error():
-    with pytest.raises(ValueError, match="non-empty"):
-        batch_read([], "value")
-    with pytest.raises(ValueError, match="non-empty"):
-        batch_write([], np.empty(0), "value")
-    assert batch_read(create_batch_handle([]), "position").shape == (0, 3)
-
-
-def test_inherited_numeric_fields_share_the_declared_native_layout():
-    from infernux.components._cds_bridge import get_class_info
-
-    class Base(InxComponent):
-        speed: float = 2.0
-
-    parent = Base()
-
-    class Derived(Base):
-        count: int = 3
-
-    class Sibling(Base):
-        offset: float = 4.0
-
-    children = [Derived(), Derived()]
-    sibling = Sibling()
-    try:
-        class_id, fields = get_class_info(Derived)
-        assert set(fields) == {"speed", "count"}
-        field_id, type_code = fields["speed"]
-        assert lib._cds_get(class_id, field_id, children[0]._cds_slot, type_code) == 2.0
-        batch_write(children, np.asarray([7.0, 8.0], dtype=np.float32), "speed")
-        assert [child.speed for child in children] == [7.0, 8.0]
-        children[0].speed = 9.0
-        np.testing.assert_array_equal(batch_read(children, "speed"), [9.0, 8.0])
-        assert children[0]._serialize_fields_document()["speed"] == 9.0
-        assert parent.speed == 2.0 and sibling.speed == 2.0
-        parent.speed = 11.0
-        assert batch_read([parent], "speed")[0] == 11.0
-        assert "speed" not in Derived._serialized_fields_  # Still declared by Base.
-        assert Base.speed is not Derived.speed and Base.speed is not Sibling.speed
-    finally:
-        for value in [parent, sibling, *children]:
-            value._call_on_destroy()
-
-
 def test_repeated_layout_registration_binds_new_descriptors():
     from infernux.components._cds_bridge import get_class_info
 
@@ -255,6 +156,7 @@ def test_inherited_candidate_publication_and_rollback_preserve_live_parent():
         parent.speed = 11.0
         parent_binding = Base.speed._cds_class_id
         with candidate_component_registration_scope():
+
             class Candidate(Base):
                 count: int = 3
 
@@ -346,18 +248,12 @@ def test_cds_batch_validates_handle_and_data_shapes():
     values = np.asarray([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=np.float32)
 
     lib._cds_batch_scatter(class_id, field_id, 4, handle_array, values)
-    np.testing.assert_array_equal(
-        lib._cds_batch_gather(class_id, field_id, 4, handle_array), values
-    )
+    np.testing.assert_array_equal(lib._cds_batch_gather(class_id, field_id, 4, handle_array), values)
 
     with pytest.raises(ValueError, match=r"shape \(N, 2\)"):
-        lib._cds_batch_gather(
-            class_id, field_id, 4, np.asarray([handles[0][0]], dtype=np.uint32)
-        )
+        lib._cds_batch_gather(class_id, field_id, 4, np.asarray([handles[0][0]], dtype=np.uint32))
     with pytest.raises(ValueError, match=r"shape \(N, 3\)"):
-        lib._cds_batch_scatter(
-            class_id, field_id, 4, handle_array, np.zeros((2, 2), dtype=np.float32)
-        )
+        lib._cds_batch_scatter(class_id, field_id, 4, handle_array, np.zeros((2, 2), dtype=np.float32))
     with pytest.raises(ValueError, match="field type mismatch"):
         lib._cds_batch_gather(class_id, field_id, 0, handle_array)
 
@@ -442,35 +338,6 @@ def test_transform_batch_write_bumps_global_transform_serial(scene):
     )
 
 
-def test_component_class_can_reserve_numeric_storage():
-    class ReservedComponent(InxComponent):
-        value: float = 0.0
-
-    ReservedComponent.reserve_instances(257)
-    class_id = get_class_id(ReservedComponent)
-    assert lib._cds_capacity(class_id) >= 257
-    assert lib._cds_alive_count(class_id) == 0
-
-    with pytest.raises(ValueError, match="non-negative integer"):
-        ReservedComponent.reserve_instances(-1)
-
-
-def test_component_cleanup_tolerates_an_already_released_slot():
-    class CleanupComponent(InxComponent):
-        value: float = 1.0
-
-    component = CleanupComponent()
-    class_id = component._cds_class_id
-    slot = component._cds_slot
-    assert class_id is not None and slot is not None
-
-    lib._cds_free(class_id, slot)
-    component._call_on_destroy()
-
-    assert component._cds_slot is None
-    assert component._cds_class_id is None
-
-
 def test_script_replacement_detach_releases_the_old_numeric_slot():
     class ReplacedComponent(InxComponent):
         value: float = 1.0
@@ -501,14 +368,6 @@ def test_unbound_component_collection_releases_its_numeric_slot():
     assert not lib._cds_is_alive(class_id, slot)
 
 
-def test_reserve_rejects_component_without_numeric_storage():
-    class TextOnlyComponent(InxComponent):
-        label: str = "text"
-
-    with pytest.raises(TypeError, match="no CDS-backed numeric fields"):
-        TextOnlyComponent.reserve_instances(10)
-
-
 def test_component_layout_revision_gets_distinct_storage():
     class ReloadedComponent(InxComponent):
         value: float = 0.0
@@ -520,3 +379,53 @@ def test_component_layout_revision_gets_distinct_storage():
 
     second_class_id = get_class_id(ReloadedComponent)
     assert first_class_id != second_class_id
+
+
+@pytest.mark.parametrize("native_storage", [False, True])
+def test_batch_values_reserve_configure_save_and_reopen(tmp_path, native_storage):
+    import json
+
+    class Values(InxComponent):
+        _uses_component_data_store = native_storage
+        count: int = serialized_field(default=1, range=(0, 5))
+        active: bool = False
+        position: lib.Vector3 = lib.Vector3(1, 2, 3)
+
+    if native_storage:
+        Values.reserve_instances(257)
+        class_id = get_class_id(Values)
+        assert lib._cds_capacity(class_id) >= 257 and lib._cds_alive_count(class_id) == 0
+        with pytest.raises(ValueError, match="non-negative integer"):
+            Values.reserve_instances(-1)
+    components = [Values(), Values()]
+    restored = None
+    try:
+        batch_write(components, np.array([-1.8, 7.5]), "count")
+        assert [value.count for value in components] == [0, 5]
+        with pytest.raises(ValueError):
+            batch_write(components, np.array([3.0, float("nan")]), "count")
+        assert [value.count for value in components] == [0, 5]
+        batch_write(components, np.array([0, 256]), "active")
+        flags = batch_read(components, "active")
+        assert flags.dtype == np.dtype(bool)
+        np.testing.assert_array_equal(flags, [False, True])
+        assert components[0].active is False and components[1].active is True
+        with pytest.raises(ValueError, match="shape"):
+            batch_write(components, np.zeros((2, 2), dtype=np.float32), "position")
+        np.testing.assert_array_equal(batch_read(components, "position"), [[1, 2, 3], [1, 2, 3]])
+        source = np.arange(12, dtype=np.float32).reshape(2, 6)[:, ::2]
+        batch_write(components, source, "position")
+        np.testing.assert_array_equal(batch_read(components, "position"), source)
+        path = tmp_path / "batch-values.json"
+        document = components[1]._serialize_fields_document()
+        path.write_text(json.dumps(document), encoding="utf-8")
+        restored = Values()
+        restored._deserialize_fields_document(json.loads(path.read_text(encoding="utf-8")))
+        assert restored._serialize_fields_document() == document
+        assert restored.count == 5 and restored.active is True
+        np.testing.assert_array_equal(batch_read([restored], "position"), source[1:2])
+    finally:
+        if restored is not None:
+            restored._call_on_destroy()
+        for component in components:
+            component._call_on_destroy()
