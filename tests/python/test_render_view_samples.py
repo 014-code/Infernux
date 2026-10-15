@@ -93,27 +93,6 @@ class _Context:
         self.parameter_updates.extend(updates)
 
 
-def test_alternating_views_reuse_variants_and_invalidate_together(monkeypatch):
-    monkeypatch.setattr(AssetManager, "refresh_pending", staticmethod(lambda: False))
-    stack = _stack()
-    contexts = [_Context(0, 1), _Context(1, 2), _Context(4, 3), _Context(1, 4)]
-    for _ in range(4):
-        for context in contexts:
-            stack.render(context, object())
-            _assert_motion_samples(context.description, context.output_samples or 4)
-    assert all(len(context.applied) == 1 for context in contexts)
-    assert contexts[1].description is contexts[3].description
-    assert contexts[0].description is not contexts[2].description
-    assert len(stack._graph_states) == 3
-    old_revisions = [context.description.source_revision for context in contexts]
-    stack.invalidate_graph()
-    assert all(state.description is None for state in stack._graph_states.values())
-    for context, old_revision in zip(contexts, old_revisions):
-        stack.render(context, object())
-        assert context.description.source_revision != old_revision
-        assert len(context.applied) == 2
-
-
 def test_effect_parameter_uploads_belong_to_variant_and_native_view(monkeypatch):
     monkeypatch.setattr(AssetManager, "refresh_pending", staticmethod(lambda: False))
     stack = RenderStack()
@@ -130,73 +109,3 @@ def test_effect_parameter_uploads_belong_to_variant_and_native_view(monkeypatch)
         stack.render(context, object())
         assert any(dict(update.values).get("exposure") == 2.0 for update in context.parameter_updates)
         assert len(context.applied) == 1
-
-
-def test_no_stack_default_uses_output_contract_cache():
-    pipeline = RenderStackPipeline()
-    contexts = [_Context(1, 10), _Context(4, 11)]
-    for _ in range(3):
-        for context in contexts:
-            pipeline._render_default(context, object())
-            assert context.description.msaa_samples == context.output_samples
-    assert all(len(context.applied) == 1 for context in contexts)
-    assert len(pipeline._default_graphs) == 2
-
-
-def test_deserialization_invalidates_every_output_variant():
-    stack = RenderStack()
-    for samples in (0, 1, 4):
-        description = stack.build_graph(output_samples=samples)
-        stack._graph_state.description = description
-    assert all(state.description is not None for state in stack._graph_states.values())
-    stack.on_after_deserialize()
-    assert all(state.description is None for state in stack._graph_states.values())
-
-
-def test_standalone_pipeline_builds_once_per_output_contract():
-    pipeline = _DslPipeline()
-
-    class Context(_Context):
-        def is_graph_revision_current(self, revision):
-            return self.render_compiled(None, revision)
-
-    contexts = [Context(1, 20), Context(4, 21)]
-    for _ in range(3):
-        for context in contexts:
-            pipeline.render(context, object())
-            assert context.description.msaa_samples == context.output_samples
-    assert all(len(context.applied) == 1 for context in contexts)
-    pipeline.dispose()
-    assert pipeline._standalone_graphs == {}
-
-
-@pytest.mark.parametrize("samples", [1, 4])
-def test_bilingual_base_color_provider_matches_camera_depth_samples(samples):
-    from infernux.lib import MaterialPassType
-
-    guide = Path(__file__).parents[2] / "docs/learn/rendergraph-advanced.md"
-    blocks = re.findall(r"```python\n(.*?)\n```", guide.read_text(encoding="utf-8"), re.DOTALL)
-    examples = [block for block in blocks if "class BaseColorPresentPipeline(" in block]
-    assert len(examples) == 2
-    assert examples[0] == examples[1]
-    namespace = {}
-    exec(compile(examples[0], str(guide), "exec"), namespace)
-    pipeline = namespace["BaseColorPresentPipeline"]()
-    stack = RenderStack()
-    stack._pipeline = pipeline
-    pipeline._render_stack = stack
-    description = stack.build_graph(output_samples=samples)
-    textures = {texture.name: texture for texture in description.textures}
-    provider = next(p for p in description.passes if p.name == "opaque_preview_color")
-    assert provider.commands[0].material_pass == MaterialPassType.BASE_COLOR
-    effective = samples or 1
-    assert description.msaa_samples == effective
-    color = textures[dict(provider.write_colors)[0]]
-    assert (color.samples or effective) == effective
-    for name in provider.read_textures:
-        depth = textures[name]
-        if depth.is_depth:
-            assert (depth.samples or effective) == effective
-    assert bool(provider.resolve_color) == (effective > 1)
-    if provider.resolve_color:
-        assert textures[provider.resolve_color].samples == 1

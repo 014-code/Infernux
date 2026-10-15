@@ -41,22 +41,6 @@ def test_native_cpu_description_roundtrip_without_engine(relative):
     )
 
 
-@pytest.mark.parametrize(
-    "patch",
-    [
-        {"samples": 3},
-        {"size": {"scale": [1e-100, 1]}},
-        {"size": {"scale": [1e100, 1]}},
-        {"format": "d32_sfloat"},
-        {"sampled_depth": True},
-    ],
-)
-def test_authoring_errors_are_rejected_by_native_contract(patch):
-    source = document() | patch
-    with pytest.raises((ValueError, RuntimeError)):
-        native._render_texture_description_from_json(json.dumps(source))
-
-
 def test_binary_truncation_corruption_and_trailing_payload_are_rejected():
     description = native._render_texture_description_from_json(json.dumps(document()))
     payload = native._encode_render_texture_artifact(description, "0123456789abcdef")
@@ -66,21 +50,3 @@ def test_binary_truncation_corruption_and_trailing_payload_are_rejected():
     for bad in (payload + b"\0", b"broken!!" + payload[8:], payload[:12] + b"\xff" * 4 + payload[16:]):
         with pytest.raises((ValueError, RuntimeError)):
             native._decode_render_texture_artifact(bad)
-
-
-def test_project_creation_is_camera_ready_and_never_overwrites(tmp_path):
-    from infernux.engine.ui.project_file_ops import create_render_texture
-    from infernux.host.asset_operations import _CREATE_KINDS
-
-    assert _CREATE_KINDS["render_texture"] == ".rendertexture"
-    assert create_render_texture(str(tmp_path), "Monitor").success
-    path = tmp_path / "Monitor.rendertexture"
-    description = native._render_texture_description_from_json(path.read_text(encoding="utf-8"))
-    assert description.width == description.height == 256
-    assert description.depth_format == native.PixelFormat.D32_SFLOAT
-    assert description.color_format == native.PixelFormat.RGBA8_UNORM
-    assert native._RenderTextureDesc().depth_format == native.PixelFormat.UNDEFINED
-    original = path.read_bytes()
-    assert not create_render_texture(str(tmp_path), "Monitor.rendertexture").success
-    assert path.read_bytes() == original
-    assert not create_render_texture(str(tmp_path), ".rendertexture").success

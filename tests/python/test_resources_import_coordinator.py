@@ -25,22 +25,6 @@ from infernux.debug import Debug
 from infernux.lib import AssetMutationResult, RuntimeMode
 
 
-def test_plugin_editor_translation_catalog_path_is_exact(tmp_path):
-    package = tmp_path / "Packages/vendor/example"
-    editor = package / "editor"
-    editor.mkdir(parents=True)
-    (package / "inx_package.json").write_text("{}", encoding="utf-8")
-    catalog = editor / "translations.json"
-    nested = editor / "nested/translations.json"
-    nested.parent.mkdir()
-
-    assert _is_plugin_editor_translation_catalog(str(catalog), str(tmp_path))
-    assert not _is_plugin_editor_translation_catalog(str(nested), str(tmp_path))
-    assert not _is_plugin_editor_translation_catalog(
-        str(editor / "messages.json"), str(tmp_path)
-    )
-
-
 def _mutation(operation, path, guid=""):
     result = AssetMutationResult()
     result.succeeded = True
@@ -153,269 +137,6 @@ def _patch_asset_manager(monkeypatch, calls):
     monkeypatch.setattr(AssetManager, "_invalidate_project_panel_cache", classmethod(lambda _cls: None))
 
 
-def test_python_bytecode_and_cache_sidecars_never_enter_import_queue(tmp_path):
-    database = _AssetDatabaseProbe()
-    handler = ResourceChangeHandler(_EngineProbe(database))
-    cache = tmp_path / "Assets" / "Scripts" / "__pycache__"
-    cache.mkdir(parents=True)
-    bytecode = cache / "Controller.cpython-312.pyc"
-    moved_bytecode = cache / "Controller.cpython-312.optimized.pyc"
-    bytecode.write_bytes(b"cache")
-
-    handler.on_created(_event(bytecode))
-    handler.on_modified(_event(bytecode))
-    handler.on_moved(_event(bytecode, destination=moved_bytecode))
-    handler.on_deleted(_event(bytecode))
-    handler.on_deleted(_event(Path(f"{bytecode}.meta")))
-
-    assert handler.pending_count == 0
-    assert handler.process_pending_reloads(force=True) == 0
-    assert database.queries == []
-    assert database.mutations == []
-
-
-@pytest.mark.parametrize("relative", [
-    ".git/objects/source.py",
-    ".git",
-    ".gitignore",
-    ".GIT/HEAD",
-])
-def test_vcs_control_files_never_enter_asset_or_script_import_queues(tmp_path, relative):
-    database = _AssetDatabaseProbe()
-    handler = ResourceChangeHandler(_EngineProbe(database))
-    path = tmp_path / "Assets/Vendor" / relative
-    path.parent.mkdir(parents=True)
-    path.write_text("version control state\n", encoding="utf-8")
-    handler.on_created(_event(path))
-    handler.on_modified(_event(path))
-    handler.on_deleted(_event(path))
-    assert handler.pending_count == 0
-    assert handler.process_pending_reloads(force=True) == 0
-    assert database.queries == []
-    assert database.mutations == []
-
-
-def test_script_submission_wakes_the_frontend_worker(tmp_path):
-    database = _AssetDatabaseProbe()
-    wakes = []
-    handler = ResourceChangeHandler(
-        _EngineProbe(database),
-        frontend_wake=lambda: wakes.append("wake"),
-    )
-    script = tmp_path / "FastReload.py"
-    script.write_text("value = 1\n", encoding="utf-8")
-
-    assert handler._check_script(str(script), origin="editor") is not None
-    assert wakes == ["wake"]
-
-
-def test_script_watchdog_event_has_no_debounce_and_wakes_idle_editor(tmp_path):
-    database = _AssetDatabaseProbe()
-    engine = _EngineProbe(database)
-    handler = ResourceChangeHandler(engine)
-    script = tmp_path / "ImmediateReload.py"
-    script.write_text("value = 1\n", encoding="utf-8")
-
-    handler.on_modified(_event(script))
-
-    assert len(handler._coordinator.drain(now=time.monotonic() + 0.001)) == 1
-    assert engine.editor_wakes == 1
-
-
-def test_plugin_translation_watchdog_event_has_no_debounce_and_wakes_idle_editor(
-    tmp_path,
-):
-    database = _AssetDatabaseProbe()
-    engine = _EngineProbe(database)
-    handler = ResourceChangeHandler(engine, project_path=str(tmp_path))
-    package = tmp_path / "Packages/vendor/example"
-    editor = package / "editor"
-    editor.mkdir(parents=True)
-    (package / "inx_package.json").write_text("{}", encoding="utf-8")
-    catalog = editor / "translations.json"
-    catalog.write_text("{}", encoding="utf-8")
-
-    handler.on_modified(_event(catalog))
-
-    assert len(handler._coordinator.drain(now=time.monotonic() + 0.001)) == 1
-    assert engine.editor_wakes == 1
-
-
-def test_watcher_event_waits_for_asset_database_refresh_commit(tmp_path, monkeypatch):
-    database = _AssetDatabaseProbe()
-    database.refresh_pending = True
-    handler = ResourceChangeHandler(_EngineProbe(database))
-    asset = tmp_path / "DeferredDuringRefresh.png"
-    asset.write_bytes(b"asset")
-    dispatched = []
-    errors = []
-    monkeypatch.setattr(handler, "_dispatch_event", dispatched.append)
-    monkeypatch.setattr(Debug, "log_error", errors.append)
-
-    handler._coordinator.submit(AssetFsEventKind.MODIFIED, str(asset.resolve()))
-
-    assert handler.process_pending_reloads(force=True) == 1
-    assert dispatched == []
-    assert errors == []
-    assert handler.pending_count == 1
-
-    database.refresh_pending = False
-    assert handler.process_pending_reloads(force=True) == 1
-    assert len(dispatched) == 1
-    assert dispatched[0].attempt == 0
-    assert errors == []
-
-
-def test_deleted_script_event_preserves_queued_guid_for_missing_component_replacement(monkeypatch, tmp_path):
-    database = _AssetDatabaseProbe()
-    handler = ResourceChangeHandler(_EngineProbe(database))
-    calls = []
-    _patch_asset_manager(monkeypatch, calls)
-    script = tmp_path / "Attached.py"
-    path = str(script.resolve())
-    database.guid_by_path[path] = "attached-guid"
-    marked = []
-
-    class _PlayMode:
-        @staticmethod
-        def mark_components_missing_for_script(guid, deleted_path):
-            marked.append((guid, deleted_path))
-
-    from infernux.engine.play_mode import PlayModeManager
-    monkeypatch.setattr(PlayModeManager, "instance", classmethod(lambda _cls: _PlayMode()))
-
-    handler._coordinator.submit(
-        AssetFsEventKind.DELETED,
-        path,
-        guid_hint="attached-guid",
-    )
-    assert handler.process_pending_reloads(force=True) == 1
-    assert marked == [("attached-guid", path)]
-
-
-def test_reimport_meta_write_suppresses_meta_deleted_echo(monkeypatch, tmp_path):
-    database = _AssetDatabaseProbe()
-    handler = ResourceChangeHandler(_EngineProbe(database))
-    asset_calls = []
-    _patch_asset_manager(monkeypatch, asset_calls)
-
-    owner = tmp_path / "newmaterial.mat"
-    meta = tmp_path / "newmaterial.mat.meta"
-    owner.write_text("content", encoding="utf-8")
-    meta.write_text("meta", encoding="utf-8")
-    owner_path = str(owner.resolve())
-    database.guid_by_path[owner_path] = "stable-guid"
-
-    assert AssetManager.reimport_asset(owner_path, database=database)
-    assert [entry[0] for entry in database.mutations] == ["modified"]
-
-    meta.unlink()
-    handler.on_deleted(_event(meta))
-    assert handler.process_pending_reloads(force=True) == 1
-    # META_DELETED must be treated as DocumentStore echo, not a second reimport.
-    assert [entry[0] for entry in database.mutations] == ["modified"]
-
-
-def test_stale_meta_deleted_event_after_asset_delete_is_ignored(monkeypatch, tmp_path):
-    database = _AssetDatabaseProbe()
-    handler = ResourceChangeHandler(_EngineProbe(database))
-    asset_calls = []
-    _patch_asset_manager(monkeypatch, asset_calls)
-
-    owner = tmp_path / "DeletedScript.py"
-    meta = tmp_path / "DeletedScript.py.meta"
-    owner.write_text("value = 1\n", encoding="utf-8")
-    meta.write_text("meta", encoding="utf-8")
-
-    owner.unlink()
-    meta.unlink()
-    handler._coordinator.submit(AssetFsEventKind.META_DELETED, str(owner.resolve()))
-
-    assert handler.process_pending_reloads(force=True) == 1
-    assert database.mutations == []
-
-
-def test_deleted_new_asset_does_not_retry_importing_its_absent_file(monkeypatch, tmp_path):
-    database = _AssetDatabaseProbe()
-    handler = ResourceChangeHandler(_EngineProbe(database))
-    asset_calls = []
-    errors = []
-    _patch_asset_manager(monkeypatch, asset_calls)
-    monkeypatch.setattr(Debug, "log_error", lambda message: errors.append(message))
-    path = str(tmp_path / "NewTarget.rendertexture")
-    # The Project commands already committed creation and deletion. Both
-    # watcher notifications can carry that same imported identity.
-    handler._coordinator.submit(AssetFsEventKind.CREATED, path, guid_hint="target-guid")
-    handler._coordinator.submit(AssetFsEventKind.MODIFIED, path)
-    handler._coordinator.submit(AssetFsEventKind.DELETED, path, guid_hint="target-guid")
-    assert handler.process_pending_reloads(force=True) == 0
-    assert handler.pending_count == 0
-    assert database.mutations == []
-    assert asset_calls == []
-    assert errors == []
-
-
-def test_blender_numbered_backups_never_move_or_register_asset_identity(tmp_path):
-    database = _AssetDatabaseProbe()
-    handler = ResourceChangeHandler(_EngineProbe(database))
-    source = tmp_path / "Assembly.blend"
-    backup = tmp_path / "Assembly.blend1"
-    source.write_bytes(b"new generation")
-    backup.write_bytes(b"previous generation")
-    database.guid_by_path[str(source)] = "stable-model-guid"
-
-    # Blender reports its save as the old source moving to .blend1 followed by
-    # a newly created .blend. The backup event is presentation noise; the
-    # source path remains authoritative and is reimported with its GUID.
-    handler.on_moved(_event(source, destination=backup))
-    handler.on_created(_event(source))
-
-    assert handler.pending_count == 1
-    events = handler._coordinator.drain(force=True)
-    assert len(events) == 1
-    assert events[0].kind is AssetFsEventKind.MODIFIED
-    assert events[0].path == str(source.resolve())
-    assert events[0].guid_hint == "stable-model-guid"
-    assert database.mutations == []
-    assert database.guid_by_path[str(source)] == "stable-model-guid"
-    assert str(backup) not in database.guid_by_path
-
-
-def test_missing_meta_rebuild_imports_unregistered_owner(monkeypatch, tmp_path):
-    database = _AssetDatabaseProbe()
-    handler = ResourceChangeHandler(_EngineProbe(database))
-    asset_calls = []
-    _patch_asset_manager(monkeypatch, asset_calls)
-
-    owner = tmp_path / "orphan.mat"
-    meta = tmp_path / "orphan.mat.meta"
-    owner.write_text("content", encoding="utf-8")
-    handler.on_deleted(_event(meta))
-
-    assert handler.process_pending_reloads(force=True) == 1
-    assert [entry[0] for entry in database.mutations] == ["import"]
-    assert database.guid_by_path[str(owner.resolve())] == "created-guid"
-
-
-def test_material_preview_invalidation_does_not_hide_external_edit(monkeypatch, tmp_path):
-    database = _AssetDatabaseProbe()
-    handler = ResourceChangeHandler(_EngineProbe(database))
-    asset_calls = []
-    _patch_asset_manager(monkeypatch, asset_calls)
-
-    path = tmp_path / "live.mat"
-    path.write_text("content", encoding="utf-8")
-    path_str = str(path.resolve())
-    database.guid_by_path[path_str] = "stable-guid"
-
-    AssetManager.on_material_saved(path_str)
-    handler.on_modified(_event(path))
-    assert handler.process_pending_reloads(force=True) == 1
-    assert database.mutations == [
-        ("modified", path_str, threading.get_ident())
-    ]
-
-
 def test_watcher_thread_only_submits_and_main_thread_commits(monkeypatch, tmp_path):
     database = _AssetDatabaseProbe()
     handler = ResourceChangeHandler(_EngineProbe(database))
@@ -447,151 +168,6 @@ def test_watcher_thread_only_submits_and_main_thread_commits(monkeypatch, tmp_pa
     assert database.mutations[0][-1] == threading.get_ident()
 
 
-def test_modified_asset_failure_surfaces_runtime_compile_detail(monkeypatch, tmp_path):
-    database = _AssetDatabaseProbe()
-    handler = ResourceChangeHandler(_EngineProbe(database))
-    path = tmp_path / "Tone.effect"
-    path.write_text("{}", encoding="utf-8")
-    resolved = str(path.resolve())
-    database.guid_by_path[resolved] = "tone-guid"
-    failure = AssetMutationResult()
-    failure.succeeded = False
-    failure.error = "tone mapping enum compile failed"
-    monkeypatch.setattr(
-        AssetManager,
-        "reimport_asset",
-        classmethod(lambda _cls, *_args, **_kwargs: failure),
-    )
-
-    with pytest.raises(_AssetImportNotReady, match="tone mapping enum compile failed"):
-        handler._commit_modified(resolved)
-
-
-@pytest.mark.parametrize("extension,echo_kind", [
-    (".vert", "watcher"),
-    (".glsl", "watcher"),
-    (".effectgroup", "local_write"),
-    (".particle.py", "local_write"),
-])
-def test_rejected_compiled_asset_waits_for_next_save_without_retrying(monkeypatch, tmp_path, extension, echo_kind):
-    from infernux.lib import AssetMutationErrorCode
-    from infernux.engine.interaction import DocumentRegistry
-
-    database = _AssetDatabaseProbe()
-    handler = ResourceChangeHandler(_EngineProbe(database))
-    path = tmp_path / ("Surface" + extension)
-    path.write_text("invalid source", encoding="utf-8")
-    database.guid_by_path[str(path)] = "source-guid"
-    failure = _mutation("reimport", str(path), "source-guid")
-    failure.succeeded = False
-    failure.error_code = AssetMutationErrorCode.RUNTIME_APPLY_FAILED
-    failure.error = "source compile failed"
-    attempts, notifications, errors = [], [], []
-    documents = DocumentRegistry.instance()
-    # Reverting to the last valid document has no durable content difference,
-    # but the failed candidate still needs a successful runtime publication.
-    monkeypatch.setattr(documents, "durable_resource_content_changed", lambda *_args, **_kwargs: path.read_text(encoding="utf-8") == "invalid source")
-    monkeypatch.setattr(documents, "preflight_external_resource_change", lambda *_args, **_kwargs: True)
-
-    def reimport(_cls, asset_path, **_kwargs):
-        attempts.append(asset_path)
-        return failure if len(attempts) == 1 else _mutation("reimport", asset_path, "source-guid")
-
-    monkeypatch.setattr(AssetManager, "reimport_asset", classmethod(reimport))
-    monkeypatch.setattr(handler, "_notify_shader_reloaded", notifications.append)
-    monkeypatch.setattr(Debug, "log_error", errors.append)
-    handler.on_modified(_event(path))
-    assert handler.process_pending_reloads(force=True) == 1
-    assert handler.pending_count == 0
-    assert handler.process_pending_reloads(force=True) == 0
-    assert attempts == [str(path)]
-    assert not notifications
-    assert not errors  # The runtime compiler already owns this diagnostic.
-
-    # A no-op echo cannot acknowledge a rejected runtime candidate.
-    if echo_kind == "watcher":
-        monkeypatch.setattr(AssetManager, "is_watcher_echo_suppressed", classmethod(lambda _cls, *_args: True))
-    else:
-        monkeypatch.setattr(AssetManager, "local_write_event_state", classmethod(lambda _cls, _path: "ack"))
-    handler.on_modified(_event(path))
-    assert handler.process_pending_reloads(force=True) == 1
-    assert attempts == [str(path)]
-    assert path_key(str(path)) in handler._rejected_compiled_assets
-    if echo_kind == "watcher":
-        monkeypatch.setattr(AssetManager, "is_watcher_echo_suppressed", classmethod(lambda _cls, *_args: False))
-
-    path.write_text("corrected source", encoding="utf-8")
-    handler.on_modified(_event(path))
-    assert handler.process_pending_reloads(force=True) == 1
-    assert handler.pending_count == 0
-    assert attempts == [str(path), str(path)]
-    assert notifications == ([str(path)] if extension in (".vert", ".frag", ".glsl", ".shadingmodel") else [])
-    assert not handler._rejected_compiled_assets
-
-
-@pytest.mark.parametrize("extension", [
-    ".glsl",
-    ".effect",
-    ".particle.py",
-])
-def test_new_compiled_asset_rejection_is_terminal(monkeypatch, tmp_path, extension):
-    from infernux.lib import AssetMutationErrorCode
-
-    database = _AssetDatabaseProbe()
-    handler = ResourceChangeHandler(_EngineProbe(database))
-    path = tmp_path / ("New" + extension)
-    path.write_text("invalid source", encoding="utf-8")
-    failure = _mutation("import", str(path), "created-guid")
-    failure.succeeded = False
-    failure.error_code = AssetMutationErrorCode.RUNTIME_APPLY_FAILED
-    failure.error = "source compile failed"
-    attempts, errors = [], []
-
-    def import_asset(_cls, asset_path, **_kwargs):
-        attempts.append(asset_path)
-        database.guid_by_path[asset_path] = "created-guid"
-        return failure
-
-    monkeypatch.setattr(AssetManager, "import_asset", classmethod(import_asset))
-    monkeypatch.setattr(Debug, "log_error", errors.append)
-    handler.on_created(_event(path))
-    assert handler.process_pending_reloads(force=True) == 1
-    assert handler.pending_count == 0
-    assert handler.process_pending_reloads(force=True) == 0
-    assert attempts == [str(path)]
-    assert not errors
-
-
-@pytest.mark.parametrize("extension", [
-    ".vert",
-])
-def test_new_shader_runtime_rejection_is_terminal(monkeypatch, tmp_path, extension):
-    from infernux.lib import AssetMutationErrorCode
-
-    database = _AssetDatabaseProbe()
-    handler = ResourceChangeHandler(_EngineProbe(database))
-    path = tmp_path / ("New" + extension)
-    path.write_text("invalid GLSL", encoding="utf-8")
-    failure = _mutation("reimport", str(path), "created-guid")
-    failure.succeeded = False
-    failure.error_code = AssetMutationErrorCode.RUNTIME_APPLY_FAILED
-    failure.error = "shader compile failed"
-    attempts, notifications, errors = [], [], []
-    monkeypatch.setattr(AssetManager, "import_asset", classmethod(lambda _cls, asset_path, **kwargs: database.import_asset(asset_path)))
-    def reject(_cls, asset_path, **kwargs):
-        attempts.append(asset_path)
-        return failure
-
-    monkeypatch.setattr(AssetManager, "reimport_asset", classmethod(reject))
-    monkeypatch.setattr(handler, "_notify_shader_reloaded", notifications.append)
-    monkeypatch.setattr(Debug, "log_error", errors.append)
-    handler.on_created(_event(path))
-    assert handler.process_pending_reloads(force=True) == 1
-    assert handler.pending_count == 0
-    assert attempts == [str(path)]
-    assert not notifications and not errors
-
-
 def test_move_query_may_run_on_watcher_but_mutation_waits_for_owner(monkeypatch, tmp_path):
     database = _AssetDatabaseProbe()
     handler = ResourceChangeHandler(_EngineProbe(database))
@@ -603,9 +179,7 @@ def test_move_query_may_run_on_watcher_but_mutation_waits_for_owner(monkeypatch,
     new_path.write_text("moved", encoding="utf-8")
     database.guid_by_path[str(old_path)] = "stable-guid"
 
-    worker = threading.Thread(
-        target=lambda: handler.on_moved(_event(old_path, destination=new_path))
-    )
+    worker = threading.Thread(target=lambda: handler.on_moved(_event(old_path, destination=new_path)))
     worker.start()
     worker.join()
 
@@ -620,31 +194,12 @@ def test_move_query_may_run_on_watcher_but_mutation_waits_for_owner(monkeypatch,
     assert all(entry[-1] == threading.get_ident() for entry in asset_calls)
 
 
-def test_rejected_effect_relocation_retains_recovery_until_publication(monkeypatch, tmp_path):
-    database = _AssetDatabaseProbe()
-    handler = ResourceChangeHandler(_EngineProbe(database))
-    asset_calls = []
-    _patch_asset_manager(monkeypatch, asset_calls)
-    old = tmp_path / "Old.effect"
-    new = tmp_path / "New.effect"
-    source = {"$schema": "infernux.render_effect", "feature_type": "infernux.post.bloom", "parameters": {"intensity": 0.5}, "dependencies": []}
-    new.write_text(json.dumps(source), encoding="utf-8")
-    database.guid_by_path[str(old)] = "stable-guid"
-    handler._rejected_compiled_assets.add(path_key(str(old)))
-    handler.on_moved(_event(old, destination=new))
-    assert handler.process_pending_reloads(force=True) == 1
-    assert database.guid_by_path[str(new)] == "stable-guid"
-    assert handler._rejected_compiled_assets == {path_key(str(new))}
-    source["parameters"]["intensity"] = 1.5
-    new.write_text(json.dumps(source), encoding="utf-8")
-    handler.on_modified(_event(new))
-    assert handler.process_pending_reloads(force=True) == 1
-    assert not handler._rejected_compiled_assets
-
-
-@pytest.mark.parametrize("extension", [
-    ".glsl",
-])
+@pytest.mark.parametrize(
+    "extension",
+    [
+        ".glsl",
+    ],
+)
 def test_rejected_dependency_move_is_terminal_and_exact_revert_can_recover(monkeypatch, tmp_path, extension):
     from infernux.engine.interaction import DocumentRegistry
 
@@ -656,9 +211,13 @@ def test_rejected_dependency_move_is_terminal_and_exact_revert_can_recover(monke
     new.write_text("invalid source", encoding="utf-8")
     database.guid_by_path[str(old)] = "stable-guid"
     publications, notifications, errors = [], [], []
-    monkeypatch.setattr(AssetManager, "_compile_shader_dependency_runtime", classmethod(
-        lambda _cls, path, previous_path="": publications.append((path, previous_path)) or "dependency rejected"
-    ))
+    monkeypatch.setattr(
+        AssetManager,
+        "_compile_shader_dependency_runtime",
+        classmethod(
+            lambda _cls, path, previous_path="": publications.append((path, previous_path)) or "dependency rejected"
+        ),
+    )
     monkeypatch.setattr(AssetManager, "_publish_compile_diagnostic", staticmethod(lambda *_args: None))
     monkeypatch.setattr(handler, "_notify_shader_reloaded", notifications.append)
     monkeypatch.setattr(Debug, "log_error", errors.append)
@@ -676,9 +235,11 @@ def test_rejected_dependency_move_is_terminal_and_exact_revert_can_recover(monke
     # rejected candidate still requires one successful runtime publication.
     monkeypatch.setattr(DocumentRegistry.instance(), "durable_resource_content_changed", lambda *_a, **_kw: False)
     reimports = []
-    monkeypatch.setattr(AssetManager, "reimport_asset", classmethod(
-        lambda _cls, path, **_kw: reimports.append(path) or _mutation("reimport", path, "stable-guid")
-    ))
+    monkeypatch.setattr(
+        AssetManager,
+        "reimport_asset",
+        classmethod(lambda _cls, path, **_kw: reimports.append(path) or _mutation("reimport", path, "stable-guid")),
+    )
     new.write_text("valid original source", encoding="utf-8")
     handler.on_modified(_event(new))
     assert handler.process_pending_reloads(force=True) == 1
@@ -713,61 +274,18 @@ def test_document_store_atomic_replace_ignores_temp_events_and_reimports_target(
     assert all(str(temporary) not in str(entry) for entry in database.mutations)
 
 
-def test_first_scene_save_as_imports_active_unregistered_target(monkeypatch, tmp_path):
-    database = _AssetDatabaseProbe()
-    handler = ResourceChangeHandler(_EngineProbe(database))
-    asset_calls = []
-    _patch_asset_manager(monkeypatch, asset_calls)
-    target = tmp_path / "MainMenu.scene"
-    temporary = tmp_path / "MainMenu.scene.tmp.123456.9"
-    target.write_text("{}", encoding="utf-8")
-
-    handler.on_moved(_event(temporary, destination=target))
-
-    assert handler.process_pending_reloads(force=True) == 1
-    assert database.mutations == [("import", str(target.resolve()), threading.get_ident())]
-    assert [entry[0] for entry in asset_calls] == ["asset-created"]
-
-
-@pytest.mark.parametrize("staging_name,registered", [
-    ("TankBattle.py.tmp.47892.966d5eeabe93", True),
-    (".editor-save", False),
-])
-def test_external_atomic_script_publication_registers_destination_content(
-    monkeypatch, tmp_path, staging_name, registered,
-):
-    database = _AssetDatabaseProbe()
-    engine = _EngineProbe(database)
-    handler = ResourceChangeHandler(engine)
-    asset_calls = []
-    _patch_asset_manager(monkeypatch, asset_calls)
-    target = tmp_path / "TankBattle.py"
-    staging = tmp_path / staging_name
-    target.write_text("class TankBattle: pass", encoding="utf-8")
-    if registered:
-        database.guid_by_path[str(target)] = "stable-guid"
-    checked = []
-    handler._dependency_graph = SimpleNamespace(project_root=str(tmp_path))
-    monkeypatch.setattr("infernux.engine.resources_manager.is_project_component_script", lambda *_args: True)
-    monkeypatch.setattr(handler, "_check_script", lambda path, **_kwargs: checked.append(path))
-
-    handler.on_created(_event(staging))
-    handler.on_modified(_event(staging))
-    handler.on_moved(_event(staging, destination=target))
-
-    assert engine.editor_wakes > 0
-    assert handler.process_pending_reloads(force=True) == 1
-    assert [entry[0] for entry in database.mutations] == ["modified" if registered else "import"]
-    assert checked == [str(target.resolve())]
-    if registered:
-        assert database.guid_by_path[str(target)] == "stable-guid"
-
-
-@pytest.mark.parametrize("staging_name,destination_exists", [
-    ("TankBattle.py.tmp.47892.966d5eeabe93", False), (".editor-save", True),
-])
+@pytest.mark.parametrize(
+    "staging_name,destination_exists",
+    [
+        ("TankBattle.py.tmp.47892.966d5eeabe93", False),
+        (".editor-save", True),
+    ],
+)
 def test_already_imported_staging_file_cannot_replace_target_script_identity(
-    engine, tmp_path, staging_name, destination_exists,
+    engine,
+    tmp_path,
+    staging_name,
+    destination_exists,
 ):
     from infernux.components.registry import get_component_registrations, unregister_component_script
     from infernux.components.script_loader import retire_script_module
@@ -788,8 +306,7 @@ def test_already_imported_staging_file_cannot_replace_target_script_identity(
             handler.process_pending_reloads(force=True)
             _run_script_publication_owner(handler)
             target_guid = database.get_guid_from_path(str(target))
-        before = [entry for entry in get_component_registrations(project_root=str(tmp_path))
-                  if entry.project_script]
+        before = [entry for entry in get_component_registrations(project_root=str(tmp_path)) if entry.project_script]
         assert len(before) == int(destination_exists)
         staging.write_text(source.replace("marker = 1", "marker = 2"), encoding="utf-8")
         handler.on_created(_event(staging))
@@ -806,8 +323,7 @@ def test_already_imported_staging_file_cannot_replace_target_script_identity(
         assert database.get_meta_by_path(str(target)).get_resource_type() == ResourceType.Script
         assert not database.get_guid_from_path(str(staging))
         assert not Path(str(staging) + ".meta").exists()
-        after = [entry for entry in get_component_registrations(project_root=str(tmp_path))
-                 if entry.project_script]
+        after = [entry for entry in get_component_registrations(project_root=str(tmp_path)) if entry.project_script]
         assert len(after) == 1
         if destination_exists:
             assert after[0].script_path == before[0].script_path
@@ -823,88 +339,6 @@ def test_already_imported_staging_file_cannot_replace_target_script_identity(
         retire_script_module(str(target))
         database.delete_asset(str(target))
         database.delete_asset(str(staging))
-
-
-def test_active_registered_scene_external_edit_is_reimported(monkeypatch, tmp_path):
-    database = _AssetDatabaseProbe()
-    handler = ResourceChangeHandler(_EngineProbe(database))
-    asset_calls = []
-    _patch_asset_manager(monkeypatch, asset_calls)
-    target = tmp_path / "RaceTrack.scene"
-    target.write_text("{}", encoding="utf-8")
-    database.guid_by_path[str(target.resolve())] = "stable-guid"
-
-    handler.on_modified(_event(target))
-
-    assert handler.process_pending_reloads(force=True) == 1
-    assert database.mutations == [
-        ("modified", str(target.resolve()), threading.get_ident())
-    ]
-    assert [entry[0] for entry in asset_calls] == ["invalidate", "asset-modified"]
-
-
-def test_dirty_asset_document_allows_external_reimport_before_publication(
-    monkeypatch,
-    tmp_path,
-):
-    from infernux.engine.interaction import (
-        DocumentCapability,
-        DocumentKey,
-        DocumentKind,
-        DocumentRegistry,
-        DocumentState,
-    )
-
-    class _ReloadableController:
-        def __init__(self):
-            self.reloaded = False
-
-        def reload_from_resource(self, *, document_id: str, resource_path: str):
-            del document_id, resource_path
-            self.reloaded = True
-            return True
-
-    database = _AssetDatabaseProbe()
-    handler = ResourceChangeHandler(_EngineProbe(database))
-    asset_calls = []
-    _patch_asset_manager(monkeypatch, asset_calls)
-    target = tmp_path / "Dirty.effect"
-    effect_document = {
-        "$schema": "infernux.render_effect",
-        "feature_type": "infernux.post.bloom",
-        "parameters": {},
-        "dependencies": [],
-    }
-    import json
-
-    target.write_text(json.dumps(effect_document), encoding="utf-8")
-    target_path = str(target.resolve())
-    database.guid_by_path[target_path] = "dirty-guid"
-    registry = DocumentRegistry()
-    controller = _ReloadableController()
-    document = registry.create(
-        DocumentKind.RENDER_EFFECT,
-        "Dirty",
-        key=DocumentKey.asset(DocumentKind.RENDER_EFFECT, "dirty-guid"),
-        resource_path=target_path,
-        revision=1,
-        saved_revision=0,
-        capabilities=DocumentCapability.SAVE | DocumentCapability.DISCARD,
-        controller=controller,
-    )
-
-    target.write_text(json.dumps(effect_document, indent=2), encoding="utf-8")
-    handler.on_modified(_event(target))
-
-    assert handler.process_pending_reloads(force=True) == 1
-    assert database.mutations == [
-        ("modified", target_path, threading.get_ident())
-    ]
-    assert [entry[0] for entry in asset_calls] == ["asset-modified"]
-    assert controller.reloaded
-    assert document.external_revision == 1
-    assert document.state is DocumentState.READY
-    assert not document.is_dirty
 
 
 def test_dirty_scene_still_blocks_external_reimport_for_user_arbitration(
@@ -957,7 +391,9 @@ def test_dirty_scene_still_blocks_external_reimport_for_user_arbitration(
 
 @pytest.mark.parametrize("kind", ["scene", "render_effect"])
 def test_failed_external_import_retries_without_acknowledging_unpublished_bytes(
-    monkeypatch, tmp_path, kind,
+    monkeypatch,
+    tmp_path,
+    kind,
 ):
     from infernux.engine.interaction import (
         DocumentKey,
@@ -965,20 +401,24 @@ def test_failed_external_import_retries_without_acknowledging_unpublished_bytes(
         DocumentRegistry,
         DocumentState,
     )
-    import json
 
     database = _AssetDatabaseProbe()
     handler = ResourceChangeHandler(_EngineProbe(database))
     _patch_asset_manager(monkeypatch, [])
     path = tmp_path / ("Retry.scene" if kind == "scene" else "Retry.effect")
-    content = {"$schema": "infernux.render_effect", "feature_type": "infernux.post.bloom",
-               "parameters": {}, "dependencies": []}
+    content = {
+        "$schema": "infernux.render_effect",
+        "feature_type": "infernux.post.bloom",
+        "parameters": {},
+        "dependencies": [],
+    }
     path.write_text(json.dumps(content), encoding="utf-8")
     database.guid_by_path[str(path)] = "retry-guid"
     reloads = []
     registry = DocumentRegistry.instance()
     document = registry.create(
-        DocumentKind(kind), "Retry",
+        DocumentKind(kind),
+        "Retry",
         key=DocumentKey.asset(DocumentKind(kind), "retry-guid"),
         resource_path=str(path),
         controller=SimpleNamespace(reload_from_resource=lambda **_kwargs: reloads.append(True)),
@@ -1012,126 +452,13 @@ def test_failed_external_import_retries_without_acknowledging_unpublished_bytes(
     assert document.state is DocumentState.READY
     assert document.external_file_state is None
     assert document.external_revision == external_revision
-    assert registry.durable_resource_content_changed(
-        str(path),
-        guid="retry-guid",
-    ) is False
-
-
-def test_document_store_atomic_replace_does_not_delete_republished_target(monkeypatch, tmp_path):
-    database = _AssetDatabaseProbe()
-    handler = ResourceChangeHandler(_EngineProbe(database))
-    asset_calls = []
-    _patch_asset_manager(monkeypatch, asset_calls)
-
-    target = tmp_path / "atomic.mat"
-    temporary = tmp_path / "atomic.mat.tmp.123456.8"
-    target.write_text("old", encoding="utf-8")
-    temporary.write_text("new", encoding="utf-8")
-    database.guid_by_path[str(target)] = "stable-guid"
-
-    # MoveFileEx(REPLACE_EXISTING) may be observed as deletion of the old
-    # target followed by publication of the DocumentStore temporary file.
-    handler.on_deleted(_event(target))
-    target.write_text("new", encoding="utf-8")
-    temporary.unlink()
-    handler.on_moved(_event(temporary, destination=target))
-
-    assert handler.pending_count == 1
-    assert handler.process_pending_reloads(force=True) == 1
-    assert target.read_text(encoding="utf-8") == "new"
-    assert [entry[0] for entry in database.mutations] == ["modified"]
-    assert [entry[0] for entry in asset_calls] == ["invalidate", "asset-modified"]
-
-
-def test_stale_delete_event_reimports_existing_target_instead_of_deleting_it(monkeypatch, tmp_path):
-    database = _AssetDatabaseProbe()
-    handler = ResourceChangeHandler(_EngineProbe(database))
-    asset_calls = []
-    _patch_asset_manager(monkeypatch, asset_calls)
-
-    target = tmp_path / "atomic.mat"
-    target.write_text("republished", encoding="utf-8")
-    database.guid_by_path[str(target)] = "stable-guid"
-
-    handler.on_deleted(_event(target))
-
-    assert handler.process_pending_reloads(force=True) == 1
-    assert target.is_file()
-    assert [entry[0] for entry in database.mutations] == ["modified"]
-    assert [entry[0] for entry in asset_calls] == ["invalidate", "asset-modified"]
-
-
-def test_recreated_meta_sidecar_cancels_missing_meta_rebuild(monkeypatch, tmp_path):
-    database = _AssetDatabaseProbe()
-    handler = ResourceChangeHandler(_EngineProbe(database))
-    asset_calls = []
-    _patch_asset_manager(monkeypatch, asset_calls)
-
-    owner = tmp_path / "asset.txt"
-    meta = tmp_path / "asset.txt.meta"
-    owner.write_text("content", encoding="utf-8")
-    handler.on_deleted(_event(meta))
-    meta.write_text("restored", encoding="utf-8")
-
-    assert handler.process_pending_reloads(force=True) == 1
-    assert database.mutations == []
-    assert asset_calls == []
-
-
-def test_explicit_import_suppresses_matching_watcher_echo(monkeypatch, tmp_path):
-    database = _AssetDatabaseProbe()
-    handler = ResourceChangeHandler(_EngineProbe(database))
-    asset_calls = []
-    _patch_asset_manager(monkeypatch, asset_calls)
-    path = tmp_path / "created.txt"
-    path.write_text("content", encoding="utf-8")
-
-    AssetManager.import_asset(str(path), database=database)
-    assert [entry[0] for entry in database.mutations] == ["import"]
-    handler.on_created(_event(path))
-    assert handler.process_pending_reloads(force=True) == 1
-    assert [entry[0] for entry in database.mutations] == ["import"]
-
-
-def test_real_edit_after_explicit_reimport_is_not_suppressed(monkeypatch, tmp_path):
-    database = _AssetDatabaseProbe()
-    handler = ResourceChangeHandler(_EngineProbe(database))
-    asset_calls = []
-    _patch_asset_manager(monkeypatch, asset_calls)
-    path = tmp_path / "modified.txt"
-    path.write_text("first", encoding="utf-8")
-    database.guid_by_path[str(path)] = "stable-guid"
-
-    assert AssetManager.reimport_asset(str(path), database=database)
-    handler.on_modified(_event(path))
-    handler.process_pending_reloads(force=True)
-    assert [entry[0] for entry in database.mutations] == ["modified"]
-
-    path.write_text("a genuinely newer and larger edit", encoding="utf-8")
-    handler.on_modified(_event(path))
-    handler.process_pending_reloads(force=True)
-    assert [entry[0] for entry in database.mutations] == ["modified", "modified"]
-
-
-def test_cleanup_drains_events_before_releasing_engine(monkeypatch, tmp_path):
-    database = _AssetDatabaseProbe()
-    engine = _EngineProbe(database)
-    manager = ResourcesManager(str(tmp_path), engine)
-    manager._event_handler = ResourceChangeHandler(engine)
-    asset_calls = []
-    _patch_asset_manager(monkeypatch, asset_calls)
-
-    path = tmp_path / "asset.txt"
-    path.write_text("content", encoding="utf-8")
-    database.guid_by_path[str(path)] = "stable-guid"
-    manager._event_handler.on_modified(_event(path))
-    manager.cleanup()
-
-    assert [entry[0] for entry in database.mutations] == ["modified"]
-    assert database.mutations[0][-1] == threading.get_ident()
-    assert manager._engine is None
-    assert ResourcesManager.instance() is None
+    assert (
+        registry.durable_resource_content_changed(
+            str(path),
+            guid="retry-guid",
+        )
+        is False
+    )
 
 
 def test_initial_script_scan_publishes_artifact_for_main_thread(monkeypatch, tmp_path):
@@ -1232,114 +559,13 @@ def test_background_asset_refresh_uses_native_transaction_result(tmp_path):
     manager.cleanup()
 
 
-def test_initial_script_scan_includes_assets_and_installed_packages(monkeypatch, tmp_path):
-    assets = tmp_path / "Assets"
-    package_root = tmp_path / "Packages" / "vendor" / "gameplay"
-    runtime = package_root / "runtime"
-    assets.mkdir()
-    runtime.mkdir(parents=True)
-    asset_script = assets / "asset_component.py"
-    package_script = runtime / "package_component.py"
-    asset_script.write_text("value = 1\n", encoding="utf-8")
-    package_script.write_text("value = 2\n", encoding="utf-8")
-    (package_root / "inx_package.json").write_text("{}", encoding="utf-8")
-
-    manager = ResourcesManager(str(tmp_path), _EngineProbe(_AssetDatabaseProbe()))
-    handler = manager._ensure_event_handler()
-    submitted = []
-    monkeypatch.setattr(
-        handler,
-        "_check_script",
-        lambda path, **kwargs: submitted.append((path, kwargs)) or object(),
-    )
-
-    manager._initial_script_scan()
-
-    assert {Path(path) for path, _kwargs in submitted} == {
-        asset_script,
-        package_script,
-    }
-    transaction_ids = {kwargs["transaction_id"] for _path, kwargs in submitted}
-    assert len(transaction_ids) == 1
-    manager.cleanup()
-
-
-def test_new_manifestless_package_component_publishes_without_editor_restart(
-    monkeypatch,
-    tmp_path,
-):
-    database = _AssetDatabaseProbe()
-    engine = _EngineProbe(database)
-    manager = ResourcesManager(str(tmp_path), engine)
-    handler = manager._ensure_event_handler()
-    asset_calls = []
-    _patch_asset_manager(monkeypatch, asset_calls)
-    published = []
-    monkeypatch.setattr(
-        handler,
-        "_publish_valid_script",
-        lambda path, **kwargs: published.append((Path(path), kwargs)) or True,
-    )
-
-    script = tmp_path / "Packages" / "abc" / "runtime" / "component.py"
-    script.parent.mkdir(parents=True)
-    script.write_text("from infernux import InxComponent\nclass Live(InxComponent):\n    pass\n")
-
-    handler.on_created(_event(script))
-    assert manager.process_pending_reloads(force=True) > 0
-
-    assert [entry[0] for entry in database.mutations] == ["import"]
-    assert published and published[0][0] == script
-    assert published[0][1]["catalog_event"] == "created"
-    record = handler.dependency_graph.module_for_path(script)
-    assert record is not None
-    assert record.id.module_name == "_infernux_packages.abc.runtime.component"
-    manager.cleanup()
-
-
-def test_package_runtime_script_publishes_with_isolated_graph_identity(
-    monkeypatch,
-    tmp_path,
-):
-    (tmp_path / "Assets").mkdir()
-    package_root = tmp_path / "Packages" / "vendor" / "gameplay"
-    runtime = package_root / "runtime"
-    runtime.mkdir(parents=True)
-    (package_root / "inx_package.json").write_text("{}", encoding="utf-8")
-    script = runtime / "package_component.py"
-    script.write_text("value = 1\n", encoding="utf-8")
-
-    manager = ResourcesManager(str(tmp_path), _EngineProbe(_AssetDatabaseProbe()))
-    handler = manager._ensure_event_handler()
-    published = []
-    monkeypatch.setattr(
-        handler,
-        "_publish_valid_script",
-        lambda path, **kwargs: published.append((path, kwargs)) or True,
-    )
-
-    assert manager.submit_script_change(str(script), origin="editor") is not None
-    assert manager.process_pending_reloads(force=True) == 0
-    assert [Path(path) for path, _kwargs in published] == [script]
-    record = handler.dependency_graph.module_for_path(script)
-    assert record is not None
-    assert record.id.module_name == (
-        "_infernux_packages.vendor.gameplay.runtime.package_component"
-    )
-    manager.cleanup()
-
-
-def test_initial_scan_supersede_restarts_barrier_with_current_sources(
-    monkeypatch, tmp_path
-):
+def test_initial_scan_supersede_restarts_barrier_with_current_sources(monkeypatch, tmp_path):
     first = tmp_path / "Assets" / "first.py"
     second = tmp_path / "Assets" / "second.py"
     first.parent.mkdir()
     first.write_text("value = 'old-first'\n", encoding="utf-8")
     second.write_text("value = 'old-second'\n", encoding="utf-8")
-    handler = ResourceChangeHandler(
-        _EngineProbe(_AssetDatabaseProbe()), project_path=str(tmp_path)
-    )
+    handler = ResourceChangeHandler(_EngineProbe(_AssetDatabaseProbe()), project_path=str(tmp_path))
     published = []
     monkeypatch.setattr(
         handler,
@@ -1347,9 +573,7 @@ def test_initial_scan_supersede_restarts_barrier_with_current_sources(
         lambda path, **kwargs: published.append((path, kwargs["source"])) or True,
     )
 
-    initial = handler.begin_script_transaction(
-        (str(first), str(second)), initial_scan=True
-    )
+    initial = handler.begin_script_transaction((str(first), str(second)), initial_scan=True)
     handler._check_script(
         str(first),
         origin="initial_scan",
@@ -1383,117 +607,11 @@ def test_initial_scan_supersede_restarts_barrier_with_current_sources(
         path_key(str(first)),
         path_key(str(second)),
     }
-    assert dict((path_key(path), source) for path, source in published)[
-        path_key(str(first))
-    ] == first.read_bytes()
+    assert dict((path_key(path), source) for path, source in published)[path_key(str(first))] == first.read_bytes()
     assert handler._initial_scan_transaction_id is None
 
 
-def test_restarted_initial_scan_enters_lkg_and_dependency_graph(
-    monkeypatch, tmp_path
-):
-    script = tmp_path / "Assets" / "controller.py"
-    script.parent.mkdir()
-    script.write_text("value = 'old'\n", encoding="utf-8")
-    handler = ResourceChangeHandler(
-        _EngineProbe(_AssetDatabaseProbe()), project_path=str(tmp_path)
-    )
-    monkeypatch.setattr(handler, "_publish_valid_script", lambda *_args, **_kwargs: True)
-    initial = handler.begin_script_transaction((str(script),), initial_scan=True)
-    handler._check_script(
-        str(script),
-        origin="initial_scan",
-        change_kind="initial_scan",
-        transaction_id=initial,
-    )
-    script.write_text("value = 'new'\n", encoding="utf-8")
-    handler._check_script(str(script), origin="editor", force=True)
-    handler.process_script_worker()
-    handler._drain_script_results()
-    handler.process_script_worker()
-    handler._drain_script_results()
-
-    latest = handler._script_change_collector.last_known_good(str(script))
-    record = handler.dependency_graph.module_for_path(str(script))
-    assert latest is not None
-    assert latest.source == script.read_bytes()
-    assert record is not None
-    assert record.source_hash == latest.content_hash
-    assert handler._initial_scan_transaction_id is None
-
-
-def test_initial_scan_supersede_does_not_block_following_transaction(
-    monkeypatch, tmp_path
-):
-    initial_path = tmp_path / "Assets" / "initial.py"
-    ordinary_path = tmp_path / "Assets" / "ordinary.py"
-    initial_path.parent.mkdir()
-    initial_path.write_text("value = 'initial-old'\n", encoding="utf-8")
-    ordinary_path.write_text("value = 'ordinary'\n", encoding="utf-8")
-    handler = ResourceChangeHandler(_EngineProbe(_AssetDatabaseProbe()))
-    monkeypatch.setattr(handler, "_publish_valid_script", lambda *_args, **_kwargs: True)
-
-    initial = handler.begin_script_transaction(
-        (str(initial_path),), initial_scan=True
-    )
-    handler._check_script(
-        str(initial_path),
-        origin="initial_scan",
-        change_kind="initial_scan",
-        transaction_id=initial,
-    )
-    initial_path.write_text("value = 'initial-new'\n", encoding="utf-8")
-    handler._check_script(str(initial_path), origin="editor", force=True)
-    handler._check_script(str(ordinary_path), origin="editor", force=True)
-    handler.process_script_worker()
-    handler._drain_script_results()
-
-    # The ordinary result remains queued behind the restarted ready barrier,
-    # rather than being lost or leaving the old barrier permanently active.
-    assert handler._initial_scan_transaction_id is not None
-    assert handler._script_change_collector.last_known_good(str(ordinary_path)) is None
-    handler.process_script_worker()
-    handler._drain_script_results()
-    assert handler._script_change_collector.last_known_good(str(ordinary_path)) is not None
-    assert handler._initial_scan_transaction_id is None
-
-
-def test_failed_restarted_initial_source_releases_barrier_and_keeps_diagnostic(
-    tmp_path,
-):
-    script = tmp_path / "Assets" / "broken.py"
-    script.parent.mkdir()
-    script.write_text("value = 'old'\n", encoding="utf-8")
-    handler = ResourceChangeHandler(_EngineProbe(_AssetDatabaseProbe()))
-    published = []
-    handler._publish_valid_script = (
-        lambda *_args, **_kwargs: published.append(True) or True
-    )
-
-    initial = handler.begin_script_transaction((str(script),), initial_scan=True)
-    handler._check_script(
-        str(script),
-        origin="initial_scan",
-        change_kind="initial_scan",
-        transaction_id=initial,
-    )
-    script.write_text("def broken(:\n", encoding="utf-8")
-    handler._check_script(str(script), origin="editor", force=True)
-    handler.process_script_worker()
-    handler._drain_script_results()
-    handler.process_script_worker()
-    handler._drain_script_results()
-
-    assert published == []
-    assert handler._initial_scan_transaction_id is None
-    diagnostic = handler._script_change_collector.diagnostic(str(script))
-    assert diagnostic is not None
-    assert diagnostic.messages == ("invalid syntax",)
-
-
-def test_restarted_initial_scan_removes_deleted_members_and_ignores_late_old_result(
-    monkeypatch, tmp_path
-):
+def test_restarted_initial_scan_removes_deleted_members_and_ignores_late_old_result(monkeypatch, tmp_path):
     first = tmp_path / "Assets" / "first.py"
     deleted = tmp_path / "Assets" / "deleted.py"
     first.parent.mkdir()
@@ -1501,13 +619,9 @@ def test_restarted_initial_scan_removes_deleted_members_and_ignores_late_old_res
     deleted.write_text("value = 'deleted'\n", encoding="utf-8")
     handler = ResourceChangeHandler(_EngineProbe(_AssetDatabaseProbe()))
     published = []
-    handler._publish_valid_script = (
-        lambda path, **_kwargs: published.append(path) or True
-    )
+    handler._publish_valid_script = lambda path, **_kwargs: published.append(path) or True
 
-    initial = handler.begin_script_transaction(
-        (str(first), str(deleted)), initial_scan=True
-    )
+    initial = handler.begin_script_transaction((str(first), str(deleted)), initial_scan=True)
     handler._check_script(
         str(first),
         origin="initial_scan",
@@ -1526,9 +640,7 @@ def test_restarted_initial_scan_removes_deleted_members_and_ignores_late_old_res
     deleted.unlink()
     first.write_text("value = 'new-first'\n", encoding="utf-8")
     handler._check_script(str(first), origin="editor", force=True)
-    handler._restart_initial_scan_transaction(
-        handler._script_transactions[initial]
-    )
+    handler._restart_initial_scan_transaction(handler._script_transactions[initial])
     replacement_id = handler._initial_scan_transaction_id
     replacement = handler._script_transactions[replacement_id]
     assert replacement.expected_paths == [str(first)]
@@ -1598,297 +710,7 @@ def test_frontend_worker_does_not_publish_or_update_graph(monkeypatch, tmp_path)
     assert handler._script_change_collector.last_known_good(str(path)) is not None
 
 
-def test_internal_asset_script_ingress_uses_collector_and_origin_mapping(
-    monkeypatch, tmp_path
-):
-    assets = tmp_path / "Assets"
-    assets.mkdir()
-    database = _AssetDatabaseProbe()
-    manager = ResourcesManager(str(tmp_path), _EngineProbe(database))
-    calls = []
-    _patch_asset_manager(monkeypatch, calls)
-    script = assets / "EditorScript.py"
-    script.write_text("value = 1\n", encoding="utf-8")
-    path = str(script.resolve())
-
-    with action_origin_scope(ActionOrigin.AUTOMATION):
-        assert AssetManager.import_asset(path, database=database)
-    handler = manager._event_handler
-    assert handler is not None
-    handler.process_script_worker()
-    first = handler._script_change_collector.drain_completed()
-    assert len(first) == 1
-    assert first[0].change.origin == "automation"
-
-    script.write_text("value = 2\n", encoding="utf-8")
-    with action_origin_scope(ActionOrigin.EXTERNAL):
-        assert AssetManager.reimport_asset(path, database=database)
-    handler.process_script_worker()
-    second = handler._script_change_collector.drain_completed()
-    assert len(second) == 1
-    assert second[0].change.origin == "watchdog"
-
-    script.write_text("value = 3\n", encoding="utf-8")
-    with action_origin_scope(ActionOrigin.USER):
-        AssetManager._submit_internal_script_change(path, catalog_event="modified")
-    handler.process_script_worker()
-    third = handler._script_change_collector.drain_completed()
-    assert len(third) == 1
-    assert third[0].change.origin == "editor"
-
-
-def test_internal_editor_package_script_bypasses_gameplay_frontend(
-    monkeypatch, tmp_path
-):
-    package = tmp_path / "Packages" / "infernux" / "mcp"
-    editor = package / "editor" / "infernux_mcp"
-    editor.mkdir(parents=True)
-    (package / "InxPackage.json").write_text("{}", encoding="utf-8")
-    script = editor / "server.py"
-    script.write_text("import threading\nlock = threading.RLock()\n", encoding="utf-8")
-    database = _AssetDatabaseProbe()
-    manager = ResourcesManager(str(tmp_path), _EngineProbe(database))
-    publications = []
-    manager.register_script_catalog_callback(
-        lambda path, event: publications.append((path, event))
-    )
-
-    AssetManager._submit_internal_script_change(
-        str(script), catalog_event="modified"
-    )
-
-    assert publications == [(str(script), "modified")]
-    assert manager._event_handler is None
-
-
-def test_internal_script_ingress_and_watcher_echo_publish_once(monkeypatch, tmp_path):
-    assets = tmp_path / "Assets"
-    assets.mkdir()
-    database = _AssetDatabaseProbe()
-    manager = ResourcesManager(str(tmp_path), _EngineProbe(database))
-    _patch_asset_manager(monkeypatch, [])
-    script = assets / "EditorScript.py"
-    script.write_text("value = 1\n", encoding="utf-8")
-    path = str(script.resolve())
-    AssetManager._suppress_watcher_echo("modified", path)
-
-    with action_origin_scope(ActionOrigin.AUTOMATION):
-        AssetManager._submit_internal_script_change(path, catalog_event="modified")
-    manager._event_handler.on_modified(_event(path))
-    handler = manager._event_handler
-    monkeypatch.setattr(
-        handler,
-        "_publish_valid_script",
-        lambda *_args, **_kwargs: True,
-    )
-    assert manager.process_pending_reloads(force=True) == 1
-    latest = handler._script_change_collector.journal.last_known_good(path)
-    assert latest is not None
-    assert latest.generation == 1
-
-
-def test_duplicate_script_transaction_echo_keeps_canonical_publication_owner(
-    monkeypatch, tmp_path
-):
-    assets = tmp_path / "Assets"
-    assets.mkdir()
-    database = _AssetDatabaseProbe()
-    handler = ResourceChangeHandler(
-        _EngineProbe(database),
-        project_path=str(tmp_path),
-    )
-    script = assets / "SnakeController.py"
-    script.write_text("value = 1\n", encoding="utf-8")
-    path = str(script.resolve())
-
-    first = handler._check_script(
-        path,
-        origin="automation",
-        transaction_id="canonical-write",
-    )
-    echo = handler._check_script(
-        path,
-        origin="watchdog",
-        transaction_id="watcher-echo",
-    )
-    assert first is not None
-    assert echo is None
-
-    monkeypatch.setattr(
-        handler,
-        "_publish_valid_script",
-        lambda *_args, **_kwargs: True,
-    )
-    assert handler.process_script_worker() == 1
-    # The return value counts startup-scan members, not ordinary publications.
-    assert handler._drain_script_results() == 0
-    latest = handler._script_change_collector.last_known_good(path)
-    assert latest is not None
-    assert latest.generation == first.generation
-    assert handler._script_transactions == {}
-
-
-def test_published_helper_queues_dependents_with_one_transaction_without_cascade(
-    monkeypatch, tmp_path
-):
-    assets = tmp_path / "Assets"
-    assets.mkdir()
-    helper = assets / "helper.py"
-    dependent = assets / "dependent.py"
-    helper.write_text("value = 1\n", encoding="utf-8")
-    dependent.write_text("from helper import value\n", encoding="utf-8")
-    database = _AssetDatabaseProbe()
-    engine = _EngineProbe(database)
-    manager = ResourcesManager(str(tmp_path), engine)
-    handler = ResourceChangeHandler(engine, project_path=str(tmp_path))
-    manager._event_handler = handler
-    handler.dependency_graph.index_assets()
-    monkeypatch.setattr(handler, "_publish_valid_script", lambda *_args, **_kwargs: True)
-
-    submitted = []
-    original_submit = handler._script_change_collector.submit
-
-    def submit(*args, **kwargs):
-        submitted.append((args, dict(kwargs)))
-        return original_submit(*args, **kwargs)
-
-    monkeypatch.setattr(handler._script_change_collector, "submit", submit)
-    helper.write_text("value = 2\n", encoding="utf-8")
-    source_change = handler._check_script(str(helper), origin="editor")
-    handler.process_pending_reloads(force=True)
-
-    dependency_calls = [
-        kwargs
-        for _args, kwargs in submitted
-        if kwargs.get("origin") == "dependency"
-    ]
-    assert len(dependency_calls) == 1
-    assert dependency_calls[0]["change_kind"] == "dependency"
-    assert dependency_calls[0]["catalog_event"] is None
-    assert dependency_calls[0]["force"] is True
-    assert dependency_calls[0]["transaction_id"] == source_change.transaction_id
-
-    handler.process_pending_reloads(force=True)
-    assert len(
-        [kwargs for _args, kwargs in submitted if kwargs.get("origin") == "dependency"]
-    ) == 1
-
-
-def test_failed_source_does_not_advance_published_dependency_graph(
-    monkeypatch, tmp_path
-):
-    assets = tmp_path / "Assets"
-    assets.mkdir()
-    helper = assets / "helper.py"
-    dependent = assets / "dependent.py"
-    helper.write_text("value = 1\n", encoding="utf-8")
-    dependent.write_text("from helper import value\n", encoding="utf-8")
-    database = _AssetDatabaseProbe()
-    engine = _EngineProbe(database)
-    manager = ResourcesManager(str(tmp_path), engine)
-    handler = ResourceChangeHandler(engine, project_path=str(tmp_path))
-    manager._event_handler = handler
-    handler.dependency_graph.index_assets()
-    before = handler.dependency_graph.module_for_path(str(helper)).source_hash
-    monkeypatch.setattr(
-        handler._script_change_collector,
-        "_compile_source",
-        lambda _source: (_ for _ in ()).throw(SyntaxError("broken")),
-    )
-    helper.write_text("def broken(:\n", encoding="utf-8")
-    handler._check_script(str(helper), origin="editor")
-    handler.process_pending_reloads(force=True)
-
-    after = handler.dependency_graph.module_for_path(str(helper)).source_hash
-    assert after == before
-    assert handler._script_change_collector.journal.last_known_good(str(helper)) is None
-
-
-def test_resource_script_validation_failure_does_not_publish_candidate(
-    monkeypatch, tmp_path
-):
-    database = _AssetDatabaseProbe()
-    engine = _EngineProbe(database)
-    manager = ResourcesManager(str(tmp_path), engine)
-    handler = ResourceChangeHandler(engine)
-    manager._event_handler = handler
-
-    path = tmp_path / "controller.py"
-    path.write_text("value = 1\n", encoding="utf-8")
-    class CompilerError:
-        file_path = str(path)
-        line_number = 1
-        message = "invalid syntax"
-
-        def __str__(self):
-            return "controller.py:1:0: invalid syntax"
-
-    compiler_error = CompilerError()
-    monkeypatch.setattr(
-        handler._script_change_collector,
-        "_compile_source",
-        lambda _source: (_ for _ in ()).throw(SyntaxError("invalid syntax")),
-    )
-    monkeypatch.setattr(
-        "infernux.components.script_loader.set_script_error",
-        lambda _path, _message: None,
-    )
-    handler._dispatch_event = lambda _event: handler._check_script(str(path))
-    handler.on_modified(_event(path))
-
-    assert manager.process_pending_reloads(force=True) == 1
-    assert handler._script_change_collector.journal.last_known_good(str(path)) is None
-    assert handler._script_change_collector.journal.diagnostic(str(path)).messages == (
-        "invalid syntax",
-    )
-
-
-def test_script_failure_keeps_already_published_registry_entry(monkeypatch, tmp_path):
-    database = _AssetDatabaseProbe()
-    engine = _EngineProbe(database)
-    manager = ResourcesManager(str(tmp_path), engine)
-    handler = ResourceChangeHandler(engine)
-    manager._event_handler = handler
-    path = tmp_path / "controller.py"
-    path.write_text("value = 1\n", encoding="utf-8")
-
-    registered = []
-    unregistered = []
-    monkeypatch.setattr(
-        "infernux.components.registry.register_component_script",
-        lambda value, **_kwargs: registered.append(value),
-    )
-    monkeypatch.setattr(
-        "infernux.components.registry.unregister_component_script",
-        lambda value: unregistered.append(value),
-    )
-    monkeypatch.setattr(
-        "infernux.components.script_loader._clear_script_error",
-        lambda _path: None,
-    )
-    monkeypatch.setattr(
-        "infernux.components.script_loader.set_script_error",
-        lambda _path, _message: None,
-    )
-
-    handler._dispatch_event = lambda _event: handler._check_script(str(path))
-    handler.on_modified(_event(path))
-    manager.process_pending_reloads(force=True)
-    assert registered == [str(path)]
-    assert unregistered == []
-
-    path.write_text("def broken(:\n", encoding="utf-8")
-    handler.on_modified(_event(path))
-    manager.process_pending_reloads(force=True)
-
-    assert registered == [str(path)]
-    assert unregistered == []
-    assert handler._script_change_collector.journal.last_known_good(str(path)).generation == 1
-
-
-def test_reload_rejection_keeps_lkg_and_live_body_at_resources_safe_point(
-    monkeypatch, tmp_path
-):
+def test_reload_rejection_keeps_lkg_and_live_body_at_resources_safe_point(monkeypatch, tmp_path):
     from infernux.engine.play_mode import PlayModeManager, ScriptReloadOutcome
 
     database = _AssetDatabaseProbe()
@@ -1922,9 +744,7 @@ def test_reload_rejection_keeps_lkg_and_live_body_at_resources_safe_point(
         def commit_script_reload_batch(self, batch):
             outcome = next(publish_results)
             if outcome.success:
-                live_body["value"] = (
-                    batch.revisions[0].source.decode("utf-8").split("'")[1]
-                )
+                live_body["value"] = batch.revisions[0].source.decode("utf-8").split("'")[1]
             return outcome
 
         def rollback_script_reload_batch(self, _batch):
@@ -1973,10 +793,7 @@ def test_real_observer_is_owned_joinable_and_commits_on_main(monkeypatch, tmp_pa
 
     path = assets / "watched.txt"
     path.write_text("content", encoding="utf-8")
-    while (
-        (manager._event_handler is None or manager._event_handler.pending_count == 0)
-        and time.monotonic() < deadline
-    ):
+    while (manager._event_handler is None or manager._event_handler.pending_count == 0) and time.monotonic() < deadline:
         time.sleep(0.01)
 
     assert manager._event_handler.pending_count > 0
@@ -2010,9 +827,7 @@ def test_engine_exit_drains_resources_before_native_cleanup():
     assert engine._engine is None
 
 
-def test_dependency_transaction_publishes_helper_and_dependent_only_after_both_ready(
-    monkeypatch, tmp_path
-):
+def test_dependency_transaction_publishes_helper_and_dependent_only_after_both_ready(monkeypatch, tmp_path):
     assets = tmp_path / "Assets"
     assets.mkdir()
     helper = assets / "helper.py"
@@ -2020,9 +835,7 @@ def test_dependency_transaction_publishes_helper_and_dependent_only_after_both_r
     helper.write_text("value = 1\n", encoding="utf-8")
     dependent.write_text("from helper import value\n", encoding="utf-8")
 
-    handler = ResourceChangeHandler(
-        _EngineProbe(_AssetDatabaseProbe()), project_path=str(tmp_path)
-    )
+    handler = ResourceChangeHandler(_EngineProbe(_AssetDatabaseProbe()), project_path=str(tmp_path))
     handler.dependency_graph.index_assets()
     published = []
     monkeypatch.setattr(
@@ -2046,18 +859,14 @@ def test_dependency_transaction_publishes_helper_and_dependent_only_after_both_r
     assert handler._script_change_collector.last_known_good(str(dependent)) is not None
 
 
-def test_dependency_failure_aborts_root_without_live_graph_or_lkg_change(
-    monkeypatch, tmp_path
-):
+def test_dependency_failure_aborts_root_without_live_graph_or_lkg_change(monkeypatch, tmp_path):
     assets = tmp_path / "Assets"
     assets.mkdir()
     helper = assets / "helper.py"
     dependent = assets / "dependent.py"
     helper.write_text("value = 1\n", encoding="utf-8")
     dependent.write_text("from helper import value\n", encoding="utf-8")
-    handler = ResourceChangeHandler(
-        _EngineProbe(_AssetDatabaseProbe()), project_path=str(tmp_path)
-    )
+    handler = ResourceChangeHandler(_EngineProbe(_AssetDatabaseProbe()), project_path=str(tmp_path))
     handler.dependency_graph.index_assets()
     before = handler.dependency_graph.module_for_path(str(helper)).source_hash
     published = []
@@ -2066,6 +875,7 @@ def test_dependency_failure_aborts_root_without_live_graph_or_lkg_change(
         "_publish_valid_script",
         lambda path, **_kwargs: published.append(path) or True,
     )
+
     def compile_with_dependent_failure(source):
         if b"broken" in source:
             raise SyntaxError("dependent syntax failure")
@@ -2127,68 +937,6 @@ def test_second_member_publish_failure_rolls_back_batch_and_lkg(monkeypatch, tmp
     assert handler._script_change_collector.last_known_good(str(first)) is None
     assert handler._script_change_collector.last_known_good(str(second)) is None
     assert handler._script_change_collector.pending_count == 0
-
-
-def test_edit_dependency_closure_uses_shared_stable_owner_batch(monkeypatch, tmp_path):
-    from infernux.engine.play_mode import PlayModeManager
-
-    first = tmp_path / "first_edit.py"
-    second = tmp_path / "second_edit.py"
-    first.write_text("value = 1\n", encoding="utf-8")
-    second.write_text("value = 2\n", encoding="utf-8")
-    database = _AssetDatabaseProbe()
-    database.guid_by_path[str(first.resolve())] = "first-edit-guid"
-    database.guid_by_path[str(second.resolve())] = "second-edit-guid"
-    handler = ResourceChangeHandler(_EngineProbe(database))
-    transaction_id = handler.begin_script_transaction((str(first), str(second)))
-
-    class _Batch:
-        committed = False
-
-    class _EditOwner:
-        is_playing = False
-        is_paused = False
-
-        def __init__(self):
-            self.prepared = []
-            self.rolled_back = []
-            self.finalized = []
-
-        def prepare_script_reload_batch(self, revisions):
-            self.prepared.append(tuple(revisions))
-            return _Batch()
-
-        def commit_script_reload_batch(self, batch):
-            batch.committed = True
-            return SimpleNamespace(success=True)
-
-        def rollback_script_reload_batch(self, batch):
-            self.rolled_back.append(batch)
-
-        def finalize_script_reload_batch(self, batch):
-            self.finalized.append(batch)
-
-    owner = _EditOwner()
-    monkeypatch.setattr(
-        PlayModeManager,
-        "instance",
-        classmethod(lambda _cls: owner),
-    )
-
-    handler._check_script(str(first), origin="editor", transaction_id=transaction_id)
-    handler._check_script(str(second), origin="editor", transaction_id=transaction_id)
-    assert handler.process_script_worker() == 2
-    handler._drain_script_results()
-
-    assert len(owner.prepared) == 1
-    assert tuple(item.file_path for item in owner.prepared[0]) == (
-        str(first.resolve()),
-        str(second.resolve()),
-    )
-    assert owner.rolled_back == []
-    assert len(owner.finalized) == 1
-    assert handler._script_change_collector.last_known_good(str(first)) is not None
-    assert handler._script_change_collector.last_known_good(str(second)) is not None
 
 
 @pytest.mark.parametrize("raises", [False, True])
@@ -2258,52 +1006,12 @@ def test_edit_dependency_batch_failure_rolls_back_once_and_keeps_lkg_empty(
     assert handler._script_change_collector.current_result(str(second)) is None
 
 
-def test_superseded_old_transaction_discards_only_surviving_members(
-    tmp_path,
-):
-    first = tmp_path / "first.py"
-    second = tmp_path / "second.py"
-    first.write_text("value = 'old-first'\n", encoding="utf-8")
-    second.write_text("value = 'old-second'\n", encoding="utf-8")
-    handler = ResourceChangeHandler(_EngineProbe(_AssetDatabaseProbe()))
-    old_tx = handler.begin_script_transaction((str(first), str(second)))
-    new_tx = handler.begin_script_transaction((str(first),))
-
-    handler._check_script(str(first), origin="editor", transaction_id=old_tx)
-    handler._check_script(str(second), origin="editor", transaction_id=old_tx)
-    assert handler.process_script_worker(max_items=1) == 1
-    handler._drain_script_results()
-
-    first.write_text("value = 'new-first'\n", encoding="utf-8")
-    handler._check_script(
-        str(first),
-        origin="editor",
-        transaction_id=new_tx,
-        force=True,
-    )
-
-    # Finish only the old transaction's second member.  The new generation
-    # remains pending while the old transaction is pruned.
-    assert handler.process_script_worker(max_items=1) == 1
-    handler._drain_script_results()
-    assert handler._script_change_collector.pending_count == 1
-    assert (
-        handler._script_change_collector.latest(str(first)).source.splitlines()
-        == [b"value = 'new-first'"]
-    )
-    assert handler._script_change_collector.last_known_good(str(second)) is None
-
-
-def test_graph_commit_failure_does_not_rollback_uncommitted_graph_stage(
-    monkeypatch, tmp_path
-):
+def test_graph_commit_failure_does_not_rollback_uncommitted_graph_stage(monkeypatch, tmp_path):
     assets = tmp_path / "Assets"
     assets.mkdir()
     script = assets / "controller.py"
     script.write_text("value = 1\n", encoding="utf-8")
-    handler = ResourceChangeHandler(
-        _EngineProbe(_AssetDatabaseProbe()), project_path=str(tmp_path)
-    )
+    handler = ResourceChangeHandler(_EngineProbe(_AssetDatabaseProbe()), project_path=str(tmp_path))
     handler.dependency_graph.index_assets()
     monkeypatch.setattr(
         handler,

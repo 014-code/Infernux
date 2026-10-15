@@ -133,10 +133,7 @@ class _PublishBarrierComponent(InxComponent):
         if self._cpp_component.component_id != self.component_id:
             raise RuntimeError("stable component ID was not installed before callback")
         scene = self.game_object.scene
-        published_count = sum(
-            len(obj.get_py_components())
-            for obj in scene.get_all_objects()
-        )
+        published_count = sum(len(obj.get_py_components()) for obj in scene.get_all_objects())
         if published_count != 2:
             raise RuntimeError("Python graph was not fully attached before callback")
         type(self)._events.append(("after", self.value))
@@ -154,10 +151,7 @@ def _native_record(object_document: dict, type_name: str) -> dict:
 
 
 def _python_records(object_document: dict) -> list[dict]:
-    return [
-        record for record in object_document["components"]
-        if str(record.get("type_id", "")).startswith("python:")
-    ]
+    return [record for record in object_document["components"] if str(record.get("type_id", "")).startswith("python:")]
 
 
 def _python_type_id(instance: InxComponent) -> str:
@@ -182,6 +176,7 @@ def _cds_alive_count(component_type) -> int:
     class_info = get_class_info(component_type)
     assert class_info is not None
     from infernux import lib
+
     return lib._cds_alive_count(class_info[0])
 
 
@@ -201,14 +196,14 @@ class _CameraCleanupSceneComponent(InxComponent):
     def on_disable(self):
         camera = self.target_component
         if camera is None:
-            type(self)._cleanup_results.append('missing')
+            type(self)._cleanup_results.append("missing")
             return
         try:
             camera.reset_view_matrix()
         except ReferenceError as exc:
             type(self)._cleanup_results.append(str(exc))
         else:
-            type(self)._cleanup_results.append('valid')
+            type(self)._cleanup_results.append("valid")
 
 
 class _CloneSettings(SerializableObject):
@@ -236,7 +231,7 @@ def test_scene_deleted_id_watermarks_survive_a_fresh_process(tmp_path):
     from infernux.lib import _Infernux
 
     path = tmp_path / "Deleted.scene"
-    source = '''
+    source = """
 import json, sys
 from pathlib import Path
 from infernux.lib import SceneManager
@@ -251,8 +246,8 @@ document = scene.serialize_document()
 assert document["nextObjectId"] > object_id
 assert document["nextComponentId"] > component_id
 Path(sys.argv[1]).write_text(json.dumps(document), encoding="utf-8")
-'''
-    restore = '''
+"""
+    restore = """
 import json, sys
 from pathlib import Path
 from infernux.lib import SceneManager
@@ -264,13 +259,19 @@ obj = scene.create_game_object("New")
 component = obj.add_component("BoxCollider")
 assert obj.id >= document["nextObjectId"]
 assert component.component_id >= document["nextComponentId"]
-'''
+"""
     for script in (source, restore):
         environment = os.environ.copy()
         environment["INFERNUX_NATIVE_MODULE_DIR"] = str(Path(_Infernux.__file__).parent)
         environment["PYTHONPATH"] = str((Path(__file__).resolve().parents[2] / "python"))
-        result = subprocess.run([sys.executable, "-c", script, str(path)], capture_output=True,
-                                text=True, encoding="utf-8", timeout=30, env=environment)
+        result = subprocess.run(
+            [sys.executable, "-c", script, str(path)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=30,
+            env=environment,
+        )
         assert result.returncode == 0, result.stdout + result.stderr
 
 
@@ -283,8 +284,6 @@ def test_removed_component_watermark_is_persisted_without_saving_the_live_compon
 
 
 class TestSceneLifecycle:
-
-
     def test_public_loaded_scene_directory_is_distinct_from_build_list(self, scene, monkeypatch):
         from infernux.scene import SceneManager as PublicSceneManager
 
@@ -295,13 +294,14 @@ class TestSceneLifecycle:
             monkeypatch.setattr(
                 PublicSceneManager,
                 "_load_build_list",
-                staticmethod(lambda: ["/project/pytest_scene.scene", "/project/AdditiveDirectory.scene", "/project/Unused.scene"]),
+                staticmethod(
+                    lambda: ["/project/pytest_scene.scene", "/project/AdditiveDirectory.scene", "/project/Unused.scene"]
+                ),
             )
             assert PublicSceneManager.get_scene_count() == loaded_before + 1
             assert PublicSceneManager.get_scene_count_in_build_settings() == 3
             assert any(
-                PublicSceneManager.get_scene_at(index) is scene
-                for index in range(PublicSceneManager.get_scene_count())
+                PublicSceneManager.get_scene_at(index) is scene for index in range(PublicSceneManager.get_scene_count())
             )
             assert PublicSceneManager.get_scene_at(loaded_before) is additive
             assert PublicSceneManager.get_scene_at(loaded_before + 1) is None
@@ -314,9 +314,7 @@ class TestSceneLifecycle:
             native.set_active_scene(scene)
             native.unload_scene(additive)
 
-    def test_additive_transaction_remaps_object_component_and_python_references(
-        self, scene, tmp_path, monkeypatch
-    ):
+    def test_additive_transaction_remaps_object_component_and_python_references(self, scene, tmp_path, monkeypatch):
         from infernux.engine.scene_manager import SceneFileManager
         from infernux.scene import LoadSceneMode, SceneManager as PublicSceneManager
 
@@ -352,9 +350,7 @@ class TestSceneLifecycle:
 
         additive = None
         try:
-            assert PublicSceneManager.load_scene(
-                "AdditiveIdentityCopy", LoadSceneMode.ADDITIVE
-            ) is True
+            assert PublicSceneManager.load_scene("AdditiveIdentityCopy", LoadSceneMode.ADDITIVE) is True
             assert native.get_active_scene() is scene
             assert native.scene_count == loaded_before + 1
             additive = native.get_scene_at(loaded_before)
@@ -386,9 +382,7 @@ class TestSceneLifecycle:
             if additive is not None:
                 native.unload_scene(additive)
 
-    def test_player_service_additive_loads_cataloged_scene_into_running_world(
-        self, scene, tmp_path
-    ):
+    def test_player_service_additive_loads_cataloged_scene_into_running_world(self, scene, tmp_path):
         from infernux.engine.player_scene import PlayerSceneService
         from infernux.engine.player_service_graph import PlayerRuntimeAssetCatalog
 
@@ -430,17 +424,17 @@ class TestSceneLifecycle:
         )
         service = PlayerSceneService()
         service.bind_runtime_catalog(catalog)
-        baseline_worlds = {
-            int(manager.get_scene_at(index).world_id)
-            for index in range(int(manager.scene_count))
-        }
+        baseline_worlds = {int(manager.get_scene_at(index).world_id) for index in range(int(manager.scene_count))}
         additive = None
         manager.play()
         try:
-            assert service.request_prepared_load(
-                "player-additive-scene-guid",
-                mode="additive",
-            ) is True
+            assert (
+                service.request_prepared_load(
+                    "player-additive-scene-guid",
+                    mode="additive",
+                )
+                is True
+            )
             deadline = time.monotonic() + 3.0
             while service.is_load_pending and time.monotonic() < deadline:
                 service.process_pending_load()
@@ -484,9 +478,10 @@ class TestSceneLifecycle:
             assert GameObjectQuery.find("SharedQueryName") is active_match
             assert GameObjectQuery.find("MovedAcrossScenes") is moved_root
             assert GameObject.find("MovedAcrossScenes") is moved_root
-            assert {
-                obj.id for obj in GameObjectQuery.find_game_objects_with_tag("WorldQueryTag")
-            } == {active_match.id, moved_root.id}
+            assert {obj.id for obj in GameObjectQuery.find_game_objects_with_tag("WorldQueryTag")} == {
+                active_match.id,
+                moved_root.id,
+            }
             assert GameObjectQuery.find_game_objects_in_layer(7) == [moved_root]
 
             PublicSceneManager.move_game_object_to_scene(moved_root, destination)
@@ -521,7 +516,6 @@ class TestGameObject:
             game_object.serialize_document()
         with pytest.raises(RuntimeError, match="intentional serialization failure"):
             scene.serialize_document()
-
 
     def test_object_handles_reject_rebuilt_scene_lifetimes(self, scene):
         go = scene.create_game_object("HandleOwner")
@@ -559,7 +553,6 @@ class TestGameObject:
 
         assert scene.resolve_game_object(wrong_world) is None
 
-
     def test_python_component_queries_follow_stable_type_identity_across_reload(self, scene):
         namespace = {"__module__": __name__, "__qualname__": "_ReloadedQueryComponent"}
         old_type = type("_ReloadedQueryComponent", (InxComponent,), dict(namespace))
@@ -579,219 +572,6 @@ class TestGameObject:
         assert child.get_component_in_parent(new_type) is component
 
 
-    def test_multi_owner_component_removal_restores_adjacent_order_identity_and_selection(self, scene):
-        from infernux.engine.interaction import SelectionService, SelectionSnapshot, SelectionTarget
-        from infernux.engine.undo import RemoveComponentsCommand, RemoveNativeComponentCommand
-        first = scene.create_game_object('ComponentOwnerA')
-        collider = first.add_component('BoxCollider')
-        light = first.add_component('Light')
-        audio = first.add_component('AudioSource')
-        camera = first.add_component('Camera')
-        second = scene.create_game_object('ComponentOwnerB')
-        second_collider = second.add_component('BoxCollider')
-        order = tuple(first.get_component_order())
-        identities = (light.component_id, audio.component_id, second_collider.component_id)
-        before = SelectionSnapshot.create((SelectionTarget.component(first.id, light.component_id),
-            SelectionTarget.component(first.id, audio.component_id),
-            SelectionTarget.component(second.id, second_collider.component_id)), owner_id='inspector',
-            primary=SelectionTarget.component(second.id, second_collider.component_id))
-        after = SelectionSnapshot.create((SelectionTarget.scene_object(first.id), SelectionTarget.scene_object(second.id)),
-            owner_id='inspector', primary=SelectionTarget.scene_object(second.id))
-        previous = SelectionService._instance
-        selection = SelectionService()
-        selection.apply_snapshot(before, record_history=False)
-        command = RemoveComponentsCommand((RemoveNativeComponentCommand(first.id, 'Light', light),
-            RemoveNativeComponentCommand(first.id, 'AudioSource', audio),
-            RemoveNativeComponentCommand(second.id, 'BoxCollider', second_collider)), before, after)
-        try:
-            command.execute()
-            assert tuple(first.get_component_order()) == (collider.component_id, camera.component_id)
-            assert second.get_component('BoxCollider') is None and selection.snapshot == after
-            command.undo()
-            assert tuple(first.get_component_order()) == order
-            assert (first.get_component('Light').component_id, first.get_component('AudioSource').component_id,
-                    second.get_component('BoxCollider').component_id) == identities
-            assert selection.snapshot == before
-            command.redo()
-            assert tuple(first.get_component_order()) == (collider.component_id, camera.component_id)
-            assert second.get_component('BoxCollider') is None and selection.snapshot == after
-        finally:
-            SelectionService._instance = previous
-
-    def test_component_order_is_atomic_and_undoable(self, scene):
-        from infernux.engine.interaction import SelectionService, SelectionTarget
-        from infernux.engine.undo import ReorderComponentsCommand, UndoManager
-
-        obj = scene.create_game_object("ComponentOrder")
-        collider = obj.add_component("BoxCollider")
-        light = obj.add_component("Light")
-        audio = obj.add_component("AudioSource")
-        before = tuple(obj.get_component_order())
-        expected_ids = (
-            int(collider.component_id),
-            int(light.component_id),
-            int(audio.component_id),
-        )
-        assert before == expected_ids
-
-        assert not obj.set_component_order([before[0], before[0], before[2]])
-        assert tuple(obj.get_component_order()) == before
-        assert not obj.set_component_order([before[0], before[1]])
-        assert tuple(obj.get_component_order()) == before
-
-        after = (before[2], before[0], before[1])
-        previous_selection = SelectionService._instance
-        previous_undo = UndoManager._instance
-        selection = SelectionService()
-        manager = UndoManager()
-        selection.select(
-            SelectionTarget.component(obj.id, before[0], sub_kind="native"),
-            owner_id="inspector",
-            record_history=False,
-        )
-        command = ReorderComponentsCommand([(obj.id, before, after)])
-        try:
-            assert manager.execute(command)
-            assert tuple(obj.get_component_order()) == after
-            assert selection.snapshot.primary == SelectionTarget.component(
-                obj.id, before[0], sub_kind="native"
-            )
-
-            manager.undo()
-            assert tuple(obj.get_component_order()) == before
-            assert selection.snapshot.primary == SelectionTarget.component(
-                obj.id, before[0], sub_kind="native"
-            )
-
-            manager.redo()
-            assert tuple(obj.get_component_order()) == after
-            assert selection.snapshot.primary == SelectionTarget.component(
-                obj.id, before[0], sub_kind="native"
-            )
-        finally:
-            UndoManager._instance = previous_undo
-            SelectionService._instance = previous_selection
-
-    def test_multi_object_component_reorder_is_one_atomic_action(self, scene):
-        from infernux.engine.interaction import SelectionService, SelectionTarget
-        from infernux.engine.undo import ReorderComponentsCommand, UndoManager
-
-        first = scene.create_game_object("FirstComponentOrder")
-        second = scene.create_game_object("SecondComponentOrder")
-        first_components = tuple(
-            first.add_component(type_name)
-            for type_name in ("BoxCollider", "Light", "AudioSource")
-        )
-        second_components = tuple(
-            second.add_component(type_name)
-            for type_name in ("BoxCollider", "Light", "AudioSource")
-        )
-        first_before = tuple(first.get_component_order())
-        second_before = tuple(second.get_component_order())
-        first_after = (first_before[2], first_before[0], first_before[1])
-        second_after = (second_before[2], second_before[0], second_before[1])
-
-        previous_selection = SelectionService._instance
-        previous_undo = UndoManager._instance
-        selection = SelectionService()
-        manager = UndoManager()
-        selected = tuple(
-            SelectionTarget.component(owner.id, component.component_id, sub_kind="native")
-            for owner, component in (
-                (first, first_components[2]),
-                (second, second_components[2]),
-            )
-        )
-        selection.replace(
-            selected,
-            owner_id="inspector",
-            primary=selected[-1],
-            anchor=selected[0],
-            record_history=False,
-        )
-        command = ReorderComponentsCommand(
-            [
-                (first.id, first_before, first_after),
-                (second.id, second_before, second_after),
-            ],
-            "Reorder Components",
-        )
-        try:
-            assert manager.execute(command)
-            assert tuple(first.get_component_order()) == first_after
-            assert tuple(second.get_component_order()) == second_after
-            assert selection.snapshot.targets == selected
-
-            manager.undo()
-            assert tuple(first.get_component_order()) == first_before
-            assert tuple(second.get_component_order()) == second_before
-            assert selection.snapshot.targets == selected
-
-            manager.redo()
-            assert tuple(first.get_component_order()) == first_after
-            assert tuple(second.get_component_order()) == second_after
-            assert selection.snapshot.targets == selected
-        finally:
-            UndoManager._instance = previous_undo
-            SelectionService._instance = previous_selection
-
-    def test_reset_authored_object_transform_and_light_is_one_identity_preserving_undo_flow(self, scene):
-        from infernux.engine.undo import CompoundCommand, GenericComponentCommand, UndoManager
-        owner = scene.create_game_object('ResetAuthoredObject')
-        transform = owner.transform
-        transform.local_position, transform.local_scale = Vector3(3, 4, 5), Vector3(2, 3, 4)
-        light = owner.add_component('Light')
-        light.intensity, light.execution_order = 7.5, 23
-        before_transform, before_light = transform.serialize_document(), light.serialize_document()
-        reset_transform = owner.get_component_default_document(transform)
-        reset_light = owner.get_component_default_document(light)
-        assert reset_transform['component_id'] == transform.component_id
-        assert reset_transform['position'] == pytest.approx([0, 0, 0])
-        assert reset_transform['scale'] == pytest.approx([1, 1, 1])
-        assert reset_light['component_id'] == light.component_id and reset_light['execution_order'] == 23
-        assert reset_light['intensity'] == pytest.approx(1)
-        previous = UndoManager._instance
-        manager = UndoManager()
-        try:
-            assert manager.execute(CompoundCommand([
-                GenericComponentCommand(transform, before_transform, reset_transform, 'Reset Transform', mergeable=False),
-                GenericComponentCommand(light, before_light, reset_light, 'Reset Light', mergeable=False),
-            ]))
-            assert transform.serialize_document() == reset_transform and light.serialize_document() == reset_light
-            manager.undo()
-            assert transform.serialize_document() == before_transform and light.serialize_document() == before_light
-            manager.redo()
-            assert transform.serialize_document() == reset_transform and light.serialize_document() == reset_light
-        finally:
-            manager.clear()
-            UndoManager._instance = previous
-
-
-    def test_native_component_constraints_are_enforced_below_inspector(self, scene):
-        first = scene.create_game_object("SpriteFirst")
-        assert first.add_component("SpriteRenderer") is not None
-        assert not first.can_add_component("MeshRenderer")
-        assert first.get_add_component_blockers("MeshRenderer") == [
-            "exclusive component group already owned by 'SpriteRenderer'"
-        ]
-        assert first.add_component("MeshRenderer") is None
-        assert first.get_component("MeshRenderer") is None
-        assert first.get_component("SpriteRenderer") is not None
-
-        second = scene.create_game_object("MeshFirst")
-        assert second.add_component("MeshRenderer") is not None
-        assert not second.can_add_component("SpriteRenderer")
-        assert second.get_add_component_blockers("SpriteRenderer") == [
-            "exclusive component group already owned by 'MeshRenderer'"
-        ]
-        assert second.add_component("SpriteRenderer") is None
-        assert second.get_component("SpriteRenderer") is None
-        assert second.get_component("MeshRenderer") is not None
-
-        assert not second.can_add_component("Transform")
-        assert not second.can_add_component("MissingNativeComponent")
-
-
 class TestPrimitives:
     @staticmethod
     def _triangle_areas(positions, indices):
@@ -809,134 +589,31 @@ class TestPrimitives:
         return areas
 
 
-    def test_cylinder_primitive_collider_keeps_vertical_default_axis(self, scene):
-        cylinder = scene.create_primitive(PrimitiveType.Cylinder, "VerticalCylinder")
-
-        collider = cylinder.get_component("CylinderCollider")
-        assert collider.direction == 1
-        assert collider.height == pytest.approx(1.0)
-        assert collider.radius == pytest.approx(0.5)
-
-
-    def test_level_primitives_keep_compact_builtin_meshes_after_custom_naming_and_batch_creation(self, scene):
-        cube = scene.create_primitive(PrimitiveType.Cube, 'PuzzleBlock')
-        quad = scene.create_primitive(PrimitiveType.Quad, 'PuzzleFloor')
-        columns = scene.create_primitives_batch(PrimitiveType.Cube, 3, 'WaveCube')
-        cube_document = cube.get_component('MeshRenderer').serialize_document()
-        quad_document = quad.get_component('MeshRenderer').serialize_document()
-        assert cube_document['inlineMeshName'] == 'Cube' and cube_document['inlineMeshBuiltin'] is True
-        assert quad_document['inlineMeshName'] == 'Quad' and quad_document['inlineMeshBuiltin'] is True
-        assert not {'inlineVertices', 'inlineIndices'} & cube_document.keys()
-        assert not {'inlineVertices', 'inlineIndices'} & quad_document.keys()
-        assert [item.name for item in columns] == ['WaveCube_0', 'WaveCube_1', 'WaveCube_2']
-        for column in columns:
-            document = column.get_component('MeshRenderer').serialize_document()
-            assert document['inlineMeshName'] == 'Cube' and document['inlineMeshBuiltin'] is True
-            assert not {'inlineVertices', 'inlineIndices'} & document.keys()
-
-
-    def test_sphere_is_uniform_geodesic_mesh_without_degenerate_poles(self, scene):
-        sphere = scene.create_primitive(PrimitiveType.Sphere, "GeodesicSphere")
-        renderer = sphere.get_component("MeshRenderer")
-        positions = renderer.get_positions()
-        indices = renderer.get_indices()
-
-        radii = [math.sqrt(sum(component * component for component in position)) for position in positions]
-        areas = self._triangle_areas(positions, indices)
-        assert min(radii) == pytest.approx(0.5, abs=1e-5)
-        assert max(radii) == pytest.approx(0.5, abs=1e-5)
-        assert min(areas) > 1e-6
-        assert max(areas) / min(areas) < 1.5
-
-    def test_capsule_has_closed_hemispheres_and_nonzero_cylinder_section(self, scene):
-        capsule = scene.create_primitive(PrimitiveType.Capsule, "TrueCapsule")
-        renderer = capsule.get_component("MeshRenderer")
-        positions = renderer.get_positions()
-        indices = renderer.get_indices()
-        areas = self._triangle_areas(positions, indices)
-
-        assert min(position[1] for position in positions) == pytest.approx(-1.0, abs=1e-5)
-        assert max(position[1] for position in positions) == pytest.approx(1.0, abs=1e-5)
-        assert min(areas) > 1e-6
-        assert max(indices) < len(positions)
-
-        cylinder_triangles = 0
-        for offset in range(0, len(indices), 3):
-            ys = {round(positions[indices[offset + corner]][1], 5) for corner in range(3)}
-            if 0.5 in ys and -0.5 in ys:
-                cylinder_triangles += 1
-        assert cylinder_triangles == 64
-
-    @pytest.mark.parametrize(
-        "primitive_type,expected_minimum,expected_maximum",
-        [
-            (PrimitiveType.Cube, (-0.5, -0.5, -0.5), (0.5, 0.5, 0.5)),
-            (PrimitiveType.Cylinder, (-0.5, -0.5, -0.5), (0.5, 0.5, 0.5)),
-            (PrimitiveType.Plane, (-0.5, 0.0, -0.5), (0.5, 0.0, 0.5)),
-            (PrimitiveType.Quad, (-0.5, -0.5, 0.0), (0.5, 0.5, 0.0)),
-        ],
-    )
-    def test_other_primitive_meshes_have_documented_unit_bounds_and_no_degenerate_triangles(
-        self, scene, primitive_type, expected_minimum, expected_maximum
-    ):
-        primitive = scene.create_primitive(primitive_type, f"Audited{primitive_type.name}")
-        renderer = primitive.get_component("MeshRenderer")
-        positions = renderer.get_positions()
-        indices = renderer.get_indices()
-        minimum = tuple(min(position[axis] for position in positions) for axis in range(3))
-        maximum = tuple(max(position[axis] for position in positions) for axis in range(3))
-
-        assert minimum == pytest.approx(expected_minimum, abs=1e-5)
-        assert maximum == pytest.approx(expected_maximum, abs=1e-5)
-        assert min(self._triangle_areas(positions, indices)) > 1e-6
-        assert max(indices) < len(positions)
-
-
 class TestInstantiate:
-
-
     def test_cloning_a_rich_object_graph_remaps_internal_references_and_retains_external_targets(self, scene):
-        external = scene.create_game_object('ExternalTarget')
+        external = scene.create_game_object("ExternalTarget")
         external_component = external.add_py_component(_StrictSceneComponent())
-        original = scene.create_game_object('RichCloneSource')
+        original = scene.create_game_object("RichCloneSource")
         original.add_py_component(_StrictSceneComponent()).value = 31
-        child = scene.create_game_object('RichCloneChild')
+        child = scene.create_game_object("RichCloneChild")
         child.set_parent(original)
         child.add_py_component(_StrictSceneComponent())
         internal = original.add_py_component(_RichCloneComponent())
-        internal.count, internal.title, internal.values = 17, 'edited', [2, 3, 5, 8]
-        internal.settings = _CloneSettings(gain=2.5, label='nested')
+        internal.count, internal.title, internal.values = 17, "edited", [2, 3, 5, 8]
+        internal.settings = _CloneSettings(gain=2.5, label="nested")
         internal.target_object = GameObjectRef(child)
-        internal.target_component = ComponentRef(go_id=child.id, component_type='_StrictSceneComponent')
+        internal.target_component = ComponentRef(go_id=child.id, component_type="_StrictSceneComponent")
         outside = original.add_py_component(_RichCloneComponent())
         outside.target_object = GameObjectRef(external)
-        outside.target_component = ComponentRef(go_id=external.id, component_type='_StrictSceneComponent')
+        outside.target_component = ComponentRef(go_id=external.id, component_type="_StrictSceneComponent")
         clone = clone_game_object_transactionally(scene, original)
         assert clone is not None and clone.get_py_component(_StrictSceneComponent).value == 31
         copied, retained = clone.get_components(_RichCloneComponent)
-        assert (copied.count, copied.title, copied.values) == (17, 'edited', [2, 3, 5, 8])
-        assert copied.settings.gain == pytest.approx(2.5) and copied.settings.label == 'nested'
+        assert (copied.count, copied.title, copied.values) == (17, "edited", [2, 3, 5, 8])
+        assert copied.settings.gain == pytest.approx(2.5) and copied.settings.label == "nested"
         assert copied.target_object is clone.get_child(0)
         assert copied.target_component is clone.get_child(0).get_py_component(_StrictSceneComponent)
         assert retained.target_object is external and retained.target_component is external_component
-
-    def test_string_lookup_resolves_the_component_attached_to_each_object(self, scene):
-        first_type = type("AttachedLookupTwin", (InxComponent,), {
-            "__module__": "attached_lookup_first",
-        })
-        second_type = type("AttachedLookupTwin", (InxComponent,), {
-            "__module__": "attached_lookup_second",
-        })
-        first_object = scene.create_game_object("FirstLookupOwner")
-        second_object = scene.create_game_object("SecondLookupOwner")
-        first_component = first_object.add_py_component(first_type())
-        second_component = second_object.add_py_component(second_type())
-
-        assert first_object.get_component("AttachedLookupTwin") is first_component
-        assert second_object.get_component("AttachedLookupTwin") is second_component
-        assert first_object.get_components("AttachedLookupTwin") == [first_component]
-        assert second_object.get_components("AttachedLookupTwin") == [second_component]
-
 
     def test_unified_instantiate_for_game_object_ref_preserves_fields_and_parent(self, scene):
         parent = scene.create_game_object("InstantiateReferenceParent")
@@ -999,122 +676,48 @@ class TestInstantiate:
         assert positioned.get_parent() is target_parent
         assert positioned.transform.position.to_tuple() == pytest.approx((30.0, 5.0, 6.0))
 
-    def test_copying_connected_level_objects_preserves_rich_fields_and_all_reference_scopes(self, scene, editor_history):
+    def test_copying_connected_level_objects_preserves_rich_fields_and_all_reference_scopes(
+        self, scene, editor_history
+    ):
         from infernux.engine.interaction import ClipboardService, SceneObjectCommandService, SelectionService
-        external = scene.create_game_object('ExternalClipboardTarget')
+
+        external = scene.create_game_object("ExternalClipboardTarget")
         external_component = external.add_py_component(_StrictSceneComponent())
-        first = scene.create_game_object('ClipboardGroupFirst')
-        child = scene.create_game_object('InternalChild')
+        first = scene.create_game_object("ClipboardGroupFirst")
+        child = scene.create_game_object("InternalChild")
         child.set_parent(first)
         child.add_py_component(_StrictSceneComponent())
-        second = scene.create_game_object('ClipboardGroupSecond')
+        second = scene.create_game_object("ClipboardGroupSecond")
         second_component = second.add_py_component(_StrictSceneComponent())
         internal = first.add_py_component(_RichCloneComponent())
-        internal.count, internal.title, internal.values = 29, 'ctrl-cv', [34, 55]
-        internal.settings = _CloneSettings(gain=6.5, label='hierarchy')
+        internal.count, internal.title, internal.values = 29, "ctrl-cv", [34, 55]
+        internal.settings = _CloneSettings(gain=6.5, label="hierarchy")
         internal.target_object = GameObjectRef(child)
-        internal.target_component = ComponentRef(go_id=child.id, component_type='_StrictSceneComponent')
+        internal.target_component = ComponentRef(go_id=child.id, component_type="_StrictSceneComponent")
         cross_root = first.add_py_component(_RichCloneComponent())
         cross_root.target_object = GameObjectRef(second)
-        cross_root.target_component = ComponentRef(go_id=second.id, component_type='_StrictSceneComponent')
+        cross_root.target_component = ComponentRef(go_id=second.id, component_type="_StrictSceneComponent")
         outside = first.add_py_component(_RichCloneComponent())
         outside.target_object = GameObjectRef(external)
-        outside.target_component = ComponentRef(go_id=external.id, component_type='_StrictSceneComponent')
+        outside.target_component = ComponentRef(go_id=external.id, component_type="_StrictSceneComponent")
         selection = SelectionService.instance()
-        selection.replace_scene_objects([first.id, second.id], owner_id='hierarchy', record_history=False)
+        selection.replace_scene_objects([first.id, second.id], owner_id="hierarchy", record_history=False)
         commands = SceneObjectCommandService(selection, ClipboardService())
-        context = SimpleNamespace(selection=selection.snapshot,
-            focus=SimpleNamespace(active_view_id='hierarchy', active_panel_id='hierarchy'))
+        context = SimpleNamespace(
+            selection=selection.snapshot, focus=SimpleNamespace(active_view_id="hierarchy", active_panel_id="hierarchy")
+        )
         assert commands.copy(context, cut=False) and commands.paste(context)
         first_id, second_id = selection.scene_object_ids()
         copied_first, copied_second = scene.find_by_id(first_id), scene.find_by_id(second_id)
         inner, linked, retained = copied_first.get_components(_RichCloneComponent)
-        assert (inner.count, inner.title, inner.values) == (29, 'ctrl-cv', [34, 55])
-        assert inner.settings.gain == pytest.approx(6.5) and inner.settings.label == 'hierarchy'
+        assert (inner.count, inner.title, inner.values) == (29, "ctrl-cv", [34, 55])
+        assert inner.settings.gain == pytest.approx(6.5) and inner.settings.label == "hierarchy"
         assert inner.target_object is copied_first.get_child(0)
         assert inner.target_component is copied_first.get_child(0).get_py_component(_StrictSceneComponent)
         assert linked.target_object is copied_second and linked.target_object is not second
         assert linked.target_component is copied_second.get_py_component(_StrictSceneComponent)
         assert linked.target_component is not second_component
         assert retained.target_object is external and retained.target_component is external_component
-
-
-    def test_hierarchy_rename_is_one_global_command(self, scene, editor_history):
-        from infernux.engine.interaction import (
-            ClipboardService,
-            SceneObjectCommandService,
-            SelectionService,
-        )
-
-        obj = scene.create_game_object("Before")
-        commands = SceneObjectCommandService(SelectionService(), ClipboardService())
-
-        assert commands.rename(obj.id, "After") is True
-        assert obj.name == "After"
-        assert len(editor_history.action_journal.entries) == 1
-
-        editor_history.undo()
-        assert obj.name == "Before"
-        editor_history.redo()
-        assert obj.name == "After"
-
-    def test_hierarchy_copy_uses_the_frozen_command_selection(
-        self, scene, editor_history
-    ):
-        from infernux.engine.interaction import (
-            ClipboardDomain,
-            ClipboardService,
-            SceneObjectCommandService,
-            SelectionService,
-        )
-
-        first = scene.create_game_object("FrozenTarget")
-        second = scene.create_game_object("CurrentTarget")
-        selection = SelectionService()
-        clipboard = ClipboardService()
-        commands = SceneObjectCommandService(selection, clipboard)
-        selection.replace_scene_objects(
-            [first.id], owner_id="hierarchy", record_history=False
-        )
-        frozen = SimpleNamespace(selection=selection.snapshot, payload={})
-        selection.replace_scene_objects(
-            [second.id], owner_id="hierarchy", record_history=False
-        )
-
-        assert commands.copy(frozen, cut=False)
-
-        payload = clipboard.peek(ClipboardDomain.SCENE_OBJECT)
-        assert payload is not None
-        assert tuple(item.target_id for item in payload.items) == (str(first.id),)
-
-    def test_inspector_object_property_is_one_global_command(
-        self, scene, editor_history
-    ):
-        from infernux.engine.interaction import (
-            ClipboardService,
-            SceneObjectCommandService,
-            SelectionService,
-        )
-
-        obj = scene.create_game_object("Before")
-        commands = SceneObjectCommandService(SelectionService(), ClipboardService())
-        published = []
-        commands.set_change_publisher(lambda: published.append(obj.name))
-
-        assert commands.set_object_property(obj.id, "name", "After") is True
-        assert obj.name == "After"
-        assert published == ["After"]
-        assert len(editor_history.action_journal.entries) == 1
-
-        editor_history.undo()
-        assert obj.name == "Before"
-        editor_history.redo()
-        assert obj.name == "After"
-
-        assert commands.set_object_property(obj.id, "unknown", 1) is False
-        assert commands.set_object_property(obj.id, "layer", 32) is False
-        assert commands.set_object_property("invalid", "active", True) is False
-        assert len(editor_history.action_journal.entries) == 1
 
     @staticmethod
     def _transform_values(position, rotation=(0.0, 0.0, 0.0), scale=(1.0, 1.0, 1.0)):
@@ -1123,252 +726,6 @@ class TestInstantiate:
             "rotation": rotation,
             "scale": scale,
         }
-
-    def test_inspector_transform_edit_undo_redo_and_merge(
-        self, scene, editor_history
-    ):
-        from infernux.engine.interaction import (
-            ClipboardService,
-            SceneObjectCommandService,
-            SelectionService,
-        )
-
-        obj = scene.create_game_object("TransformTarget")
-        commands = SceneObjectCommandService(SelectionService(), ClipboardService())
-
-        assert commands.set_transforms(
-            [obj.id], [self._transform_values((1.0, 2.0, 3.0))]
-        )
-        assert commands.set_transforms(
-            [obj.id], [self._transform_values((4.0, 5.0, 6.0))]
-        )
-        assert obj.transform.local_position.to_tuple() == pytest.approx((4.0, 5.0, 6.0))
-        assert len(editor_history.action_journal.entries) == 1
-
-        editor_history.undo()
-        assert obj.transform.local_position.to_tuple() == pytest.approx((0.0, 0.0, 0.0))
-        editor_history.redo()
-        assert obj.transform.local_position.to_tuple() == pytest.approx((4.0, 5.0, 6.0))
-
-    def test_inspector_multi_transform_is_one_atomic_command(
-        self, scene, editor_history
-    ):
-        from infernux.engine.interaction import (
-            ClipboardService,
-            SceneObjectCommandService,
-            SelectionService,
-        )
-
-        first = scene.create_game_object("FirstTransform")
-        second = scene.create_game_object("SecondTransform")
-        second.transform.local_position = Vector3(8.0, 0.0, 0.0)
-        commands = SceneObjectCommandService(SelectionService(), ClipboardService())
-
-        assert commands.set_transforms(
-            [first.id, second.id],
-            [
-                self._transform_values((1.0, 2.0, 3.0)),
-                self._transform_values((9.0, 5.0, 6.0)),
-            ],
-        )
-        assert first.transform.local_position.to_tuple() == pytest.approx((1.0, 2.0, 3.0))
-        assert second.transform.local_position.to_tuple() == pytest.approx((9.0, 5.0, 6.0))
-        assert len(editor_history.action_journal.entries) == 1
-
-        editor_history.undo()
-        assert first.transform.local_position.to_tuple() == pytest.approx((0.0, 0.0, 0.0))
-        assert second.transform.local_position.to_tuple() == pytest.approx((8.0, 0.0, 0.0))
-        editor_history.redo()
-        assert first.transform.local_position.to_tuple() == pytest.approx((1.0, 2.0, 3.0))
-        assert second.transform.local_position.to_tuple() == pytest.approx((9.0, 5.0, 6.0))
-
-    def test_moving_multiple_level_roots_ignores_selected_descendants_and_replays_layout(self, scene, editor_history):
-        from infernux.engine.interaction import ClipboardService, SceneObjectCommandService, SelectionService
-        first = scene.create_game_object('First')
-        parent = scene.create_game_object('Parent')
-        child = scene.create_game_object('Child')
-        child.set_parent(parent)
-        third = scene.create_game_object('Third')
-        anchor = scene.create_game_object('Anchor')
-        commands = SceneObjectCommandService(SelectionService(), ClipboardService())
-        before = [item.id for item in scene.get_root_objects()]
-        assert commands.move_hierarchy([parent.id, child.id, third.id], 'adjacent', anchor.id, True)
-        after = [first.id, anchor.id, parent.id, third.id]
-        assert [item.id for item in scene.get_root_objects()] == after
-        assert child.get_parent() is parent and len(editor_history.action_journal.entries) == 1
-        editor_history.undo()
-        assert [item.id for item in scene.get_root_objects()] == before and child.get_parent() is parent
-        editor_history.redo()
-        assert [item.id for item in scene.get_root_objects()] == after and child.get_parent() is parent
-        assert commands.move_hierarchy([parent.id, child.id], 'parent', anchor.id)
-        assert parent.get_parent() is anchor and child.get_parent() is parent
-        assert len(editor_history.action_journal.entries) == 2
-        editor_history.undo()
-        assert parent.get_parent() is None and child.get_parent() is parent
-        assert [item.id for item in scene.get_root_objects()] == after
-        editor_history.redo()
-        assert parent.get_parent() is anchor and child.get_parent() is parent
-
-
-    def test_hierarchy_cycle_rejection_does_not_record_history(
-        self, scene, editor_history
-    ):
-        from infernux.engine.interaction import (
-            ClipboardService,
-            SceneObjectCommandService,
-            SelectionService,
-        )
-
-        parent = scene.create_game_object("Parent")
-        child = scene.create_game_object("Child")
-        child.set_parent(parent)
-        commands = SceneObjectCommandService(SelectionService(), ClipboardService())
-
-        assert commands.move_hierarchy([parent.id], "parent", child.id) is False
-        assert parent.get_parent() is None
-        assert child.get_parent() is parent
-        assert editor_history.action_journal.entries == ()
-
-
-    def test_component_clipboard_preserves_fields_without_copying_component_id(self, scene):
-        source_object = scene.create_game_object("ComponentClipboardSource")
-        source = source_object.add_py_component(_RichCloneComponent())
-        source.count = 144
-        source.values = [8, 13, 21]
-        source.settings = _CloneSettings(gain=9.5, label="component-copy")
-        target_object = scene.create_game_object("ComponentClipboardTarget")
-        target = target_object.add_py_component(_RichCloneComponent())
-        target_component_id = target.component_id
-
-        from infernux.engine.bootstrap_inspector._wire import (
-            _apply_python_component_clipboard_document,
-            _component_clipboard_data,
-            _publish_component_clipboard,
-        )
-
-        assert _publish_component_clipboard(
-            source,
-            type(source).__name__,
-            False,
-        )
-        clipboard_data = _component_clipboard_data()
-        assert clipboard_data is not None
-        payload = clipboard_data["document"]
-        assert "__component_id__" not in payload
-        _apply_python_component_clipboard_document(target, payload)
-
-        assert target.component_id == target_component_id
-        assert target.count == 144
-        assert target.values == [8, 13, 21]
-        assert target.settings.gain == pytest.approx(9.5)
-        assert target.settings.label == "component-copy"
-        assert target.settings is not source.settings
-
-    def test_pasting_then_editing_one_duplicate_component_replays_against_its_exact_identity(self, scene):
-        from infernux.engine.bootstrap_inspector._wire import _python_component_clipboard_document
-        from infernux.engine.undo import PythonComponentDocumentCommand, SetPropertyCommand
-        owner = scene.create_game_object('DuplicateComponentTarget')
-        first, second = owner.add_py_component(_RichCloneComponent()), owner.add_py_component(_RichCloneComponent())
-        first.count, second.count = 1, 2
-        source = scene.create_game_object('ClipboardSource').add_py_component(_RichCloneComponent())
-        source.count = 233
-        pasted = PythonComponentDocumentCommand(second, _python_component_clipboard_document(second),
-            _python_component_clipboard_document(source), 'Paste duplicate component properties')
-        pasted.execute()
-        assert (first.count, second.count) == (1, 233)
-        edited = SetPropertyCommand(second, 'count', 233, 8, 'Set second count')
-        edited.execute()
-        assert (first.count, second.count) == (1, 8)
-        edited.undo()
-        assert (first.count, second.count) == (1, 233)
-        pasted.undo()
-        assert (first.count, second.count) == (1, 2)
-        pasted.redo()
-        assert (first.count, second.count) == (1, 233)
-
-
-    def test_python_component_add_undo_redo_preserves_loaded_type_and_fields(self, scene):
-        owner = scene.create_game_object("PythonComponentUndoOwner")
-        component = owner.add_py_component(_RichCloneComponent())
-        component_id = int(component.component_id)
-        component.count = 377
-        component.values = [34, 55, 89]
-        component.settings = _CloneSettings(gain=12.5, label="redo")
-
-        from infernux.engine.undo import AddPyComponentCommand
-
-        command = AddPyComponentCommand(owner.id, component, "Add rich component")
-        command.undo()
-        assert owner.get_py_component(_RichCloneComponent) is None
-
-        command.redo()
-        restored = owner.get_py_component(_RichCloneComponent)
-        assert type(restored) is type(component)
-        assert restored.component_id == component_id
-        assert restored.count == 377
-        assert restored.values == [34, 55, 89]
-        assert restored.settings.gain == pytest.approx(12.5)
-        assert restored.settings.label == "redo"
-
-    def test_authoring_component_order_inserts_native_and_required_python_blocks_with_precise_undo(self, scene):
-        from infernux.engine.undo import AddComponentTransactionCommand, UndoManager
-        owner = scene.create_game_object('ComponentAssembly')
-        light, camera = owner.add_component('Light'), owner.add_component('Camera')
-        before = tuple(owner.get_component_order())
-        previous = UndoManager._instance
-        manager = UndoManager()
-        try:
-            middle = AddComponentTransactionCommand(owner.id, 'BoxCollider', target_component_id=int(camera.component_id), insert_after=False)
-            assert manager.execute(middle)
-            middle_id = int(middle.result_component.component_id)
-            middle_order = (int(light.component_id), middle_id, int(camera.component_id))
-            assert tuple(owner.get_component_order()) == middle_order
-            manager.undo()
-            assert tuple(owner.get_component_order()) == before
-            manager.redo()
-            assert tuple(owner.get_component_order()) == middle_order
-            start = AddComponentTransactionCommand(owner.id, 'BoxCollider', insert_at_start=True)
-            assert manager.execute(start)
-            start_order = (int(start.result_component.component_id), *middle_order)
-            assert tuple(owner.get_component_order()) == start_order
-            manager.undo()
-            assert tuple(owner.get_component_order()) == middle_order
-            manager.redo()
-            assert tuple(owner.get_component_order()) == start_order
-            prototype = _RequiresRigidbodyComponent()
-            prototype.value = 42
-            block = AddComponentTransactionCommand(owner.id, type(prototype).__name__, python_instance=prototype,
-                target_component_id=int(camera.component_id), insert_after=False)
-            assert owner.get_component('Rigidbody') is None
-            assert manager.execute(block)
-            attached, body = owner.get_py_component(_RequiresRigidbodyComponent), owner.get_component('Rigidbody')
-            assert attached is prototype and attached.value == 42 and body is not None
-            complete = (*start_order[:-1], int(body.component_id), int(attached.component_id), start_order[-1])
-            assert tuple(owner.get_component_order()) == complete
-            manager.undo()
-            assert owner.get_component('Rigidbody') is None and owner.get_py_component(_RequiresRigidbodyComponent) is None
-            assert tuple(owner.get_component_order()) == start_order
-            manager.redo()
-            assert owner.get_py_component(_RequiresRigidbodyComponent).value == 42
-            assert tuple(owner.get_component_order()) == complete
-        finally:
-            manager.clear()
-            UndoManager._instance = previous
-
-
-    def test_component_add_rejects_conflicting_insertion_contract(self, scene):
-        from infernux.engine.undo import AddComponentTransactionCommand
-
-        owner = scene.create_game_object("ConflictingComponentInsertionOwner")
-        camera = owner.add_component("Camera")
-        with pytest.raises(ValueError, match="both an anchor and the list start"):
-            AddComponentTransactionCommand(
-                owner.id,
-                "BoxCollider",
-                target_component_id=int(camera.component_id),
-                insert_at_start=True,
-            )
-
 
     def test_component_add_transaction_rolls_back_failed_python_callback(self, scene):
         from infernux.engine.undo import AddComponentTransactionCommand, UndoManager
@@ -1391,9 +748,7 @@ class TestInstantiate:
         finally:
             UndoManager._instance = previous_manager
 
-    def test_repeated_asset_script_clone_preserves_fields_across_module_reload(
-        self, scene, tmp_path
-    ):
+    def test_repeated_asset_script_clone_preserves_fields_across_module_reload(self, scene, tmp_path):
         script_path = tmp_path / "pipe_probe.py"
         script_path.write_text(
             "from infernux.components import InxComponent\n\n"
@@ -1438,8 +793,7 @@ class TestInstantiate:
             clone = GameObject.instantiate(original)
             restored_components = list(clone.get_py_components() or ())
             assert len(restored_components) == 1, [
-                (type(item).__name__, getattr(item, "_broken_error", ""))
-                for item in restored_components
+                (type(item).__name__, getattr(item, "_broken_error", "")) for item in restored_components
             ]
             restored = restored_components[0]
             assert type(restored) is type(source_component)
@@ -1468,9 +822,7 @@ class TestInstantiate:
             assert restored.speed == pytest.approx(6.25)
             assert restored.wrap_distance == pytest.approx(42.0)
 
-    def test_ui_prefab_drop_with_implicit_canvas_is_one_atomic_action(
-        self, scene, tmp_path
-    ):
+    def test_ui_prefab_drop_with_implicit_canvas_is_one_atomic_action(self, scene, tmp_path):
         from infernux.engine.interaction import (
             ClipboardService,
             EditorContextSnapshot,
@@ -1540,9 +892,7 @@ class TestInstantiate:
             manager.clear()
             UndoManager._instance = previous_manager
 
-    def test_failed_ui_prefab_drop_rolls_back_implicit_canvas(
-        self, scene, tmp_path, monkeypatch
-    ):
+    def test_failed_ui_prefab_drop_rolls_back_implicit_canvas(self, scene, tmp_path, monkeypatch):
         from infernux.engine.interaction import (
             ClipboardService,
             SceneObjectCommandService,
@@ -1583,9 +933,7 @@ class TestInstantiate:
         try:
             assert commands.instantiate_prefab(str(prefab_path), 0, False) is False
 
-            assert all(
-                obj.name != "RollbackCanvas" for obj in scene.get_root_objects()
-            )
+            assert all(obj.name != "RollbackCanvas" for obj in scene.get_root_objects())
             assert len(manager.action_journal.entries) == 0
             assert selection.snapshot.primary == SelectionTarget.scene_object(source.id)
         finally:
@@ -1618,9 +966,7 @@ class TestInstantiate:
         assert restored.settings.gain == pytest.approx(7.5)
         assert restored.settings.label == "restored"
 
-    def test_structural_undo_keeps_additive_scene_ownership_after_active_scene_switch(
-        self, scene, editor_history
-    ):
+    def test_structural_undo_keeps_additive_scene_ownership_after_active_scene_switch(self, scene, editor_history):
         from infernux.engine.undo import (
             CreateGameObjectCommand,
             DeleteGameObjectCommand,
@@ -1633,9 +979,7 @@ class TestInstantiate:
             manager.set_active_scene(additive)
             created = additive.create_game_object("UndoAdditiveObject")
             object_id = int(created.id)
-            editor_history.record(
-                CreateGameObjectCommand(object_id, "Create additive object")
-            )
+            editor_history.record(CreateGameObjectCommand(object_id, "Create additive object"))
 
             manager.set_active_scene(scene)
             editor_history.undo()
@@ -1646,9 +990,7 @@ class TestInstantiate:
             assert additive.find_by_id(object_id) is not None
             assert scene.find_by_id(object_id) is None
 
-            assert editor_history.execute(
-                DeleteGameObjectCommand(object_id, "Delete additive object")
-            )
+            assert editor_history.execute(DeleteGameObjectCommand(object_id, "Delete additive object"))
             assert additive.find_by_id(object_id) is None
             editor_history.undo()
             assert additive.find_by_id(object_id) is not None
@@ -1657,59 +999,7 @@ class TestInstantiate:
             manager.set_active_scene(scene)
             manager.unload_scene(additive)
 
-    def test_scene_object_edits_resolve_additive_target_after_active_scene_switch(
-        self, scene, editor_history
-    ):
-        from infernux.engine.interaction import (
-            ClipboardService,
-            SceneObjectCommandService,
-            SelectionService,
-        )
-
-        manager = SceneManager.instance()
-        additive = manager.create_scene("EditAdditiveOwner")
-        target = additive.create_game_object("EditAdditiveTarget")
-        parent = additive.create_game_object("EditAdditiveParent")
-        target_id = int(target.id)
-        commands = SceneObjectCommandService(SelectionService(), ClipboardService())
-        try:
-            manager.set_active_scene(scene)
-            assert commands.rename(target_id, "RenamedAcrossScenes") is True
-            assert additive.find_by_id(target_id).name == "RenamedAcrossScenes"
-
-            assert commands.set_transforms(
-                [target_id],
-                [{
-                    "position": [4.0, 5.0, 6.0],
-                    "rotation": [0.0, 0.0, 0.0],
-                    "scale": [1.0, 2.0, 3.0],
-                }],
-            ) is True
-            edited = additive.find_by_id(target_id)
-            assert edited.transform.position.to_tuple() == pytest.approx((4.0, 5.0, 6.0))
-            assert edited.transform.local_scale.to_tuple() == pytest.approx((1.0, 2.0, 3.0))
-
-            editor_history.undo()
-            restored = additive.find_by_id(target_id)
-            assert restored.transform.position.to_tuple() == pytest.approx((0.0, 0.0, 0.0))
-            assert restored.transform.local_scale.to_tuple() == pytest.approx((1.0, 1.0, 1.0))
-            editor_history.undo()
-            assert additive.find_by_id(target_id).name == "EditAdditiveTarget"
-
-            assert commands.move_hierarchy(
-                [target_id], "parent", int(parent.id)
-            ) is True
-            assert additive.find_by_id(target_id).get_parent() is parent
-            editor_history.undo()
-            assert additive.find_by_id(target_id).get_parent() is None
-            assert manager.get_active_scene() is scene
-        finally:
-            manager.set_active_scene(scene)
-            manager.unload_scene(additive)
-
-    def test_hierarchy_move_transfers_ownership_between_loaded_scenes_and_undoes(
-        self, scene, editor_history
-    ):
+    def test_hierarchy_move_transfers_ownership_between_loaded_scenes_and_undoes(self, scene, editor_history):
         from infernux.engine.interaction import (
             ClipboardService,
             SceneObjectCommandService,
@@ -1725,13 +1015,16 @@ class TestInstantiate:
         moved.transform.set_sibling_index(0)
         commands = SceneObjectCommandService(SelectionService(), ClipboardService())
         try:
-            assert commands.move_hierarchy(
-                [moved.id],
-                "parent",
-                destination_parent.id,
-                False,
-                additive.world_id,
-            ) is True
+            assert (
+                commands.move_hierarchy(
+                    [moved.id],
+                    "parent",
+                    destination_parent.id,
+                    False,
+                    additive.world_id,
+                )
+                is True
+            )
             assert moved.scene is additive
             assert moved.get_parent() is destination_parent
 
@@ -1829,9 +1122,7 @@ class TestInstantiate:
             assert result.status is DocumentActionStatus.APPLIED
             saved = json.loads(additive_path.read_text(encoding="utf-8"))
             assert saved["name"] == "Additive"
-            assert [entry["name"] for entry in saved["objects"]] == [
-                "EditedAdditiveObject"
-            ]
+            assert [entry["name"] for entry in saved["objects"]] == ["EditedAdditiveObject"]
             assert native.get_active_scene() is scene
 
             undo.undo()
@@ -1877,19 +1168,11 @@ class TestInstantiate:
         class _AssetDatabase:
             @staticmethod
             def get_guid_from_path(path):
-                return (
-                    "undoable-additive-guid"
-                    if str(path) == str(additive_path.resolve())
-                    else ""
-                )
+                return "undoable-additive-guid" if str(path) == str(additive_path.resolve()) else ""
 
             @staticmethod
             def get_path_from_guid(guid):
-                return (
-                    str(additive_path.resolve())
-                    if guid == "undoable-additive-guid"
-                    else ""
-                )
+                return str(additive_path.resolve()) if guid == "undoable-additive-guid" else ""
 
         def drain_additive_load():
             deadline = time.monotonic() + 3.0
@@ -1909,9 +1192,7 @@ class TestInstantiate:
                 drain_additive_load()
 
             native = SceneManager.instance()
-            loaded = tuple(
-                native.get_scene_at(index) for index in range(int(native.scene_count))
-            )
+            loaded = tuple(native.get_scene_at(index) for index in range(int(native.scene_count)))
             additive = next(item for item in loaded if item.name == "UndoableAdditive")
             additive_world_id = int(additive.world_id)
             assert undo.undo_description == "Open Scene UndoableAdditive Additively"
@@ -1997,9 +1278,7 @@ class TestInstantiate:
             SceneFileManager._instance = previous_manager
             set_project_root(previous_root)
 
-    def test_single_scene_open_resolves_every_dirty_resident_scene_document(
-        self, scene, tmp_path, monkeypatch
-    ):
+    def test_single_scene_open_resolves_every_dirty_resident_scene_document(self, scene, tmp_path, monkeypatch):
         from infernux.engine.interaction import DocumentRegistry
         from infernux.engine.project_context import get_project_root, set_project_root
         from infernux.engine.ui.dirty_panel_confirmation import (
@@ -2019,9 +1298,7 @@ class TestInstantiate:
         class _Confirmation:
             document_ids = ()
 
-            def request_documents_replace(
-                self, document_ids, on_complete, on_cancel=None, **_kwargs
-            ):
+            def request_documents_replace(self, document_ids, on_complete, on_cancel=None, **_kwargs):
                 del on_complete, on_cancel
                 self.document_ids = tuple(document_ids)
                 return True
@@ -2065,9 +1342,7 @@ class TestInstantiate:
             SceneFileManager._instance = previous_manager
             set_project_root(previous_root)
 
-    def test_single_scene_commit_unloads_every_other_resident_scene(
-        self, scene, tmp_path, monkeypatch
-    ):
+    def test_single_scene_commit_unloads_every_other_resident_scene(self, scene, tmp_path, monkeypatch):
         from infernux.engine.project_context import get_project_root, set_project_root
 
         previous_root = get_project_root()

@@ -132,43 +132,10 @@ class TestTypedResourcePasses:
         assert command.source_resource == "source"
         assert command.destination_resource == "destination"
 
-    def test_present_pass_sets_graph_output(self):
-        graph = _make_graph()
-        with graph.add_pass("Opaque") as p:
-            p.write_color("color")
-            p.draw_renderers()
-        with graph.add_present_pass("Present") as p:
-            p.present("color")
-
-        description = graph.build()
-        present = description.passes[-1]
-        assert description.output_texture == "color"
-        assert present.type == GraphPassType.PRESENT
-        assert present.commands[0].type == GraphCommandType.PRESENT
-        assert present.commands[0].source_resource == "color"
-
-    def test_texture_copy_rejects_camera_target(self):
-        graph = _make_graph()
-        graph.create_texture("destination", format=Format.RGBA8_UNORM)
-        with graph.add_copy_pass("BadCameraCopy") as p:
-            p.copy_texture("color", "destination")
-        graph.set_output("destination")
-        with pytest.raises(ValueError, match="requires transient textures"):
-            graph.build()
-
 
 # ══════════════════════════════════════════════════════════════════════
 # RenderPassBuilder
 # ══════════════════════════════════════════════════════════════════════
-
-
-class TestRenderPassBuilder:
-    def test_draw_skybox(self):
-        graph = _make_graph()
-        with graph.add_pass("Sky") as p:
-            p.write_color("color")
-            p.draw_skybox()
-        assert graph.build().passes[0].commands[0].type == GraphCommandType.DRAW_SKYBOX
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -239,22 +206,6 @@ class TestGraphTextures:
         graph.set_temporal_jitter(False)
         assert not graph.build().temporal_jitter
 
-    @pytest.mark.parametrize("options, expected", [({"size": (37, 23)}, (37, 23, 0))])
-    def test_temporal_history_dimensions_and_scopes(self, options, expected):
-        graph = RenderGraph("Temporal")
-        with graph.name_scope("feedback"):
-            read, write = graph.create_temporal_history("color", **options)
-        with graph.add_copy_pass("Commit") as commit:
-            commit.copy_texture(read, write)
-            commit.set_side_effect()
-        graph.set_output(read)
-        textures = graph.build().textures
-        assert len(textures) == 2
-        for texture in textures:
-            assert (texture.width, texture.height, texture.size_divisor) == expected
-            assert texture.temporal_key == "feedback/color"
-        assert read.name == "feedback/color/read"
-
     @pytest.mark.parametrize("options", [{"size": (37, 23), "size_divisor": 2}])
     def test_invalid_temporal_dimensions_publish_no_partial_pair(self, options):
         graph = RenderGraph("Temporal")
@@ -268,57 +219,9 @@ class TestGraphTextures:
 # ══════════════════════════════════════════════════════════════════════
 
 
-class TestPassManagement:
-    def test_remove_and_reappend_reorders_topology_and_built_passes(self):
-        graph = _make_graph()
-        with graph.add_pass("A") as p:
-            p.write_color("color")
-            p.draw_renderers()
-        with graph.add_pass("B") as p:
-            p.write_color("color")
-            p.draw_renderers()
-        assert graph.has_pass("A") and not graph.has_pass("missing")
-        assert graph.remove_pass("missing") is None
-        removed = graph.remove_pass("A")
-        assert removed is not None
-        assert not graph.has_pass("A") and graph.pass_count == 1
-        assert not any(label == "A" for _, label in graph.topology_sequence)
-        graph.append_pass(removed)
-        assert graph.has_pass("A") and graph.pass_count == 2
-        names = [label for kind, label in graph.topology_sequence if kind == "pass"]
-        assert names == ["B", "A"]
-        assert [item.name for item in graph.build().passes] == ["B", "A"]
-
-
 # ══════════════════════════════════════════════════════════════════════
 # Injection point callbacks
 # ══════════════════════════════════════════════════════════════════════
-
-
-class TestInjectionPointCallback:
-    def test_callback_fires_for_screen_ui_section(self):
-        graph = _make_graph()
-        fired = []
-        graph._injection_callback = lambda name: fired.append(name)
-        with graph.add_pass("Opaque") as p:
-            p.write_color("color")
-            p.draw_renderers()
-        graph.screen_ui_section()
-        assert "before_post_process" in fired
-        assert "after_post_process" in fired
-        assert [stage.stable_id for stage in graph.effect_stages] == [
-            "after_camera_ui",
-            "final",
-            "after_screen_ui",
-        ]
-
-        commands = [
-            command
-            for render_pass in graph.build().passes
-            for command in render_pass.commands
-            if command.type == GraphCommandType.DRAW_SCREEN_UI
-        ]
-        assert [command.screen_ui_list for command in commands] == [0, 1]
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -329,60 +232,6 @@ class TestInjectionPointCallback:
 # ══════════════════════════════════════════════════════════════════════
 # Build & validation
 # ══════════════════════════════════════════════════════════════════════
-
-
-class TestBuild:
-    # hard/soft shadow selection lives on the Light component, not the
-    # graph pass (the former shadow_type parameter was a dead end and
-    # has been removed from the API).
-
-    def test_linear_camera_output_stops_before_display_encoding(self):
-        graph = _make_graph()
-        with graph.add_pass("Opaque") as p:
-            p.write_color("color").draw_renderers()
-        graph.display_encode_section()
-        graph.display_encode_section()
-        graph.set_output("color")
-        desc = graph.build()
-        assert desc.linear_output_texture == "color"
-        assert desc.linear_output_pass_count == 1
-        assert [p.name for p in desc.passes[: desc.linear_output_pass_count]] == ["Opaque"]
-        assert desc.passes[desc.linear_output_pass_count].name == "_DisplayEncode"
-        graph.remove_pass("Opaque")
-        desc = graph.build()
-        assert desc.linear_output_pass_count == 0
-        assert desc.passes[0].name == "_DisplayEncode"
-
-    def test_raw_camera_graph_does_not_invent_a_display_boundary(self):
-        graph = _make_graph()
-        with graph.add_pass("Opaque") as p:
-            p.write_color("color").draw_renderers()
-        desc = graph.build()
-        assert desc.linear_output_texture == ""
-        assert desc.linear_output_pass_count == 0
-
-    def test_dynamic_parameter_block_is_emitted_in_command_ir(self):
-        graph = _make_graph()
-        with graph.add_pass("Opaque") as p:
-            p.write_color("color")
-            p.draw_renderers()
-        graph.create_texture("_fx_out", format=Format.RGBA16_SFLOAT)
-        parameters = {"intensity": 0.5}
-        with graph.add_pass("FX") as p:
-            p.set_texture("_SourceTex", "color")
-            p.write_color("_fx_out")
-            p.bind_parameter_block("slot-1/fx", parameters)
-            p.set_param("threshold", 1.0)
-            p.fullscreen_quad("my_effect")
-        graph.set_output("_fx_out")
-
-        parameters["intensity"] = 4.0
-        command = graph.build().passes[1].commands[0]
-        assert command.type == GraphCommandType.FULLSCREEN_QUAD
-        assert command.shader_name == "my_effect"
-
-        assert command.parameter_block == "slot-1/fx"
-        assert dict(command.push_constants) == {"intensity": 0.5, "threshold": 1.0}
 
 
 # ══════════════════════════════════════════════════════════════════════

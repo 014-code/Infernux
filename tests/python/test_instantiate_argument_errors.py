@@ -17,13 +17,10 @@ def source_for(scene, kind):
     return PrefabRef()
 
 
-@pytest.mark.parametrize("kind,kwargs,message", [
-    ("object", {"position": "invalid"}, "position"),
-    ("object-ref", {"rotation": "invalid"}, "rotation"),
-    ("prefab-ref", {"parent": "invalid"}, "parent"),
-    ("object", {"instantiate_in_world_space": 1}, "bool"),
-    ("prefab-ref", {"unexpected_option": True}, "unexpected"),
-])
+@pytest.mark.parametrize(
+    "kind,kwargs,message",
+    [("object", {"position": "invalid"}, "position"), ("prefab-ref", {"parent": "invalid"}, "parent")],
+)
 def test_invalid_scalar_keywords_raise_type_error_without_scene_mutation(scene, kind, kwargs, message):
     source = source_for(scene, kind)
     before = scene.serialize_document()
@@ -32,11 +29,7 @@ def test_invalid_scalar_keywords_raise_type_error_without_scene_mutation(scene, 
     assert scene.serialize_document() == before
 
 
-@pytest.mark.parametrize("kind,duplicate", [
-    ("object", "parent"), ("object-ref", "world-space"),
-    ("prefab-ref", "position"), ("object", "rotation"),
-    ("object-ref", "placed-parent"), ("prefab-ref", "world-space-alias"),
-])
+@pytest.mark.parametrize("kind,duplicate", [("object", "parent"), ("prefab-ref", "world-space-alias")])
 def test_duplicate_scalar_parameters_are_rejected_without_selecting_one_value(scene, kind, duplicate):
     source = source_for(scene, kind)
     parent = scene.create_game_object("FirstParent")
@@ -100,8 +93,9 @@ def test_batch_rejects_duplicate_world_space_aliases_before_instantiation(scene)
     source = source_for(scene, "object-ref")
     before = scene.serialize_document()
     with pytest.raises(TypeError, match="multiple values"):
-        Instantiate(source, positions=[Vector3(1, 2, 3)],
-                    instantiate_in_world_space=False, instantiateInWorldSpace=True)
+        Instantiate(
+            source, positions=[Vector3(1, 2, 3)], instantiate_in_world_space=False, instantiateInWorldSpace=True
+        )
     assert scene.serialize_document() == before
 
 

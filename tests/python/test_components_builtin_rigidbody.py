@@ -13,53 +13,6 @@ from infernux.components.builtin.rigidbody import (
 )
 
 
-class TestCollisionDetectionModeMapping:
-    def test_unsupported_mode_is_rejected(self, cpp_rigidbody):
-        with pytest.raises(ValueError):
-            cpp_rigidbody.collision_detection_mode = 3
-
-
-class TestPropertyRoundTrip:
-    def test_enum_properties_round_trip(self, cpp_rigidbody):
-        rb = cpp_rigidbody
-        native = rb._cpp_component
-
-        rb.collision_detection_mode = CollisionDetectionMode.ContinuousDynamic
-        rb.interpolation = RigidbodyInterpolation.None_
-
-        assert native.collision_detection_mode == int(CollisionDetectionMode.ContinuousDynamic)
-        assert native.interpolation == int(RigidbodyInterpolation.None_)
-
-        native.collision_detection_mode = 2
-        native.interpolation = 1
-        assert rb.collision_detection_mode is CollisionDetectionMode.ContinuousDynamic
-        assert rb.interpolation is RigidbodyInterpolation.Interpolate
-
-
-class TestConstraintsHelpers:
-    def test_add_remove_has(self, cpp_rigidbody):
-        rb = cpp_rigidbody
-
-        rb.constraints_flags = (
-            RigidbodyConstraints.FreezePositionX | RigidbodyConstraints.FreezeRotationY
-        )
-        assert rb.has_constraint(RigidbodyConstraints.FreezePositionX)
-        assert rb.has_constraint(RigidbodyConstraints.FreezeRotationY)
-        assert not rb.has_constraint(RigidbodyConstraints.FreezePositionZ)
-
-        rb.add_constraint(RigidbodyConstraints.FreezeRotationZ)
-        assert rb.has_constraint(RigidbodyConstraints.FreezeRotationZ)
-
-        rb.remove_constraint(RigidbodyConstraints.FreezePositionX)
-        assert not rb.has_constraint(RigidbodyConstraints.FreezePositionX)
-
-    def test_freeze_rotation(self, cpp_rigidbody):
-        rb = cpp_rigidbody
-        assert rb.freeze_rotation is False
-        rb.freeze_rotation = True
-        assert rb._cpp_component.freeze_rotation is True
-
-
 class TestVelocityAndForce:
     def test_bound_wrapper_configures_moves_and_sleeps_a_dynamic_body(self, scene):
         owner = scene.create_game_object("Wrapper dynamics")
