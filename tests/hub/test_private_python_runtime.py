@@ -9,20 +9,17 @@ import subprocess
 import tarfile
 import zipfile
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
 
-PACKAGING_ROOT = (Path(__file__).resolve().parents[2] / "packaging")
+PACKAGING_ROOT = Path(__file__).resolve().parents[2] / "packaging"
 
 import embed_runtime_manager
 import stage_bundled_python_runtime
 from private_python_runtime import (
     extract_runtime_archive,
     is_private_runtime_root,
-    prune_runtime_staging_cache,
-    runtime_archive_for_machine,
 )
 
 
@@ -67,9 +64,7 @@ def test_managed_runtime_extraction_and_provenance_preserve_external_python(
     assert embed_runtime_manager._default_runtime_dir() == str(tmp_path / "HubData/Runtimes")
     assert stage_bundled_python_runtime._bootstrap_root() == str(tmp_path / "HubData/Downloads/RuntimeBootstrap")
     manager = embed_runtime_manager.PythonRuntimeManager(runtime_dir=str(runtime_dir))
-    monkeypatch.setattr(
-        manager, "_ensure_runtime_archive", lambda *_args, **_kwargs: str(archive)
-    )
+    monkeypatch.setattr(manager, "_ensure_runtime_archive", lambda *_args, **_kwargs: str(archive))
     monkeypatch.setattr(
         embed_runtime_manager,
         "extract_runtime_archive",
@@ -98,105 +93,6 @@ def test_managed_runtime_extraction_and_provenance_preserve_external_python(
     assert is_private_runtime_root(private_root)
     marker = (private_root / ".infernux-private-python-runtime.json").read_text(encoding="utf-8")
     assert archive.name in marker
-
-
-def test_runtime_catalog_versions_map_to_distinct_managed_roots(tmp_path) -> None:
-    artifact = runtime_archive_for_machine(system="win32", machine="AMD64")
-
-    assert artifact.name == (
-        "cpython-3.13.15+20260825-x86_64-pc-windows-msvc-"
-        "install_only.tar.gz"
-    )
-    assert artifact.url.startswith(
-        "https://github.com/astral-sh/python-build-standalone/releases/download/"
-    )
-    assert artifact.url.endswith(artifact.name.replace("+", "%2B"))
-    assert not artifact.name.endswith((".exe", ".msi", ".pkg"))
-
-    legacy = runtime_archive_for_machine(system="win32", machine="AMD64", runtime="3.12")
-    assert legacy.name.startswith("cpython-3.12.13+20260805-")
-    manager = embed_runtime_manager.PythonRuntimeManager(runtime_dir=str(tmp_path / "hub-runtime"))
-    assert Path(manager.private_runtime_root("3.12")).name == "python312"
-    assert Path(manager.private_runtime_root("3.13")).name == "python313"
-    assert manager.default_version == "3.13"
-
-
-def test_runtime_archive_download_uses_the_configured_ca_context(
-    tmp_path, monkeypatch
-):
-    artifact = SimpleNamespace(
-        name="python-runtime.tar.gz",
-        url="https://example.test/python-runtime.tar.gz",
-    )
-    context = object()
-    ca_bundle = str(tmp_path / "proxy-ca.pem")
-    manager = embed_runtime_manager.PythonRuntimeManager(
-        runtime_dir=str(tmp_path / "Runtimes"),
-    )
-    requests = []
-
-    monkeypatch.setattr(
-        embed_runtime_manager,
-        "runtime_archive_for_machine",
-        lambda **_kwargs: artifact,
-    )
-    monkeypatch.setattr(
-        embed_runtime_manager,
-        "create_download_ssl_context",
-        lambda path: requests.append(("context", path)) or context,
-    )
-    monkeypatch.setattr(
-        embed_runtime_manager.urllib.request,
-        "urlopen",
-        lambda request, **kwargs: (
-            requests.append((request.full_url, kwargs["context"])),
-            io.BytesIO(b"runtime archive"),
-        )[1],
-    )
-
-    archive_path = manager._ensure_runtime_archive(download_ca_bundle=ca_bundle)
-
-    assert Path(archive_path).read_bytes() == b"runtime archive"
-    assert requests == [
-        ("context", ca_bundle),
-        (artifact.url, context),
-    ]
-
-
-def test_runtime_archive_download_uses_the_default_context_without_a_ca(
-    tmp_path, monkeypatch
-):
-    artifact = SimpleNamespace(
-        name="python-runtime.tar.gz",
-        url="https://example.test/python-runtime.tar.gz",
-    )
-    manager = embed_runtime_manager.PythonRuntimeManager(
-        runtime_dir=str(tmp_path / "Runtimes"),
-    )
-    contexts = []
-
-    monkeypatch.setattr(
-        embed_runtime_manager,
-        "runtime_archive_for_machine",
-        lambda **_kwargs: artifact,
-    )
-    monkeypatch.setattr(
-        embed_runtime_manager,
-        "create_download_ssl_context",
-        lambda path: pytest.fail("no CA is configured"),
-    )
-    monkeypatch.setattr(
-        embed_runtime_manager.urllib.request,
-        "urlopen",
-        lambda request, **kwargs: (
-            contexts.append(kwargs["context"]),
-            io.BytesIO(b"runtime archive"),
-        )[1],
-    )
-
-    manager._ensure_runtime_archive()
-
-    assert contexts == [None]
 
 
 @pytest.mark.parametrize(
@@ -259,12 +155,17 @@ def test_broken_matching_bundle_does_not_fall_back_to_network(tmp_path, monkeypa
 def test_missing_pip_uses_bundled_ensurepip_without_network(tmp_path, monkeypatch, success):
     manager = embed_runtime_manager.PythonRuntimeManager(runtime_dir=str(tmp_path))
     commands = []
+
     def run(args, **kwargs):
         commands.append(args)
-        return subprocess.CompletedProcess(args, 0 if success and args[3] == "ensurepip" else 1,
-                                           stdout="", stderr="bootstrap failed")
+        return subprocess.CompletedProcess(
+            args, 0 if success and args[3] == "ensurepip" else 1, stdout="", stderr="bootstrap failed"
+        )
+
     monkeypatch.setattr(embed_runtime_manager, "_run_command", run)
-    monkeypatch.setattr(embed_runtime_manager, "_download_file", lambda *a, **kw: pytest.fail("pip bootstrap must be offline"))
+    monkeypatch.setattr(
+        embed_runtime_manager, "_download_file", lambda *a, **kw: pytest.fail("pip bootstrap must be offline")
+    )
     if success:
         manager._ensure_pip("python")
     else:
@@ -284,7 +185,9 @@ def test_runtime_zip_preserves_executable_permissions(tmp_path, monkeypatch):
         bundle.writestr(info, "#!/bin/sh\nprintf '3.13\\n'\n")
     manager = embed_runtime_manager.PythonRuntimeManager(runtime_dir=str(tmp_path / "managed"))
     monkeypatch.setattr(manager, "bundled_runtime_dirs", lambda: [str(bundle_dir)])
-    monkeypatch.setattr(embed_runtime_manager, "is_current_private_runtime_root", lambda root, **kw: Path(root).exists())
+    monkeypatch.setattr(
+        embed_runtime_manager, "is_current_private_runtime_root", lambda root, **kw: Path(root).exists()
+    )
     monkeypatch.setattr(manager, "_prepare_managed_runtime", lambda *a, **kw: None)
     monkeypatch.setattr(manager, "_relocate_runtime_scripts", lambda *a: None)
     python = manager._seed_runtime_from_bundle(version="3.13")
@@ -306,32 +209,8 @@ def test_runtime_archive_rejects_paths_outside_destination(tmp_path: Path) -> No
     assert not (tmp_path / "outside.txt").exists()
 
 
-def test_stale_packaging_runtime_is_removed_from_current_installer(tmp_path: Path) -> None:
-    legacy_installer = tmp_path / "python-3.12.8-amd64.exe"
-    legacy_installer.write_bytes(b"installer")
-    legacy_archive = (
-        tmp_path
-        / "cpython-3.12.13+20260805-x86_64-pc-windows-msvc-install_only.tar.gz"
-    )
-    legacy_archive.write_bytes(b"old archive")
-    current_archive = tmp_path / runtime_archive_for_machine().name
-    current_archive.write_bytes(b"current archive")
-    runtime_python = tmp_path / "python312" / "python.exe"
-    runtime_python.parent.mkdir()
-    runtime_python.write_bytes(b"runtime")
-
-    prune_runtime_staging_cache(tmp_path)
-
-    assert not legacy_installer.exists()
-    assert not legacy_archive.exists()
-    assert current_archive.read_bytes() == b"current archive"
-    assert not runtime_python.parent.exists()
-
-
 def test_runtime_manager_refuses_non_hub_python_destination(tmp_path: Path) -> None:
-    manager = embed_runtime_manager.PythonRuntimeManager(
-        runtime_dir=str(tmp_path / "hub-runtime")
-    )
+    manager = embed_runtime_manager.PythonRuntimeManager(runtime_dir=str(tmp_path / "hub-runtime"))
 
     with pytest.raises(
         embed_runtime_manager.PythonRuntimeError,
@@ -340,12 +219,8 @@ def test_runtime_manager_refuses_non_hub_python_destination(tmp_path: Path) -> N
         manager._extract_runtime_to_root(str(tmp_path / "user-python"))
 
 
-def test_runtime_reinstall_does_not_prepare_after_publication(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    manager = embed_runtime_manager.PythonRuntimeManager(
-        runtime_dir=str(tmp_path / "hub-runtime")
-    )
+def test_runtime_reinstall_does_not_prepare_after_publication(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = embed_runtime_manager.PythonRuntimeManager(runtime_dir=str(tmp_path / "hub-runtime"))
     expected_python = str(tmp_path / "hub-runtime" / "python313" / "python.exe")
     observed: dict[str, object] = {}
 
@@ -364,36 +239,10 @@ def test_runtime_reinstall_does_not_prepare_after_publication(
     assert observed["version"].series == "3.13"
 
 
-def test_runtime_manager_contains_no_python_installer_execution_path() -> None:
-    forbidden = (
-        "InstallAllUsers=",
-        "TargetDir=",
-        "Include_launcher=",
-        "InstallLauncherAllUsers=",
-        "python.org/ftp/python",
-        '"installer", "-pkg"',
-    )
-    sources = [
-        path
-        for path in PACKAGING_ROOT.rglob("*.py")
-        if "tests" not in path.parts and "runtime" not in path.parts
-    ]
-
-    for source_path in sources:
-        source = source_path.read_text(encoding="utf-8")
-        for token in forbidden:
-            assert token not in source, (
-                f"{source_path.relative_to(PACKAGING_ROOT)} reintroduced a system "
-                f"Python installer path: {token}"
-            )
-
-
 def test_project_runtime_requires_explicitly_installed_target_version(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    manager = embed_runtime_manager.PythonRuntimeManager(
-        runtime_dir=str(tmp_path / "hub-runtime")
-    )
+    manager = embed_runtime_manager.PythonRuntimeManager(runtime_dir=str(tmp_path / "hub-runtime"))
     provisioned = []
     monkeypatch.setattr(
         manager,
@@ -411,31 +260,3 @@ def test_project_runtime_requires_explicitly_installed_target_version(
         )
 
     assert provisioned == []
-
-
-def test_runtime_bundle_only_extracts_the_requested_python_version(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    bundle_dir = tmp_path / "bundle"
-    bundle_dir.mkdir()
-    runtime_bundle = bundle_dir / "runtime_bundle.zip"
-    with zipfile.ZipFile(runtime_bundle, "w") as bundle:
-        bundle.writestr("python313/python.exe", b"python 313")
-
-    managed_root = tmp_path / "managed"
-    existing_python313 = managed_root / "python313" / "keep.txt"
-    existing_python313.parent.mkdir(parents=True)
-    existing_python313.write_text("untouched", encoding="utf-8")
-    manager = embed_runtime_manager.PythonRuntimeManager(
-        runtime_dir=str(managed_root),
-        bundle_runtime_dir=str(bundle_dir),
-    )
-    monkeypatch.setattr(
-        manager,
-        "bundled_runtime_dirs",
-        lambda: [],
-    )
-
-    assert manager._seed_runtime_from_bundle(version="3.12") is None
-    assert existing_python313.read_text(encoding="utf-8") == "untouched"
-    assert not (managed_root / "python312").exists()

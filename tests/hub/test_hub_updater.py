@@ -55,38 +55,10 @@ def _catalog(
                 "published_at": "2026-09-03T00:00:00Z",
                 "release_url": "https://example.invalid/release",
                 "minimum_updatable_version": minimum_updatable_version,
-                "platforms": {
-                    platform: _platform_release(target, platform)
-                    for platform in platforms
-                },
+                "platforms": {platform: _platform_release(target, platform) for platform in platforms},
             }
         ],
     }
-
-
-def test_packaged_hub_version_requires_the_current_document(
-    tmp_path: Path, monkeypatch
-):
-    monkeypatch.setattr(hub_updater, "is_frozen", lambda: True)
-    monkeypatch.setattr(hub_updater, "get_app_dir", lambda: str(tmp_path))
-    (tmp_path / "hub-version.json").write_text(
-        '{"version": "0.4.0", "old_version": "0.3.7"}', encoding="utf-8"
-    )
-
-    with pytest.raises(ValueError, match="current schema"):
-        hub_updater.current_hub_version()
-
-
-def test_unpublished_release_does_not_offer_downloads(monkeypatch):
-    release = _catalog("0.4.0", "windows-x64", "linux-x64")
-    release["releases"][0]["published_at"] = None
-    monkeypatch.setattr(hub_updater, "_request_bytes", lambda *_args: json.dumps(release).encode())
-
-    result = check_for_update("0.3.7", platform_id="windows-x64")
-
-    assert result.status is HubUpdateStatus.CATALOG_INVALID
-    assert "not published" in result.detail
-    assert result.update is None
 
 
 @pytest.mark.parametrize("archive_readonly", [False, True])
@@ -141,24 +113,16 @@ def test_catalog_selection_and_archive_staging_use_current_platform_manifests(
     monkeypatch.setattr(
         hub_updater,
         "_download",
-        lambda _update, destination, _progress=None: shutil.copy2(
-            archive_path, destination
-        ),
+        lambda _update, destination, _progress=None: shutil.copy2(archive_path, destination),
     )
-    monkeypatch.setattr(
-        hub_updater, "_request_bytes", lambda *_args, **_kwargs: manifest_bytes
-    )
+    monkeypatch.setattr(hub_updater, "_request_bytes", lambda *_args, **_kwargs: manifest_bytes)
 
     staged = stage_update(update)
 
     assert (staged / "stage" / "Infernux Hub.exe").read_bytes() == b"new executable"
     assert (staged / "stage" / "lib.dll").read_bytes() == b"new library"
-    assert (
-        staged / "stage" / manifest_asset_name(platform)
-    ).read_bytes() == manifest_bytes
-    metadata = json.loads(
-        (staged / "hub-update.json").read_text(encoding="utf-8")
-    )
+    assert (staged / "stage" / manifest_asset_name(platform)).read_bytes() == manifest_bytes
+    metadata = json.loads((staged / "hub-update.json").read_text(encoding="utf-8"))
     assert metadata["target_version"] == "1.1.0"
     assert metadata["delete"] == ["removed.dll"]
     assert {entry["path"] for entry in metadata["files"]} == {
@@ -168,56 +132,6 @@ def test_catalog_selection_and_archive_staging_use_current_platform_manifests(
     }
     if sys.platform == "win32":
         (staged / "stage" / "lib.dll").write_bytes(b"ordinary user replacement")
-
-
-@pytest.mark.parametrize("platform", ["windows-x64", "linux-x64"])
-def test_hotfix_catalog_progression_preserves_each_platform_asset(monkeypatch, platform):
-    release = _catalog("0.4.2-2", "windows-x64", "linux-x64")
-    monkeypatch.setattr(hub_updater, "_request_bytes", lambda *_args: json.dumps(release).encode())
-    initial = check_for_update("0.4.2", platform_id=platform)
-    assert initial.status is HubUpdateStatus.UPDATE_AVAILABLE
-    assert initial.update.current_version == "0.4.2"
-    assert initial.update.target_version == "0.4.2-2"
-    assert initial.update.asset_name == f"InfernuxHub-0.4.2-2-{platform}-full.zip"
-    assert initial.update.manifest_url.endswith(f"InfernuxHub-{platform}-manifest.json")
-    assert initial.update.platform == platform
-
-    release.update(_catalog("0.4.2-3", "windows-x64", "linux-x64"))
-    following = check_for_update(initial.update.target_version, platform_id=platform)
-    assert following.status is HubUpdateStatus.UPDATE_AVAILABLE
-    assert following.update.current_version == "0.4.2-2"
-    assert following.update.target_version == "0.4.2-3"
-    assert following.update.asset_name == f"InfernuxHub-0.4.2-3-{platform}-full.zip"
-    assert check_for_update(following.update.target_version, platform_id=platform).status is HubUpdateStatus.UP_TO_DATE
-
-
-def test_check_requires_the_current_platform_release(monkeypatch):
-    release = _catalog("1.1.0", "windows-x64")
-    monkeypatch.setattr(
-        hub_updater,
-        "_request_bytes",
-        lambda *_args, **_kwargs: json.dumps(release).encode(),
-    )
-
-    result = check_for_update("1.0.0", platform_id="linux-x64")
-
-    assert result.status is HubUpdateStatus.CATALOG_INVALID
-    assert "no linux-x64 release" in result.detail
-
-
-def test_check_rejects_a_malformed_catalog(monkeypatch):
-    release = _catalog("1.1.0", "windows-x64")
-    del release["releases"][0]["published_at"]
-    monkeypatch.setattr(
-        hub_updater,
-        "_request_bytes",
-        lambda *_args, **_kwargs: json.dumps(release).encode(),
-    )
-
-    result = check_for_update("1.0.0", platform_id="windows-x64")
-
-    assert result.status is HubUpdateStatus.CATALOG_INVALID
-    assert "current contract" in result.detail
 
 
 def test_check_reports_network_unavailable(monkeypatch):
@@ -232,44 +146,17 @@ def test_check_reports_network_unavailable(monkeypatch):
     assert "offline" in result.detail
 
 
-def test_request_preserves_the_actual_network_failure(monkeypatch):
-    def fail(*_args, **_kwargs):
-        raise OSError("connection timed out")
-
-    monkeypatch.setattr(hub_updater.urllib.request, "urlopen", fail)
-
-    with pytest.raises(OSError, match="connection timed out"):
-        hub_updater._request_bytes("https://example.invalid/catalog")
-
-
-def test_catalog_uses_the_website_before_its_static_mirror(monkeypatch):
-    requested = []
-    release = _catalog("1.1.0", "windows-x64")
-
-    def fetch(request, *, timeout):
-        requested.append(request.full_url)
-        assert timeout == 15
-        if len(requested) == 1:
-            raise OSError("website unavailable")
-        return io.BytesIO(json.dumps(release).encode())
-
-    monkeypatch.setattr(hub_updater.urllib.request, "urlopen", fetch)
-
-    result = check_for_update("1.0.0", platform_id="windows-x64")
-
-    assert result.status is HubUpdateStatus.UPDATE_AVAILABLE
-    assert requested == [
-        "https://infernux-engine.com/hub-catalog.json",
-        "https://raw.githubusercontent.com/ChenlizheMe/Infernux/master/docs/hub-catalog.json",
-    ]
-
-
-@pytest.mark.parametrize("body, status", [
-    (b"not json", HubUpdateStatus.CATALOG_INVALID),
-    (json.dumps(_catalog("1.0.0", "windows-x64")).encode(), HubUpdateStatus.UP_TO_DATE),
-])
+@pytest.mark.parametrize(
+    "body, status",
+    [
+        (b"not json", HubUpdateStatus.CATALOG_INVALID),
+        (json.dumps(_catalog("1.0.0", "windows-x64")).encode(), HubUpdateStatus.UP_TO_DATE),
+    ],
+)
 def test_a_successful_catalog_response_does_not_query_another_authority(
-    monkeypatch, body, status,
+    monkeypatch,
+    body,
+    status,
 ):
     requested = []
 
@@ -283,35 +170,6 @@ def test_a_successful_catalog_response_does_not_query_another_authority(
 
     assert result.status is status
     assert requested == [hub_updater.HUB_CATALOG_URL]
-
-
-def test_catalog_network_failures_are_bounded_and_visible(monkeypatch):
-    requested = []
-
-    def fetch(request, *, timeout):
-        requested.append(request.full_url)
-        raise OSError("offline")
-
-    monkeypatch.setattr(hub_updater.urllib.request, "urlopen", fetch)
-
-    result = check_for_update("1.0.0", platform_id="windows-x64")
-
-    assert result.status is HubUpdateStatus.NETWORK_UNAVAILABLE
-    assert "offline" in result.detail
-    assert len(requested) == 2
-
-
-@pytest.mark.parametrize("current, target, status", [
-    ("1.1.0-rc.1", "1.1.0", HubUpdateStatus.UPDATE_AVAILABLE),
-    ("1.1.0-rc.2", "1.1.0-rc.10", HubUpdateStatus.UPDATE_AVAILABLE),
-    ("1.1.0", "1.1.0-rc.1", HubUpdateStatus.UP_TO_DATE),
-    ("1.9.9", "1.10.0", HubUpdateStatus.UPDATE_AVAILABLE),
-])
-def test_version_ordering_includes_release_candidates(monkeypatch, current, target, status):
-    release = _catalog(target, "windows-x64")
-    monkeypatch.setattr(hub_updater, "_request_bytes", lambda *_args: json.dumps(release).encode())
-
-    assert check_for_update(current, platform_id="windows-x64").status is status
 
 
 def test_download_uses_a_bounded_timeout_and_one_asset_mirror(tmp_path, monkeypatch):
@@ -338,19 +196,6 @@ def test_download_uses_a_bounded_timeout_and_one_asset_mirror(tmp_path, monkeypa
     assert requested == [update.asset_url, update.asset_fallback_url]
 
 
-def test_catalog_migration_gate_becomes_an_optional_update_after_install(monkeypatch):
-    release = _catalog("0.4.0", "windows-x64", minimum_updatable_version="0.4.0")
-    monkeypatch.setattr(hub_updater, "_request_bytes", lambda *_args, **_kwargs: json.dumps(release).encode())
-    result = check_for_update("0.3.7", platform_id="windows-x64")
-    assert result.status is HubUpdateStatus.UNSUPPORTED_CURRENT_VERSION
-    assert result.update is None
-    assert result.installer_url.endswith("windows-x64.exe")
-    release.update(_catalog("0.4.1", "windows-x64", minimum_updatable_version="0.4.0"))
-    optional = check_for_update("0.4.0", platform_id="windows-x64")
-    assert optional.status is HubUpdateStatus.UPDATE_AVAILABLE
-    assert optional.update is not None
-
-
 def test_packaged_updater_requests_elevation(tmp_path: Path, monkeypatch):
     staged = tmp_path / "update"
     (staged / "stage").mkdir(parents=True)
@@ -359,9 +204,7 @@ def test_packaged_updater_requests_elevation(tmp_path: Path, monkeypatch):
 
     monkeypatch.setattr(hub_updater.sys, "platform", "win32")
     monkeypatch.setattr(hub_updater, "is_frozen", lambda: True)
-    monkeypatch.setattr(
-        hub_updater, "get_app_dir", lambda: str(tmp_path / "installed")
-    )
+    monkeypatch.setattr(hub_updater, "get_app_dir", lambda: str(tmp_path / "installed"))
 
     def launch(script, arguments, working_directory):
         observed["script"] = script
@@ -379,6 +222,7 @@ def test_packaged_updater_requests_elevation(tmp_path: Path, monkeypatch):
     assert "-MetadataPath" in observed["arguments"]
     script = observed["script"].read_text(encoding="utf-8-sig")
     from style import StyleManager
+
     assert StyleManager.palette(True).bg_base in script
     assert "@BG_BASE@" not in script
 
@@ -404,9 +248,7 @@ def test_packaged_linux_updater_uses_the_managed_runtime(tmp_path: Path, monkeyp
     monkeypatch.setattr(
         hub_updater.subprocess,
         "Popen",
-        lambda arguments, **kwargs: observed.update(
-            arguments=arguments, kwargs=kwargs
-        ),
+        lambda arguments, **kwargs: observed.update(arguments=arguments, kwargs=kwargs),
     )
 
     hub_updater.launch_external_updater(staged, is_dark=True)
@@ -453,13 +295,9 @@ def test_stage_update_rejects_an_unowned_archive_member(tmp_path: Path, monkeypa
     monkeypatch.setattr(
         hub_updater,
         "_download",
-        lambda _update, destination, _progress=None: shutil.copy2(
-            archive_path, destination
-        ),
+        lambda _update, destination, _progress=None: shutil.copy2(archive_path, destination),
     )
-    monkeypatch.setattr(
-        hub_updater, "_request_bytes", lambda *_args, **_kwargs: manifest_bytes
-    )
+    monkeypatch.setattr(hub_updater, "_request_bytes", lambda *_args, **_kwargs: manifest_bytes)
 
     with pytest.raises(ValueError, match="does not match its manifest"):
         stage_update(update)

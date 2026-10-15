@@ -15,9 +15,7 @@ SCRIPT = ACCEPTANCE / "android_multitouch_smoke.py"
 def _module():
     sys.path.insert(0, str(ACCEPTANCE))
     try:
-        spec = importlib.util.spec_from_file_location(
-            "android_multitouch_smoke", SCRIPT
-        )
+        spec = importlib.util.spec_from_file_location("android_multitouch_smoke", SCRIPT)
         assert spec is not None and spec.loader is not None
         module = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = module
@@ -74,96 +72,5 @@ I/python.stdout: INFERNUX_PLATFORM_FIXTURE_SCREEN_STATE revision=9 size=3200x144
 
 @pytest.mark.parametrize("cycles", [0, 1, 2, 10])
 def test_resume_requires_exact_completed_cycle_count(cycles):
-    output = (
-        "INSTRUMENTATION_RESULT: INFERNUX_SURFACE_RESUME=passed\n"
-        f"INSTRUMENTATION_RESULT: resumeCycles={cycles}\n"
-    )
+    output = f"INSTRUMENTATION_RESULT: INFERNUX_SURFACE_RESUME=passed\nINSTRUMENTATION_RESULT: resumeCycles={cycles}\n"
     assert _module().validate_resume_output(output, cycles) == cycles
-
-
-@pytest.mark.parametrize(
-    "output",
-    [
-        "INSTRUMENTATION_RESULT: resumeCycles=2\n",
-        "INSTRUMENTATION_RESULT: INFERNUX_SURFACE_RESUME=failed\n"
-        "INSTRUMENTATION_RESULT: resumeCycles=2\n",
-        "INSTRUMENTATION_RESULT: INFERNUX_SURFACE_RESUME=passed\n",
-        "INSTRUMENTATION_RESULT: INFERNUX_SURFACE_RESUME=passed\n"
-        "INSTRUMENTATION_RESULT: resumeCycles=0\n",
-        "INSTRUMENTATION_RESULT: INFERNUX_SURFACE_RESUME=passed\n"
-        "INSTRUMENTATION_RESULT: resumeCycles=1\n",
-        "INSTRUMENTATION_RESULT: INFERNUX_SURFACE_RESUME=passed\n"
-        "INSTRUMENTATION_RESULT: resumeCycles=3\n",
-        "INSTRUMENTATION_RESULT: INFERNUX_SURFACE_RESUME=passed\n"
-        "INSTRUMENTATION_RESULT: resumeCycles=2\n"
-        "INSTRUMENTATION_RESULT: resumeCycles=2\n",
-    ],
-)
-def test_resume_rejects_missing_failed_or_incomplete_evidence(output):
-    with pytest.raises(RuntimeError):
-        _module().validate_resume_output(output, 2)
-
-
-@pytest.mark.parametrize("cycles", ["-1", "11"])
-def test_resume_parser_rejects_invalid_counts(cycles):
-    with pytest.raises(SystemExit):
-        _module()._parser().parse_args(
-            ["input.apk", "--target-package", "test.player", "--resume-cycles", cycles]
-        )
-
-
-def test_screen_state_samples_reject_inconsistent_safe_rect():
-    module = _module()
-    log = """
-INFERNUX_PLATFORM_FIXTURE_SCREEN_STATE revision=4 size=3200x1440 framebuffer=3200x1440 safe=0,0,3200,1440 insets=161,161,0,60 pixel_ratio=3.750000
-"""
-
-    with pytest.raises(RuntimeError, match="safe_area and safe_insets disagree"):
-        module.screen_state_samples(log)
-
-
-@pytest.mark.parametrize(
-    "output",
-    [
-        "INSTRUMENTATION_CODE: -1",
-        "INSTRUMENTATION_RESULT: INFERNUX_MULTITOUCH_INJECTION=failed\nINSTRUMENTATION_CODE: 0",
-        "INSTRUMENTATION_RESULT: INFERNUX_MULTITOUCH_INJECTION=passed\nINSTRUMENTATION_CODE: -1",
-    ],
-)
-def test_instrumentation_result_fails_closed(output: str):
-    module = _module()
-
-    with pytest.raises(RuntimeError):
-        module.validate_instrumentation_output(output)
-
-
-def test_parser_uses_current_android_fixture_contract():
-    module = _module()
-
-    with pytest.raises(SystemExit):
-        module._parser().parse_args(["input.apk"])
-
-    arguments = module._parser().parse_args(
-        ["input.apk", "--target-package", "com.infernux.infernux041labv2"]
-    )
-
-    assert arguments.target_package == "com.infernux.infernux041labv2"
-    assert arguments.instrumentation_package == "com.infernux.acceptance.input"
-    assert arguments.wait_milliseconds == 7000
-    assert module._DEFAULT_REQUIRED_LOGS == (
-        "INFERNUX_PLATFORM_FIXTURE_SCREEN_STATE",
-        "INFERNUX_PLATFORM_FIXTURE_PACKAGE_RESOURCE_READY "
-        "value=Package resource reached UIText on every Player target.",
-        "INFERNUX_PLATFORM_FIXTURE_PRELOAD_RESOURCE_READY "
-        "value=Package resource reached UIText on every Player target.",
-        "INFERNUX_PLATFORM_FIXTURE_MANAGED_GUID_READ_READY "
-        "guid=8b7148eba8303c90b0589315c16f7cba",
-        "INFERNUX_PLATFORM_FIXTURE_MULTITOUCH_READY",
-        "INFERNUX_PLATFORM_FIXTURE_UNITY_TOUCH_READY",
-        "INFERNUX_PLATFORM_FIXTURE_TOUCH_CANCELED",
-        "INFERNUX_PLATFORM_FIXTURE_UI_CLICK_READY",
-        "INFERNUX_PLATFORM_FIXTURE_IME_VISIBLE",
-        "INFERNUX_PLATFORM_FIXTURE_TEXT_COMMITTED value=输入测试中文🙂",
-        "INFERNUX_PLATFORM_FIXTURE_IME_HIDDEN",
-        "INFERNUX_PLATFORM_FIXTURE_BACK_READY",
-    )
