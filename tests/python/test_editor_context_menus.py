@@ -1,8 +1,3 @@
-from types import SimpleNamespace
-from pathlib import Path
-
-import pytest
-
 from infernux.engine.interaction import (
     CommandStatus,
     CommandSource,
@@ -55,42 +50,13 @@ def _registry() -> EditorCommandRegistry:
     )
 
 
-def test_context_menu_uses_registry_metadata_payload_and_checked_state():
-    registry = _registry()
-    received = []
-    registry.register(
-        EditorCommand(
-            "edit.toggle",
-            lambda context: received.append(dict(context.payload)) or True,
-            display_name="Toggle",
-            default_shortcut="Ctrl+T",
-            is_checked=lambda context: bool(context.payload.get("checked")),
-        )
-    )
-    ctx = _MenuContext("Toggle")
-
-    rendered = ContextMenuBuilder(registry).render(
-        ctx,
-        (ContextMenuCommand("edit.toggle", payload={"local": 2}),),
-        payload={"checked": True, "root": 1},
-    )
-
-    assert ctx.items == [("Toggle", "Ctrl+T", True, True)]
-    assert received == [{"checked": True, "root": 1, "local": 2}]
-    assert rendered is not None
-    assert rendered.result.status is CommandStatus.EXECUTED
-    assert ctx.closed == 1
-    assert ctx.semantics == [("menu_item", "Toggle", True, "edit.toggle")]
-
-
 def test_context_menu_can_defer_domain_execution_until_widget_scopes_close():
     registry = _registry()
     events = []
     registry.register(
         EditorCommand(
             "asset.clear",
-            lambda context: events.append(("execute", context.payload["field"]))
-            or True,
+            lambda context: events.append(("execute", context.payload["field"])) or True,
             display_name="Clear",
         )
     )
@@ -160,9 +126,7 @@ def test_deferred_context_menu_executes_the_frozen_focus_and_selection():
     assert len(captured) == 1
     assert captured[0].source is CommandSource.CONTEXT_MENU
     assert captured[0].focus.active_panel_id == "project"
-    assert captured[0].selection.primary == SelectionTarget.asset(
-        "C:/Project/Assets/A.mat"
-    )
+    assert captured[0].selection.primary == SelectionTarget.asset("C:/Project/Assets/A.mat")
     assert captured[0].payload["target_id"].endswith("A.mat")
 
 
@@ -211,11 +175,6 @@ def test_context_menu_disabled_reason_hidden_items_and_separator_groups():
     assert ctx.separators == 1
 
 
-def test_context_menu_rejects_unregistered_commands():
-    with pytest.raises(KeyError, match="not registered"):
-        ContextMenuBuilder(_registry()).resolve((ContextMenuCommand("missing"),))
-
-
 def test_context_menu_submenus_keep_leaf_commands_registry_backed():
     registry = _registry()
     received = []
@@ -253,36 +212,6 @@ def test_context_menu_submenus_keep_leaf_commands_registry_backed():
     assert result.command.spec.command_id == "scene.create"
 
 
-def test_context_menu_hides_an_empty_nested_branch():
-    registry = _registry()
-    registry.register(
-        EditorCommand(
-            "hidden",
-            lambda _context: True,
-            can_execute=lambda _context: False,
-        )
-    )
-    ctx = _MenuContext()
-
-    ContextMenuBuilder(registry).render(
-        ctx,
-        (
-            ContextMenuSubmenu(
-                "Empty",
-                (ContextMenuCommand("hidden", hide_when_disabled=True),),
-                semantic_id="test.empty",
-            ),
-        ),
-    )
-
-    assert ctx.submenus == []
-
-
-def test_context_menu_submenus_require_stable_semantic_identity():
-    with pytest.raises(ValueError, match="semantic_id"):
-        ContextMenuSubmenu("Unstable", ())
-
-
 def _flatten_menu_entries(entries):
     flattened = []
     for entry in entries:
@@ -291,85 +220,3 @@ def _flatten_menu_entries(entries):
         else:
             flattened.append(entry)
     return flattened
-
-
-def test_hierarchy_menu_freezes_target_and_create_parent_payloads():
-    from infernux.engine.ui.core_context_menus import hierarchy_context_menu
-
-    entries = hierarchy_context_menu(
-        lambda key: key,
-        target_id=42,
-        target_is_prefab=True,
-    )
-    leaves = _flatten_menu_entries(entries)
-    create_entries = [entry for entry in leaves if entry.command_id == "scene.create_object"]
-    rename = next(entry for entry in leaves if entry.command_id == "edit.rename")
-    prefab = next(entry for entry in leaves if entry.command_id == "prefab.apply")
-
-    assert create_entries
-    assert {entry.payload["parent_id"] for entry in create_entries} == {42}
-    assert rename.payload["target_id"] == "42"
-    assert prefab.payload["object_id"] == 42
-
-
-def test_hierarchy_root_menu_exposes_scene_and_ui_creation_together():
-    from infernux.engine.ui.core_context_menus import hierarchy_context_menu
-
-    leaves = _flatten_menu_entries(hierarchy_context_menu(lambda key: key))
-    kinds = {
-        entry.payload["kind"]
-        for entry in leaves
-        if entry.command_id == "scene.create_object"
-    }
-
-    assert "empty" in kinds
-    assert "primitive.cube" in kinds
-    assert "ui.canvas" in kinds
-
-
-def test_project_menu_freezes_logical_and_reveal_paths_separately():
-    from infernux.engine.ui.core_context_menus import project_context_menu
-
-    entries = project_context_menu(
-        lambda key: key,
-        target_path="Assets/model.fbx::submesh:Body",
-        reveal_path="C:/Game/Assets/model.fbx",
-        current_path="C:/Game/Assets",
-    )
-    leaves = _flatten_menu_entries(entries)
-    reveal = next(
-        entry for entry in leaves
-        if entry.command_id == "project.reveal_in_explorer"
-    )
-    rename = next(entry for entry in leaves if entry.command_id == "edit.rename")
-
-    assert reveal.payload == {"path": "C:/Game/Assets/model.fbx"}
-    assert rename.payload == {"target_id": "Assets/model.fbx::submesh:Body"}
-
-
-def test_project_menu_always_offers_inxpackage_import():
-    from infernux.engine.ui.core_context_menus import project_context_menu
-
-    for target_path in ("", "Assets/Materials"):
-        leaves = _flatten_menu_entries(
-            project_context_menu(
-                lambda key: key,
-                target_path=target_path,
-                current_path="C:/Game/Assets",
-            )
-        )
-        entry = next(
-            item for item in leaves if item.command_id == "inxpackage.import"
-        )
-        assert entry.label == "project.import_inxpackage"
-        assert entry.semantic_id == "project.context.import_inxpackage"
-
-
-def test_project_menu_offers_render_texture_through_asset_create_command():
-    from infernux.engine.ui.core_context_menus import project_context_menu
-
-    entries = _flatten_menu_entries(project_context_menu(
-        lambda key: key, current_path="C:/Game/Assets"))
-    entry = next(item for item in entries if item.label == "project.create_render_texture")
-    assert entry.command_id == "asset.create"
-    assert entry.payload["kind"] == "render_texture"

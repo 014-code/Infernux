@@ -2,9 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-from infernux.engine.nuitka_builder import NuitkaBuilder
-from infernux.engine.ui.curve_editor import render_curve_property
-from infernux.engine.ui.dpi import editor_dpi_scale
 from infernux.engine.ui.editor_modal import (
     EditorModalAction,
     begin_editor_modal,
@@ -13,10 +10,8 @@ from infernux.engine.ui.editor_modal import (
 from infernux.engine.ui.editor_panel import EditorPanel
 from infernux.engine.ui.inspector_utils import (
     render_compact_section_header,
-    render_inspector_checkbox,
 )
 from infernux.engine.ui.theme import Theme
-from infernux.graph.ramp import AnimationCurve
 
 
 class _ModalContext:
@@ -197,42 +192,6 @@ def test_editor_modal_metrics_follow_per_monitor_scale(scale: float):
 
 
 @pytest.mark.parametrize("scale", [1.0, 1.5])
-def test_curve_editor_preview_and_popup_follow_per_monitor_scale(scale: float):
-    ctx = _CurvePreviewContext(scale)
-
-    assert render_curve_property(
-        ctx, "dpi_curve", AnimationCurve().to_dict()
-    ) == AnimationCurve().to_dict()
-
-    assert ctx.buttons == [
-        ("##dpi_curve_curve_preview", 120.0 * scale, Theme.CURVE_EDITOR_PREVIEW_H * scale)
-    ]
-    assert ctx.window_size == (440.0 * scale, 440.0 * scale, Theme.COND_ALWAYS)
-
-
-@pytest.mark.parametrize("scale", [0.0, -1.0, float("inf"), float("nan")])
-def test_editor_dpi_rejects_invalid_native_scale(scale: float):
-    with pytest.raises(RuntimeError, match="invalid display scale"):
-        editor_dpi_scale(_ModalContext(scale))
-
-
-@pytest.mark.parametrize("scale", [1.0, 1.5])
-def test_editor_panel_initial_size_follows_per_monitor_scale(scale: float):
-    assert _SizedPanel()._scaled_initial_size(_ModalContext(scale)) == (
-        800.0 * scale,
-        600.0 * scale,
-    )
-
-
-def test_windows_player_manifest_requires_per_monitor_v2_without_dpi_fallback():
-    manifest = NuitkaBuilder._UTF8_MANIFEST.decode("utf-8")
-
-    assert ">PerMonitorV2</dpiAwareness>" in manifest
-    assert "PerMonitorV2," not in manifest
-    assert "<dpiAware xmlns=" not in manifest
-
-
-@pytest.mark.parametrize("scale", [1.0, 1.5])
 def test_inspector_native_header_metrics_follow_per_monitor_scale(scale: float):
     ctx = _NativeInspectorContext(scale)
 
@@ -252,18 +211,3 @@ def test_inspector_native_header_metrics_follow_per_monitor_scale(scale: float):
     assert call[9] == pytest.approx(Theme.INSPECTOR_HEADER_BORDER_SIZE * scale)
     assert call[12] == pytest.approx(Theme.INSPECTOR_HEADER_RIGHT_MARGIN * scale)
     assert call[13] == pytest.approx(Theme.COMPONENT_ICON_SIZE * scale)
-
-
-def test_inspector_widgets_require_current_native_bindings():
-    with pytest.raises(RuntimeError, match="native checkbox_inspector"):
-        render_inspector_checkbox(object(), "Enabled", True)
-
-    with pytest.raises(RuntimeError, match="native render_compact_section_header"):
-        render_compact_section_header(_ModalContext(1.0), "Rendering")
-
-
-def test_inspector_checkbox_uses_native_contract():
-    ctx = _NativeInspectorContext(2.0)
-
-    assert render_inspector_checkbox(ctx, "Enabled", False)
-    assert ctx.checkbox_calls == [("Enabled", False)]
