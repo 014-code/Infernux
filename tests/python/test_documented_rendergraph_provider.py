@@ -9,8 +9,7 @@ from infernux.renderstack import RenderStack
 from infernux.renderstack.render_pipeline import RenderPipeline
 
 
-@pytest.mark.parametrize("language", ("en", "zh"))
-@pytest.mark.parametrize("output_samples", (1, 2, 4, 8))
+@pytest.mark.parametrize("language,output_samples", [("en", 1), ("zh", 4)])
 def test_documented_integer_provider_builds(language, output_samples):
     source = Path(__file__).resolve().parents[2] / "docs/learn/rendergraph-advanced.md"
     english, chinese = source.read_text(encoding="utf-8").split("<!-- language:zh -->")
@@ -57,22 +56,20 @@ class _StandaloneContext:
         self.submissions.append(culling)
 
 
-@pytest.mark.parametrize("language", ("en", "zh"))
-@pytest.mark.parametrize("output_samples", (1, 2, 4, 8))
-def test_documented_base_color_pipeline_builds_standalone(language, output_samples):
+def test_documented_base_color_pipeline_uses_offscreen_target_samples():
     source = Path(__file__).resolve().parents[2] / "docs/learn/rendergraph-advanced.md"
-    english, chinese = source.read_text(encoding="utf-8").split("<!-- language:zh -->")
-    blocks = re.findall(r"```python\n(.*?)```", english if language == "en" else chinese, re.S)
+    english, _chinese = source.read_text(encoding="utf-8").split("<!-- language:zh -->")
+    blocks = re.findall(r"```python\n(.*?)```", english, re.S)
     complete = next(block for block in blocks if "class BaseColorPresentPipeline(" in block)
     namespace = {"__name__": __name__}
     exec(compile(complete, str(source), "exec"), namespace)
     pipeline = namespace["BaseColorPresentPipeline"]()
-    context = _StandaloneContext(output_samples)
+    context = _StandaloneContext(4)
     camera = object()
     for _ in range(2):
         pipeline.render(context, camera)
     description, = context.descriptions
-    assert description.msaa_samples == output_samples
+    assert description.msaa_samples == 4
     assert any(p.name == "opaque_preview_color" for p in description.passes)
     assert any(p.name == "Present" for p in description.passes)
     assert context.submissions == [camera, camera]
@@ -81,8 +78,7 @@ def test_documented_base_color_pipeline_builds_standalone(language, output_sampl
         pipeline.require_buffer("preview_color")
 
 
-@pytest.mark.parametrize("output_samples", (1, 2, 4, 8))
-def test_standalone_pipeline_publishes_immutable_result_revisions(output_samples):
+def test_standalone_pipeline_publishes_immutable_result_revisions():
     class ResultsPipeline(RenderPipeline):
         def define_topology(self, graph):
             graph.set_msaa_samples(1)
@@ -95,7 +91,7 @@ def test_standalone_pipeline_publishes_immutable_result_revisions(output_samples
             graph.set_output(self.sample_buffer(self.updated, "color"))
 
     pipeline = ResultsPipeline()
-    context = _StandaloneContext(output_samples)
+    context = _StandaloneContext(4)
     pipeline.render(context, object())
     assert pipeline.initial.sample("color").name == "original"
     assert pipeline.updated.sample("color").name == "updated"

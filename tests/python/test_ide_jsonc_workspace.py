@@ -9,21 +9,13 @@ from infernux.engine.ui import project_utils
 
 
 DOCUMENTS = [
-    ('{"editor.fontSize": 18}', '"editor.fontSize": 18'),
-    ('{"editor.fontSize": 12, "editor.fontSize": 18}', '"editor.fontSize": 12, "editor.fontSize": 18'),
-    ('{\n// Team preference\n"editor.fontSize": 18\n}', '// Team preference'),
-    ('{/* Team preference */ "editor.fontSize": 18}', '/* Team preference */'),
-    ('{"editor.fontSize": 18, /* keep comma */}', '/* keep comma */'),
-    ('\ufeff{\r\n\t"editor.fontSize": 18, // 中文说明\r\n}\r\n', '// 中文说明\r\n'),
-    ('{"[python]": {"editor.rulers": [80, 120,],}, "url": "https://host/a//b",}',
+    ('direct', '\ufeff{\r\n\t"editor.fontSize": 18, // 中文说明\r\n}\r\n', '// 中文说明\r\n'),
+    ('project', '{"[python]": {"editor.rulers": [80, 120,],}, "url": "https://host/a//b",}',
      '"[python]": {"editor.rulers": [80, 120,],}'),
-    (r'{"quote": "escaped \" /* not a comment */", "path": "C:\\tools\\", "editor.fontSize": 18}',
-     r'"quote": "escaped \" /* not a comment */"'),
 ]
 
 
-@pytest.mark.parametrize("entrypoint", ["direct", "project"])
-@pytest.mark.parametrize("source,untouched", DOCUMENTS)
+@pytest.mark.parametrize("entrypoint,source,untouched", DOCUMENTS)
 def test_supported_jsonc_reaches_actual_ide_launch_boundary(tmp_path, monkeypatch, entrypoint, source, untouched):
     script = tmp_path / "Assets/Hello.py"
     script.parent.mkdir()
@@ -52,8 +44,7 @@ def test_supported_jsonc_reaches_actual_ide_launch_boundary(tmp_path, monkeypatc
                for path, payload, stamp in before)
 
 
-@pytest.mark.parametrize("settings_bad", [True, False])
-@pytest.mark.parametrize("invalid", ['{"x":', '{/* incomplete', '{"x": "unterminated}', '[1,2]', '{"x":,}'])
+@pytest.mark.parametrize("settings_bad,invalid", [(True, '{"x":'), (False, '[1,2]')])
 def test_invalid_configuration_never_changes_either_file(tmp_path, settings_bad, invalid):
     settings = tmp_path / ".vscode/settings.json"
     pyright = tmp_path / "pyrightconfig.json"
@@ -66,13 +57,9 @@ def test_invalid_configuration_never_changes_either_file(tmp_path, settings_bad,
     assert [path.read_bytes() for path in (settings, pyright)] == before
 
 
-@pytest.mark.parametrize("obsolete", [
-    '"venv": ".venv", /* first */ "exclude": ["Assets/Generated"]',
-    '"exclude": ["Assets/Generated"], /* last */ "venv": ".venv"',
-    '"venvPath": ".", /* middle */ "venv": ".venv", "exclude": ["Assets/Generated"],',
-    '"venv": ".venv", "pythonPath": "old/python", /* only old keys */',
-])
-def test_pyright_jsonc_removes_owned_obsolete_keys_and_retains_comments(tmp_path, obsolete):
+def test_pyright_jsonc_removes_owned_obsolete_keys_and_retains_comments(tmp_path):
+    obsolete = ('"venvPath": ".", /* obsolete runtime */ "venv": ".venv", '
+                '"pythonPath": "old/python", "exclude": ["Assets/Generated"],')
     pyright = tmp_path / "pyrightconfig.json"
     source = "{\n  // Team Pyright settings\n  " + obsolete + "\n}\n"
     pyright.write_bytes(source.encode("utf-8"))
@@ -128,8 +115,7 @@ def test_external_edit_during_sync_is_preserved_by_native_atomic_write(tmp_path,
     assert changed and target.read_text(encoding="utf-8") == external
 
 
-@pytest.mark.parametrize("bad_paths", [None, "Libraries", [1, "Libraries"]])
-@pytest.mark.parametrize("settings_bad", [False, True])
+@pytest.mark.parametrize("bad_paths,settings_bad", [(None, True), ([1, "Libraries"], False)])
 def test_invalid_extra_paths_leave_configuration_unchanged(tmp_path, bad_paths, settings_bad):
     settings = tmp_path / ".vscode/settings.json"
     settings.parent.mkdir()

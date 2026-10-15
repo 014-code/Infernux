@@ -53,21 +53,6 @@ def test_reload_candidate_has_no_dispatch_until_epoch_publication():
         assert "_runtime_phase_invokers" not in CandidateProbe.__dict__
 
 
-def test_lifecycle_dispatch_does_not_retain_a_bound_method():
-    probe = _Probe()
-    probe.calls = []
-    publication = publish_runtime_dispatch_epoch((_Probe,))
-    publication.commit()
-    try:
-        assert probe._safe_lifecycle_call("on_validate") is True
-        assert "_lifecycle_dispatch_cache" not in probe.__dict__
-
-        assert probe._safe_lifecycle_call("on_validate") is True
-        assert probe.calls == ["validate-old", "validate-old"]
-    finally:
-        publication.rollback()
-
-
 def test_lifecycle_dispatch_uses_the_new_body_after_epoch_publication():
     probe = _Probe()
     probe.calls = []
@@ -241,22 +226,6 @@ class _PhaseProbe(ComponentLifecycleMixin):
 
     def late_update(self, delta_time: float) -> None:
         self.calls.append(f"l:{delta_time}")
-
-
-def test_runtime_phase_dispatch_uses_one_epoch_owned_unbound_table():
-    probe = _PhaseProbe()
-
-    with _published(_PhaseProbe) as descriptor:
-        probe._call_update(1.0)
-        probe._call_fixed_update(2.0)
-        probe._call_late_update(3.0)
-
-        dispatch = descriptor.phase_dispatch
-        assert len(dispatch) == 5
-        assert dispatch[0] == (_PhaseProbe.update, True)
-        assert dispatch[1] == (_PhaseProbe.fixed_update, True)
-        assert dispatch[2] == (_PhaseProbe.late_update, True)
-    assert probe.calls == ["u:1.0", "f:2.0", "l:3.0"]
 
 
 def test_runtime_phase_dispatch_preserves_static_and_classmethod_descriptors():

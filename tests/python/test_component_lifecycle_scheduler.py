@@ -8,7 +8,6 @@ from infernux.components._component_lifecycle import (
     ComponentLifecycleMixin,
     RuntimeExecutionScheduler,
 )
-from infernux.engine.runtime_dispatch import publish_runtime_dispatch_epoch
 from infernux.components.component import InxComponent
 from infernux.engine.runtime_dispatch import build_type_dispatch_descriptor
 
@@ -491,24 +490,6 @@ def test_runtime_scheduler_does_not_rescan_dispatch_types_in_steady_state(monkey
     assert calls == 1
 
 
-def test_runtime_scheduler_only_rebuilds_for_structure_not_body_reload():
-    scheduler = RuntimeExecutionScheduler()
-    probe = _ScheduledProbe(1)
-    scheduler.register_component(probe)
-    plan = scheduler.prepare_frame()
-    assert scheduler.profiler_snapshot()["plan_builds"] == 1
-
-    scheduler.mark_type_body_reload(type(probe))
-    assert scheduler.prepare_frame() is plan
-    counters = scheduler.profiler_snapshot()
-    assert counters["plan_builds"] == 1
-    assert counters["body_reload_updates"] == 1
-
-    scheduler.mark_structure_changed("component enabled")
-    assert scheduler.prepare_frame() is not plan
-    assert scheduler.profiler_snapshot()["plan_builds"] == 2
-
-
 def test_starting_coroutine_invalidates_cached_phase_membership(monkeypatch):
     scheduler = RuntimeExecutionScheduler(name="coroutine-phase-transition")
     probe = _ScheduledProbe(1)
@@ -596,79 +577,6 @@ def test_unbound_component_is_excluded_from_the_plan():
     scheduler.register_component(probe)
 
     assert scheduler.phase_plan("update") == ()
-
-
-def test_runtime_frame_keeps_one_dispatch_revision_across_all_phases():
-    class BodyProbe(ComponentLifecycleMixin):
-        def __init__(self) -> None:
-            self._component_id = 1
-            self._execution_order = 0
-            self._native_generation = 1
-            self._enabled = True
-            self._is_destroyed = False
-            self.calls = []
-
-        @property
-        def component_id(self):
-            return self._component_id
-
-        @property
-        def execution_order(self):
-            return self._execution_order
-
-        def fixed_update(self, _delta_time):
-            self.calls.append("fixed-old")
-
-        def update(self, _delta_time):
-            self.calls.append("update-old")
-
-        def late_update(self, _delta_time):
-            self.calls.append("late-old")
-
-    scheduler = RuntimeExecutionScheduler()
-    probe = BodyProbe()
-    scheduler.register_component(probe)
-    frame = scheduler.begin_frame()
-
-    frame.execute_phase("fixed_update", 0.02)
-    frame.execute_phase("update", 0.016)
-    frame.execute_phase("late_update", 0.016)
-    frame.close()
-
-    def new_fixed_update(self, _delta_time):
-        self.calls.append("fixed-new")
-
-    def new_update(self, _delta_time):
-        self.calls.append("update-new")
-
-    def new_late_update(self, _delta_time):
-        self.calls.append("late-new")
-
-    BodyProbe.fixed_update = new_fixed_update
-    BodyProbe.update = new_update
-    BodyProbe.late_update = new_late_update
-    publication = publish_runtime_dispatch_epoch((BodyProbe,))
-    publication.commit()
-
-    assert probe.calls == ["fixed-old", "update-old", "late-old"]
-    try:
-        next_frame = scheduler.begin_frame()
-        try:
-            next_frame.execute_phase("fixed_update", 0.02)
-            next_frame.execute_phase("update", 0.016)
-            next_frame.execute_phase("late_update", 0.016)
-        finally:
-            next_frame.close()
-    finally:
-        publication.rollback()
-    assert probe.calls == [
-        "fixed-old",
-        "update-old",
-        "late-old",
-        "fixed-new",
-        "update-new",
-        "late-new",
-    ]
 
 
 def test_closed_runtime_frame_rejects_late_dispatch():

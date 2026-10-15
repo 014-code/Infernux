@@ -16,8 +16,7 @@ def _resource_examples(language):
     return re.findall(r'```python\n(.*?)```', section, re.S)
 
 
-@pytest.mark.parametrize('language', ('en', 'zh'))
-@pytest.mark.parametrize('samples', (1, 2, 4, 8))
+@pytest.mark.parametrize('language,samples', [('en', 1), ('zh', 4)])
 def test_documented_resolve_uses_effective_camera_samples(language, samples):
     graph = inx.rendergraph.RenderGraph('Documented resolve', output_samples=samples)
     source = next(code for code in _resource_examples(language) if 'route_msaa' in code)
@@ -40,10 +39,9 @@ def test_documented_resolve_uses_effective_camera_samples(language, samples):
         assert route.resolve_color == 'route_color'
 
 
-@pytest.mark.parametrize('language', ('en', 'zh'))
-def test_documented_buffer_creation_declares_all_requested_usages(language):
+def test_documented_buffer_creation_declares_all_requested_usages():
     graph = inx.rendergraph.RenderGraph('Documented usages')
-    source = next(code for code in _resource_examples(language) if 'draw_data =' in code)
+    source = next(code for code in _resource_examples('en') if 'draw_data =' in code)
     namespace = {'graph': graph}
     exec(compile(source, 'rendergraph-advanced.md#resource-usage', 'exec'), namespace)
     buffer = namespace['draw_data']

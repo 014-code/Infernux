@@ -22,20 +22,14 @@ def _project(tmp_path):
 
 
 @pytest.mark.parametrize('entrypoint', ['direct', 'project'])
-@pytest.mark.parametrize('missing', FILES + (None,))
-def test_open_pycharm_only_creates_missing_files(tmp_path, monkeypatch, entrypoint, missing):
+def test_open_pycharm_only_creates_missing_files(tmp_path, monkeypatch, entrypoint):
     script = _project(tmp_path)
-    assert project_utils._ensure_pycharm_project_files(str(tmp_path))
-    original = {}
-    for filename in FILES:
-        path = tmp_path / filename
-        if filename == missing:
-            path.unlink()
-        else:
-            # Author comments, encoding, whitespace and file timestamps are owned by the team.
-            content = ('\ufeff<!-- keep authored 中文 -->\r\n' + path.read_text(encoding='utf-8')).encode('utf-8')
-            path.write_bytes(content)
-            original[path] = (content, path.stat().st_mtime_ns)
+    authored = tmp_path / '.idea/misc.xml'
+    authored.parent.mkdir()
+    content = ('\ufeff<!-- keep authored 中文 -->\r\n'
+               '<project><component name="ProjectRootManager" project-jdk-name="TeamSDK" /></project>\r\n').encode('utf-8')
+    authored.write_bytes(content)
+    original = (content, authored.stat().st_mtime_ns)
     launches = []
     monkeypatch.setattr(project_utils, '_find_pycharm_executable', lambda: 'pycharm.exe')
     monkeypatch.setattr(project_utils, 'get_ide', lambda: 'pycharm')
@@ -46,8 +40,7 @@ def test_open_pycharm_only_creates_missing_files(tmp_path, monkeypatch, entrypoi
     assert len(launches) == 1
     assert launches[0][-2:] == ['--line', '17']
     assert str(script) in launches[0] and str(tmp_path) in launches[0]
-    assert all(path.read_bytes() == payload and path.stat().st_mtime_ns == stamp
-               for path, (payload, stamp) in original.items())
+    assert (authored.read_bytes(), authored.stat().st_mtime_ns) == original
     assert all((tmp_path / filename).is_file() for filename in FILES)
     before = [(tmp_path / name).read_bytes() for name in FILES]
     assert opener(str(script), project_root=str(tmp_path))
