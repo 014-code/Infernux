@@ -646,6 +646,7 @@ struct ResourceData
     VkImageView allocatedView = VK_NULL_HANDLE;
     VmaAllocation allocatedMemory = VK_NULL_HANDLE;
     VkBuffer allocatedBuffer = VK_NULL_HANDLE;
+    VkImageUsageFlags allocatedUsage = 0;
 
     // Lifetime tracking
     uint32_t firstPass = UINT32_MAX;
@@ -1148,6 +1149,16 @@ class RenderGraph
     /// @brief Free transient resources
     void FreeResources();
 
+    /// Reset() keeps graph-owned images whose last use was on the graphics
+    /// lane; the next Compile() claims an identical image instead of holding
+    /// two generations while the old one is still in flight. Unclaimed images
+    /// are retired through the GPU deletion queue.
+    void RetainReusableImages();
+    [[nodiscard]] bool ClaimReusableImage(uint32_t resourceIndex, const VkImageCreateInfo &info);
+    void RetireReusableImages();
+    void RetireNativeResources(std::vector<VkImageView> imageViews, std::vector<VkImage> images,
+                               std::vector<VkBuffer> buffers, std::vector<VmaAllocation> allocations);
+
     // ========================================================================
     // Layout / barrier helpers
     // ========================================================================
@@ -1244,6 +1255,22 @@ class RenderGraph
     // are reapplied to external resources at each Execute() so owner-driven
     // layout changes (e.g. ResolveSceneMsaa) do not leave stale barriers.
     std::vector<ResourceState> m_initialResourceStates;
+
+    struct ReusableImage
+    {
+        VkFormat format = VK_FORMAT_UNDEFINED;
+        uint32_t width = 0;
+        uint32_t height = 0;
+        uint32_t mipLevels = 1;
+        uint32_t arrayLayers = 1;
+        VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
+        VkImageUsageFlags usage = 0;
+        uint32_t graphicsLane = UINT32_MAX;
+        VkImage image = VK_NULL_HANDLE;
+        VkImageView view = VK_NULL_HANDLE;
+        VmaAllocation memory = VK_NULL_HANDLE;
+    };
+    std::vector<ReusableImage> m_reusableImages;
 
     // Pre-allocated scratch buffers reused every Execute() to avoid per-pass heap allocs.
     std::vector<VkImageMemoryBarrier> m_barrierScratch;

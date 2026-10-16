@@ -424,6 +424,15 @@ class TestTriggerConsumption:
         assert sp._parameters["attack"] is True
 
 
+@pytest.mark.parametrize("animator_type", [SpriteAnimator, SkeletalAnimator])
+def test_runtime_state_before_awake_is_not_shared_between_instances(animator_type):
+    first, second = animator_type(), animator_type()
+    first.set_bool("grounded", True)
+    first._clip_cache["Walk"] = None
+    assert second.get_bool("grounded") is False
+    assert "Walk" not in second._clip_cache
+
+
 class TestEmptyConditionTransition:
     def _animator_with_state(self, loop: bool, duration: float):
         anim = _make_animator()

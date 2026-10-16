@@ -28,6 +28,31 @@ def _default_lifecycle_method(function):
     function.__infernux_default_lifecycle__ = True
     return function
 
+
+class per_instance:
+    """Class-level default for private mutable runtime state.
+
+    ``_cache = per_instance(dict)`` gives every instance its own value on first
+    read, so state written before ``awake()`` never leaks into the class (a bare
+    ``= {}`` would be shared by every unawakened instance). Assignment stores on
+    the instance as usual.
+    """
+
+    __slots__ = ("_factory", "_name")
+
+    def __init__(self, factory):
+        self._factory = factory
+        self._name = ""
+
+    def __set_name__(self, owner, name):
+        self._name = name
+
+    def __get__(self, instance, owner=None):
+        if instance is None:
+            return self
+        value = instance.__dict__[self._name] = self._factory()
+        return value
+
 from infernux.lib import GameObject
 
 if TYPE_CHECKING:

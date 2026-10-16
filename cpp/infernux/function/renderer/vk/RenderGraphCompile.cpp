@@ -1005,6 +1005,9 @@ bool RenderGraph::AllocateResources()
                 return false;
             }
 
+            if (ClaimReusableImage(ri, imageInfo))
+                continue;
+            resource.allocatedUsage = imageInfo.usage;
             if (vkCreateImage(device, &imageInfo, nullptr, &resource.allocatedImage) != VK_SUCCESS) {
                 INXLOG_ERROR("Failed to create image for resource: ", resource.name);
                 return false;
@@ -1091,6 +1094,55 @@ bool RenderGraph::AllocateResources()
             m_rhiDevice ? m_rhiDevice->RegisterTexture(resource.allocatedImage) : rhi::TextureHandle{};
     }
 
+    RetireReusableImages();
+    return true;
+}
+
+bool RenderGraph::ClaimReusableImage(uint32_t resourceIndex, const VkImageCreateInfo &info)
+{
+    if (m_reusableImages.empty())
+        return false;
+    // The previous owner's work is ordered only on the graphics queue. Every
+    // pass that touches the image in this generation must record there too.
+    const auto touches = [resourceIndex](const ResourceAccess &access) { return access.handle.id == resourceIndex; };
+    for (const auto &pass : m_passes) {
+        if (!pass.culled && pass.queue != rhi::QueueRole::Graphics &&
+            (std::any_of(pass.reads.begin(), pass.reads.end(), touches) ||
+             std::any_of(pass.writes.begin(), pass.writes.end(), touches)))
+            return false;
+    }
+    const NativeQueueBinding graphics = m_queueTopology[static_cast<size_t>(rhi::QueueRole::Graphics)];
+    const auto match = std::find_if(m_reusableImages.begin(), m_reusableImages.end(), [&](const ReusableImage &image) {
+        return image.graphicsLane == graphics.lane && image.format == info.format &&
+               image.width == info.extent.width && image.height == info.extent.height &&
+               image.mipLevels == info.mipLevels && image.arrayLayers == info.arrayLayers &&
+               image.samples == info.samples && image.usage == info.usage;
+    });
+    if (match == m_reusableImages.end())
+        return false;
+    const ReusableImage claimed = *match;
+    *match = m_reusableImages.back();
+    m_reusableImages.pop_back();
+
+    auto &resource = m_resources[resourceIndex];
+    resource.allocatedImage = claimed.image;
+    resource.allocatedView = claimed.view;
+    resource.allocatedMemory = claimed.memory;
+    resource.allocatedUsage = claimed.usage;
+    resource.rhiView = m_rhiDevice ? m_rhiDevice->RegisterTextureView(claimed.view) : rhi::TextureViewHandle{};
+    resource.rhiTexture = m_rhiDevice ? m_rhiDevice->RegisterTexture(claimed.image) : rhi::TextureHandle{};
+
+    // Contents are discarded (Undefined), but the first transition waits for
+    // every earlier graphics-queue access, including frames still in flight.
+    ResourceState state{};
+    state.layout = rhi::TextureLayout::Undefined;
+    state.accessMask = rhi::Access::MemoryWrite;
+    state.stages = rhi::PipelineStage::AllCommands;
+    state.queue = rhi::QueueRole::Graphics;
+    state.queueFamily = graphics.family;
+    state.nativeQueueLane = graphics.lane;
+    m_initialResourceStates[resourceIndex] = state;
+    m_resourceStates[resourceIndex] = state;
     return true;
 }
 
@@ -1641,8 +1693,6 @@ void RenderGraph::FreeResources()
         return;
     }
 
-    VkDevice device = m_context->GetDevice();
-
     // RHI registrations are graph-resource lifetime aliases, including
     // external resources. Release them before the no-transient early-out and
     // before any owned native resource is destroyed.
@@ -1698,7 +1748,55 @@ void RenderGraph::FreeResources()
         }
     }
 
-    std::vector<VmaAllocation> allocations(allocationSet.begin(), allocationSet.end());
+    RetireNativeResources(std::move(imageViews), std::move(images), std::move(buffers),
+                          std::vector<VmaAllocation>(allocationSet.begin(), allocationSet.end()));
+}
+
+void RenderGraph::RetainReusableImages()
+{
+    if (!m_context)
+        return;
+    const uint32_t graphicsLane = m_queueTopology[static_cast<size_t>(rhi::QueueRole::Graphics)].lane;
+    for (size_t index = 0; index < m_resources.size(); ++index) {
+        auto &resource = m_resources[index];
+        if (resource.isExternal || resource.allocatedImage == VK_NULL_HANDLE ||
+            resource.allocatedView == VK_NULL_HANDLE || resource.allocatedMemory == VK_NULL_HANDLE)
+            continue;
+        // UINT32_MAX: never recorded, so no GPU work references the image.
+        const uint32_t lane = index < m_resourceStates.size() ? m_resourceStates[index].nativeQueueLane : UINT32_MAX;
+        if (lane != UINT32_MAX && lane != graphicsLane)
+            continue;
+        const auto &desc = resource.textureDesc;
+        m_reusableImages.push_back({desc.format, desc.width, desc.height, desc.mipLevels, desc.arrayLayers,
+                                    desc.samples, resource.allocatedUsage, graphicsLane, resource.allocatedImage,
+                                    resource.allocatedView, resource.allocatedMemory});
+        // FreeResources() still releases the RHI registrations of this generation.
+        resource.allocatedImage = VK_NULL_HANDLE;
+        resource.allocatedView = VK_NULL_HANDLE;
+        resource.allocatedMemory = VK_NULL_HANDLE;
+    }
+}
+
+void RenderGraph::RetireReusableImages()
+{
+    if (m_reusableImages.empty() || !m_context)
+        return;
+    std::vector<VkImageView> views;
+    std::vector<VkImage> images;
+    std::vector<VmaAllocation> allocations;
+    for (const auto &image : m_reusableImages) {
+        views.push_back(image.view);
+        images.push_back(image.image);
+        allocations.push_back(image.memory);
+    }
+    m_reusableImages.clear();
+    RetireNativeResources(std::move(views), std::move(images), {}, std::move(allocations));
+}
+
+void RenderGraph::RetireNativeResources(std::vector<VkImageView> imageViews, std::vector<VkImage> images,
+                                        std::vector<VkBuffer> buffers, std::vector<VmaAllocation> allocations)
+{
+    VkDevice device = m_context->GetDevice();
     const VmaAllocator allocator = m_context->GetVmaAllocator();
     auto destroyRetired = [device, allocator, imageViews = std::move(imageViews), images = std::move(images),
                            buffers = std::move(buffers), allocations = std::move(allocations)]() mutable {

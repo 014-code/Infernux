@@ -15,6 +15,7 @@ import pytest
     ("failure", 1),
     ("sys-exit-int", 3),
     ("sys-exit-message", 1),
+    ("missing-manifest", 1),
 ])
 def test_generated_boot_exits_without_finalizing_live_runtime(tmp_path, debug, outcome, exit_code):
     from infernux.engine.game_builder import GameBuilder
@@ -27,7 +28,8 @@ def test_generated_boot_exits_without_finalizing_live_runtime(tmp_path, debug, o
     runtime.mkdir()
     data = tmp_path / "Data"
     data.mkdir()
-    (data / "BuildManifest.json").write_text("{}", encoding="utf-8")
+    if outcome != "missing-manifest":
+        (data / "BuildManifest.json").write_text("{}", encoding="utf-8")
     finalized = tmp_path / "interpreter-finalized"
     returned = tmp_path / "entry-returned"
     worker = tmp_path / "run_entry.py"
@@ -83,12 +85,16 @@ Path(sys.argv[3]).write_text("returned", encoding="utf-8")
         crash = (logs / "crash.log").read_text(encoding="utf-8")
         assert "RuntimeError: PLAYER_BOOT_FAILURE_EXPECTED" in crash
         assert "CRASH: " in log and "PLAYER_BOOT_FAILURE_EXPECTED" in log
+    elif outcome == "missing-manifest":
+        # Fails before run_player: still reported, never a silent GUI exit.
+        assert "BuildManifest.json" in (logs / "crash.log").read_text(encoding="utf-8")
+        assert "CRASH: " in log and "boot: calling run_player" not in log
     else:
         assert not (logs / "crash.log").exists()
         assert ("boot: run_player returned" in log) == (outcome == "success")
         if outcome == "sys-exit-message":
             assert "PLAYER_BOOT_EXIT_MESSAGE" in log
-    if debug:
+    if debug and outcome != "missing-manifest":
         diagnostics = (logs / (boot.stem + "_debug.log")).read_text(encoding="utf-8")
         assert "PLAYER_BOOT_BUFFERED_OUTPUT" in diagnostics
         if outcome == "failure":

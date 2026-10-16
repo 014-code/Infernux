@@ -17,7 +17,7 @@ from __future__ import annotations
 import os
 from typing import Dict, Optional
 
-from infernux.components.component import InxComponent
+from infernux.components.component import InxComponent, per_instance
 from infernux.components.fields import serialized_field
 from infernux.components.decorators import require_component, disallow_multiple, add_component_menu
 from infernux.components.builtin.sprite_renderer import SpriteRenderer
@@ -80,15 +80,14 @@ class SpriteAnimator(InxComponent):
 
     # ── Runtime parameters (user-settable, used in conditions) ──────
 
-    _parameters: Dict[str, object] = {}
-    # Immutable default also keeps unattached instances independent before Awake.
+    _parameters: Dict[str, object] = per_instance(dict)
     _pending_triggers: frozenset[str] = frozenset()
 
     # ── Private runtime state ───────────────────────────────────────
 
     _fsm: Optional[AnimStateMachine] = None
     _sprite_renderer: Optional[SpriteRenderer] = None
-    _clip_cache: Dict[str, Optional[AnimationClip]] = {}
+    _clip_cache: Dict[str, Optional[AnimationClip]] = per_instance(dict)
 
     _current_state_name: str = ""
     _current_clip: Optional[AnimationClip] = None
@@ -96,7 +95,7 @@ class SpriteAnimator(InxComponent):
     _playing: bool = False
     _playback_revision: int = 0
     _current_timeline = None
-    _timeline_cache: Dict[str, object] = {}
+    _timeline_cache: Dict[str, object] = per_instance(dict)
     _timeline_base = None
     _last_timeline_pose = None
 

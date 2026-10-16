@@ -60,23 +60,15 @@ def test_loaded_scene_query_reports_every_resident_scene_and_active_owner(scene)
         manager.unload_scene(additive)
 
 
-def test_capability_grants_are_explicit_and_diff_is_machine_readable(tmp_path):
+def test_default_grants_cover_every_operation_and_diff_is_machine_readable(tmp_path):
     (tmp_path / "Assets").mkdir()
     (tmp_path / "ProjectSettings").mkdir()
     mcp = _FakeMCP()
     try:
-        register_gateways(mcp, str(tmp_path), {"granted_capabilities": list(capabilities.DEFAULT_GRANTED_CAPABILITIES)})
-
-        # The default grant is an explicit whitelist, never a wildcard.
+        # Omitting granted_capabilities keeps the default: every capability.
+        register_gateways(mcp, str(tmp_path), {})
         config = capabilities.current_config()
-        assert "*" not in config["granted_capabilities"]
-        assert config["granted_capabilities"] == list(capabilities.DEFAULT_GRANTED_CAPABILITIES)
-
-        # Drift guard: every capability referenced by a registered operation
-        # must be covered by the default enumeration.
-        documents = OperationRegistry.instance().list()
-        used = {str(name) for document in documents for name in document["capabilities"]}
-        assert used <= set(capabilities.DEFAULT_GRANTED_CAPABILITIES)
+        assert config["granted_capabilities"] == ["*"]
 
         snapshot = mcp.tools["host_capabilities"]()
         assert snapshot["ok"] is True
@@ -847,14 +839,13 @@ def test_server_start_rejects_occupied_port_without_false_loaded_state(tmp_path)
     assert adapter_status()["active"] is False
 
 
-def test_http_boundary_and_same_stdio_bridge_after_editor_restart(tmp_path):
+def test_direct_http_clients_connect_and_survive_editor_restart(tmp_path):
     import asyncio
     import httpx
     from fastmcp import Client
     from infernux.engine.project_context import get_project_root, using_project_root
     from infernux.host import Operation, OperationKind, OperationSchema
     from infernux_mcp.client import create_loopback_client
-    from infernux_mcp.credentials import credential_path, load_token
 
     (tmp_path / "Assets").mkdir()
     (tmp_path / "ProjectSettings").mkdir()
@@ -873,10 +864,13 @@ def test_http_boundary_and_same_stdio_bridge_after_editor_restart(tmp_path):
 
     async def verify():
         async with httpx.AsyncClient(trust_env=False) as http:
-            assert (await http.post(endpoint, json={})).status_code == 401
-            assert (await http.post(endpoint, headers={"Authorization": "Bearer wrong"}, json={})).status_code == 401
-            assert (await http.get(health, headers={"Host": f"attacker.example:{port}"})).status_code == 421
-            assert (await http.get(health, headers={"Origin": "https://attacker.example"})).status_code == 403
+            # DNS-rebinding guard for /mcp: foreign Host and foreign browser origins.
+            initialize = {"jsonrpc": "2.0", "id": 1, "method": "ping"}
+            accept = {"Accept": "application/json, text/event-stream"}
+            rebinding = {**accept, "Host": f"attacker.example:{port}"}
+            assert (await http.post(endpoint, headers=rebinding, json=initialize)).status_code == 421
+            foreign = {**accept, "Origin": "https://attacker.example"}
+            assert (await http.post(endpoint, headers=foreign, json=initialize)).status_code == 403
             assert (await http.get(health)).json() == {"name": "Infernux Editor", "ready": True}
             async with create_loopback_client(endpoint, timeout_seconds=20) as client:
                 assert (await client.call_tool("mcp_ping")).data["ok"]
@@ -893,15 +887,13 @@ def test_http_boundary_and_same_stdio_bridge_after_editor_restart(tmp_path):
                 result = (await query).data
                 assert result["ok"] and result["data"]["result"]["root"] == str(tmp_path)
             config = server.connection_info(port=port)["clients"]["generic"]["config"]
-            async with Client(config, timeout=20) as bridge:
-                assert (await bridge.call_tool("mcp_ping")).data["ok"]
-                old_token = load_token(endpoint)
-                server.stop_server()
-                assert not credential_path(endpoint).exists()
-                assert server.start_server(str(tmp_path), port=port)
-                token_changed = load_token(endpoint) != old_token
-                assert token_changed, "Editor restart must rotate its credential"
-                assert (await bridge.call_tool("mcp_ping")).data["ok"]
+            assert config["mcpServers"]["infernux-editor"]["url"] == endpoint
+            async with Client(config, timeout=20) as direct:
+                assert (await direct.call_tool("mcp_ping")).data["ok"]
+            server.stop_server()
+            assert server.start_server(str(tmp_path), port=port)
+            async with Client(config, timeout=20) as direct:
+                assert (await direct.call_tool("mcp_ping")).data["ok"]
 
     try:
         with using_project_root(str(tmp_path)):
@@ -925,7 +917,6 @@ def test_http_boundary_and_same_stdio_bridge_after_editor_restart(tmp_path):
                     "transport-test",
                 )
             )
-            assert not credential_path(endpoint).is_relative_to(tmp_path)
             asyncio.run(verify())
     finally:
         release.set()

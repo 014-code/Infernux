@@ -809,6 +809,7 @@ RenderGraph::RenderGraph(RenderGraph &&other) noexcept
       m_structuralCacheHits(other.m_structuralCacheHits), m_structuralCacheMisses(other.m_structuralCacheMisses),
       m_resourceStates(std::move(other.m_resourceStates)),
       m_initialResourceStates(std::move(other.m_initialResourceStates)),
+      m_reusableImages(std::exchange(other.m_reusableImages, {})),
       m_barrierScratch(std::move(other.m_barrierScratch)),
       m_bufferBarrierScratch(std::move(other.m_bufferBarrierScratch)),
       m_barrier2Scratch(std::move(other.m_barrier2Scratch)),
@@ -847,6 +848,7 @@ RenderGraph &RenderGraph::operator=(RenderGraph &&other) noexcept
         m_compiled = std::exchange(other.m_compiled, false);
         m_resourceStates = std::move(other.m_resourceStates);
         m_initialResourceStates = std::move(other.m_initialResourceStates);
+        m_reusableImages = std::exchange(other.m_reusableImages, {});
         m_barrierScratch = std::move(other.m_barrierScratch);
         m_bufferBarrierScratch = std::move(other.m_bufferBarrierScratch);
         m_barrier2Scratch = std::move(other.m_barrier2Scratch);
@@ -867,6 +869,7 @@ RenderGraph &RenderGraph::operator=(RenderGraph &&other) noexcept
 void RenderGraph::Initialize(VkDeviceContext *context, GpuRetirementQueue *deletionQueue,
                              const VulkanQueueManager *queueManager)
 {
+    RetireReusableImages();
     m_context = context;
     m_deviceId = context ? context->GetDeviceId() : rhi::InvalidDeviceId;
     m_rhiDevice = context ? &context->GetRhiDevice() : nullptr;
@@ -947,6 +950,7 @@ void RenderGraph::SetRenderView(const rhi::RenderViewContext &view)
 
 void RenderGraph::Reset()
 {
+    RetainReusableImages();
     FreeResources();
     m_passes.clear();
     m_explicitPassDependencies.clear();
@@ -971,6 +975,7 @@ void RenderGraph::Reset()
 void RenderGraph::Destroy()
 {
     FreeResources();
+    RetireReusableImages();
 
     m_structuralCompileCache.clear();
     m_structuralCacheHits = 0;

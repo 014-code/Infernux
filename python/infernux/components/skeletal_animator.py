@@ -11,7 +11,7 @@ from __future__ import annotations
 import math
 from typing import Dict, Optional
 
-from infernux.components.component import InxComponent
+from infernux.components.component import InxComponent, per_instance
 from infernux.components.fields import serialized_field
 from infernux.components.decorators import disallow_multiple, add_component_menu
 from infernux.components.builtin.skinned_mesh_renderer import SkinnedMeshRenderer
@@ -108,14 +108,14 @@ class SkeletalAnimator(InxComponent):
         tooltip="Seconds used to blend between 3D animation states",
     )
 
-    _parameters: Dict[str, object] = {}
+    _parameters: Dict[str, object] = per_instance(dict)
     _pending_triggers: frozenset[str] = frozenset()
-    _curve_values: Dict[str, float] = {}
+    _curve_values: Dict[str, float] = per_instance(dict)
 
     _fsm: Optional[AnimStateMachine] = None
     _skinned_renderer: Optional[SkinnedMeshRenderer] = None
-    _skinned_renderers: list[SkinnedMeshRenderer] = []
-    _clip_cache: Dict[str, Optional[AnimationClip3D]] = {}
+    _skinned_renderers: list[SkinnedMeshRenderer] = per_instance(list)
+    _clip_cache: Dict[str, Optional[AnimationClip3D]] = per_instance(dict)
 
     _current_state_name: str = ""
     _current_clip: Optional[AnimationClip3D] = None
@@ -131,9 +131,9 @@ class SkeletalAnimator(InxComponent):
     _blend_duration: float = 0.0
     _last_native_take_name: str = ""
     _last_native_pose_key = None
-    _duration_cache: Dict[tuple[str, str], float] = {}
+    _duration_cache: Dict[tuple[str, str], float] = per_instance(dict)
     _current_timeline = None
-    _timeline_cache: Dict[str, object] = {}
+    _timeline_cache: Dict[str, object] = per_instance(dict)
     _timeline_base = None
 
     def awake(self):
