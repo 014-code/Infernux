@@ -417,6 +417,24 @@ std::shared_ptr<const InxSkinnedMesh> SkinnedMeshRenderer::GetOrLoadRuntimeModel
     return m_runtimeModel;
 }
 
+size_t SkinnedMeshRenderer::GetAnimationTakeCount() const
+{
+    const auto source = m_animationSourceModel ? m_animationSourceModel : GetOrLoadRuntimeModel();
+    return source ? source->animations.size() : 0;
+}
+
+std::vector<std::string> SkinnedMeshRenderer::GetAnimationTakeNames() const
+{
+    const auto source = m_animationSourceModel ? m_animationSourceModel : GetOrLoadRuntimeModel();
+    std::vector<std::string> names;
+    if (source) {
+        names.reserve(source->animations.size());
+        for (const auto &animation : source->animations)
+            names.push_back(animation.name);
+    }
+    return names;
+}
+
 void SkinnedMeshRenderer::RefreshRuntimeSkinnedMesh()
 {
     if (!HasMeshAsset()) {
@@ -450,11 +468,7 @@ void SkinnedMeshRenderer::RefreshRuntimeSkinnedMesh()
     }
     if (modelChanged)
         MarkMeshBufferDirty();
-    m_animationTakeNames.clear();
     const auto animationSource = m_animationSourceModel ? m_animationSourceModel : model;
-    m_animationTakeNames.reserve(animationSource->animations.size());
-    for (const auto &animation : animationSource->animations)
-        m_animationTakeNames.push_back(animation.name);
 
     std::shared_ptr<const EvaluatedSkinPose> nextPose;
     if (m_usePoseStack) {

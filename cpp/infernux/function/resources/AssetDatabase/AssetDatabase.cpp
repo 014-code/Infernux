@@ -185,7 +185,7 @@ void ExpandModelSubAssets(Paths &guidToPath, Paths &pathToGuid, Metas &metas, St
         VisitModelSubAssets(*metas.at(owner), [&](const nlohmann::json &record) {
             auto metadata = ModelSubAssetMetadata(record, owner, sourcePath);
             const auto guid = metadata->GetGuid();
-            const auto path = metadata->GetDataAs<std::string>("file_path");
+            const auto path = metadata->template GetDataAs<std::string>("file_path");
             const auto key = IndexedAssetPathKey(path);
             if (metas.find(guid) != metas.end())
                 throw std::invalid_argument("model sub-asset identity collides with another asset: " + guid);

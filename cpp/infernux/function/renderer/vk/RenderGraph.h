@@ -705,6 +705,19 @@ class RenderGraph
         uint64_t calls = 0;
     };
 
+    struct ViewPassProfileEntry
+    {
+        rhi::RenderViewId view = rhi::InvalidRenderViewId;
+        uint32_t pass = 0;
+        std::string name;
+        double recordMs = 0.0;
+        double barrierMs = 0.0;
+        double callbackMs = 0.0;
+        uint64_t calls = 0;
+        uint64_t gpuRegions = 0;
+        uint64_t gpuNotSampled = 0;
+    };
+
     struct ParticlePassProfileEntry
     {
         std::string name;
@@ -875,6 +888,7 @@ class RenderGraph
     static ExecuteProfileSnapshot GetExecuteProfileSnapshot();
     static std::vector<PassCallbackProfileEntry> GetTopCallbackProfiles(size_t maxEntries);
     static PassCallbackProfileEntry GetCallbackProfile(std::string_view name);
+    static std::vector<ViewPassProfileEntry> GetViewPassProfiles();
     static std::vector<ParticlePassProfileEntry> GetParticlePassProfiles(size_t maxEntries);
     static void ResetExecuteProfileSnapshot();
 #endif
@@ -1132,7 +1146,8 @@ class RenderGraph
 
     /// Record an ordered set of pass ids while preserving the graph's current
     /// resource-state cursor. Used by both Execute() and batch execution.
-    void RecordPasses(VkCommandBuffer commandBuffer, const std::vector<uint32_t> &passIndices);
+    void RecordPasses(VkCommandBuffer commandBuffer, const std::vector<uint32_t> &passIndices,
+                      rhi::QueueRole recordingQueue);
 
     /// Start a new graph frame without discarding the final state of graph-owned
     /// resources. External resources receive an authoritative state from their
@@ -1284,6 +1299,7 @@ class RenderGraph
 #if INFERNUX_FRAME_PROFILE
     static ExecuteProfileSnapshot s_executeProfile; // The windows msvc will parse later. But linux gcc will not.
     inline static std::unordered_map<std::string, PassCallbackProfileEntry> s_callbackProfiles;
+    inline static std::unordered_map<std::string, ViewPassProfileEntry> s_viewPassProfiles;
     inline static std::unordered_map<std::string, ParticlePassProfileEntry> s_particlePassProfiles;
 #endif
 };

@@ -700,7 +700,8 @@ void InxVkCoreModular::PrepareMaterialRenderState(const std::shared_ptr<InxMater
         // Queue classification is part of geometry publication. A rejected
         // shader must not change blending, depth or routing on the retained
         // valid pipeline before ResolveMeshMaterial reports the bad selection.
-        (void)ResolveShaderProgramArtifact(material, stages, ShaderProgramDomain::Mesh);
+        if (material->IsPipelineDirty() || !m_materialPipelineManager.GetRenderData(material->GetMaterialKey()))
+            (void)ResolveShaderProgramArtifact(material, stages, ShaderProgramDomain::Mesh);
     } catch (const ShaderProgramDomainMismatch &) {
         return;
     }
@@ -742,7 +743,8 @@ MaterialRenderData *InxVkCoreModular::ResolveMeshMaterial(const std::shared_ptr<
     const auto *requestedArtifact = m_shaderCache.FindProgramArtifact(requestedStages);
     bool domainRejected =
         m_rejectedGeometryMaterialPrograms.find(rejectionKey) != m_rejectedGeometryMaterialPrograms.end();
-    if (!domainRejected && !requestedArtifact && m_shaderProgramArtifactResolver) {
+    if (!domainRejected && !requestedArtifact && (!forward || material->IsPipelineDirty()) &&
+        m_shaderProgramArtifactResolver) {
         try {
             m_shaderProgramArtifactResolver(material, ShaderProgramDomain::Mesh);
             requestedArtifact = m_shaderCache.FindProgramArtifact(requestedStages);
@@ -1440,18 +1442,8 @@ VkDescriptorSet InxVkCoreModular::EnsureMaterialShadowPipeline(const std::shared
         return VK_NULL_HANDLE;
     const ShaderStagePair stagePair = forwardRenderData->programKey.stages;
     const ShaderProgramArtifact *linkedArtifact = m_shaderCache.FindProgramArtifact(stagePair);
-    // A shadow pass can be the first consumer of a material after a fresh
-    // scene is opened.  The Forward pipeline may already be valid while the
-    // linked program publication is still absent, so resolve the authoritative
-    // artifact here instead of reporting an initialization error.  The
-    // resolver is cached and deterministic; this does not introduce a
-    // fallback shader or a second publication path.
-    if (stagePair == ShaderStagePair{vertShaderName, fragShaderName} &&
-        (!linkedArtifact || !linkedArtifact->FindVariant(ShaderCompileTarget::Shadow)) &&
-        m_shaderProgramArtifactResolver) {
-        m_shaderProgramArtifactResolver(material, ShaderProgramDomain::Mesh);
-        linkedArtifact = m_shaderCache.FindProgramArtifact(stagePair);
-    }
+    // ResolveMeshMaterial publishes the program before its Forward pipeline.
+    // Standalone stages have no linked artifact or generated Shadow variant.
     if (!linkedArtifact || !linkedArtifact->FindVariant(ShaderCompileTarget::Shadow)) {
         // An unsupported or not-yet-imported material simply has no shadow
         // caster.  The renderer must not turn this expected absence into a

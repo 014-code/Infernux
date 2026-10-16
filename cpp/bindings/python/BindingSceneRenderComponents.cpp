@@ -116,10 +116,8 @@ void BindSkinnedMeshRenderer(py::module_ &m)
                       &SkinnedMeshRenderer::SetActiveTakeName, "Currently selected animation take name")
         .def_property_readonly("has_animation_takes", &SkinnedMeshRenderer::HasAnimationTakes,
                                "Whether this renderer has any imported animation takes")
-        .def_property_readonly(
-            "animation_take_count",
-            [](const SkinnedMeshRenderer &sr) -> size_t { return sr.GetAnimationTakeNames().size(); },
-            "Number of imported animation takes on the source model")
+        .def_property_readonly("animation_take_count", &SkinnedMeshRenderer::GetAnimationTakeCount,
+                               "Number of imported animation takes on the source model")
         .def(
             "get_animation_take_names", [](const SkinnedMeshRenderer &sr) { return sr.GetAnimationTakeNames(); },
             "Get imported animation take names from the source model")

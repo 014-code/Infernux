@@ -136,3 +136,73 @@ def test_authored_material_library_geometry(engine, scene, tmp_path, monkeypatch
         engine.set_play_mode_rendering(previous_rendering)
         if case:
             case.close()
+
+
+def test_standalone_material_draws_use_resident_program_until_explicit_reload(engine, scene, tmp_path, monkeypatch):
+    from infernux.core.shader import Shader
+    from infernux.lib import Vector3
+
+    monkeypatch.setattr(AssetManager, "_engine", engine)
+    monkeypatch.setattr(AssetManager, "_asset_database", engine.get_asset_database())
+    case = ShaderLibraryCase(engine, scene, tmp_path, "cross")
+    source = tmp_path / "Library.frag"
+    parked = tmp_path / "Library.offline"
+    red = ('#version 450\nShaderInfo { Name "Resident Standalone Material" Capabilities [Standalone] Cull Off '
+           'Outputs { Float4 outColor } }\nvoid main(){outColor=vec4(1,0,0,1);}\n')
+    manager, console = SceneManager.instance(), ConsolePanel()
+    previous_rendering = engine.is_play_mode_rendering()
+    phase = frame = changed = 0
+    ticket = None
+    failures = []
+
+    def after_draw():
+        nonlocal phase, frame, changed, ticket
+        try:
+            frame += 1
+            assert frame < 100
+            # Keep submitting changed camera data instead of reusing a static list.
+            case.camera.game_object.transform.position = Vector3(0.001 * (frame % 2), 0, -3)
+            if ticket is None and frame >= changed + 6:
+                ticket = engine.request_render_target_readback(True)
+            elif ticket is not None and ticket.done:
+                pixel = ticket.result_numpy()[64, 64]
+                np.testing.assert_allclose(pixel, (0, 1, 0, 1) if phase == 2 else (1, 0, 0, 1), atol=.002)
+                if phase == 0:
+                    source.rename(parked)
+                elif phase == 1:
+                    parked.rename(source)
+                    source.write_text(red.replace("vec4(1,0,0,1)", "vec4(0,1,0,1)"), encoding="utf-8")
+                    assert Shader.reload(str(source))
+                else:
+                    engine.exit()
+                phase += 1
+                ticket, changed = None, frame
+        except BaseException as error:
+            failures.append(error)
+            engine.exit()
+
+    try:
+        source.write_text(red, encoding="utf-8")
+        assert AssetManager.reimport_asset(str(source))
+        case.material.frag_shader_name = "Resident Standalone Material"
+        scene.main_camera = case.camera
+        engine.resize_game_render_target(128, 128)
+        engine.set_game_camera_enabled(True)
+        engine.set_render_pipeline(case.pipeline)
+        manager.play()
+        manager.pause()
+        engine.set_play_mode_rendering(True)
+        engine.set_post_draw_callback(after_draw)
+        engine.run()
+        if failures:
+            raise failures[0]
+        assert phase == 3
+        assert console.get_error_count() == console.get_warning_count() == 0
+    finally:
+        engine.set_post_draw_callback(None)
+        engine.set_render_pipeline(None)
+        manager.stop()
+        engine.set_play_mode_rendering(previous_rendering)
+        if parked.exists():
+            parked.rename(source)
+        case.close()

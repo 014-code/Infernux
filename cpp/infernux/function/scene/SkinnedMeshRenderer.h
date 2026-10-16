@@ -49,10 +49,8 @@ class SkinnedMeshRenderer : public MeshRenderer
         return m_animationSourceGuid;
     }
 
-    [[nodiscard]] const std::vector<std::string> &GetAnimationTakeNames() const
-    {
-        return m_animationTakeNames;
-    }
+    [[nodiscard]] std::vector<std::string> GetAnimationTakeNames() const;
+    [[nodiscard]] size_t GetAnimationTakeCount() const;
 
     void SetActiveTakeName(const std::string &name);
     [[nodiscard]] const std::string &GetActiveTakeName() const
@@ -110,7 +108,7 @@ class SkinnedMeshRenderer : public MeshRenderer
 
     [[nodiscard]] bool HasAnimationTakes() const
     {
-        return !m_animationTakeNames.empty();
+        return GetAnimationTakeCount() != 0;
     }
     [[nodiscard]] float GetAnimationDurationSeconds(const std::string &takeName,
                                                     const std::string &animationSourceGuid = {}) const;
@@ -163,7 +161,6 @@ class SkinnedMeshRenderer : public MeshRenderer
     [[nodiscard]] std::shared_ptr<const InxSkinnedMesh>
     LoadCompatibleAnimationSource(const std::string &guid, const std::string &takeName = {}) const;
 
-    std::vector<std::string> m_animationTakeNames;
     std::string m_activeTakeName;
     std::string m_animationSourceGuid;
     std::string m_blendAnimationSourceGuid;

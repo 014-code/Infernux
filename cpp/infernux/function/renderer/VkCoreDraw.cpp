@@ -1344,8 +1344,6 @@ void InxVkCoreModular::DrawSceneFiltered(VkCommandBuffer cmdBuf, uint32_t width,
         MaterialRenderData *forward = ResolveMeshMaterial(owner);
         if (!forward)
             return {};
-        const ShaderStagePair requestedStages{owner->GetVertShaderName(), owner->GetFragShaderName()};
-
         const MaterialPassPipelineDescriptor defaultForward =
             m_materialPipelineManager.GetDefaultPassPipelineDescriptor(ShaderCompileTarget::Forward);
         if (activePass == defaultForward) {
@@ -1359,10 +1357,6 @@ void InxVkCoreModular::DrawSceneFiltered(VkCommandBuffer cmdBuf, uint32_t width,
             // so resolving from the mutable asset fields would mix two ABIs.
             const ShaderStagePair &stages = forward->programKey.stages;
             const ShaderProgramArtifact *artifact = m_shaderCache.FindProgramArtifact(stages);
-            if (!artifact && m_shaderProgramArtifactResolver && stages == requestedStages) {
-                m_shaderProgramArtifactResolver(owner, ShaderProgramDomain::Mesh);
-                artifact = m_shaderCache.FindProgramArtifact(stages);
-            }
             if (!artifact || !artifact->FindVariant(activePass.target)) {
                 if (activePass.target == ShaderCompileTarget::Normal ||
                     activePass.target == ShaderCompileTarget::BaseColor) {

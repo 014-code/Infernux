@@ -208,7 +208,17 @@ def test_skinned_mesh_companion_artifact_is_atomic_worker_loaded_and_rebuilt(eng
         assert renderer.source_model_guid == guid
         assert not hasattr(renderer, "source_model_path")
         assert renderer.animation_take_count > 0
-        assert renderer.get_animation_take_names()
+        takes = renderer.get_animation_take_names()
+        assert len(takes) == renderer.animation_take_count
+        for seconds in (0.0, 0.1, 0.2):
+            renderer.submit_animation_pose(takes[0], seconds, 0.0)
+        assert renderer.get_animation_take_names() == takes
+        renderer.set_source_model_guid("")
+        assert not renderer.has_animation_takes
+        assert renderer.animation_take_count == 0
+        assert renderer.get_animation_take_names() == []
+        renderer.set_source_model_guid(guid)
+        assert renderer.get_animation_take_names() == takes
         document = renderer.serialize_document()
         assert document["meshAssetGuid"] == guid
         assert "sourceModelGuid" not in document

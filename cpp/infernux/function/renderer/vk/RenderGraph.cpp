@@ -8,6 +8,7 @@
  */
 
 #include "RenderGraph.h"
+#include "GpuTimestampQueries.h"
 #include "RhiVulkanTypes.h"
 #include "VkDeviceContext.h"
 #include "VulkanQueueManager.h"
@@ -85,6 +86,18 @@ RenderGraph::PassCallbackProfileEntry RenderGraph::GetCallbackProfile(std::strin
     return it == s_callbackProfiles.end() ? PassCallbackProfileEntry{} : it->second;
 }
 
+std::vector<RenderGraph::ViewPassProfileEntry> RenderGraph::GetViewPassProfiles()
+{
+    std::vector<ViewPassProfileEntry> result;
+    result.reserve(s_viewPassProfiles.size());
+    for (const auto &[key, profile] : s_viewPassProfiles)
+        result.push_back(profile);
+    std::sort(result.begin(), result.end(), [](const auto &left, const auto &right) {
+        return left.view != right.view ? left.view < right.view : left.pass < right.pass;
+    });
+    return result;
+}
+
 std::vector<RenderGraph::ParticlePassProfileEntry> RenderGraph::GetParticlePassProfiles(size_t maxEntries)
 {
     std::vector<ParticlePassProfileEntry> result;
@@ -108,6 +121,7 @@ void RenderGraph::ResetExecuteProfileSnapshot()
 {
     s_executeProfile = {};
     s_callbackProfiles.clear();
+    s_viewPassProfiles.clear();
     s_particlePassProfiles.clear();
 }
 
@@ -809,8 +823,7 @@ RenderGraph::RenderGraph(RenderGraph &&other) noexcept
       m_structuralCacheHits(other.m_structuralCacheHits), m_structuralCacheMisses(other.m_structuralCacheMisses),
       m_resourceStates(std::move(other.m_resourceStates)),
       m_initialResourceStates(std::move(other.m_initialResourceStates)),
-      m_reusableImages(std::exchange(other.m_reusableImages, {})),
-      m_barrierScratch(std::move(other.m_barrierScratch)),
+      m_reusableImages(std::exchange(other.m_reusableImages, {})), m_barrierScratch(std::move(other.m_barrierScratch)),
       m_bufferBarrierScratch(std::move(other.m_bufferBarrierScratch)),
       m_barrier2Scratch(std::move(other.m_barrier2Scratch)),
       m_bufferBarrier2Scratch(std::move(other.m_bufferBarrier2Scratch)),
@@ -1700,7 +1713,8 @@ bool RenderGraph::RecordSubmissionBatch(uint32_t batchIndex, VkCommandBuffer com
         INXLOG_ERROR("RenderGraph::RecordSubmissionBatch - invalid execution request");
         return false;
     }
-    RecordPasses(commandBuffer, m_submissionPlan.batches[batchIndex].workItems);
+    RecordPasses(commandBuffer, m_submissionPlan.batches[batchIndex].workItems,
+                 m_submissionPlan.batches[batchIndex].queue);
     InsertQueueOwnershipReleases(commandBuffer, batchIndex);
     return true;
 }
@@ -1752,7 +1766,7 @@ void RenderGraph::Execute(VkCommandBuffer commandBuffer, rhi::QueueRole recordin
 #if INFERNUX_FRAME_PROFILE
     ++s_executeProfile.executeCalls;
 #endif
-    RecordPasses(commandBuffer, m_executionOrder);
+    RecordPasses(commandBuffer, m_executionOrder, m_immediateRecordingQueue);
 }
 
 void RenderGraph::PrepareExecutionResourceStates()
@@ -1788,10 +1802,11 @@ void RenderGraph::ContinueExecution(VkCommandBuffer commandBuffer, rhi::QueueRol
 #if INFERNUX_FRAME_PROFILE
     ++s_executeProfile.executeCalls;
 #endif
-    RecordPasses(commandBuffer, m_executionOrder);
+    RecordPasses(commandBuffer, m_executionOrder, m_immediateRecordingQueue);
 }
 
-void RenderGraph::RecordPasses(VkCommandBuffer commandBuffer, const std::vector<uint32_t> &passIndices)
+void RenderGraph::RecordPasses(VkCommandBuffer commandBuffer, const std::vector<uint32_t> &passIndices,
+                               [[maybe_unused]] rhi::QueueRole recordingQueue)
 {
     if (commandBuffer == VK_NULL_HANDLE)
         return;
@@ -1815,6 +1830,22 @@ void RenderGraph::RecordPasses(VkCommandBuffer commandBuffer, const std::vector<
 
 #if INFERNUX_FRAME_PROFILE
         context.m_activePassId = passIndex;
+        const std::string profileKey = "V" + std::to_string(m_renderViewId) + "/P" + std::to_string(passIndex);
+        auto &viewProfile = s_viewPassProfiles[profileKey];
+        viewProfile.view = m_renderViewId;
+        viewProfile.pass = passIndex;
+        viewProfile.name = pass.name;
+        ++viewProfile.calls;
+        auto *gpuQueries =
+            recordingQueue == rhi::QueueRole::Graphics ? GpuTimestampQueries::CurrentRecording() : nullptr;
+        const auto recordStart = Clock::now();
+        const auto gpuRegion =
+            gpuQueries ? gpuQueries->BeginRegion(commandBuffer, profileKey, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT)
+                       : rhi::TimestampRegionHandle{};
+        if (gpuRegion.IsValid())
+            ++viewProfile.gpuRegions;
+        else
+            ++viewProfile.gpuNotSampled;
         ++s_executeProfile.passCount;
         if (pass.name.find("GpuParticle") != std::string::npos) {
             auto &particleProfile = s_particlePassProfiles[pass.name];
@@ -1846,7 +1877,9 @@ void RenderGraph::RecordPasses(VkCommandBuffer commandBuffer, const std::vector<
 
 #if INFERNUX_FRAME_PROFILE
         auto stageNow = Clock::now();
-        s_executeProfile.barrierMs += std::chrono::duration<double, std::milli>(stageNow - stageStart).count();
+        const double barrierMs = std::chrono::duration<double, std::milli>(stageNow - stageStart).count();
+        s_executeProfile.barrierMs += barrierMs;
+        viewProfile.barrierMs += barrierMs;
         ++s_executeProfile.barrierCallCount;
 #endif
 
@@ -1886,12 +1919,17 @@ void RenderGraph::RecordPasses(VkCommandBuffer commandBuffer, const std::vector<
             } catch (...) {
                 if (isGraphicsPass)
                     m_cmdEndRendering(commandBuffer);
+#if INFERNUX_FRAME_PROFILE
+                if (gpuQueries)
+                    gpuQueries->EndRegion(commandBuffer, gpuRegion, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+#endif
                 throw;
             }
 #if INFERNUX_FRAME_PROFILE
             stageNow = Clock::now();
             const double callbackMs = std::chrono::duration<double, std::milli>(stageNow - stageStart).count();
             s_executeProfile.callbackMs += callbackMs;
+            viewProfile.callbackMs += callbackMs;
             auto &profile = s_callbackProfiles[pass.name];
             profile.name = pass.name;
             profile.totalMs += callbackMs;
@@ -1910,6 +1948,11 @@ void RenderGraph::RecordPasses(VkCommandBuffer commandBuffer, const std::vector<
             s_executeProfile.endPassMs += std::chrono::duration<double, std::milli>(stageNow - stageStart).count();
 #endif
         }
+#if INFERNUX_FRAME_PROFILE
+        if (gpuQueries)
+            gpuQueries->EndRegion(commandBuffer, gpuRegion, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+        viewProfile.recordMs += std::chrono::duration<double, std::milli>(Clock::now() - recordStart).count();
+#endif
     }
 #if INFERNUX_FRAME_PROFILE
     s_executeProfile.rhiPipelineBinds +=
