@@ -19,6 +19,7 @@ from enum import Enum, auto
 from typing import Optional, List, Any, Callable, Iterable
 from dataclasses import dataclass
 from infernux.debug import Debug
+from infernux.lib import InputManager as _NativeInputManager
 from infernux.engine.project_context import resolve_script_path
 
 
@@ -789,6 +790,7 @@ class PlayModeManager(PlayModeSerializationMixin):
                     from infernux.input import Input
                     Input.set_game_focused(False)
                     Input.set_cursor_locked(False)
+                    _NativeInputManager.instance().set_editor_cursor_capture_allowed(False)
                     self._cancel_runtime_scene_loads()
                     AssetManager._end_play_data_asset_isolation()
                     restored = (
@@ -882,6 +884,7 @@ class PlayModeManager(PlayModeSerializationMixin):
         from infernux.input import Input
         Input.set_game_focused(False)
         Input.set_cursor_locked(False)
+        _NativeInputManager.instance().set_editor_cursor_capture_allowed(False)
 
         # Stopping simulation does not publish an authored scene. Keep saves
         # disabled until the retained snapshot has been restored successfully.
@@ -974,6 +977,10 @@ class PlayModeManager(PlayModeSerializationMixin):
         scene_manager = self._get_scene_manager()
         if scene_manager:
             scene_manager.pause()
+
+        from infernux.input import Input
+        Input.set_game_focused(False)
+        _NativeInputManager.instance().set_editor_cursor_capture_allowed(False)
 
         old_state = self._state
         self._state = PlayModeState.PAUSED

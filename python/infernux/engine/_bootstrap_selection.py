@@ -812,14 +812,17 @@ class BootstrapSelectionMixin:
             native.clear_selection_outline()
 
     def _on_global_selection_changed(self, change) -> None:
-        self._present_selection_snapshot(change.after)
+        self._present_selection_snapshot(
+            change.after,
+            preserve_console_selection=change.reason == "console_navigate_to_object",
+        )
         self._record_selection_snapshot(
             change.after,
             previous_snapshot=change.before,
             record=change.record_history,
         )
 
-    def _present_selection_snapshot(self, snapshot) -> None:
+    def _present_selection_snapshot(self, snapshot, *, preserve_console_selection: bool = False) -> None:
         """Project the one authoritative selection into editor views."""
         from infernux.engine.interaction import SelectionDomain
 
@@ -836,7 +839,7 @@ class BootstrapSelectionMixin:
             except (TypeError, ValueError):
                 console_uid = 0
         console = getattr(self, "console", None)
-        if console is not None:
+        if console is not None and not preserve_console_selection:
             console.set_selection_snapshot(console_uid)
 
         inspector = self.inspector_panel
@@ -975,20 +978,14 @@ class BootstrapSelectionMixin:
                     activate_panel=False,
                 )
 
-    def _navigate_console_entry_to_object(self, object_id: int) -> bool:
+    def _navigate_console_entry_to_object(self, object_id: int, *, record_history: bool = True) -> bool:
         """Reveal a console-targeted scene object in Hierarchy and Inspector."""
         if not object_id:
             return False
 
         from infernux.lib import SceneManager
 
-        manager = SceneManager.instance()
-        resolve_runtime = getattr(manager, "find_runtime_object_by_id", None)
-        if callable(resolve_runtime):
-            obj = resolve_runtime(object_id)
-        else:
-            scene = manager.get_active_scene()
-            obj = scene.find_by_id(object_id) if scene else None
+        obj = SceneManager.instance().find_runtime_object_by_id(object_id)
         if obj is None:
             return False
 
@@ -998,7 +995,7 @@ class BootstrapSelectionMixin:
             SelectionTarget.scene_object(object_id),
             owner_id="hierarchy",
             reason="console_navigate_to_object",
-            record_history=True,
+            record_history=record_history,
         )
 
     def _record_selection_snapshot(

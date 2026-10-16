@@ -1,6 +1,7 @@
 #include "SkinnedMeshRenderer.h"
 #include "ComponentFactory.h"
 #include "SceneManager.h"
+#include "Transform.h"
 
 #include <core/config/MathConstants.h>
 #include <core/log/InxLog.h>
@@ -10,16 +11,40 @@
 #include <algorithm>
 #include <cmath>
 #include <nlohmann/json.hpp>
+#include <stdexcept>
 
 using json = nlohmann::json;
 
 namespace infernux
 {
 
-INFERNUX_REGISTER_VALIDATED_COMPONENT("SkinnedMeshRenderer", SkinnedMeshRenderer)
-
 namespace
 {
+SemanticTypeDescriptor DescribeSkinnedMeshRenderer()
+{
+    auto type = MeshRenderer::DescribeSemanticType();
+    type.typeGuid = "native:infernux.SkinnedMeshRenderer";
+    type.readableId = "infernux.component.skinned_mesh_renderer";
+    type.displayName = "SkinnedMeshRenderer";
+    type.baseTypeGuid = "native:infernux.MeshRenderer";
+    type.fields.push_back({"SkinnedMeshRenderer.active_take_name", "FieldType.STRING", false,
+                           {{"field_id", "active_take_name"},
+                            {"serialized_name", "activeTakeName"},
+                            {"serialized", true},
+                            {"document_required", false},
+                            {"hidden", false},
+                            {"nullable", false},
+                            {"storage_kind", "native_property"},
+                            {"default", ""},
+                            {"tooltip", "Currently selected animation take name"}}});
+    return type;
+}
+
+const bool registeredSkinnedMeshRenderer = ComponentFactory::Register(
+    "SkinnedMeshRenderer", [] { return std::make_unique<SkinnedMeshRenderer>(); },
+    SkinnedMeshRenderer::ValidateSerializedDocument, SkinnedMeshRenderer::GetTypeConstraints(),
+    DescribeSkinnedMeshRenderer);
+
 const std::vector<glm::mat4> &EmptySkinPalette()
 {
     static const std::vector<glm::mat4> empty;
@@ -86,6 +111,32 @@ const std::vector<glm::mat4> &SkinnedMeshRenderer::GetRuntimeSkinBoneMatrices() 
 {
     const auto palette = m_skinPoseHistory.Current();
     return palette ? *palette : EmptySkinPalette();
+}
+
+std::vector<std::string> SkinnedMeshRenderer::GetSkeletonNodeNames() const
+{
+    const auto model = GetRuntimeModelSnapshot();
+    if (!model)
+        throw std::logic_error("SkinnedMeshRenderer has no evaluated skeleton");
+    std::vector<std::string> names;
+    names.reserve(model->skeleton.nodes.size());
+    for (const auto &node : model->skeleton.nodes)
+        names.push_back(node.name);
+    return names;
+}
+
+std::vector<glm::mat4>
+SkinnedMeshRenderer::GetSkeletonNodeWorldMatrices(const std::vector<std::string> &nodeNames) const
+{
+    const auto snapshot = GetRuntimeSkinPoseSnapshot();
+    const auto model = GetRuntimeModelSnapshot();
+    const auto *transform = GetTransform();
+    if (!model || !snapshot->IsValid() || !transform)
+        throw std::logic_error("SkinnedMeshRenderer requires an evaluated pose and an owning Transform");
+    glm::mat4 drawWorld = ResolveRenderWorldMatrix(transform->GetWorldMatrix());
+    if (GetSubmeshIndex() >= 0)
+        drawWorld *= glm::translate(glm::mat4(1.0f), GetMeshPivotOffset());
+    return model->GetSkeletonNodeWorldMatrices(*snapshot->evaluated, nodeNames, drawWorld);
 }
 
 void SkinnedMeshRenderer::ComputeWorldBounds(const glm::mat4 &worldMatrix, glm::vec3 &outMin, glm::vec3 &outMax) const
@@ -403,12 +454,12 @@ void SkinnedMeshRenderer::RefreshRuntimeSkinnedMesh()
     for (const auto &animation : animationSource->animations)
         m_animationTakeNames.push_back(animation.name);
 
-    std::shared_ptr<const std::vector<glm::mat4>> nextPalette;
+    std::shared_ptr<const EvaluatedSkinPose> nextPose;
     if (m_usePoseStack) {
         // AnimationTree path: N-way weighted + additive + masked blend.
         // Not cached (the stack changes most frames); built fresh each refresh.
-        nextPalette = std::make_shared<const std::vector<glm::mat4>>(
-            model->BuildGpuBonePaletteFromPoseStack(m_poseStack, m_poseStackAnimationSources));
+        nextPose = std::make_shared<const EvaluatedSkinPose>(
+            model->EvaluatePoseStack(m_poseStack, m_poseStackAnimationSources));
     } else {
         SkinnedSampleRequest request;
         request.takeName = m_activeTakeName;
@@ -417,10 +468,10 @@ void SkinnedMeshRenderer::RefreshRuntimeSkinnedMesh()
         request.blendTakeName = m_blendTakeName;
         request.blendTimeSeconds = m_blendAnimationTime;
         request.blendWeight = m_blendWeight;
-        nextPalette =
-            model->GetOrBuildGpuBonePalette(request, animationSource.get(), m_blendAnimationSourceModel.get());
+        nextPose =
+            model->GetOrBuildEvaluatedPose(request, animationSource.get(), m_blendAnimationSourceModel.get());
     }
-    m_skinPoseHistory.Publish(std::move(nextPalette), modelChanged);
+    m_skinPoseHistory.Publish(std::move(nextPose), modelChanged);
     SceneManager::Instance().QueueSkinPoseHistoryCommit(this);
     // Deformation changes world bounds even when the object transform stays
     // fixed. Invalidate both coarse groups and per-camera visibility caches.

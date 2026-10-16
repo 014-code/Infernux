@@ -141,6 +141,10 @@ class SkinnedMeshRenderer : public MeshRenderer
     {
         return m_skinPoseHistory.Acquire();
     }
+    [[nodiscard]] std::vector<std::string> GetSkeletonNodeNames() const;
+    /// Latest submitted pose, with bone-local coordinates expressed in engine units.
+    [[nodiscard]] std::vector<glm::mat4>
+    GetSkeletonNodeWorldMatrices(const std::vector<std::string> &nodeNames) const;
     void CommitRuntimeSkinPoseHistory();
 
     /// Animated geometry can leave the imported bind-pose AABB even when the

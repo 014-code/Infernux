@@ -45,6 +45,19 @@ class _LogContext:
         return reference() if reference is not None else None
 
     def __set__(self, instance, value):
+        instance.__dict__["_context_handle"] = None
+        if value is not None:
+            from infernux.components.component import InxComponent
+            from infernux.lib import Component, GameObject
+
+            if isinstance(value, InxComponent):
+                owner = value._try_get_game_object()
+            elif isinstance(value, Component):
+                owner = value.game_object if value else None
+            else:
+                owner = value if isinstance(value, GameObject) and value else None
+            if owner is not None:
+                instance.__dict__["_context_handle"] = owner.handle
         try:
             reference = weakref.ref(value) if value is not None else None
         except TypeError:
@@ -132,6 +145,7 @@ class DebugConsole:
         self._max_entries: int = 1000
         self._listener_registry = ReloadableCallbackRegistry()
         self._native_console = None  # C++ ConsolePanel (set by bootstrap)
+        self._project_root = ""
         self._native_bridge_lock = RLock()
         self._pending_native_entries = deque()
         self._suppressed_errors: dict[str, tuple[str, str]] = {}
@@ -162,6 +176,7 @@ class DebugConsole:
         with self._native_bridge_lock:
             self._native_console = native_console
             if native_console is not None:
+                self._project_root = native_console.project_root
                 while self._pending_native_entries:
                     self._forward_native_entry(self._pending_native_entries[0])
                     self._pending_native_entries.popleft()
@@ -171,7 +186,7 @@ class DebugConsole:
         if level is not None:
             self._native_console.log_from_python(
                 level, entry.message, entry.stack_trace or "",
-                entry.source_file or "", entry.source_line,
+                entry.source_file or "", entry.source_line, entry.__dict__["_context_handle"],
             )
 
     @staticmethod
@@ -245,14 +260,17 @@ class DebugConsole:
     
     def _print_entry(self, entry: LogEntry):
         """Print entry to console for development."""
-        prefix = f"[{entry.get_formatted_time()}] [{entry.log_type.name}]"
-        message = _sanitize_text(f"{prefix} {entry.message}")
+        from infernux.lib import _Infernux
+
+        level = 1 if entry.log_type is LogType.LOG else 2 if entry.log_type is LogType.WARNING else 3
+        message = _Infernux._format_log_message(
+            level, entry.source_file,
+            entry.source_line, entry.message, self._project_root,
+        )
         
         if entry.log_type in (LogType.ERROR, LogType.ASSERT, LogType.EXCEPTION):
             import sys
             _safe_stream_write(sys.stderr, message)
-            if entry.stack_trace:
-                _safe_stream_write(sys.stderr, entry.stack_trace)
         else:
             import sys
             _safe_stream_write(sys.stdout, message)

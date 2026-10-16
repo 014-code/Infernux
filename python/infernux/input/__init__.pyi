@@ -265,6 +265,10 @@ class Input:
         """Returns the value of the virtual axis identified by axis_name."""
         ...
     @staticmethod
+    def get_mouse_delta() -> Tuple[float, float]:
+        """Unscaled, non-consuming mouse movement accumulated this input frame."""
+        ...
+    @staticmethod
     def get_axis_raw(axis_name: str) -> float:
         """Returns the raw value of the virtual axis with no smoothing."""
         ...

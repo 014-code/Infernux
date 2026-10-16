@@ -36,7 +36,7 @@ def is_unchanged_ui_scalar(instance, name: str, value) -> bool:
     return type(previous) is type(value) and previous == value
 
 
-def mark_runtime_ui_dirty(element=None, *, binding: bool = False) -> int:
+def mark_runtime_ui_dirty(element=None, *, binding: bool = False, subtree: bool = False) -> int:
     """Publish an element edit, or an inherited/global visual change.
 
     An element edit preserves other elements' extracted draw parameters.
@@ -50,14 +50,26 @@ def mark_runtime_ui_dirty(element=None, *, binding: bool = False) -> int:
     if element is None:
         _shared_visual_revision += 1
     else:
-        _invalidate_ui_command_groups(element)
+        _invalidate_ui_command_groups(element, subtree=subtree)
     return _runtime_ui_revision
 
 
-def _invalidate_ui_command_groups(element) -> None:
+def _invalidate_ui_command_groups(element, *, subtree: bool = False) -> None:
     """Notify existing submission owners, without retaining an edit history."""
     for group in element.__dict__.get('_ui_command_groups', ()):
         group.invalidate(element)
+    if subtree:
+        from .ui_canvas import UICanvas
+
+        pending = list(element.game_object.get_children())
+        while pending:
+            owner = pending.pop()
+            components = owner.get_py_components()
+            if any(isinstance(component, UICanvas) for component in components):
+                continue
+            for component in components:
+                _invalidate_ui_command_groups(component)
+            pending.extend(owner.get_children())
 
 
 def _get_shared_visual_revision() -> int:

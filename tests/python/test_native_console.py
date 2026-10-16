@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from infernux.debug import Debug, DebugConsole
+from infernux.debug import Debug, DebugConsole, LogEntry, LogType
 from infernux.lib import ConsolePanel, LogLevel, inflog_internal
 
 
@@ -103,3 +103,73 @@ def test_disconnected_debug_bridge_does_not_write_to_old_panel():
         console.set_native_console(None)
         console.clear()
         DebugConsole._instance = None
+
+
+def test_component_log_selects_owning_object_and_retains_diagnostic(scene, native_console):
+    from infernux.engine._bootstrap_panels import BootstrapPanelsMixin
+    from infernux.engine._bootstrap_selection import BootstrapSelectionMixin
+    from infernux.engine.interaction import EditorInteractionCore, SelectionDomain, SelectionService, SelectionTarget
+
+    class ConsoleOwner(BootstrapPanelsMixin, BootstrapSelectionMixin):
+        pass
+
+    previous_selection = SelectionService._instance
+    core = EditorInteractionCore()
+    owner = object.__new__(ConsoleOwner)
+    owner.interaction_core = core
+    core.panels.register_selection_authority("hierarchy", (SelectionDomain.SCENE_OBJECT,))
+    core.panels.register_selection_authority("console", (SelectionDomain.DIAGNOSTIC_ENTRY,))
+    core.navigation.register(SelectionDomain.SCENE_OBJECT, lambda _target, _request: True)
+    core.selection.add_listener(lambda _change: native_console.set_selection_snapshot(0))
+    game_object = scene.create_game_object("Logged object")
+    component = game_object.add_component("BoxCollider")
+    try:
+        Debug.log_error("component failure", component)
+        entry = native_console._get_visible_log_snapshot(1)[0]
+        uid = entry["uid"]
+        object_id = game_object.id
+        assert native_console.get_entry_context_object_id(uid) == object_id
+        owner._on_console_selection_changed(native_console, uid, False)
+        assert core.selection.snapshot.primary == SelectionTarget.scene_object(object_id)
+        assert core.selection.snapshot.owner_id == "hierarchy"
+        assert native_console._selected_uid == uid
+
+        Debug.log("object observation", game_object)
+        object_uid = native_console._get_visible_log_snapshot(1)[0]["uid"]
+        assert native_console.get_entry_context_object_id(object_uid) == object_id
+        scene.destroy_game_object(game_object)
+        scene.process_pending_destroys()
+        assert native_console.get_entry_context_object_id(uid) == 0
+        Debug.log("retired component observation", component)
+        Debug.log("retired object observation", game_object)
+        assert all(native_console.get_entry_context_object_id(entry["uid"]) == 0
+                   for entry in native_console._get_visible_log_snapshot(2))
+        owner._on_console_selection_changed(native_console, uid, False)
+        assert core.selection.snapshot.domain is SelectionDomain.DIAGNOSTIC_ENTRY
+    finally:
+        core.shutdown()
+        SelectionService._instance = previous_selection
+
+
+def test_log_display_is_relative_and_trace_remains_structured(tmp_path, capsys):
+    from datetime import datetime
+
+    previous = DebugConsole._instance
+    console = DebugConsole()
+    panel = ConsolePanel(str(tmp_path))
+    console.set_native_console(panel)
+    source = str(tmp_path / "Assets" / "Scripts" / "Player.py")
+    try:
+        console.log(LogEntry("ValueError: failed", LogType.EXCEPTION, datetime.now(),
+                             stack_trace="Traceback original diagnostic", source_file=source, source_line=35))
+        expected = "[Error] (Assets/Scripts/Player.py, line 35) ValueError: failed"
+        assert capsys.readouterr().err.strip() == expected
+        assert panel._get_status_snapshot()[0] == expected
+        snapshot = panel._get_visible_log_snapshot(1)[0]
+        assert snapshot["stack_trace"] == "Traceback original diagnostic"
+        assert snapshot["source_file"] == source
+        assert snapshot["message"] == "ValueError: failed"
+    finally:
+        console.set_native_console(None)
+        console.clear()
+        DebugConsole._instance = previous

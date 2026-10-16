@@ -1326,13 +1326,12 @@ def _apply_batch_changes_py(py_comp, changes: dict, batch_info: list):
 
 def render_cpp_component_generic(ctx: InxGUIContext, comp):
     """Render only fields declared by the native semantic catalog."""
+    declared = _declared_native_fields(comp)
+    if not declared:
+        return
     original_document = comp.serialize_document()
     data = dict(original_document)
     changed = False
-    declared = _declared_native_fields(comp)
-    if not declared:
-        ctx.label("No declared editable fields")
-        return
     lw = max_label_w(ctx, [pretty_field_name(name) for name, *_rest in declared])
     for key, schema, metadata, value in declared:
         if schema.read_only:

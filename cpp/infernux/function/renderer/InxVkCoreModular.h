@@ -1385,15 +1385,26 @@ class InxVkCoreModular
     // Texture cache (GPU textures keyed by name/GUID, thread-safe)
     vk::VulkanBindlessTextureTable m_bindlessTextureTable;
     VkTextureCache m_textureCache;
+    struct PendingTextureStagingLoad
+    {
+        std::shared_ptr<TextureUploadStagingTicket> ticket;
+        rhi::SamplerDesc sampler;
+    };
     struct PendingTextureGpuUpload
     {
         std::string guid;
         uint64_t runtimeVersion = 0;
         std::shared_ptr<vk::TextureUploadTicket> ticket;
     };
+    struct FailedTextureUpload
+    {
+        std::string guid;
+        uint64_t runtimeVersion;
+    };
     std::unordered_map<std::string, std::shared_ptr<AssetLoadTicket>> m_pendingTextureAssetLoads;
-    std::unordered_map<std::string, std::shared_ptr<TextureUploadStagingTicket>> m_pendingTextureStagingLoads;
+    std::unordered_map<std::string, PendingTextureStagingLoad> m_pendingTextureStagingLoads;
     std::unordered_map<std::string, PendingTextureGpuUpload> m_pendingTextureGpuUploads;
+    std::unordered_map<std::string, FailedTextureUpload> m_failedTextureUploads;
     std::function<std::shared_ptr<rhi::RenderTexture>(const std::string &)> m_renderTextureAssetLoader;
     std::unordered_map<std::string, std::weak_ptr<InxMaterial>> m_materialTextureOwners;
     void CollectUnusedMaterialTextureOwners();
@@ -1488,6 +1499,7 @@ class InxVkCoreModular
                                      MeshGeometryView currentView);
     void RetireUnusedRuntimeMeshBuffers();
     void PumpPendingTextureLoads();
+    bool TrySubmitTextureStaging(const std::string &cacheKey, const PendingTextureStagingLoad &pending);
     [[nodiscard]] std::vector<GpuAssetResidencyRecord> GetAssetTextureGpuResidency() const
     {
         return m_textureCache.GetAssetResidency();

@@ -1347,6 +1347,13 @@ float InxGUIContext::GetItemRectMaxY()
     return ImGui::GetItemRectMax().y;
 }
 
+std::array<float, 4> InxGUIContext::GetItemVisibleRect()
+{
+    ImRect rect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+    rect.ClipWithFull(ImGui::GetCurrentWindow()->ClipRect);
+    return {rect.Min.x, rect.Min.y, rect.GetWidth(), rect.GetHeight()};
+}
+
 void InxGUIContext::RecordSemanticItem(const std::string &kind, const std::string &label, bool enabled,
                                        const std::string &semanticId, std::optional<bool> boolValue,
                                        std::optional<double> numericValue, std::optional<std::string> stringValue)

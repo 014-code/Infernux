@@ -374,6 +374,34 @@ def test_parent_ui_pose_updates_descendants_not_unrelated_branches(ui):
     assert set(ui.extracted) == (set() if ui.world else {parent, child, descendant})
     assert unrelated not in ui.extracted
     _assert_current_commands_match_fresh(ui, actual)
+    if not ui.world:
+        from infernux.ui import UICanvas
+        from infernux.ui.inx_ui_screen_component import _get_layout_revision
+        from infernux.ui.ui_render_dispatch import _runtime_command_epoch
+
+        nested_canvas = ui.scene.create_game_object("Nested Canvas")
+        nested_canvas.set_parent(parent.game_object)
+        nested_canvas.add_component(UICanvas)
+        nested = ui.add(parent=nested_canvas)
+        ui.frame()
+        revision, epoch = _get_layout_revision(), _runtime_command_epoch()
+        for move in (
+            lambda: parent.set_rect(200, 300, parent.width, parent.height, 1920, 1080),
+            lambda: parent.set_visual_position(240, 320, 1920, 1080),
+            lambda: parent.set_layout_rotation(30),
+        ):
+            move()
+            _, actual = ui.frame()
+            assert set(ui.extracted) == {parent, child, descendant}
+            assert unrelated not in ui.extracted and nested not in ui.extracted
+            assert _get_layout_revision() == revision
+            assert _runtime_command_epoch() == epoch
+            _assert_current_commands_match_fresh(ui, actual)
+        captures = ui.renderer.captures
+        child.set_rect(20, 30, child.width, child.height, 1920, 1080)
+        ui.frame()
+        assert ui.extracted == [child]
+        assert ui.renderer.captures == captures + 1
 
 
 @pytest.mark.parametrize("position", ["before", "after"])
@@ -401,7 +429,10 @@ def test_custom_draw_remeasures_successive_text_and_size_edits(ui, position):
 
     def draw(element, renderer, **kwargs):
         if mutate:
-            setattr(target, change, "TenLetters" if change == "text" else 36)
+            if change == "position":
+                parent.set_visual_position(200, 100, 1920, 1080)
+            else:
+                setattr(target, change, "TenLetters" if change == "text" else 36)
 
     def text_command(commands, content):
         return next(args for name, args, _ in commands if name == "add_text" and args[5] == content)
@@ -454,6 +485,16 @@ def test_custom_draw_remeasures_successive_text_and_size_edits(ui, position):
         command = text_command(settled, target.text)
         assert command[3] - command[1] == pytest.approx(expected_width * scale)
         assert ui.frame() == (False, [])
+        if not ui.world:
+            tail_before = text_command(settled, "tail")
+            shift = 200 - parent.get_visual_rect(1920, 1080)[0]
+            change, mutate = "position", True
+            custom.label = "Publish parent movement"
+            _, after = ui.frame()
+            assert text_command(after, "tail")[1] - tail_before[1] == pytest.approx(shift * scale)
+            mutate = False
+            _, settled = ui.frame()
+            _assert_current_commands_match_fresh(ui, settled)
     finally:
         dispatch.register_ui_renderer("UIButton", "runtime", original)
 
@@ -498,7 +539,8 @@ def test_material_binding_document_restore_and_removal_match_fresh(ui, monkeypat
     material = Material(InxMaterial("Inspector material", "Unlit"))
     material.set_color("baseColor", 0.2, 0.4, 0.8, 1.0)
     monkeypatch.setattr(AssetManager, "load_by_guid", lambda *_args, **_kwargs: material)
-    label, other = ui.add(), ui.add()
+    label = ui.add()
+    ui.add()
     ui.frame()
     for reference in (make_asset_ref("Material", "1234567890abcdef1234567890abcdef"), None):
         label._deserialize_fields_document({"material": reference})
@@ -522,7 +564,8 @@ def test_renderer_replacement_releases_old_bound_calls(ui):
 
 
 def test_destroyed_element_packets_do_not_survive_membership_change(ui):
-    doomed, survivor = ui.add(), ui.add()
+    doomed = ui.add()
+    ui.add()
     ui.frame()
     ui.scene.destroy_game_object(doomed.game_object)
     ui.scene.process_pending_destroys()
@@ -565,7 +608,7 @@ def test_registered_renderer_replacement_invalidates_warm_packets(ui):
 def test_packet_capture_failure_does_not_publish_partial_geometry(ui, monkeypatch):
     import infernux.engine.runtime_screen_ui as runtime
 
-    label = ui.add()
+    ui.add()
     original = runtime._ui_dispatch
 
     def fail(*_args, **_kwargs):

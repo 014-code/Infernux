@@ -9,6 +9,7 @@ from infernux.application import Application
 from infernux.core.assets import AssetFile, AssetManager
 from infernux.core.material import Material
 from infernux.core.sandbox_files import SandboxPath
+from infernux.core.texture import Texture
 
 
 class _Database:
@@ -21,6 +22,11 @@ class _Database:
     def get_path_from_guid(self, guid):
         return self.entries.get(guid, "")
 
+    def get_directory_catalog(self, directory):
+        key = os.path.normcase(os.path.abspath(directory))
+        return [{"guid": guid, "path": path} for guid, path in self.entries.items()
+                if os.path.normcase(os.path.abspath(os.path.dirname(path))) == key]
+
     def get_guid_from_path(self, path):
         key = os.path.normcase(os.path.abspath(path))
         for guid, candidate in self.entries.items():
@@ -28,11 +34,15 @@ class _Database:
                 return guid
         return ""
 
+    get_guid_from_catalog_path = get_guid_from_path
+
 
 def _editor(monkeypatch, root: Path) -> None:
+    from infernux.engine import project_context
+
     monkeypatch.setattr(Application, "is_editor", staticmethod(lambda: True))
     monkeypatch.setattr(Application, "is_player", staticmethod(lambda: False))
-    monkeypatch.setattr(Application, "data_path", staticmethod(lambda: str(root)))
+    monkeypatch.setattr(project_context._context(), "root", str(root))
 
 
 def test_editor_asset_path_is_converted_to_guid_before_load(monkeypatch, tmp_path):
@@ -148,7 +158,6 @@ def test_managed_find_returns_guid_identity_and_player_uses_frozen_path_query(mo
     database = _Database(
         {
             "material-guid": str(material),
-            "directory-guid": str(directory),
             "nested-guid": str(nested),
         }
     )
@@ -233,6 +242,61 @@ def test_managed_find_returns_guid_identity_and_player_uses_frozen_path_query(mo
     assert AssetManager.find_assets("material-guid")[0].load() is not None
     assert AssetManager.load("Assets/Materials/Gold.mat") is not None
     assert observed == ["material-guid", "material-guid"]
+
+
+def test_managed_queries_read_published_index_without_filesystem_probes(monkeypatch, tmp_path):
+    material = tmp_path / "Assets" / "Materials" / "Gold.mat"
+    material.parent.mkdir(parents=True)
+    material.write_text("{}", encoding="utf-8")
+    sibling = material.with_name("Silver.mat")
+    sibling.write_text("{}", encoding="utf-8")
+    dotted_directory = material.parent / "Directory.mat"
+    dotted_directory.mkdir()
+    nested = dotted_directory / "Nested.mat"
+    nested.write_text("{}", encoding="utf-8")
+    unrelated = tmp_path / "Assets" / "Textures" / "Unrelated.mat"
+    unrelated.parent.mkdir()
+    unrelated.write_text("{}", encoding="utf-8")
+    database = _Database({"gold": str(material), "silver": str(sibling), "nested": str(nested),
+                          "unrelated": str(unrelated), "virtual": str(material) + "::subtex:preview"})
+    _editor(monkeypatch, tmp_path)
+    monkeypatch.setattr(AssetManager, "_asset_database", database)
+    enumerated = []
+    monkeypatch.setattr(database, "get_all_guids", lambda: enumerated.append(True) or list(database.entries))
+
+    assert AssetManager.find_assets(r"assets\Materials\Gold.mat") == [AssetFile("gold")]
+    if os.name == "nt":
+        assert AssetManager.find_assets("ASSETS/materials/gOLD.MAT") == [AssetFile("gold")]
+    else:
+        assert AssetManager.find_assets("Assets/materials/gOLD.MAT") == []
+    assert AssetManager.find_assets("Assets/Materials/Gold.mat", asset_type=Material) == [AssetFile("gold")]
+    assert AssetManager.find_assets("Assets/Materials/Gold.mat", asset_type=Texture) == []
+    assert AssetManager.find_assets("Assets/Materials/Missing.mat") == []
+    assert AssetManager.find_assets("Assets/Materials/Gold.mat::subtex:preview") == []
+    assert AssetManager.find_assets("virtual") == []
+    assert enumerated == []
+    assert AssetManager.find_assets("Assets/Materials") == [AssetFile("gold"), AssetFile("silver")]
+    assert AssetManager.find_assets("Assets/Materials/Directory.mat") == [AssetFile("nested")]
+    assert enumerated == []
+    material.unlink()
+
+    def filesystem_probe(*_args, **_kwargs):
+        raise AssertionError("managed search must read the published catalog without filesystem probes")
+
+    with monkeypatch.context() as search:
+        for name in ("stat", "lstat", "scandir", "walk"):
+            search.setattr(os, name, filesystem_probe)
+        for name in ("isfile", "isdir", "realpath"):
+            search.setattr(os.path, name, filesystem_probe)
+        search.setattr(database, "get_guid_from_path", filesystem_probe)
+        assert AssetManager.find_assets("Assets/Materials/Gold.mat") == [AssetFile("gold")]
+        assert AssetManager.find_assets("gold") == [AssetFile("gold")]
+        assert AssetManager.find_assets("Assets/Materials/Missing.mat") == []
+        assert AssetManager.find_assets("Assets/Materials") == [AssetFile("gold"), AssetFile("silver")]
+        assert AssetManager.find_assets("Assets/Materials/*.mat") == [AssetFile("gold"), AssetFile("silver")]
+        assert AssetManager.find_assets("Assets/Materials/*.mat", asset_type=Texture) == []
+    with pytest.raises(FileNotFoundError):
+        AssetFile("gold").read_text()
 
 
 def test_raw_filesystem_handle_reads_writes_lists_and_deletes_inside_editor_assets(monkeypatch, tmp_path):

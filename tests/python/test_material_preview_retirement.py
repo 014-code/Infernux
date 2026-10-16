@@ -3,6 +3,7 @@
 import io
 import json
 import os
+from pathlib import Path
 import time
 import uuid
 
@@ -10,7 +11,7 @@ import pytest
 from PIL import Image
 
 from infernux.core.assets import AssetManager
-from infernux.lib import ConsolePanel, InxMaterial
+from infernux.lib import AssetRegistry, ConsolePanel, InxMaterial, ResourceType
 from infernux.renderstack.render_stack_pipeline import RenderStackPipeline
 
 
@@ -50,6 +51,53 @@ def invalid_material():
     document["builtin"] = False
     document["shaders"]["fragment"] = {"guid": uuid.uuid4().hex, "shader_id": "DeletedShader"}
     return json.dumps(document)
+
+
+def test_imported_texture_staging_has_a_terminal_result_without_repeated_resolve(engine, scene):
+    registry = AssetRegistry.instance()
+    database = engine.get_asset_database()
+    path = Path(database.assets_root) / "UnobservedTexture.png"
+    key = "unobserved-staging"
+    console = ConsolePanel()
+    Image.new("RGBA", (1024, 1024), "red").save(path)
+    imported = database.import_asset(str(path))
+    assert imported, imported.error
+    guid = imported.guid
+    try:
+        registry.load_texture_by_guid(guid)
+        previous_version = registry.get_asset_version(guid)
+        artifact = Path(database.get_runtime_artifact_path(guid, ResourceType.Texture))
+        artifact.unlink()
+        errors_before = console.get_error_count()
+        engine._get_imported_texture_ui_texture_id(key, guid)
+        pump_until(engine, lambda _: engine.pending_texture_cpu_load_count == 0
+                   and engine.pending_texture_gpu_upload_count == 0)
+        assert console.get_error_count() == errors_before + 1
+        for _ in range(10):
+            assert engine._get_imported_texture_ui_texture_id(key, guid) == 0
+            assert engine.pending_texture_cpu_load_count == 0
+        assert console.get_error_count() == errors_before + 1
+
+        Image.new("RGBA", (1024, 1024), "green").save(path)
+        corrected = database.reimport_asset(str(path))
+        assert corrected and corrected.guid == guid, corrected.error
+        engine.reload_texture(str(path))
+        registry.load_texture_by_guid(guid)
+        version = registry.get_asset_version(guid)
+        assert version > previous_version
+        uploads_before = engine.completed_texture_gpu_upload_count
+        engine._get_imported_texture_ui_texture_id(key, guid)
+        pump_until(engine, lambda _: engine.pending_texture_cpu_load_count == 0
+                   and engine.pending_texture_gpu_upload_count == 0
+                   and engine.completed_texture_gpu_upload_count > uploads_before)
+        resident = next(record for record in engine.asset_runtime_records if record.guid == guid)
+        assert resident.runtime_version == version
+        assert resident.gpu_resident_bytes > 0 and resident.gpu_pending_bytes == 0
+        assert console.get_error_count() == errors_before + 1
+    finally:
+        engine.remove_imgui_texture(key)
+        engine.reload_texture(str(path))
+        database.delete_asset(str(path))
 
 
 def test_rejected_material_does_not_block_texture_or_repeat_without_change(engine, scene, tmp_path):

@@ -67,11 +67,11 @@ def test_player_smoke_reads_errors_from_packaged_player_state_directory(state_lo
         monkeypatch.setenv(state_location, str(state_home))
     actual_log = state_home / "Infernux" / "Players" / "Balance" / "Logs" / "player.log"
     actual_log.parent.mkdir(parents=True)
-    actual_log.write_text("[ERROR] scene failed\n", encoding="utf-8")
+    actual_log.write_text("[Error] scene failed\n", encoding="utf-8")
 
     log_path = module._state_log("Balance")
     assert str(log_path) == str(actual_log)
-    assert module._fatal_lines(module._new_log_text(log_path, 0)) == ["[ERROR] scene failed"]
+    assert module._fatal_lines(module._new_log_text(log_path, 0)) == ["[Error] scene failed"]
 
 
 def test_linux_smoke_position_and_axis_delta():

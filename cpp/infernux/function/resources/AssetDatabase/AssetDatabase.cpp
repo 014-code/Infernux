@@ -121,7 +121,44 @@ void ApplyModelTextureSettings(InxResourceMeta &model, const std::string &guid, 
 #endif
 }
 
-// Rebuild these derived entries at the same publication boundary as the owner.
+// Stored catalog paths already have canonical backing paths. Virtual suffixes
+// are identities, not filenames to probe or case-fold on the filesystem.
+std::string IndexedAssetPathKey(const std::string &path)
+{
+    const auto suffix = path.find("::");
+    return suffix == std::string::npos ? FoldFilesystemPathCase(path)
+                                      : FoldFilesystemPathCase(path.substr(0, suffix)) + path.substr(suffix);
+}
+
+template <typename Visit> void VisitModelSubAssets(const InxResourceMeta &owner, Visit visit)
+{
+    for (const auto *table : {"model_textures", "model_animations"}) {
+        if (!owner.HasKey(table))
+            continue;
+        const auto records = nlohmann::json::parse(owner.GetDataAs<std::string>(table));
+        for (const auto &record : records)
+            visit(record);
+    }
+}
+
+std::shared_ptr<InxResourceMeta> ModelSubAssetMetadata(const nlohmann::json &record, const std::string &owner,
+                                                    const std::string &sourcePath)
+{
+    auto metadata = std::make_shared<InxResourceMeta>();
+    metadata->DeserializeDocument(record.at("metadata"));
+    const auto guid = metadata->GetGuid();
+    if (!IsCanonicalAssetGuid(guid) || guid == owner)
+        throw std::invalid_argument("invalid model sub-asset identity: " + guid);
+    const auto suffix = metadata->HasKey("import_document")
+                            ? "::subanim:" + record.at("id").get<std::string>()
+                            : "::subtex:" + guid;
+    metadata->AddMetadata("file_path", sourcePath + suffix);
+    metadata->AddMetadata("import_owner_guid", owner);
+    return metadata;
+}
+
+// Full scans rebuild all derived entries once; individual imports update only
+// their owner through UpdateModelSubAssets.
 template <typename Paths, typename Metas, typename States, typename Results>
 void ExpandModelSubAssets(Paths &guidToPath, Paths &pathToGuid, Metas &metas, States &fileStates, Results &results)
 {
@@ -130,7 +167,7 @@ void ExpandModelSubAssets(Paths &guidToPath, Paths &pathToGuid, Metas &metas, St
         if (it->second->HasKey("import_owner_guid")) {
             const auto path = guidToPath.find(it->first);
             if (path != guidToPath.end()) {
-                const auto key = FilesystemPathKey(path->second);
+                const auto key = IndexedAssetPathKey(path->second);
                 pathToGuid.erase(key);
                 fileStates.erase(key);
                 guidToPath.erase(path);
@@ -144,36 +181,24 @@ void ExpandModelSubAssets(Paths &guidToPath, Paths &pathToGuid, Metas &metas, St
         }
     }
     for (const auto &owner : owners) {
-        const auto sourcePath = guidToPath.at(owner);
-        const auto sourceState = fileStates.at(FilesystemPathKey(sourcePath));
-        for (const auto *table : {"model_textures", "model_animations"}) {
-            if (!metas.at(owner)->HasKey(table))
-                continue;
-            const auto records = nlohmann::json::parse(metas.at(owner)->template GetDataAs<std::string>(table));
-            for (const auto &record : records) {
-                // Clip tables predating owned identities contain display data only.
-                if (!record.contains("metadata"))
-                    continue;
-                auto metadata = std::make_shared<InxResourceMeta>();
-                metadata->DeserializeDocument(record.at("metadata"));
-                const auto guid = metadata->GetGuid();
-                if (!IsCanonicalAssetGuid(guid) || guid == owner || metas.find(guid) != metas.end())
-                    throw std::invalid_argument("model sub-asset identity collides with another asset: " + guid);
-                const auto path = metadata->HasKey("import_document")
-                                      ? sourcePath + "::subanim:" + record.at("id").template get<std::string>()
-                                      : sourcePath + "::subtex:" + guid;
-                metadata->UpdateFilePath(path);
-                metadata->AddMetadata("import_owner_guid", owner);
-                guidToPath.emplace(guid, path);
-                pathToGuid.emplace(FilesystemPathKey(path), guid);
-                metas.emplace(guid, std::move(metadata));
-                auto childState = sourceState;
-                childState.readOnly = true;
-                fileStates.emplace(FilesystemPathKey(path), childState);
-                if (const auto result = results.find(owner); result != results.end())
-                    results.emplace(guid, result->second);
-            }
-        }
+        const auto sourcePath = ResolveFilesystemPath(guidToPath.at(owner));
+        const auto sourceState = fileStates.at(IndexedAssetPathKey(sourcePath));
+        VisitModelSubAssets(*metas.at(owner), [&](const nlohmann::json &record) {
+            auto metadata = ModelSubAssetMetadata(record, owner, sourcePath);
+            const auto guid = metadata->GetGuid();
+            const auto path = metadata->GetDataAs<std::string>("file_path");
+            const auto key = IndexedAssetPathKey(path);
+            if (metas.find(guid) != metas.end())
+                throw std::invalid_argument("model sub-asset identity collides with another asset: " + guid);
+            guidToPath.emplace(guid, path);
+            pathToGuid.emplace(key, guid);
+            metas.emplace(guid, std::move(metadata));
+            auto childState = sourceState;
+            childState.readOnly = true;
+            fileStates.emplace(key, childState);
+            if (const auto result = results.find(owner); result != results.end())
+                results.emplace(guid, result->second);
+        });
     }
 }
 
@@ -696,29 +721,122 @@ void AssetDatabase::PublishQuerySnapshot(bool includeCatalog)
     PublishModelSubAssetEvents(previous);
 }
 
-void AssetDatabase::PublishModelSubAssetEvents(const std::shared_ptr<const QuerySnapshot> &previous)
+void AssetDatabase::PublishModelSubAssetEvents(const std::shared_ptr<const QuerySnapshot> &previous,
+                                             const std::unordered_set<std::string> *changedGuids)
 {
-    for (const auto &[guid, metadata] : m_metas)
-        if (metadata->HasKey("import_document") && !AssetDependencyGraph::Instance().HasDependency(
-                                                       guid, metadata->GetDataAs<std::string>("import_owner_guid")))
-            AssetDependencyGraph::Instance().SetAssetDependencies(
-                guid, {metadata->GetDataAs<std::string>("import_owner_guid")});
-    if (!previous)
-        return;
-    for (const auto &[guid, metadata] : previous->metas) {
-        if (!metadata->HasKey("import_owner_guid"))
-            continue;
+    auto &registry = AssetRegistry::Instance();
+    auto &graph = AssetDependencyGraph::Instance();
+    const auto publish = [&](const std::string &guid) {
         const auto current = m_metas.find(guid);
-        if (current == m_metas.end()) {
-            AssetRegistry::Instance().RemoveAsset(guid);
-            AssetDependencyGraph::Instance().NotifyEvent(guid, metadata->GetResourceType(), AssetEvent::Deleted);
-            AssetDependencyGraph::Instance().RemoveAsset(guid);
-        } else if (metadata->SerializeDocument() != current->second->SerializeDocument()) {
-            AssetRegistry::Instance().UpdateLoadedAssetPath(guid, m_guidToPath.at(guid));
-            if (AssetRegistry::Instance().GetAssetType(guid) == ResourceType::Texture)
-                AssetRegistry::Instance().ReloadAsset(guid);
-            AssetDependencyGraph::Instance().NotifyEvent(guid, metadata->GetResourceType(), AssetEvent::Modified);
+        if (current != m_metas.end() && current->second->HasKey("import_document")) {
+            const auto owner = current->second->GetDataAs<std::string>("import_owner_guid");
+            if (!graph.HasDependency(guid, owner))
+                graph.SetAssetDependencies(guid, {owner});
         }
+        if (!previous)
+            return;
+        const auto old = previous->metas.find(guid);
+        if (old == previous->metas.end()) {
+            if (current != m_metas.end() && current->second->HasKey("import_owner_guid"))
+                graph.NotifyEvent(guid, current->second->GetResourceType(), AssetEvent::Modified);
+            return;
+        }
+        const auto &metadata = old->second;
+        if (!metadata->HasKey("import_owner_guid"))
+            return;
+        if (current == m_metas.end()) {
+            registry.RemoveAsset(guid);
+            graph.NotifyEvent(guid, metadata->GetResourceType(), AssetEvent::Deleted);
+            graph.RemoveAsset(guid);
+        } else if (metadata != current->second) {
+            auto before = metadata->SerializeDocument();
+            auto after = current->second->SerializeDocument();
+            if (before == after)
+                return;
+            const bool moved = previous->guidToPath.at(guid) != m_guidToPath.at(guid);
+            if (moved) {
+                before["metadata"].erase("file_path");
+                after["metadata"].erase("file_path");
+            }
+            const auto event = moved && before == after ? AssetEvent::Moved : AssetEvent::Modified;
+            registry.UpdateLoadedAssetPath(guid, m_guidToPath.at(guid));
+            if (event == AssetEvent::Modified && registry.GetAssetType(guid) == ResourceType::Texture)
+                registry.ReloadAsset(guid);
+            graph.NotifyEvent(guid, metadata->GetResourceType(), event);
+        }
+    };
+    if (changedGuids) {
+        for (const auto &guid : *changedGuids)
+            publish(guid);
+        return;
+    }
+    for (const auto &[guid, metadata] : m_metas)
+        if (metadata->HasKey("import_owner_guid"))
+            publish(guid);
+    if (previous)
+        for (const auto &[guid, metadata] : previous->metas)
+            if (metadata->HasKey("import_owner_guid") && m_metas.find(guid) == m_metas.end())
+                publish(guid);
+}
+
+void AssetDatabase::UpdateModelSubAssets(const std::string &owner, const QuerySnapshot &previous,
+                                       QuerySnapshot &snapshot, std::unordered_set<std::string> &changedGuids)
+{
+    std::unordered_map<std::string, std::shared_ptr<InxResourceMeta>> children;
+    std::string sourcePath;
+    if (const auto current = m_metas.find(owner); current != m_metas.end()) {
+        sourcePath = ResolveFilesystemPath(m_guidToPath.at(owner));
+        VisitModelSubAssets(*current->second, [&](const nlohmann::json &record) {
+            auto metadata = ModelSubAssetMetadata(record, owner, sourcePath);
+            const auto guid = metadata->GetGuid();
+            const auto existing = m_metas.find(guid);
+            if ((existing != m_metas.end() &&
+                 (!existing->second->HasKey("import_owner_guid") ||
+                  existing->second->GetDataAs<std::string>("import_owner_guid") != owner)) ||
+                !children.emplace(guid, metadata).second)
+                throw std::invalid_argument("model sub-asset identity collides with another asset: " + guid);
+            if (existing != m_metas.end() && existing->second->SerializeDocument() == metadata->SerializeDocument())
+                children.at(guid) = existing->second;
+        });
+    }
+    if (const auto old = previous.metas.find(owner); old != previous.metas.end()) {
+        VisitModelSubAssets(*old->second, [&](const nlohmann::json &record) {
+            const auto guid = record.at("guid").get<std::string>();
+            const auto key = IndexedAssetPathKey(previous.guidToPath.at(guid));
+            if (const auto mapping = m_pathToGuid.find(key); mapping != m_pathToGuid.end() && mapping->second == guid) {
+                m_pathToGuid.erase(mapping);
+                m_fileStates.erase(key);
+            }
+            if (const auto mapping = snapshot.pathToGuid.find(key);
+                mapping != snapshot.pathToGuid.end() && mapping->second == guid)
+                snapshot.pathToGuid.erase(mapping);
+            if (children.find(guid) == children.end()) {
+                m_guidToPath.erase(guid);
+                m_metas.erase(guid);
+                m_importResults.erase(guid);
+                snapshot.guidToPath.erase(guid);
+                snapshot.metas.erase(guid);
+            }
+            changedGuids.insert(guid);
+        });
+    }
+    if (children.empty())
+        return;
+    auto state = m_fileStates.at(IndexedAssetPathKey(sourcePath));
+    state.readOnly = true;
+    for (auto &[guid, metadata] : children) {
+        const auto path = metadata->GetDataAs<std::string>("file_path");
+        const auto key = IndexedAssetPathKey(path);
+        m_guidToPath[guid] = path;
+        m_pathToGuid[key] = guid;
+        m_metas[guid] = metadata;
+        m_fileStates[key] = state;
+        if (const auto result = m_importResults.find(owner); result != m_importResults.end())
+            m_importResults[guid] = result->second;
+        snapshot.guidToPath[guid] = path;
+        snapshot.pathToGuid[key] = guid;
+        snapshot.metas[guid] = metadata;
+        changedGuids.insert(guid);
     }
 }
 
@@ -799,17 +917,6 @@ void AssetDatabase::PublishRefreshAssetEvents(const WorkingSet &previous)
 void AssetDatabase::PublishQuerySnapshotForPaths(const std::vector<std::string> &paths)
 {
     const auto previous = LoadQuerySnapshot();
-    for (const auto &path : paths) {
-        const auto key = FilesystemPathKey(path);
-        const auto current = m_pathToGuid.find(key);
-        const auto old = previous ? previous->pathToGuid.find(key) : m_pathToGuid.end();
-        if ((current != m_pathToGuid.end() && m_metas.at(current->second)->HasKey("model_textures")) ||
-            (previous && old != previous->pathToGuid.end() &&
-             previous->metas.at(old->second)->HasKey("model_textures"))) {
-            PublishQuerySnapshot();
-            return;
-        }
-    }
     if (!previous || !previous->catalog || paths.empty()) {
         PublishQuerySnapshot();
         return;
@@ -822,6 +929,8 @@ void AssetDatabase::PublishQuerySnapshotForPaths(const std::vector<std::string> 
 
     std::unordered_set<std::string> touchedDirectories;
     std::unordered_set<std::string> touchedPaths;
+    std::unordered_set<std::string> touchedGuids;
+    std::unordered_set<std::string> modelOwners;
     touchedPaths.reserve(paths.size());
     for (const std::string &path : paths) {
         const std::string normalizedPath = FilesystemPathKey(path);
@@ -834,6 +943,10 @@ void AssetDatabase::PublishQuerySnapshotForPaths(const std::vector<std::string> 
         const auto oldMapping = snapshot->pathToGuid.find(normalizedPath);
         if (oldMapping != snapshot->pathToGuid.end()) {
             const std::string oldGuid = oldMapping->second;
+            touchedGuids.insert(oldGuid);
+            const auto &oldMetadata = snapshot->metas.at(oldGuid);
+            if (oldMetadata->HasKey("model_textures") || oldMetadata->HasKey("model_animations"))
+                modelOwners.insert(oldGuid);
             snapshot->pathToGuid.erase(oldMapping);
             if (m_guidToPath.find(oldGuid) == m_guidToPath.end()) {
                 snapshot->guidToPath.erase(oldGuid);
@@ -845,6 +958,7 @@ void AssetDatabase::PublishQuerySnapshotForPaths(const std::vector<std::string> 
         if (currentMapping == m_pathToGuid.end())
             continue;
         const std::string &guid = currentMapping->second;
+        touchedGuids.insert(guid);
         const auto currentPath = m_guidToPath.find(guid);
         const auto metadata = m_metas.find(guid);
         if (currentPath == m_guidToPath.end() || metadata == m_metas.end() || !metadata->second)
@@ -852,13 +966,19 @@ void AssetDatabase::PublishQuerySnapshotForPaths(const std::vector<std::string> 
         snapshot->pathToGuid[normalizedPath] = guid;
         snapshot->guidToPath[guid] = currentPath->second;
         snapshot->metas[guid] = metadata->second;
+        if (metadata->second->HasKey("model_textures") || metadata->second->HasKey("model_animations"))
+            modelOwners.insert(guid);
     }
+
+    std::unordered_set<std::string> changedSubAssets;
+    for (const auto &owner : modelOwners)
+        UpdateModelSubAssets(owner, *previous, *snapshot, changedSubAssets);
 
     for (const std::string &directory : touchedDirectories) {
         auto &entries = catalog->m_directories[directory];
         entries.erase(std::remove_if(entries.begin(), entries.end(),
-                                     [&touchedPaths](const AssetCatalogEntry &entry) {
-                                         return touchedPaths.find(FilesystemPathKey(entry.path)) != touchedPaths.end();
+                                     [&touchedGuids](const AssetCatalogEntry &entry) {
+                                         return touchedGuids.find(entry.guid) != touchedGuids.end();
                                      }),
                       entries.end());
     }
@@ -910,6 +1030,7 @@ void AssetDatabase::PublishQuerySnapshotForPaths(const std::vector<std::string> 
 
     snapshot->catalog = std::move(catalog);
     InstallQuerySnapshot(std::move(snapshot));
+    PublishModelSubAssetEvents(previous, &changedSubAssets);
 }
 
 void AssetDatabase::InstallQuerySnapshot(std::shared_ptr<QuerySnapshot> snapshot) noexcept
@@ -3075,7 +3196,7 @@ bool AssetDatabase::ContainsGuid(const std::string &guid) const
 
 bool AssetDatabase::ContainsPath(const std::string &path) const
 {
-    std::string norm = FilesystemPathKey(path);
+    std::string norm = AssetPathKey(path);
     if (CanReadWorkingSet())
         return m_pathToGuid.find(norm) != m_pathToGuid.end();
     const auto snapshot = LoadQuerySnapshot();
@@ -3084,7 +3205,7 @@ bool AssetDatabase::ContainsPath(const std::string &path) const
 
 std::string AssetDatabase::GetGuidFromPath(const std::string &path) const
 {
-    const std::string normalized = FilesystemPathKey(path);
+    const std::string normalized = AssetPathKey(path);
     if (CanReadWorkingSet()) {
         const auto it = m_pathToGuid.find(normalized);
         return it != m_pathToGuid.end() ? it->second : "";
@@ -3092,6 +3213,17 @@ std::string AssetDatabase::GetGuidFromPath(const std::string &path) const
     const auto snapshot = LoadQuerySnapshot();
     const auto it = snapshot->pathToGuid.find(normalized);
     return it != snapshot->pathToGuid.end() ? it->second : "";
+}
+
+std::string AssetDatabase::GetGuidFromCatalogPath(const std::string &path) const
+{
+    const size_t suffix = path.find("::");
+    std::string normalized = LexicalFilesystemPathKey(path.substr(0, suffix));
+    if (suffix != std::string::npos)
+        normalized += path.substr(suffix);
+    const auto snapshot = LoadQuerySnapshot();
+    const auto found = snapshot->pathToGuid.find(normalized);
+    return found != snapshot->pathToGuid.end() ? found->second : "";
 }
 
 std::string AssetDatabase::GetPathFromGuid(const std::string &guid) const
@@ -3121,7 +3253,7 @@ std::shared_ptr<const InxResourceMeta> AssetDatabase::GetMetaByPath(const std::s
     if (path.empty())
         return nullptr;
 
-    const std::string normalized = FilesystemPathKey(path);
+    const std::string normalized = AssetPathKey(path);
     if (CanReadWorkingSet()) {
         const auto pathIt = m_pathToGuid.find(normalized);
         if (pathIt == m_pathToGuid.end())
@@ -3186,7 +3318,7 @@ std::vector<AssetCatalogEntry> AssetDatabase::GetDirectoryCatalog(const std::str
     const auto catalog = GetCatalogSnapshot();
     if (!catalog)
         return {};
-    return catalog->GetDirectory(FilesystemPathKey(directory));
+    return catalog->GetDirectory(LexicalFilesystemPathKey(directory));
 }
 
 uint64_t AssetDatabase::GetQueryGeneration() const

@@ -307,10 +307,10 @@ class BootstrapPanelsMixin:
     def _create_native_console(self):
         """Create a fresh C++ ConsolePanel for WindowManager re-open."""
         from infernux.lib import ConsolePanel as NativeConsolePanel
-        panel = NativeConsolePanel()
+        panel = NativeConsolePanel(self.project_path)
         self._wire_console_command_callbacks(panel)
         panel.on_request_focus = lambda: self.window_manager.open_window("console")
-        panel.on_selection_changed = self._on_console_selection_changed
+        panel.on_selection_changed = lambda uid, history: self._on_console_selection_changed(panel, uid, history)
         panel.on_panel_focused = self.window_manager.native_panel_focus_callback(
             "console",
             view_id="console",
@@ -375,8 +375,7 @@ class BootstrapPanelsMixin:
             )
         )
 
-    @staticmethod
-    def _on_console_selection_changed(uid, record_history):
+    def _on_console_selection_changed(self, panel, uid, record_history):
         from infernux.engine.interaction import (
             SelectionDomain,
             SelectionService,
@@ -386,6 +385,10 @@ class BootstrapPanelsMixin:
         selection = SelectionService.instance()
         entry_uid = int(uid or 0)
         if entry_uid > 0:
+            object_id = panel.get_entry_context_object_id(entry_uid)
+            if object_id and self._navigate_console_entry_to_object(object_id, record_history=bool(record_history)):
+                panel.set_selection_snapshot(entry_uid)
+                return
             selection.select(
                 SelectionTarget.diagnostic_entry(
                     "console",
@@ -490,12 +493,14 @@ class BootstrapPanelsMixin:
         # Console (native C++ panel)
         from infernux.lib import ConsolePanel as NativeConsolePanel
         from infernux.debug import DebugConsole
-        self.console = NativeConsolePanel()
+        self.console = NativeConsolePanel(self.project_path)
         self._wire_console_command_callbacks(self.console)
         # Bridge Python Debug.log() → C++ ConsolePanel
         DebugConsole.instance().set_native_console(self.console)
         self.console.on_request_focus = lambda: wm.open_window("console")
-        self.console.on_selection_changed = self._on_console_selection_changed
+        self.console.on_selection_changed = lambda uid, history: self._on_console_selection_changed(
+            self.console, uid, history,
+        )
         self.console.on_panel_focused = wm.native_panel_focus_callback(
             "console",
             view_id="console",

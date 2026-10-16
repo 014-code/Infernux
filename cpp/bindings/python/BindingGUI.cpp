@@ -21,6 +21,7 @@
 #include <function/editor/ToolbarPanel.h>
 #include <function/renderer/ProfileConfig.h>
 #include <memory>
+#include <optional>
 #include <pybind11/chrono.h>
 #include <pybind11/complex.h>
 #include <pybind11/functional.h>
@@ -790,6 +791,7 @@ void RegisterGUIBindings(py::module_ &m)
         .def("get_item_rect_min_y", &InxGUIContext::GetItemRectMinY)
         .def("get_item_rect_max_x", &InxGUIContext::GetItemRectMaxX)
         .def("get_item_rect_max_y", &InxGUIContext::GetItemRectMaxY)
+        .def("get_item_visible_rect", &InxGUIContext::GetItemVisibleRect)
         // Splitter helper methods
         .def("invisible_button", &InxGUIContext::InvisibleButton)
         .def("is_item_active", &InxGUIContext::IsItemActive)
@@ -1146,9 +1148,16 @@ void RegisterGUIBindings(py::module_ &m)
 
     // ConsolePanel — C++ native console that replaces the Python ConsolePanel
     py::class_<ConsolePanel, EditorPanel, std::shared_ptr<ConsolePanel>>(m, "ConsolePanel")
-        .def(py::init<>())
-        .def("log_from_python", &ConsolePanel::LogFromPython, py::arg("level"), py::arg("message"),
+        .def(py::init<const std::string &>(), py::arg("project_root") = "")
+        .def_property_readonly("project_root", &ConsolePanel::GetProjectRoot)
+        .def("get_entry_context_object_id", &ConsolePanel::GetEntryContextObjectId, py::arg("uid"))
+        .def("log_from_python", [](ConsolePanel &self, LogLevel level, const std::string &message,
+                                   const std::string &stackTrace, const std::string &sourceFile, int sourceLine,
+                                   const std::optional<ObjectHandle> &contextHandle) {
+            self.LogFromPython(level, message, stackTrace, sourceFile, sourceLine, contextHandle.value_or(ObjectHandle{}));
+        }, py::arg("level"), py::arg("message"),
              py::arg("stack_trace") = "", py::arg("source_file") = "", py::arg("source_line") = 0,
+             py::arg("context_handle") = py::none(),
              "Log a message originating from Python Debug.log()")
         .def("clear", &ConsolePanel::Clear, "Clear all log entries")
         .def("remove_entries_from_source", &ConsolePanel::RemoveEntriesFromSource, py::arg("source_file"),

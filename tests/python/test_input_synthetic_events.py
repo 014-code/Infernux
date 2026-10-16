@@ -44,6 +44,7 @@ def _reset_semantic_capture_between_tests():
 def test_synthetic_events_follow_the_graphical_input_path(engine):
     """Automation input must reach InputManager through the graphical loop."""
     manager = InputManager.instance()
+    manager.set_editor_game_viewport((500, 500, 20, 20), (500, 500, 20, 20))
     Input.set_game_focused(False)
     observed: dict[str, object] = {}
     frame = [0]
@@ -59,7 +60,13 @@ def test_synthetic_events_follow_the_graphical_input_path(engine):
                 "key_down": manager.get_key_down(26),
                 "mouse": manager.get_mouse_button(0),
                 "mouse_down": manager.get_mouse_button_down(0),
+                "game_mouse": Input.get_mouse_button(0),
+                "game_mouse_down": Input.get_mouse_button_down(0),
+                "game_mouse_frame": Input.get_mouse_frame_state(0)[4:],
                 "mouse_position": (manager.mouse_position_x, manager.mouse_position_y),
+                "mouse_delta": Input.get_mouse_delta(),
+                "mouse_delta_again": Input.get_mouse_delta(),
+                "mouse_axes": (Input.get_axis("Mouse X"), Input.get_axis("Mouse Y")),
                 "text": manager.input_string,
             }
             observed["release_sequences"] = (
@@ -74,8 +81,11 @@ def test_synthetic_events_follow_the_graphical_input_path(engine):
                 "key_up": manager.get_key_up(26),
                 "mouse": manager.get_mouse_button(0),
                 "mouse_up": manager.get_mouse_button_up(0),
+                "game_mouse_up": Input.get_mouse_button_up(0),
+                "game_mouse_frame": Input.get_mouse_frame_state(0)[4:],
                 "last_sequence": engine.last_processed_synthetic_input_sequence,
                 "pending": engine.pending_synthetic_input_count,
+                "mouse_delta": Input.get_mouse_delta(),
             }
             engine.exit()
 
@@ -100,7 +110,13 @@ def test_synthetic_events_follow_the_graphical_input_path(engine):
         "key_down": True,
         "mouse": True,
         "mouse_down": True,
+        "game_mouse": True,
+        "game_mouse_down": True,
+        "game_mouse_frame": (True, True, False),
         "mouse_position": (37.0, 41.0),
+        "mouse_delta": (5.0, -2.0),
+        "mouse_delta_again": (5.0, -2.0),
+        "mouse_axes": (0.5, -0.2),
         "text": "agent-input",
     }
     assert observed["release_sequences"] == (first_sequence + 4, first_sequence + 5)
@@ -111,8 +127,11 @@ def test_synthetic_events_follow_the_graphical_input_path(engine):
         "key_up": True,
         "mouse": False,
         "mouse_up": True,
+        "game_mouse_up": True,
+        "game_mouse_frame": (False, False, True),
         "last_sequence": first_sequence + 5,
         "pending": 0,
+        "mouse_delta": (0.0, 0.0),
     }
 
 

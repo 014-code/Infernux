@@ -139,6 +139,39 @@ def test_audio_source_declaration_owns_public_fields_and_coupled_track_count(sce
         UndoManager._instance = previous
 
 
+def test_skinned_renderer_declares_inherited_fields_for_host_schema_and_edits(scene):
+    from infernux.components.builtin.skinned_mesh_renderer import SkinnedMeshRenderer
+    from infernux.engine.interaction.components import ComponentCommandService
+    from infernux.engine.undo import UndoManager
+    from infernux.host.editor import EditorAutomationHost
+
+    catalog = native._semantic_catalog_snapshot()
+    base = catalog.type_document("native:infernux.MeshRenderer")
+    descriptor = catalog.type_document("native:infernux.SkinnedMeshRenderer")
+    assert descriptor["base_type_guid"] == base["type_guid"]
+    assert descriptor["fields"][:-1] == base["fields"]
+    assert descriptor["fields"][-1] == SkinnedMeshRenderer.active_take_name.schema.to_document()
+
+    owner = scene.create_game_object("SkinnedSchemaEdit")
+    renderer = owner.add_component("SkinnedMeshRenderer")
+    wrapper = SkinnedMeshRenderer._get_or_create_wrapper(renderer, owner)
+    schema = EditorAutomationHost.instance().scene_component_schema(owner.id, renderer.component_id)
+    assert {field["name"] for field in schema["fields"]} == {
+        "enabled", "castShadows", "receivesShadows", "submeshIndex", "meshPivotOffset", "activeTakeName"
+    }
+    before = renderer.serialize_document()
+    previous = UndoManager._instance
+    manager = UndoManager()
+    try:
+        assert ComponentCommandService().set_field(wrapper, "casts_shadows", False)
+        assert renderer.serialize_document()["castShadows"] is False
+        manager.undo()
+        assert renderer.serialize_document() == before
+    finally:
+        manager.clear()
+        UndoManager._instance = previous
+
+
 def test_box_collider_editor_command_uses_native_schema_material_boundary_and_undo(scene):
     from infernux.components.builtin.box_collider import BoxCollider
     from infernux.core.asset_ref import PhysicMaterialRef

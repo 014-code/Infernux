@@ -123,6 +123,24 @@ void BindSkinnedMeshRenderer(py::module_ &m)
         .def(
             "get_animation_take_names", [](const SkinnedMeshRenderer &sr) { return sr.GetAnimationTakeNames(); },
             "Get imported animation take names from the source model")
+        .def("get_skeleton_node_names", &SkinnedMeshRenderer::GetSkeletonNodeNames,
+             "Get unique skeleton node names, including nodes without skin weights")
+        .def(
+            "get_skeleton_node_world_matrices",
+            [](const SkinnedMeshRenderer &renderer, const std::vector<std::string> &nodeNames) {
+                const auto matrices = renderer.GetSkeletonNodeWorldMatrices(nodeNames);
+                py::array_t<float> result(
+                    py::array::ShapeContainer{static_cast<py::ssize_t>(matrices.size()), py::ssize_t{4}, py::ssize_t{4}});
+                auto values = result.mutable_unchecked<3>();
+                for (size_t index = 0; index < matrices.size(); ++index)
+                    for (int row = 0; row < 4; ++row)
+                        for (int column = 0; column < 4; ++column)
+                            values(index, row, column) = matrices[index][column][row];
+                return result;
+            },
+            py::arg("node_names"),
+            "Read one latest submitted pose as float32[N,4,4], indexed [node,row,column]. "
+            "Matrices map engine-unit bone-local coordinates into rendered world space; unknown names raise.")
         .def("get_animation_duration_seconds", &SkinnedMeshRenderer::GetAnimationDurationSeconds, py::arg("take_name"),
              py::arg("animation_source_guid") = "", "Get imported animation take duration in seconds")
         .def(

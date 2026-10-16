@@ -373,12 +373,10 @@ class AnimationClip3DRef(AssetRefBase):
         return self._do_resolve() if self._guid else None
 
     def _do_resolve(self):
-        db = _get_asset_database()
-        path = db.get_path_from_guid(self._guid) if db else ""
-        if not path:
-            return None
+        from infernux.core.assets import AssetManager
         from infernux.core.animation_clip3d import AnimationClip3D
-        return AnimationClip3D.load(path)
+
+        return AssetManager.load_by_guid(self._guid, AnimationClip3D)
 
 
 class AnimationTimelineRef(AssetRefBase):

@@ -738,6 +738,7 @@ def test_relative_file_import_keeps_guid_after_cook_pack_and_project_move(monkey
     database = SimpleNamespace(
         get_all_guids=lambda: [guid],
         get_guid_from_path=lambda path: guid if same_path(path, source) else "",
+        get_guid_from_catalog_path=lambda path: guid if same_path(path, source) else "",
         get_path_from_guid=lambda identity: str(source) if identity == guid else "",
     )
     monkeypatch.setattr(Application, "is_editor", staticmethod(lambda: True))
@@ -1459,7 +1460,6 @@ def test_runtime_pack_cache_round_trip(tmp_path, monkeypatch):
     (dist / "InfernuxPlayer.pdb").write_bytes(b"debug symbols")
 
     builder._store_runtime_pack("a" * 64, str(dist))
-    pack_root = cache_root / ("a" * 64)
     restored = builder._restore_runtime_pack("a" * 64)
 
     assert restored == os.path.join(builder._staging_dir, "boot.dist")

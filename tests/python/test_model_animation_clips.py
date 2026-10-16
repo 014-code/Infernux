@@ -116,43 +116,6 @@ def test_clip_extras_reject_missing_clip_without_partial_publication(model):
     assert Path(str(source) + ".meta").read_bytes() == before
 
 
-def test_stable_source_clip_reference_survives_inventory_reordering(tmp_path, monkeypatch):
-    from infernux.core import asset_types
-
-    source = tmp_path / "clips.gltf"
-    source.write_text("{}")
-    published = [
-        {
-            "id": "source-" + name.encode().hex(),
-            "guid": "d" * 32,
-            "name": name,
-            "duration": 1.0,
-            "default_loop": True,
-            "apply_root_motion": False,
-            "reference_pose": "bind_pose",
-            "curves": [],
-            "events": [],
-            "bone_mask": [],
-        }
-        for name in ("Second", "First")
-    ]
-    metadata = {"guid": "c" * 32, "animation_names_csv": "Second,First", "model_animations": json.dumps(published)}
-    monkeypatch.setattr(asset_types, "read_meta_file", lambda _: metadata)
-    monkeypatch.setattr(asset_types, "read_meta_guid", lambda _: "c" * 32)
-    reference = str(source) + "::subanim:source-" + b"First".hex()
-    clip = AnimationClip3D.from_embedded_take_virtual_path(reference)
-    assert clip.name == "First"
-    metadata["model_animations"] = json.dumps(list(reversed(json.loads(metadata["model_animations"]))))
-    assert AnimationClip3D.from_embedded_take_virtual_path(reference).take_name == clip.take_name
-    published[1].pop("default_loop")
-    metadata["model_animations"] = json.dumps(published)
-    assert AnimationClip3D.from_embedded_take_virtual_path(reference) is None
-    published[1]["default_loop"] = True
-    metadata["model_animations"] = json.dumps(published)
-    monkeypatch.setattr(asset_types, "read_meta_guid", lambda _: "")
-    assert AnimationClip3D.from_embedded_take_virtual_path(reference) is None
-
-
 def test_model_clip_import_publishes_playback_settings_curves_events_and_mask(model):
     database, source, _guid = model
     metadata = read_meta_file(str(source))

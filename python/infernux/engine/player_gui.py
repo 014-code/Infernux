@@ -20,7 +20,7 @@ from typing import Callable, Dict, List, Optional
 
 from infernux.debug import Debug
 from infernux.lib import InxGUIRenderable, InxGUIContext
-from infernux.input import Input, KeyCode, TouchPhase
+from infernux.input import Input, TouchPhase
 from infernux.engine.ui.viewport_utils import capture_viewport_info
 from infernux.ui.ui_event_data import PointerType
 from infernux.ui.ui_event_system import UIEventProcessor, UIPointerFrame
@@ -300,13 +300,6 @@ class PlayerGUI(InxGUIRenderable):
         vp = capture_viewport_info(ctx)
         Input.set_game_viewport_origin(vp.image_min_x, vp.image_min_y)
         Input.set_game_viewport_size(float(display_w), float(display_h))
-
-        # ESC safety: allow user to unlock cursor even if scripts forgot
-        cursor_locked = Input.is_cursor_locked()
-        if cursor_locked:
-            if Input.get_key_down(KeyCode.ESCAPE):
-                Input.set_cursor_locked(False)
-                cursor_locked = False
 
         # The standalone Player owns the entire window. Touchscreen contacts
         # do not define an ImGui mouse-hover state, so UI dispatch must not be

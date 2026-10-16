@@ -93,6 +93,22 @@ def test_plugin_preload_resolves_cooked_assets_before_scene_startup(monkeypatch,
             ]
         },
     )
+    from infernux.engine import player_service_graph
+
+    assert catalog.query_asset_guids(r"assets\Data\preload.txt", exact=True) == ("preload-guid",)
+    assert catalog.query_asset_guids("preload-guid", exact=True) == ("preload-guid",)
+    alternate_case = ("preload-guid",) if player_service_graph.os.name == "nt" else ()
+    assert catalog.query_asset_guids("Assets/data/PRELOAD.TXT", exact=True) == alternate_case
+    assert catalog.query_asset_guids("Assets/data/PRELOAD.TXT") == alternate_case
+    assert catalog.query_asset_guids("Assets/data") == alternate_case
+    assert catalog.query_asset_guids("assets/DATA/*.TXT") == ("preload-guid",)
+
+    resolutions = []
+    resolve = player_service_graph.resolved_path
+    with monkeypatch.context() as observe:
+        observe.setattr(player_service_graph, "resolved_path", lambda path: resolutions.append(path) or resolve(path))
+        assert catalog.resolve_guid("preload-guid") == str(cooked.resolve())
+    assert len(resolutions) == 1
     session = PlayerRuntimeSession(
         asset_database=object(),
         scheduler=types.SimpleNamespace(),

@@ -1044,11 +1044,6 @@ class ComponentLifecycleMixin:
             callback(*args)
             return True
         except Exception as exc:
-            # Keep Player diagnostics visible even when the debug console is
-            # not attached; lifecycle failures otherwise silently disable the
-            # component and make authored scenes appear inert.
-            print(f"[Infernux lifecycle] {type(self).__name__}.{method_name} failed: {exc!r}", flush=True)
-            # Route to DebugConsole so the Console Panel shows the error.
             try:
                 from infernux.debug import debug
                 debug.log_exception(exc, context=self)
@@ -1060,7 +1055,6 @@ class ComponentLifecycleMixin:
 
     def _report_lifecycle_exception(self, exc: Exception) -> None:
         """Route a phase exception without adding work to the success path."""
-        print(f"[Infernux lifecycle] {type(self).__name__} phase failed: {exc!r}", flush=True)
         try:
             from infernux.debug import debug
             debug.log_exception(exc, context=self)

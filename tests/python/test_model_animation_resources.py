@@ -40,10 +40,21 @@ def test_imported_clip_guid_picker_fsm_and_cook(model, tmp_path, monkeypatch, sc
     assert state.clip_b_guid == guid
     animator = SkeletalAnimator()
     animator._clip_cache = {}
-    clip = animator._resolve_clip(state)
+    def path_loader(*_args, **_kwargs):
+        raise AssertionError("published clip GUID loading must not re-enter path/sidecar loading")
+
+    AssetManager.invalidate(guid)
+    with monkeypatch.context() as loading:
+        loading.setattr(AnimationClip3D, "load", path_loader)
+        loading.setattr("infernux.core.asset_types.read_asset_metadata", path_loader)
+        clip = animator._resolve_clip(state)
+        assert animator._resolve_clip_b(state) is clip
+        assert AnimationClip3DRef(guid=guid).resolve() is clip
+        assert AssetManager.load_by_guid(guid) is clip
+        assert AnimationClip3D.from_embedded_take_virtual_path(virtual) is clip
+        assert AnimationClip3D.from_embedded_take_virtual_path(model_guid + "::subanim:" + record["id"]) is clip
+        assert AnimationClip3D.from_embedded_take_virtual_path(virtual + "-missing") is None
     assert clip.take_name == record["id"] and clip.source_model_guid == model_guid
-    assert animator._resolve_clip_b(state).to_dict() == clip.to_dict()
-    assert AnimationClip3DRef(guid=guid).resolve().to_dict() == clip.to_dict()
 
     render_source = source.with_name("Render.fbx")
     render_source.write_bytes(source.read_bytes())
@@ -130,11 +141,14 @@ def test_owned_clip_identity_survives_rename_mode_toggle_refresh_and_move(model)
     assert AssetManager.reimport_asset(str(source), import_settings=settings.to_dict(), database=database)
     first = output(source)
     reference = AnimationClip3DRef(guid=first["guid"])
-    assert reference.resolve().name == "Middle"
+    original_clip = reference.resolve()
+    assert original_clip.name == "Middle"
     settings.animation_clips[0]["name"] = "Renamed"
     assert AssetManager.reimport_asset(str(source), import_settings=settings.to_dict(), database=database)
     assert output(source)["guid"] == first["guid"]
-    assert reference.resolve().name == "Renamed"
+    renamed_clip = reference.resolve()
+    assert renamed_clip is not original_clip and renamed_clip.name == "Renamed"
+    assert original_clip.name == "Middle"
     settings.custom_animation_clips = False
     assert AssetManager.reimport_asset(str(source), import_settings=settings.to_dict(), database=database)
     assert not database.get_path_from_guid(first["guid"])

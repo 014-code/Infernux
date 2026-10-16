@@ -8,6 +8,18 @@
 namespace infernux
 {
 
+void EditorShortcutInput::PrepareFrame(bool gameCursorLocked)
+{
+    if (!gameCursorLocked)
+        return;
+    ImGui::GetIO().ClearInputMouse();
+    auto &events = ImGui::GetCurrentContext()->InputEventsQueue;
+    for (int index = events.Size - 1; index >= 0; --index) {
+        if (events[index].Source == ImGuiInputSource_Mouse)
+            events.erase(events.begin() + index);
+    }
+}
+
 void EditorShortcutInput::OnRender(InxGUIContext *ctx)
 {
     const int frame = ImGui::GetFrameCount();

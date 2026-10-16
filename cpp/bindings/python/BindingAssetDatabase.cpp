@@ -131,6 +131,8 @@ void RegisterAssetDatabaseBindings(py::module_ &m)
              "Check if path exists")
         .def("get_guid_from_path", &AssetDatabase::GetGuidFromPath, py::arg("path"),
              py::call_guard<py::gil_scoped_release>(), "Get GUID from asset path")
+        .def("get_guid_from_catalog_path", &AssetDatabase::GetGuidFromCatalogPath, py::arg("path"),
+             py::call_guard<py::gil_scoped_release>(), "Query a canonical catalog path without filesystem access")
         .def("get_path_from_guid", &AssetDatabase::GetPathFromGuid, py::arg("guid"),
              py::call_guard<py::gil_scoped_release>(), "Get asset path from GUID")
         .def(
@@ -165,7 +167,7 @@ void RegisterAssetDatabaseBindings(py::module_ &m)
                 }
                 return result;
             },
-            py::arg("directory"), "Get one immutable-generation asset listing for a directory")
+            py::arg("directory"), "Query a canonical directory in the published catalog without filesystem access")
         .def_property_readonly("catalog_generation",
                                [](const AssetDatabase &database) {
                                    const auto catalog = database.GetCatalogSnapshot();

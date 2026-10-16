@@ -18,7 +18,7 @@ from infernux.components.builtin.skinned_mesh_renderer import SkinnedMeshRendere
 from infernux.core.anim_state_machine import (
     AnimStateMachine, AnimState, AnimTransition,
 )
-from infernux.core.animation_clip3d import AnimationClip3D, resolve_disk_path_for_guid_string
+from infernux.core.animation_clip3d import AnimationClip3D
 from infernux.core.asset_ref import AnimStateMachineRef
 from infernux.debug import Debug
 from infernux.graph.types import ValueType
@@ -35,21 +35,6 @@ def _get_asset_database():
     from infernux.core.assets import AssetManager
 
     return AssetManager.require_asset_database()
-
-
-def _resolve_clip_path_from(guid: str) -> Optional[str]:
-    """Resolve a clip exclusively through its asset GUID."""
-    if not guid:
-        return None
-    return resolve_disk_path_for_guid_string(_get_asset_database(), guid) or None
-
-
-def _resolve_clip_path(state: AnimState) -> Optional[str]:
-    return _resolve_clip_path_from(state.clip_guid)
-
-
-def _resolve_clip_b_path(state: AnimState) -> Optional[str]:
-    return _resolve_clip_path_from(state.clip_b_guid)
 
 
 def _resolve_timeline_path(state: AnimState) -> Optional[str]:
@@ -440,18 +425,11 @@ class SkeletalAnimator(InxComponent):
         if key in self._clip_cache:
             return self._clip_cache[key]
 
-        clip_path = _resolve_clip_path(state)
-        clip = None
-        if clip_path:
-            clip = AnimationClip3D.load(clip_path)
-            if clip is None:
-                Debug.log_warning(f"[SkeletalAnimator] Failed to load clip for state '{state.name}': {clip_path}")
-        else:
-            if state.clip_guid:
-                Debug.log_warning(
-                    f"[SkeletalAnimator] Clip not found for state '{state.name}' "
-                    f"(guid='{state.clip_guid}')"
-                )
+        from infernux.core.assets import AssetManager
+
+        clip = AssetManager.load_by_guid(state.clip_guid, AnimationClip3D) if state.clip_guid else None
+        if clip is None and state.clip_guid:
+            Debug.log_warning(f"[SkeletalAnimator] Clip not found for state '{state.name}'")
         self._clip_cache[key] = clip
         return clip
 
@@ -460,8 +438,9 @@ class SkeletalAnimator(InxComponent):
         key = state.name + "::B"
         if key in self._clip_cache:
             return self._clip_cache[key]
-        clip_path = _resolve_clip_b_path(state)
-        clip = AnimationClip3D.load(clip_path) if clip_path else None
+        from infernux.core.assets import AssetManager
+
+        clip = AssetManager.load_by_guid(state.clip_b_guid, AnimationClip3D) if state.clip_b_guid else None
         self._clip_cache[key] = clip
         return clip
 

@@ -75,6 +75,14 @@ _ENGINE_OUTPUTS: dict[str, tuple[dict[str, object], tuple[str, ...]]] = {
         {"object_id": _INTEGER, "component": _OBJECT},
         ("object_id", "component"),
     ),
+    "infernux.scene.ui.layout.get": (
+        {"object_id": _INTEGER, "component_id": _INTEGER, "coordinates": _OBJECT, "rect": _ARRAY, "visual_rect": _ARRAY, "corners": _ARRAY},
+        ("object_id", "component_id", "coordinates", "rect", "visual_rect", "corners"),
+    ),
+    "infernux.scene.ui.rect.set": (
+        {"object_id": _INTEGER, "component_id": _INTEGER, "coordinates": _OBJECT, "rect": _ARRAY, "visual_rect": _ARRAY, "corners": _ARRAY},
+        ("object_id", "component_id", "coordinates", "rect", "visual_rect", "corners"),
+    ),
     "infernux.scene.mesh.assign": (
         {"object_id": _INTEGER, "component": _OBJECT},
         ("object_id", "component"),

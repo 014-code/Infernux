@@ -220,6 +220,10 @@ class AssetDatabase : public NativeLifetimeOwner
     /// already carry the authoritative GUID.
     [[nodiscard]] std::string GetGuidFromPath(const std::string &path) const;
 
+    /// @brief Query a canonical catalog path without consulting the filesystem.
+    /// Unlike the authoring alias resolver, this reads only the published index.
+    [[nodiscard]] std::string GetGuidFromCatalogPath(const std::string &path) const;
+
     /// @brief Resolve the current mutable location of an authoritative GUID.
     /// Returns empty when the referenced asset is missing.
     [[nodiscard]] std::string GetPathFromGuid(const std::string &guid) const;
@@ -239,6 +243,7 @@ class AssetDatabase : public NativeLifetimeOwner
 
     /// @brief Acquire one immutable path/type/fingerprint catalog generation.
     [[nodiscard]] std::shared_ptr<const AssetCatalogSnapshot> GetCatalogSnapshot() const;
+    /// Canonical catalog directory; no filesystem existence or alias resolution.
     [[nodiscard]] std::vector<AssetCatalogEntry> GetDirectoryCatalog(const std::string &directory) const;
 
     /// @brief Published query snapshot generation and asset count.
@@ -659,7 +664,10 @@ class AssetDatabase : public NativeLifetimeOwner
     [[nodiscard]] WorkingSet TakeWorkingSet();
     void InstallWorkingSet(WorkingSet workingSet);
     void PublishQuerySnapshot(bool includeCatalog = true);
-    void PublishModelSubAssetEvents(const std::shared_ptr<const QuerySnapshot> &previous);
+    void PublishModelSubAssetEvents(const std::shared_ptr<const QuerySnapshot> &previous,
+                                    const std::unordered_set<std::string> *changedGuids = nullptr);
+    void UpdateModelSubAssets(const std::string &owner, const QuerySnapshot &previous,
+                              QuerySnapshot &snapshot, std::unordered_set<std::string> &changedGuids);
     void PublishRefreshAssetEvents(const WorkingSet &previous);
     void PublishQuerySnapshotForPaths(const std::vector<std::string> &paths);
     void InstallQuerySnapshot(std::shared_ptr<QuerySnapshot> snapshot) noexcept;

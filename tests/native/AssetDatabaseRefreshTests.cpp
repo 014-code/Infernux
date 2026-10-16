@@ -13,6 +13,7 @@
 #include <function/resources/InxTexture/TextureArtifact.h>
 #include <platform/filesystem/InxPath.h>
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -760,6 +761,145 @@ void TestCompositeModelPublishesExternalTextureGuidDependencies()
     std::filesystem::remove_all(root);
 }
 
+void TestModelSubAssetsPublishOnlyTheirOwner()
+{
+    using namespace infernux;
+    const auto root = std::filesystem::temp_directory_path() /
+                      ("infernux-model-child-publication-" +
+                       std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    const auto fixtures = std::filesystem::path(INFERNUX_SOURCE_DIR) / "external/assimp/test/models";
+    const auto first = root / "Assets/First.fbx";
+    const auto second = root / "Assets/Second.fbx";
+    const auto textured = root / "Assets/Textured.gltf";
+    std::filesystem::create_directories(first.parent_path());
+    for (const auto &path : {first, second})
+        std::filesystem::copy_file(fixtures / "FBX/animation_with_skeleton.fbx", path);
+    std::ifstream input(fixtures / "glTF2/BoxTextured-glTF-Embedded/BoxTextured.gltf");
+    const auto texturedSource = nlohmann::json::parse(input);
+    WriteText(textured, texturedSource.dump());
+    JobSystem::Initialize(2);
+    auto &registry = AssetRegistry::Instance();
+    auto &graph = AssetDependencyGraph::Instance();
+    graph.Clear();
+    try {
+        auto database = std::make_unique<AssetDatabase>();
+        database->Initialize(FromFsPath(root));
+        registry.Initialize(std::move(database));
+        registry.RegisterLoader(ResourceType::Mesh, std::make_unique<MeshLoader>());
+        registry.RegisterLoader(ResourceType::Texture, std::make_unique<TextureLoader>());
+        registry.RegisterLoader(ResourceType::DefaultText, std::make_unique<InxDefaultTextLoader>(ResourceType::DefaultText));
+        registry.PopulateAssetDatabaseLoaders();
+        auto *db = registry.GetAssetDatabase();
+        db->Refresh();
+        const auto firstGuid = db->GetGuidFromPath(FromFsPath(first));
+        const auto secondGuid = db->GetGuidFromPath(FromFsPath(second));
+        const auto textureOwner = db->GetGuidFromPath(FromFsPath(textured));
+        const auto table = [&](const std::string &owner, const char *key) {
+            return nlohmann::json::parse(db->GetMetaByGuid(owner)->GetDataAs<std::string>(key));
+        };
+        const auto otherClip = table(secondGuid, "model_animations").at(0).at("guid").get<std::string>();
+        const auto otherClipPath = db->GetPathFromGuid(otherClip);
+        Require(db->GetGuidFromCatalogPath(otherClipPath) == otherClip,
+                "catalog path query lost a virtual animation identity");
+        auto wrongVirtualKind = otherClipPath;
+        wrongVirtualKind.replace(wrongVirtualKind.find("::subanim:"), 10, "::SUBANIM:");
+        Require(db->GetGuidFromCatalogPath(wrongVirtualKind).empty(),
+                "catalog lookup case-folded an exact virtual identity");
+        const auto modelDirectory =
+            db->GetDirectoryCatalog(FromFsPath(ToFsPath(db->GetPathFromGuid(firstGuid)).parent_path()));
+        Require(!modelDirectory.empty() && std::all_of(modelDirectory.begin(), modelDirectory.end(),
+                            [](const AssetCatalogEntry &entry) { return entry.path.find("::") == std::string::npos; }),
+                "directory catalog exposed model sub-assets as loose files");
+        const auto otherMetadata = db->GetMetaByGuid(otherClip);
+        const auto texture = table(textureOwner, "model_textures").at(0).at("guid").get<std::string>();
+        const auto textureMetadata = db->GetMetaByGuid(texture);
+        auto unchangedOther = [&] {
+            Require(db->GetMetaByGuid(otherClip) == otherMetadata,
+                    "single model publication rebuilt another model's animation metadata");
+        };
+        Require(db->ReimportAsset(FromFsPath(first), {{"animation_loop_time", false}}).succeeded,
+                "single model settings reimport failed");
+        unchangedOther();
+        Require(db->GetMetaByGuid(texture) == textureMetadata,
+                "animation import rebuilt an unrelated model Texture");
+
+        const auto take = table(firstGuid, "source_animations").at(0);
+        const auto duration = take.at("duration").get<double>();
+        const auto clip = [&](const char *id, const char *name) {
+            return nlohmann::json{{"id", id}, {"name", name}, {"source_take", take.at("name")},
+                                  {"start", 0.0}, {"end", duration}};
+        };
+        const auto firstClip = clip("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "Opening");
+        const auto removedClip = clip("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "Closing");
+        Require(db->ReimportAsset(FromFsPath(first), {{"custom_animation_clips", true},
+                                                    {"animation_clips", nlohmann::json::array({firstClip, removedClip})}}).succeeded,
+                "custom clips were not published");
+        const auto clips = table(firstGuid, "model_animations");
+        const auto survivingGuid = clips.at(0).at("guid").get<std::string>();
+        const auto removedGuid = clips.at(1).at("guid").get<std::string>();
+        graph.AddRuntimeDependency("model-child-observer", survivingGuid);
+        graph.AddRuntimeDependency("model-child-observer", removedGuid);
+        graph.AddRuntimeDependency("model-child-observer", texture);
+        std::vector<std::pair<std::string, AssetEvent>> events;
+        const auto observe = [&](const std::string &dependent, const std::string &guid, AssetEvent event) {
+            if (dependent == "model-child-observer") {
+                Require(db->ContainsGuid(guid) == (event != AssetEvent::Deleted),
+                        "child notification preceded query publication");
+                events.emplace_back(guid, event);
+            }
+        };
+        graph.RegisterCallback(ResourceType::DefaultText, observe);
+        graph.RegisterCallback(ResourceType::Texture, observe);
+        auto renamedClip = firstClip;
+        renamedClip["name"] = "Renamed";
+        Require(db->ReimportAsset(FromFsPath(first), {{"animation_clips", nlohmann::json::array({renamedClip})}}).succeeded,
+                "clip rename/removal failed");
+        const auto renamed = table(firstGuid, "model_animations").at(0);
+        Require(renamed.at("guid") == survivingGuid && renamed.at("name") == "Renamed" &&
+                    !db->ContainsGuid(removedGuid), "clip rename changed identity or retained a removed clip");
+        Require(events.size() == 2 &&
+                    std::count(events.begin(), events.end(), std::make_pair(survivingGuid, AssetEvent::Modified)) == 1 &&
+                    std::count(events.begin(), events.end(), std::make_pair(removedGuid, AssetEvent::Deleted)) == 1,
+                "clip edit did not publish exactly its changed/deleted children");
+        unchangedOther();
+        events.clear();
+        const auto moved = root / "Assets/Renamed.fbx";
+        std::filesystem::rename(first, moved);
+        std::filesystem::rename(ToFsPath(FromFsPath(first) + ".meta"), ToFsPath(FromFsPath(moved) + ".meta"));
+        Require(db->MoveAsset(FromFsPath(first), FromFsPath(moved)).succeeded, "model relocation failed");
+        Require(db->GetPathFromGuid(survivingGuid).find("Renamed.fbx::subanim:") != std::string::npos &&
+                    events == std::vector<std::pair<std::string, AssetEvent>>{{survivingGuid, AssetEvent::Moved}},
+                "model relocation did not move its stable clip identity");
+        events.clear();
+        auto withoutTexture = texturedSource;
+        withoutTexture.erase("images");
+        withoutTexture.erase("textures");
+        withoutTexture.erase("samplers");
+        withoutTexture["materials"][0]["pbrMetallicRoughness"].erase("baseColorTexture");
+        WriteText(textured, withoutTexture.dump());
+        Require(db->ReimportAsset(FromFsPath(textured)).succeeded, "Texture removal import failed");
+        Require(!db->ContainsGuid(texture) &&
+                    events == std::vector<std::pair<std::string, AssetEvent>>{{texture, AssetEvent::Deleted}},
+                "removed model Texture remained published or missed its event");
+        WriteText(textured, texturedSource.dump());
+        Require(db->ReimportAsset(FromFsPath(textured)).succeeded, "Texture restoration failed");
+        const auto restored = table(textureOwner, "model_textures").at(0).at("guid").get<std::string>();
+        Require(db->ContainsGuid(restored), "new model Texture was not published with its owner");
+        unchangedOther();
+        graph.Clear();
+        registry.Shutdown();
+        JobSystem::Shutdown();
+        std::filesystem::remove_all(root);
+    } catch (...) {
+        graph.Clear();
+        if (registry.IsInitialized())
+            registry.Shutdown();
+        JobSystem::Shutdown();
+        std::filesystem::remove_all(root);
+        throw;
+    }
+}
+
 void TestRuntimeAssetCatalogResolvesBuiltInArchiveResources()
 {
     const auto root = std::filesystem::temp_directory_path() / "infernux-runtime-builtin-catalog";
@@ -1187,7 +1327,16 @@ void TestRefreshPublishesDeterministicAssetEvents()
         events.clear();
         std::filesystem::remove(moved);
         std::filesystem::remove(movedMeta);
+        const auto movedCatalogPath = db->GetPathFromGuid(firstGuid);
+        Require(db->GetGuidFromCatalogPath(movedCatalogPath) == firstGuid,
+                "catalog lookup observed an unpublished filesystem deletion");
+        const auto publishedDirectory = db->GetDirectoryCatalog(FromFsPath(ToFsPath(movedCatalogPath).parent_path()));
+        Require(std::any_of(publishedDirectory.begin(), publishedDirectory.end(),
+                            [&](const AssetCatalogEntry &entry) { return entry.guid == firstGuid; }),
+                "directory query inspected the filesystem instead of its published generation");
         db->Refresh();
+        Require(db->GetGuidFromCatalogPath(movedCatalogPath).empty(),
+                "catalog lookup retained an identity after deletion publication");
         Require(events == std::vector<std::pair<std::string, AssetEvent>>{{firstGuid, AssetEvent::Deleted}},
                 "external deletion did not publish one Deleted event");
         Require(graph.HasDependency("refresh-consumer", firstGuid), "deletion erased authored runtime identity");
@@ -1290,6 +1439,7 @@ int main()
         TestPluginPageImagesAndCachedImportPolicy();
         TestRuntimeAssetCatalogInstallsStableIdentityWithoutSidecar();
         TestCompositeModelPublishesExternalTextureGuidDependencies();
+        TestModelSubAssetsPublishOnlyTheirOwner();
         TestModelSettingsPublishOnlyAfterSuccessfulImport();
         TestCopiedSkeletonRefreshWithLimitedWorkers(false);
         TestCopiedSkeletonRefreshWithLimitedWorkers(true);

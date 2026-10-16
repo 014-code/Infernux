@@ -10,6 +10,7 @@ from infernux.engine import player_gui as player_gui_module
 from infernux.engine.player_control import PlayerControlChannel
 from infernux.engine.player_gui import PlayerGUI
 from infernux.input import Input, TouchPhase
+from infernux.lib import InputManager
 
 
 class _Native:
@@ -114,7 +115,14 @@ def test_standalone_player_dispatches_runtime_ui_without_desktop_hover(monkeypat
         "set_game_viewport_origin",
         lambda x, y: viewport_origins.append((x, y)),
     )
-    monkeypatch.setattr(Input, "is_cursor_locked", lambda: False)
+    native_input = InputManager.instance()
+    native_input.set_cursor_locked(True)
+    monkeypatch.setattr(Input, "get_key_down", lambda _key: True)
+
+    def reject_cursor_change(_locked):
+        pytest.fail("Standalone cursor ownership belongs to game scripts")
+
+    monkeypatch.setattr(Input, "set_cursor_locked", reject_cursor_change)
 
     player = PlayerGUI.__new__(PlayerGUI)
     player._engine = _PlayerEngine()
@@ -142,7 +150,11 @@ def test_standalone_player_dispatches_runtime_ui_without_desktop_hover(monkeypat
 
     # A standalone Player owns its whole window. The context intentionally has
     # no desktop hover API because native touchscreen input does not define it.
-    player._render_game(_Context(), 1280.0, 720.0)
+    try:
+        player._render_game(_Context(), 1280.0, 720.0)
+        assert native_input.is_cursor_locked
+    finally:
+        native_input.set_cursor_locked(False)
 
     assert viewport_origins == [(8.0, 12.0)]
     assert dispatched == [(1280, 720)]

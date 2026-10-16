@@ -9,6 +9,7 @@
 #include "InxTextLayout.h"
 #include <function/editor/EditorTheme.h>
 #include <function/editor/EditorThemeRegistry.h>
+#include <function/editor/EditorShortcutInput.h>
 #include <function/renderer/TextureUploadBuilder.h>
 #include <function/renderer/vk/RhiVulkanTypes.h>
 #include <function/renderer/vk/VkRenderUtils.h>
@@ -580,6 +581,10 @@ void InxGUI::BuildFrameInternal()
     if (InputManager::Instance().GetSyntheticMousePosition(syntheticMouseX, syntheticMouseY)) {
         ImGui::GetIO().AddMousePosEvent(syntheticMouseX, syntheticMouseY);
     }
+    auto &input = InputManager::Instance();
+    if (!m_playerMode && input.IsCursorLocked() && ImGui::GetCurrentContext()->OpenPopupStack.Size != 0)
+        input.SetEditorCursorCaptureAllowed(false);
+    EditorShortcutInput::PrepareFrame(input.IsCursorLocked());
     ImGui::NewFrame();
     // Dear ImGui may leave later transitions in InputEventsQueue. Only a synthetic input
     // batch may re-arm the scheduler, and it has a fixed four-build budget;
@@ -593,18 +598,6 @@ void InxGUI::BuildFrameInternal()
     ctx->BeginFrameInteractionState();
     InxGUISemantics::BeginFrame(m_guiFrameCounter);
     ImGuiBuildFrameGuard frameGuard;
-
-    // When the cursor is locked (game mode), suppress all mouse input from
-    // reaching ImGui so editor panels (Inspector, Hierarchy, etc.) don't
-    // react to invisible cursor movement — matching Unity behaviour.
-    if (InputManager::Instance().IsCursorLocked()) {
-        ImGuiIO &io = ImGui::GetIO();
-        io.MousePos = ImVec2(-FLT_MAX, -FLT_MAX);
-        for (int i = 0; i < IM_ARRAYSIZE(io.MouseDown); ++i)
-            io.MouseDown[i] = false;
-        io.MouseWheel = 0.0f;
-        io.MouseWheelH = 0.0f;
-    }
 
     // In player mode, skip DockSpace/DockBuilder entirely — they are only
     // needed for the editor's multi-panel layout.  The player registers a

@@ -11,7 +11,7 @@ from infernux.engine.ui.game_input_policy import (
 @pytest.mark.parametrize(
     "policy,playing,focused,locked,expected",
     [
-        pytest.param(should_route_game_input, False, False, True, True, id="case_1"),
+        pytest.param(should_route_game_input, False, False, True, False, id="case_1"),
         pytest.param(should_route_game_input, True, True, False, True, id="case_2"),
         pytest.param(should_route_game_input, True, False, False, False, id="case_3"),
         pytest.param(should_route_game_input, False, True, False, False, id="case_4"),

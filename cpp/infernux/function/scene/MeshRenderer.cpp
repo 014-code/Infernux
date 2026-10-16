@@ -419,9 +419,7 @@ void RecalculateMeshTangents(std::vector<Vertex> &vertices, const std::vector<ui
     }
 }
 
-namespace
-{
-SemanticTypeDescriptor DescribeMeshRenderer()
+SemanticTypeDescriptor MeshRenderer::DescribeSemanticType()
 {
     SemanticTypeDescriptor type;
     type.typeGuid = "native:infernux.MeshRenderer";
@@ -454,9 +452,11 @@ SemanticTypeDescriptor DescribeMeshRenderer()
     return type;
 }
 
+namespace
+{
 const bool registeredMeshRenderer = ComponentFactory::Register(
     "MeshRenderer", [] { return std::make_unique<MeshRenderer>(); }, MeshRenderer::ValidateSerializedDocument,
-    MeshRenderer::GetTypeConstraints(), DescribeMeshRenderer);
+    MeshRenderer::GetTypeConstraints(), MeshRenderer::DescribeSemanticType);
 } // namespace
 
 MeshRenderer::~MeshRenderer()
@@ -1675,7 +1675,7 @@ void MeshRenderer::ValidateSerializedDocumentForType(const nlohmann::json &j, st
         throw std::invalid_argument("unsupported MeshRenderer document type: " + std::string(expectedType));
     }
     ValidateComponentDocumentFields(j, expectedType, required, optional);
-    static const auto declaration = DescribeMeshRenderer();
+    static const auto declaration = DescribeSemanticType();
     ValidateDeclaredFields(j, expectedType, declaration);
 
     RequireUnsignedInteger(j, "meshId", expectedType);

@@ -79,21 +79,58 @@ ShadowViewGpuData PackShadowView(const lighting::ShadowView &view, uint32_t atla
 // Shared texture resolution for material Texture2D properties
 // ============================================================================
 
+bool InxVkCoreModular::TrySubmitTextureStaging(const std::string &cacheKey,
+                                             const PendingTextureStagingLoad &pending)
+{
+    auto staging = AssetRegistry::Instance().TryConsumeTextureUploadStaging(pending.ticket);
+    if (!staging)
+        return false;
+    TextureUploadBatch upload(*staging, pending.sampler);
+    auto ticket = m_resourceManager.BeginTextureUpload(upload.GetRequest());
+    ++m_submittedTextureUploadCount;
+    if (ticket->IsAsync())
+        ++m_asyncTextureUploadCount;
+    m_pendingTextureGpuUploads.emplace(
+        cacheKey, PendingTextureGpuUpload{pending.ticket->GetGuid(), pending.ticket->GetRuntimeVersion(),
+                                          std::move(ticket)});
+    return true;
+}
+
 void InxVkCoreModular::PumpPendingTextureLoads()
 {
     auto &registry = AssetRegistry::Instance();
-    std::vector<std::string> publishedTextures;
+    std::vector<std::string> changedTextures;
     for (auto pending = m_pendingTextureAssetLoads.begin(); pending != m_pendingTextureAssetLoads.end();) {
         try {
             if (!registry.TryCommitAssetLoad(pending->second)) {
                 ++pending;
                 continue;
             }
-            publishedTextures.push_back(pending->first);
+            changedTextures.push_back(pending->first);
         } catch (const std::exception &exception) {
             INXLOG_ERROR("Texture CPU load failed for GUID '", pending->first, "': ", exception.what());
         }
         pending = m_pendingTextureAssetLoads.erase(pending);
+    }
+
+    for (auto pending = m_pendingTextureStagingLoads.begin(); pending != m_pendingTextureStagingLoads.end();) {
+        const auto &ticket = pending->second.ticket;
+        if (!registry.IsLoaded(ticket->GetGuid()) ||
+            registry.GetAssetVersion(ticket->GetGuid()) != ticket->GetRuntimeVersion()) {
+            pending = m_pendingTextureStagingLoads.erase(pending);
+            continue;
+        }
+        try {
+            if (!TrySubmitTextureStaging(pending->first, pending->second)) {
+                ++pending;
+                continue;
+            }
+        } catch (const std::exception &exception) {
+            m_failedTextureUploads[pending->first] = {ticket->GetGuid(), ticket->GetRuntimeVersion()};
+            changedTextures.push_back(ticket->GetGuid());
+            INXLOG_ERROR("Texture upload staging failed for GUID '", ticket->GetGuid(), "': ", exception.what());
+        }
+        pending = m_pendingTextureStagingLoads.erase(pending);
     }
 
     for (auto pending = m_pendingTextureGpuUploads.begin(); pending != m_pendingTextureGpuUploads.end();) {
@@ -109,20 +146,22 @@ void InxVkCoreModular::PumpPendingTextureLoads()
             }
             (void)m_textureCache.Insert(pending->first, std::move(texture), m_ensureFrameCounter, false,
                                         pending->second.guid, pending->second.runtimeVersion);
-            publishedTextures.push_back(pending->second.guid);
+            changedTextures.push_back(pending->second.guid);
             ++m_completedTextureUploadCount;
         } catch (const std::exception &exception) {
+            m_failedTextureUploads[pending->first] = {pending->second.guid, pending->second.runtimeVersion};
+            changedTextures.push_back(pending->second.guid);
             INXLOG_ERROR("Texture GPU upload failed for GUID '", pending->second.guid, "': ", exception.what());
         }
         pending = m_pendingTextureGpuUploads.erase(pending);
     }
 
     // Material refresh resolves every texture property and can insert/erase
-    // entries in either pending map. Finish draining before invoking it: even
+    // entries in the pending maps. Finish draining before invoking it: even
     // a different texture's completion can rehash the map being traversed.
-    std::sort(publishedTextures.begin(), publishedTextures.end());
-    publishedTextures.erase(std::unique(publishedTextures.begin(), publishedTextures.end()), publishedTextures.end());
-    for (const auto &guid : publishedTextures)
+    std::sort(changedTextures.begin(), changedTextures.end());
+    changedTextures.erase(std::unique(changedTextures.begin(), changedTextures.end()), changedTextures.end());
+    for (const auto &guid : changedTextures)
         m_materialPipelineManager.RefreshMaterialsUsingTexture(guid);
 }
 
@@ -201,6 +240,10 @@ TextureResolveResult InxVkCoreModular::ResolveTextureAsset(const std::string &te
                      std::move(cachedSlot), std::move(cached)}};
         }
     }
+
+    const auto failed = m_failedTextureUploads.find(cacheKey);
+    if (failed != m_failedTextureUploads.end() && failed->second.runtimeVersion == publishedRuntimeVersion)
+        return {TextureResolveStatus::Failed, {}};
 
     auto infTex = registry.GetAsset<InxTexture>(textureGuid);
     if (!infTex) {
@@ -322,16 +365,18 @@ TextureResolveResult InxVkCoreModular::ResolveTextureAsset(const std::string &te
         // Reimport supersedes an in-flight preparation. Start the current
         // generation instead of trying to publish a ticket for the old bytes.
         if (pendingStaging != m_pendingTextureStagingLoads.end() &&
-            pendingStaging->second->GetRuntimeVersion() != runtimeVersion) {
+            pendingStaging->second.ticket->GetRuntimeVersion() != runtimeVersion) {
             m_pendingTextureStagingLoads.erase(pendingStaging);
             pendingStaging = m_pendingTextureStagingLoads.end();
         }
         if (pendingStaging == m_pendingTextureStagingLoads.end()) {
             try {
                 pendingStaging =
-                    m_pendingTextureStagingLoads.emplace(cacheKey, registry.BeginTextureUploadStaging(textureGuid))
+                    m_pendingTextureStagingLoads.emplace(
+                        cacheKey, PendingTextureStagingLoad{registry.BeginTextureUploadStaging(textureGuid), sampler})
                         .first;
             } catch (const std::exception &exception) {
+                m_failedTextureUploads[cacheKey] = {textureGuid, runtimeVersion};
                 INXLOG_ERROR("TextureResolver: failed to schedule upload staging for '", textureGuid,
                              "': ", exception.what());
                 return {TextureResolveStatus::Failed, {}};
@@ -341,21 +386,14 @@ TextureResolveResult InxVkCoreModular::ResolveTextureAsset(const std::string &te
             // A synchronous graph publication owns this CPU preparation dependency.
             // Wait on its worker ticket, not on a frame, retry timer, or GPU idle.
             if (waitForPreparation)
-                pendingStaging->second->Wait();
-            auto staging = registry.TryConsumeTextureUploadStaging(pendingStaging->second);
-            if (!staging)
+                pendingStaging->second.ticket->Wait();
+            if (!TrySubmitTextureStaging(cacheKey, pendingStaging->second))
                 return {TextureResolveStatus::Pending, {}};
             m_pendingTextureStagingLoads.erase(pendingStaging);
-            TextureUploadBatch upload(*staging, sampler);
-            auto ticket = m_resourceManager.BeginTextureUpload(upload.GetRequest());
-            ++m_submittedTextureUploadCount;
-            if (ticket->IsAsync())
-                ++m_asyncTextureUploadCount;
-            pendingGpu = m_pendingTextureGpuUploads
-                             .emplace(cacheKey, PendingTextureGpuUpload{textureGuid, runtimeVersion, std::move(ticket)})
-                             .first;
+            pendingGpu = m_pendingTextureGpuUploads.find(cacheKey);
         } catch (const std::exception &exception) {
             m_pendingTextureStagingLoads.erase(cacheKey);
+            m_failedTextureUploads[cacheKey] = {textureGuid, runtimeVersion};
             INXLOG_ERROR("TextureResolver: failed to schedule GPU upload for '", textureGuid, "': ", exception.what());
             return {TextureResolveStatus::Failed, {}};
         }
@@ -380,6 +418,7 @@ TextureResolveResult InxVkCoreModular::ResolveTextureAsset(const std::string &te
         ++m_completedTextureUploadCount;
         return {TextureResolveStatus::Ready, {view, nativeSampler, std::move(residentSlot), std::move(resident)}};
     } catch (const std::exception &exception) {
+        m_failedTextureUploads[cacheKey] = {textureGuid, runtimeVersion};
         INXLOG_ERROR("TextureResolver: GPU upload failed for '", textureGuid, "': ", exception.what());
         m_pendingTextureGpuUploads.erase(pendingGpu);
         return {TextureResolveStatus::Failed, {}};

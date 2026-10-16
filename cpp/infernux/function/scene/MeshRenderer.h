@@ -21,6 +21,8 @@
 namespace infernux
 {
 
+struct SemanticTypeDescriptor;
+
 namespace rhi
 {
 class ComputeBuffer;
@@ -60,6 +62,8 @@ void RecalculateMeshTangents(std::vector<Vertex> &vertices, const std::vector<ui
 class MeshRenderer : public Component
 {
   public:
+    [[nodiscard]] static SemanticTypeDescriptor DescribeSemanticType();
+
     [[nodiscard]] static ComponentTypeConstraints GetTypeConstraints()
     {
         ComponentTypeConstraints constraints;

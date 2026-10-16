@@ -30,14 +30,6 @@ from .enums import RenderMode, UIScaleMode, ScreenMatchMode
 from .ui_render_revision import is_unchanged_ui_scalar, mark_runtime_ui_dirty
 
 
-def _log2(x: float) -> float:
-    return math.log2(max(x, 1e-6))
-
-
-def _pow2(x: float) -> float:
-    return 2.0 ** x
-
-
 @disallow_multiple
 @add_component_menu("UI/Canvas")
 class UICanvas(InxUIComponent):
@@ -170,15 +162,15 @@ class UICanvas(InxUIComponent):
             return 1.0, 1.0, 1.0
 
         # ScaleWithScreenSize
-        log_w = _log2(screen_w / ref_w) if ref_w > 0 else 0.0
-        log_h = _log2(screen_h / ref_h) if ref_h > 0 else 0.0
+        log_w = math.log2(screen_w / ref_w)
+        log_h = math.log2(screen_h / ref_h)
 
         match_mode = self.screen_match_mode
 
         if match_mode == ScreenMatchMode.MatchWidthOrHeight:
             match_val = max(0.0, min(1.0, float(self.match_width_or_height)))
             log_blend = log_w * (1.0 - match_val) + log_h * match_val
-            scale = _pow2(log_blend)
+            scale = 2.0 ** log_blend
         elif match_mode == ScreenMatchMode.Expand:
             scale = min(screen_w / ref_w, screen_h / ref_h)
         elif match_mode == ScreenMatchMode.Shrink:
@@ -186,14 +178,7 @@ class UICanvas(InxUIComponent):
         else:
             scale = min(screen_w / ref_w, screen_h / ref_h)
 
-        scale_x = scale
-        scale_y = scale
-
-        if self.pixel_perfect:
-            scale_x = max(1.0, round(scale_x))
-            scale_y = max(1.0, round(scale_y))
-
-        return scale_x, scale_y, min(scale_x, scale_y)
+        return scale, scale, scale
 
     def compute_logical_size(self, screen_w: float, screen_h: float) -> tuple:
         """Return the live Canvas rect in logical canvas pixels.
@@ -207,6 +192,17 @@ class UICanvas(InxUIComponent):
             max(1.0, float(screen_w) / max(scale_x, 1e-6)),
             max(1.0, float(screen_h) / max(scale_y, 1e-6)),
         )
+
+    def pixel_adjust_rect(self, rect, scale_x: float, scale_y: float) -> tuple:
+        """Project a logical rect to render pixels, snapping its edges when enabled.
+
+        Pixel alignment changes drawing geometry, never CanvasScaler scale or
+        authored layout and pointer coordinates.
+        """
+        x, y, width, height = rect
+        edges = (x * scale_x, y * scale_y, (x + width) * scale_x, (y + height) * scale_y)
+        left, top, right, bottom = map(round, edges) if self.pixel_perfect else edges
+        return left, top, right - left, bottom - top
 
     # ------------------------------------------------------------------
     # Cached element list (invalidated when hierarchy changes)

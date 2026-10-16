@@ -12,7 +12,7 @@ import pytest
 
 from infernux.core.assets import AssetManager
 from infernux.engine.engine import Engine
-from infernux.engine.import_coordinator import AssetFsEventKind
+from infernux.engine.import_coordinator import AssetFsEventKind, ImportCoordinator
 from infernux.engine.interaction import ActionOrigin, action_origin_scope
 from infernux.engine.resources_manager import (
     ResourceChangeHandler,
@@ -135,6 +135,60 @@ def _patch_asset_manager(monkeypatch, calls):
         ),
     )
     monkeypatch.setattr(AssetManager, "_invalidate_project_panel_cache", classmethod(lambda _cls: None))
+
+
+def test_due_scripts_do_not_wait_behind_a_bulk_model_import_queue(tmp_path):
+    coordinator = ImportCoordinator(debounce_seconds=0.0, clock=lambda: 1.0)
+    models = [str(tmp_path / f"model_{index}.glb") for index in range(128)]
+    for index, path in enumerate(models):
+        coordinator.submit(AssetFsEventKind.CREATED, path, observed_at=index / 1000)
+    scripts = [str(tmp_path / name) for name in ("Movement.py", "Player.py")]
+    for index, path in enumerate(scripts):
+        coordinator.submit(AssetFsEventKind.CREATED, path, observed_at=0.2 + index / 1000)
+
+    for path in (*scripts, models[0]):
+        event, = coordinator.drain(max_events=1)
+        assert event.path == path
+        coordinator.complete(event)
+    assert coordinator.pending_count == len(models) - 1
+
+
+def test_script_priority_preserves_move_metadata_deadlines_and_inflight_order(tmp_path):
+    coordinator = ImportCoordinator(debounce_seconds=0.0)
+    source = str(tmp_path / "Before.asset")
+    destination = str(tmp_path / "After.py")
+    dependent = str(tmp_path / "SameIdentity.py")
+    coordinator.submit(AssetFsEventKind.META_MODIFIED, source, guid_hint="stable", observed_at=0.1, debounce_seconds=0.5)
+    coordinator.submit(AssetFsEventKind.MOVED, source, destination=destination, guid_hint="stable", observed_at=0.2)
+    coordinator.submit(AssetFsEventKind.META_MODIFIED, destination, guid_hint="stable", observed_at=0.3)
+    coordinator.submit(AssetFsEventKind.MODIFIED, dependent, guid_hint="stable", observed_at=0.4)
+    assert coordinator.drain(now=0.5, max_events=1) == []
+
+    metadata, = coordinator.drain(now=0.6, max_events=1)
+    assert metadata.kind is AssetFsEventKind.META_MODIFIED and metadata.path == source
+    assert coordinator.drain(now=0.6, max_events=1) == []
+    coordinator.complete(metadata)
+    move, = coordinator.drain(now=0.6, max_events=1)
+    assert move.kind is AssetFsEventKind.MOVED and move.destination == destination
+    coordinator.defer(move, now=0.6)
+    assert coordinator.drain(now=0.7, max_events=1) == []
+    move, = coordinator.drain(now=0.8, max_events=1)
+    coordinator.complete(move)
+    for path in (destination, dependent):
+        event, = coordinator.drain(now=0.8, max_events=1)
+        assert event.path == path
+        coordinator.complete(event)
+
+    coordinator.submit(AssetFsEventKind.META_DELETED, destination, observed_at=1.0)
+    coordinator.submit(AssetFsEventKind.DELETED, destination, observed_at=1.1)
+    assert coordinator.drain(now=1.5, max_events=1) == []
+    metadata, = coordinator.drain(now=1.7, max_events=1)
+    assert metadata.kind is AssetFsEventKind.META_DELETED
+    coordinator.complete(metadata)
+    assert coordinator.drain(now=1.8, max_events=1) == []
+    deleted, = coordinator.drain(now=1.9, max_events=1)
+    assert deleted.kind is AssetFsEventKind.DELETED
+    coordinator.complete(deleted)
 
 
 def test_watcher_thread_only_submits_and_main_thread_commits(monkeypatch, tmp_path):

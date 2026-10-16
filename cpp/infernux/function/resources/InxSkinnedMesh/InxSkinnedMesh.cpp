@@ -495,12 +495,12 @@ size_t InxSkinnedMesh::GetRuntimeMemoryBytes() const noexcept
         bytes += animation.trackByNodeIndex.capacity() * sizeof(int);
     }
     bytes += m_gpuPaletteCache.bucket_count() * sizeof(void *);
-    for (const auto &[key, palette] : m_gpuPaletteCache) {
+    for (const auto &[key, pose] : m_gpuPaletteCache) {
         bytes += sizeof(decltype(m_gpuPaletteCache)::value_type) + key.takeName.capacity() +
                  key.blendTakeName.capacity() + key.animationSourceKey.capacity() +
                  key.blendAnimationSourceKey.capacity();
-        if (palette)
-            bytes += sizeof(*palette) + palette->capacity() * sizeof(glm::mat4);
+        if (pose)
+            bytes += sizeof(*pose) + (pose->palette.capacity() + pose->nodeGlobals.capacity()) * sizeof(glm::mat4);
     }
     bytes += m_gpuPaletteCacheOrder.capacity() * sizeof(PaletteCacheKey);
     for (const auto &key : m_gpuPaletteCacheOrder)
@@ -873,9 +873,9 @@ std::vector<SkinnedNodePose> InxSkinnedMesh::BuildRetargetedLocalPoses(const Ske
     return targetPoses;
 }
 
-std::vector<glm::mat4> InxSkinnedMesh::BuildBoneMatrices(const SkinnedSampleRequest &request,
-                                                         const InxSkinnedMesh *animationSource,
-                                                         const InxSkinnedMesh *blendAnimationSource) const
+std::vector<glm::mat4> InxSkinnedMesh::EvaluateNodeGlobals(const SkinnedSampleRequest &request,
+                                                       const InxSkinnedMesh *animationSource,
+                                                       const InxSkinnedMesh *blendAnimationSource) const
 {
     const InxSkinnedMesh *activeSource = animationSource ? animationSource : this;
     const InxSkinnedMesh *blendSource = blendAnimationSource ? blendAnimationSource : activeSource;
@@ -916,16 +916,10 @@ std::vector<glm::mat4> InxSkinnedMesh::BuildBoneMatrices(const SkinnedSampleRequ
         globals[ni] = (node.parent >= 0) ? globals[static_cast<size_t>(node.parent)] * local : local;
     }
 
-    std::vector<glm::mat4> boneMatrices(skeleton.bones.size(), glm::mat4(1.0f));
-    for (size_t bi = 0; bi < skeleton.bones.size(); ++bi) {
-        const SkinnedRuntimeBone &bone = skeleton.bones[bi];
-        if (bone.nodeIndex >= 0 && static_cast<size_t>(bone.nodeIndex) < globals.size())
-            boneMatrices[bi] = globals[static_cast<size_t>(bone.nodeIndex)] * bone.inverseBind;
-    }
-    return boneMatrices;
+    return globals;
 }
 
-std::vector<glm::mat4> InxSkinnedMesh::BuildBoneMatricesFromPoseStack(
+std::vector<glm::mat4> InxSkinnedMesh::EvaluatePoseStackGlobals(
     const std::vector<PoseStackLayer> &layers,
     const std::vector<std::shared_ptr<const InxSkinnedMesh>> &animationSources) const
 {
@@ -1025,49 +1019,74 @@ std::vector<glm::mat4> InxSkinnedMesh::BuildBoneMatricesFromPoseStack(
             (skeleton.nodes[ni].parent >= 0) ? globals[static_cast<size_t>(skeleton.nodes[ni].parent)] * local : local;
     }
 
-    std::vector<glm::mat4> boneMatrices(skeleton.bones.size(), glm::mat4(1.0f));
+    return globals;
+}
+
+std::vector<glm::mat4> InxSkinnedMesh::BuildPalette(const std::vector<glm::mat4> &globals, float importScale) const
+{
+    const glm::mat4 scale = glm::scale(glm::mat4(1.0f), glm::vec3(importScale));
+    std::vector<glm::mat4> boneMatrices(skeleton.bones.size(), scale);
     for (size_t bi = 0; bi < skeleton.bones.size(); ++bi) {
         const SkinnedRuntimeBone &bone = skeleton.bones[bi];
         if (bone.nodeIndex >= 0 && static_cast<size_t>(bone.nodeIndex) < globals.size())
-            boneMatrices[bi] = globals[static_cast<size_t>(bone.nodeIndex)] * bone.inverseBind;
+            boneMatrices[bi] = scale * (globals[static_cast<size_t>(bone.nodeIndex)] * bone.inverseBind);
     }
     return boneMatrices;
+}
+
+EvaluatedSkinPose InxSkinnedMesh::MakeEvaluatedPose(std::vector<glm::mat4> globals) const
+{
+    auto palette = BuildPalette(globals, scaleFactor);
+    return {std::move(palette), std::move(globals)};
+}
+
+std::vector<glm::mat4> InxSkinnedMesh::BuildBoneMatrices(const SkinnedSampleRequest &request,
+                                                     const InxSkinnedMesh *animationSource,
+                                                     const InxSkinnedMesh *blendAnimationSource) const
+{
+    return BuildPalette(EvaluateNodeGlobals(request, animationSource, blendAnimationSource), 1.0f);
+}
+
+std::vector<glm::mat4> InxSkinnedMesh::BuildBoneMatricesFromPoseStack(
+    const std::vector<PoseStackLayer> &layers,
+    const std::vector<std::shared_ptr<const InxSkinnedMesh>> &animationSources) const
+{
+    return BuildPalette(EvaluatePoseStackGlobals(layers, animationSources), 1.0f);
 }
 
 std::vector<glm::mat4> InxSkinnedMesh::BuildGpuBonePalette(const SkinnedSampleRequest &request,
                                                            const InxSkinnedMesh *animationSource,
                                                            const InxSkinnedMesh *blendAnimationSource) const
 {
-    std::vector<glm::mat4> palette = BuildBoneMatrices(request, animationSource, blendAnimationSource);
-    const glm::mat4 scale = glm::scale(glm::mat4(1.0f), glm::vec3(scaleFactor));
-    for (glm::mat4 &m : palette)
-        m = scale * m;
-    return palette;
+    return MakeEvaluatedPose(EvaluateNodeGlobals(request, animationSource, blendAnimationSource)).palette;
 }
 
 std::vector<glm::mat4> InxSkinnedMesh::BuildGpuBonePaletteFromPoseStack(
     const std::vector<PoseStackLayer> &layers,
     const std::vector<std::shared_ptr<const InxSkinnedMesh>> &animationSources) const
 {
-    std::vector<glm::mat4> palette = BuildBoneMatricesFromPoseStack(layers, animationSources);
-    const glm::mat4 scale = glm::scale(glm::mat4(1.0f), glm::vec3(scaleFactor));
-    for (glm::mat4 &m : palette)
-        m = scale * m;
-    return palette;
+    return EvaluatePoseStack(layers, animationSources).palette;
 }
 
-std::shared_ptr<const std::vector<glm::mat4>>
-InxSkinnedMesh::GetOrBuildGpuBonePalette(const SkinnedSampleRequest &request, const InxSkinnedMesh *animationSource,
-                                         const InxSkinnedMesh *blendAnimationSource) const
+EvaluatedSkinPose InxSkinnedMesh::EvaluatePoseStack(
+    const std::vector<PoseStackLayer> &layers,
+    const std::vector<std::shared_ptr<const InxSkinnedMesh>> &animationSources) const
+{
+    return MakeEvaluatedPose(EvaluatePoseStackGlobals(layers, animationSources));
+}
+
+std::shared_ptr<const EvaluatedSkinPose>
+InxSkinnedMesh::GetOrBuildEvaluatedPose(const SkinnedSampleRequest &request, const InxSkinnedMesh *animationSource,
+                                     const InxSkinnedMesh *blendAnimationSource) const
 {
     PaletteCacheKey key = MakePaletteCacheKey(request, animationSource, blendAnimationSource);
     auto it = m_gpuPaletteCache.find(key);
     if (it != m_gpuPaletteCache.end())
         return it->second;
 
-    auto palette = std::make_shared<const std::vector<glm::mat4>>(
-        BuildGpuBonePalette(request, animationSource, blendAnimationSource));
-    m_gpuPaletteCache.emplace(key, palette);
+    auto pose = std::make_shared<const EvaluatedSkinPose>(
+        MakeEvaluatedPose(EvaluateNodeGlobals(request, animationSource, blendAnimationSource)));
+    m_gpuPaletteCache.emplace(key, pose);
     m_gpuPaletteCacheOrder.push_back(key);
 
     while (m_gpuPaletteCacheOrder.size() > kMaxGpuPaletteCacheEntries) {
@@ -1075,7 +1094,31 @@ InxSkinnedMesh::GetOrBuildGpuBonePalette(const SkinnedSampleRequest &request, co
         m_gpuPaletteCacheOrder.erase(m_gpuPaletteCacheOrder.begin());
     }
 
-    return palette;
+    return pose;
+}
+
+std::shared_ptr<const std::vector<glm::mat4>>
+InxSkinnedMesh::GetOrBuildGpuBonePalette(const SkinnedSampleRequest &request, const InxSkinnedMesh *animationSource,
+                                       const InxSkinnedMesh *blendAnimationSource) const
+{
+    const auto pose = GetOrBuildEvaluatedPose(request, animationSource, blendAnimationSource);
+    return {pose, &pose->palette};
+}
+
+std::vector<glm::mat4> InxSkinnedMesh::GetSkeletonNodeWorldMatrices(
+    const EvaluatedSkinPose &pose, const std::vector<std::string> &nodeNames, const glm::mat4 &drawWorld) const
+{
+    const glm::mat4 scaledWorld = drawWorld * glm::scale(glm::mat4(1.0f), glm::vec3(scaleFactor));
+    const glm::mat4 inverseScale = glm::scale(glm::mat4(1.0f), glm::vec3(1.0f / scaleFactor));
+    std::vector<glm::mat4> result;
+    result.reserve(nodeNames.size());
+    for (const auto &name : nodeNames) {
+        const auto node = skeleton.nodeByName.find(name);
+        if (node == skeleton.nodeByName.end())
+            throw std::invalid_argument("Skeleton node does not exist: " + name);
+        result.push_back(scaledWorld * pose.nodeGlobals.at(static_cast<size_t>(node->second)) * inverseScale);
+    }
+    return result;
 }
 
 std::vector<Vertex> InxSkinnedMesh::SampleVertices(const SkinnedSampleRequest &request) const

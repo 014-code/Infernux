@@ -101,6 +101,9 @@ void RegisterInputBindings(py::module_ &m)
              "True during the frame the mouse button was released")
         .def("get_mouse_frame_state", &InputManager::GetMouseFrameState, py::arg("button"),
              "Return (mouse_x, mouse_y, scroll_x, scroll_y, held, down, up) for one mouse button")
+        .def("get_game_mouse_button", &InputManager::GetGameMouseButton, py::arg("button"))
+        .def("get_game_mouse_button_down", &InputManager::GetGameMouseButtonDown, py::arg("button"))
+        .def("get_game_mouse_frame_state", &InputManager::GetGameMouseFrameState, py::arg("button"))
 
         // ---- Mouse position & delta ----
         .def_property_readonly("mouse_position_x", &InputManager::GetMousePositionX,
@@ -155,6 +158,9 @@ void RegisterInputBindings(py::module_ &m)
              "Lock/unlock cursor (hides cursor and captures relative mouse movement)")
         .def_property_readonly("is_cursor_locked", &InputManager::IsCursorLocked,
                                "True when cursor is locked (relative mouse mode)")
+        .def("set_editor_cursor_capture_allowed", &InputManager::SetEditorCursorCaptureAllowed, py::arg("allowed"))
+        .def_property_readonly("is_editor_cursor_capture_allowed", &InputManager::IsEditorCursorCaptureAllowed)
+        .def("set_editor_game_viewport", &InputManager::SetEditorGameViewport)
         .def("set_cursor_visible", &InputManager::SetCursorVisible, py::arg("visible"),
              "Show or hide the cursor independently from relative mouse mode")
         .def_property_readonly("is_cursor_visible", &InputManager::IsCursorVisible,

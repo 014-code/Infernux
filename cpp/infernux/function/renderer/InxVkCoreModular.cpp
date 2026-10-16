@@ -218,6 +218,7 @@ InxVkCoreModular::~InxVkCoreModular()
     m_assetMeshViewKeys.clear();
     m_pendingTextureAssetLoads.clear();
     m_pendingTextureStagingLoads.clear();
+    m_failedTextureUploads.clear();
     m_pendingTextureGpuUploads.clear();
 
     // Preview renderers are texture/material publication consumers. Destroy
@@ -854,8 +855,14 @@ void InxVkCoreModular::InvalidateTextureCache(const std::string &textureGuid)
 #endif
 
     m_pendingTextureAssetLoads.erase(textureGuid);
+    for (auto failed = m_failedTextureUploads.begin(); failed != m_failedTextureUploads.end();) {
+        if (failed->second.guid == textureGuid)
+            failed = m_failedTextureUploads.erase(failed);
+        else
+            ++failed;
+    }
     for (auto pending = m_pendingTextureStagingLoads.begin(); pending != m_pendingTextureStagingLoads.end();) {
-        if (!pending->second || pending->second->GetGuid() == textureGuid)
+        if (pending->second.ticket->GetGuid() == textureGuid)
             pending = m_pendingTextureStagingLoads.erase(pending);
         else
             ++pending;

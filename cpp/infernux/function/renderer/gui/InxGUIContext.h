@@ -297,6 +297,7 @@ class InxGUIContext
     float GetItemRectMinY();
     float GetItemRectMaxX();
     float GetItemRectMaxY();
+    std::array<float, 4> GetItemVisibleRect();
 
     // Explicit semantic hooks for raw ImGui widgets that bypass this wrapper.
     // They are inert unless the remote validation capture is enabled.

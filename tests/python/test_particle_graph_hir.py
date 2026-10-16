@@ -36,6 +36,7 @@ from infernux.particle import (
     VectorField,
     decode_particle_runtime_metadata,
     compile_gpu_particle_spirv,
+    validate_gpu_particle_spirv,
     default_event_graph,
 )
 from infernux.graph import AssetReference, CoordinateSpace, TypeRef, ValueType
@@ -461,6 +462,30 @@ def test_particle_event_flows_compile_to_stable_typed_queue_abi():
         event_types=(replace(impact, queue_capacity=64),),
     )
     assert ParticleGraphCompiler().compile(changed).events.event_abi_hash != program.events.event_abi_hash
+
+
+def test_integer_emitter_shape_preserves_saved_aot_signature(tmp_path):
+    asset = ParticleGraphAsset(
+        stable_id="integer-shape",
+        emitters=(ParticleEmitterAsset(settings=EmitterSettings(
+            shape=EmitterShape(kind="cone", radius=0, angle_degrees=35,
+                               dimensions=(1, 2, 3)),
+        )),),
+    )
+    path = str(tmp_path / "Shape.particlegraph")
+    asset.save(path)
+    artifact = ParticleArtifactRegistry.get(path)
+    restored = ParticleGraphAsset.load(path)
+    program = ParticleGraphCompiler().compile(restored)
+    gpu = GpuParticleGlslLowerer().lower(ParticleKernelLowerer().lower(program))
+
+    assert program.behavior_hash == artifact.behavior_hash
+    assert gpu.kernel_hash == artifact.gpu_spirv["kernel_hash"]
+    validate_gpu_particle_spirv(artifact.gpu_spirv, gpu)
+    shape = asset.emitters[0].settings.shape
+    assert type(shape.radius) is float
+    assert type(shape.angle_degrees) is float
+    assert shape == restored.emitters[0].settings.shape
 
 
 def test_particle_data_interfaces_round_trip_with_stable_identity_and_space():

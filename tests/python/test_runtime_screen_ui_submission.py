@@ -3,6 +3,12 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from infernux.ui import UICanvas
+
+
+class _CanvasStub(SimpleNamespace):
+    pixel_perfect = False
+    pixel_adjust_rect = UICanvas.pixel_adjust_rect
 
 
 class _Renderer:
@@ -12,6 +18,7 @@ class _Renderer:
         self.cached_calls: list[tuple[int, int, int]] = []
         self.clip_calls: list[tuple] = []
         self.world_calls: list[tuple] = []
+        self.screen_calls: list[tuple] = []
         self.measure_calls: list[tuple] = []
         self.capturing = False
 
@@ -74,6 +81,12 @@ class _Renderer:
     def begin_world_element(self, *values) -> None:
         self.world_calls.append(("begin", *values))
 
+    def begin_screen_object(self, *values) -> None:
+        self.screen_calls.append(values)
+
+    def end_screen_object(self) -> None:
+        pass
+
     def end_world_element(self) -> None:
         self.world_calls.append(("end",))
 
@@ -130,7 +143,7 @@ def test_runtime_submission_publishes_latest_hud_without_a_game_panel(monkeypatc
         get_rect=lambda *_args: (10.0, 5.0, 20.0, 8.0),
         get_effective_clip_rect=lambda *_args: (1.0, 2.0, 9.0, 10.0),
     )
-    canvas = SimpleNamespace(
+    canvas = _CanvasStub(
         render_mode=RenderMode.ScreenOverlay,
         reference_width=100.0,
         reference_height=50.0,
@@ -186,11 +199,12 @@ def test_runtime_submission_publishes_latest_hud_without_a_game_panel(monkeypatc
     assert [entry[0] for entry in dispatches] == ["first", "latest"]
 
 
-def test_runtime_submission_anchors_against_live_logical_canvas(monkeypatch):
+def test_runtime_submission_anchors_against_live_logical_canvas(monkeypatch, scene):
     import infernux.engine.runtime_screen_ui as module
     from infernux.engine.runtime_screen_ui import RuntimeScreenUISubmission
     from infernux.ui.enums import RenderMode
 
+    native_scene = scene
     renderer = _Renderer()
     engine = _Engine(renderer)
     engine._render_submission_frame = 1
@@ -202,7 +216,7 @@ def test_runtime_submission_anchors_against_live_logical_canvas(monkeypatch):
         get_rect=lambda width, height: logical_sizes.append((width, height)) or (32.0, 32.0, 520.0, 52.0),
         get_effective_clip_rect=lambda *_args: None,
     )
-    canvas = SimpleNamespace(
+    canvas = _CanvasStub(
         render_mode=RenderMode.ScreenOverlay,
         reference_width=1920.0,
         reference_height=1080.0,
@@ -242,6 +256,33 @@ def test_runtime_submission_anchors_against_live_logical_canvas(monkeypatch):
     assert dispatches[0]["ref_w"] == 3200.0 / 1.5
     assert dispatches[0]["ref_h"] == 1440.0 / 1.5
 
+    # Pixel Perfect adjusts geometry, not the fractional CanvasScaler ratio.
+    canvas = UICanvas()
+    canvas.reference_width, canvas.reference_height = 1280, 720
+    canvas.pixel_perfect = True
+    native_scene.create_game_object("Fractional-scale Canvas").add_py_component(canvas)
+    canvas._get_elements = lambda: (element,)
+    rect = (32.2, 32.4, 520.3, 52.5)
+    element.get_rect = lambda *_: rect
+    element.get_effective_clip_rect = lambda *_: (0.2, 0.4, 1279.9, 719.6)
+    for target, scale in (((1920, 1080), 1.5), ((960, 540), 0.75)):
+        assert canvas.compute_scale(*target) == pytest.approx((scale, scale, scale))
+        assert canvas.compute_logical_size(*target) == pytest.approx((1280, 720))
+        submission = RuntimeScreenUISubmission(engine)
+        submission.set_target_size(*target)
+        assert submission.submit()
+        draw = dispatches[-1]
+        raster = canvas.pixel_adjust_rect(rect, scale, scale)
+        assert (draw["sx"], draw["sy"], draw["sw"], draw["sh"]) == pytest.approx(raster)
+        assert all(value == round(value) for value in raster)
+        assert renderer.screen_calls[-1][2:4] == pytest.approx(
+            (raster[0] + raster[2] * 0.5, raster[1] + raster[3] * 0.5),
+        )
+        assert renderer.clip_calls[-2][2:] == tuple(round(v * scale) for v in (0.2, 0.4, 1279.9, 719.6))
+        assert element.get_rect(1280, 720) == rect
+        assert abs(raster[0] / scale - rect[0]) <= 0.5 / scale
+        assert abs(raster[1] / scale - rect[1]) <= 0.5 / scale
+
 
 def test_runtime_submission_resolves_text_before_geometry_and_keeps_authored_size(monkeypatch, scene):
     import infernux.engine.runtime_screen_ui as module
@@ -262,7 +303,7 @@ def test_runtime_submission_resolves_text_before_geometry_and_keeps_authored_siz
     element.width = 17.0
     element.height = 29.0
     element.resize_mode = TextResizeMode.AutoWidth
-    canvas = SimpleNamespace(
+    canvas = _CanvasStub(
         render_mode=RenderMode.ScreenOverlay,
         reference_width=100.0,
         reference_height=50.0,
