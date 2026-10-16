@@ -368,7 +368,10 @@ class InputManager
     /// Editor capture is allowed only after a Game View click. Releasing
     /// capture preserves the game's requested lock for the next click.
     void SetEditorCursorCaptureAllowed(bool allowed);
-    [[nodiscard]] bool IsEditorCursorCaptureAllowed() const { return m_editorCursorCaptureAllowed; }
+    [[nodiscard]] bool IsEditorCursorCaptureAllowed() const
+    {
+        return m_editorCursorCaptureAllowed;
+    }
 
     /// @brief Control cursor visibility independently from relative mouse mode.
     void SetCursorVisible(bool visible);

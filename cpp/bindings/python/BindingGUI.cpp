@@ -1151,14 +1151,16 @@ void RegisterGUIBindings(py::module_ &m)
         .def(py::init<const std::string &>(), py::arg("project_root") = "")
         .def_property_readonly("project_root", &ConsolePanel::GetProjectRoot)
         .def("get_entry_context_object_id", &ConsolePanel::GetEntryContextObjectId, py::arg("uid"))
-        .def("log_from_python", [](ConsolePanel &self, LogLevel level, const std::string &message,
-                                   const std::string &stackTrace, const std::string &sourceFile, int sourceLine,
-                                   const std::optional<ObjectHandle> &contextHandle) {
-            self.LogFromPython(level, message, stackTrace, sourceFile, sourceLine, contextHandle.value_or(ObjectHandle{}));
-        }, py::arg("level"), py::arg("message"),
-             py::arg("stack_trace") = "", py::arg("source_file") = "", py::arg("source_line") = 0,
-             py::arg("context_handle") = py::none(),
-             "Log a message originating from Python Debug.log()")
+        .def(
+            "log_from_python",
+            [](ConsolePanel &self, LogLevel level, const std::string &message, const std::string &stackTrace,
+               const std::string &sourceFile, int sourceLine, const std::optional<ObjectHandle> &contextHandle) {
+                self.LogFromPython(level, message, stackTrace, sourceFile, sourceLine,
+                                   contextHandle.value_or(ObjectHandle{}));
+            },
+            py::arg("level"), py::arg("message"), py::arg("stack_trace") = "", py::arg("source_file") = "",
+            py::arg("source_line") = 0, py::arg("context_handle") = py::none(),
+            "Log a message originating from Python Debug.log()")
         .def("clear", &ConsolePanel::Clear, "Clear all log entries")
         .def("remove_entries_from_source", &ConsolePanel::RemoveEntriesFromSource, py::arg("source_file"),
              py::arg("message_prefix") = "", "Remove Console entries owned by one source file")

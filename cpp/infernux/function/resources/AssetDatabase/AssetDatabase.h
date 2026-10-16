@@ -666,8 +666,8 @@ class AssetDatabase : public NativeLifetimeOwner
     void PublishQuerySnapshot(bool includeCatalog = true);
     void PublishModelSubAssetEvents(const std::shared_ptr<const QuerySnapshot> &previous,
                                     const std::unordered_set<std::string> *changedGuids = nullptr);
-    void UpdateModelSubAssets(const std::string &owner, const QuerySnapshot &previous,
-                              QuerySnapshot &snapshot, std::unordered_set<std::string> &changedGuids);
+    void UpdateModelSubAssets(const std::string &owner, const QuerySnapshot &previous, QuerySnapshot &snapshot,
+                              std::unordered_set<std::string> &changedGuids);
     void PublishRefreshAssetEvents(const WorkingSet &previous);
     void PublishQuerySnapshotForPaths(const std::vector<std::string> &paths);
     void InstallQuerySnapshot(std::shared_ptr<QuerySnapshot> snapshot) noexcept;

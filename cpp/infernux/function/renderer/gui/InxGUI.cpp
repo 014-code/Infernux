@@ -7,9 +7,9 @@
 #include "InxGUIContext.h"
 #include "InxGUISemantics.h"
 #include "InxTextLayout.h"
+#include <function/editor/EditorShortcutInput.h>
 #include <function/editor/EditorTheme.h>
 #include <function/editor/EditorThemeRegistry.h>
-#include <function/editor/EditorShortcutInput.h>
 #include <function/renderer/TextureUploadBuilder.h>
 #include <function/renderer/vk/RhiVulkanTypes.h>
 #include <function/renderer/vk/VkRenderUtils.h>

@@ -34,10 +34,12 @@ class ConsolePanel : public EditorPanel
 
     /// Log a message originating from Python's Debug.log() system.
     void LogFromPython(LogLevel level, const std::string &message, const std::string &stackTrace = "",
-                       const std::string &sourceFile = "", int sourceLine = 0,
-                       const ObjectHandle &contextHandle = {});
+                       const std::string &sourceFile = "", int sourceLine = 0, const ObjectHandle &contextHandle = {});
 
-    [[nodiscard]] const std::string &GetProjectRoot() const { return m_projectRoot; }
+    [[nodiscard]] const std::string &GetProjectRoot() const
+    {
+        return m_projectRoot;
+    }
     uint64_t GetEntryContextObjectId(uint64_t uid);
 
     /// Clear all log entries.

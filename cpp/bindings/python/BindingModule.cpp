@@ -1,6 +1,6 @@
 #include "BindingRegistration.h"
-#include <function/renderer/ProfileConfig.h>
 #include <core/log/InxLog.h>
+#include <function/renderer/ProfileConfig.h>
 
 PYBIND11_MODULE(_Infernux, module)
 {

@@ -79,8 +79,7 @@ ShadowViewGpuData PackShadowView(const lighting::ShadowView &view, uint32_t atla
 // Shared texture resolution for material Texture2D properties
 // ============================================================================
 
-bool InxVkCoreModular::TrySubmitTextureStaging(const std::string &cacheKey,
-                                             const PendingTextureStagingLoad &pending)
+bool InxVkCoreModular::TrySubmitTextureStaging(const std::string &cacheKey, const PendingTextureStagingLoad &pending)
 {
     auto staging = AssetRegistry::Instance().TryConsumeTextureUploadStaging(pending.ticket);
     if (!staging)
@@ -91,8 +90,8 @@ bool InxVkCoreModular::TrySubmitTextureStaging(const std::string &cacheKey,
     if (ticket->IsAsync())
         ++m_asyncTextureUploadCount;
     m_pendingTextureGpuUploads.emplace(
-        cacheKey, PendingTextureGpuUpload{pending.ticket->GetGuid(), pending.ticket->GetRuntimeVersion(),
-                                          std::move(ticket)});
+        cacheKey,
+        PendingTextureGpuUpload{pending.ticket->GetGuid(), pending.ticket->GetRuntimeVersion(), std::move(ticket)});
     return true;
 }
 
@@ -372,8 +371,9 @@ TextureResolveResult InxVkCoreModular::ResolveTextureAsset(const std::string &te
         if (pendingStaging == m_pendingTextureStagingLoads.end()) {
             try {
                 pendingStaging =
-                    m_pendingTextureStagingLoads.emplace(
-                        cacheKey, PendingTextureStagingLoad{registry.BeginTextureUploadStaging(textureGuid), sampler})
+                    m_pendingTextureStagingLoads
+                        .emplace(cacheKey,
+                                 PendingTextureStagingLoad{registry.BeginTextureUploadStaging(textureGuid), sampler})
                         .first;
             } catch (const std::exception &exception) {
                 m_failedTextureUploads[cacheKey] = {textureGuid, runtimeVersion};

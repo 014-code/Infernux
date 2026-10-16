@@ -127,7 +127,7 @@ std::string IndexedAssetPathKey(const std::string &path)
 {
     const auto suffix = path.find("::");
     return suffix == std::string::npos ? FoldFilesystemPathCase(path)
-                                      : FoldFilesystemPathCase(path.substr(0, suffix)) + path.substr(suffix);
+                                       : FoldFilesystemPathCase(path.substr(0, suffix)) + path.substr(suffix);
 }
 
 template <typename Visit> void VisitModelSubAssets(const InxResourceMeta &owner, Visit visit)
@@ -142,16 +142,15 @@ template <typename Visit> void VisitModelSubAssets(const InxResourceMeta &owner,
 }
 
 std::shared_ptr<InxResourceMeta> ModelSubAssetMetadata(const nlohmann::json &record, const std::string &owner,
-                                                    const std::string &sourcePath)
+                                                       const std::string &sourcePath)
 {
     auto metadata = std::make_shared<InxResourceMeta>();
     metadata->DeserializeDocument(record.at("metadata"));
     const auto guid = metadata->GetGuid();
     if (!IsCanonicalAssetGuid(guid) || guid == owner)
         throw std::invalid_argument("invalid model sub-asset identity: " + guid);
-    const auto suffix = metadata->HasKey("import_document")
-                            ? "::subanim:" + record.at("id").get<std::string>()
-                            : "::subtex:" + guid;
+    const auto suffix =
+        metadata->HasKey("import_document") ? "::subanim:" + record.at("id").get<std::string>() : "::subtex:" + guid;
     metadata->AddMetadata("file_path", sourcePath + suffix);
     metadata->AddMetadata("import_owner_guid", owner);
     return metadata;
@@ -722,7 +721,7 @@ void AssetDatabase::PublishQuerySnapshot(bool includeCatalog)
 }
 
 void AssetDatabase::PublishModelSubAssetEvents(const std::shared_ptr<const QuerySnapshot> &previous,
-                                             const std::unordered_set<std::string> *changedGuids)
+                                               const std::unordered_set<std::string> *changedGuids)
 {
     auto &registry = AssetRegistry::Instance();
     auto &graph = AssetDependencyGraph::Instance();
@@ -780,7 +779,7 @@ void AssetDatabase::PublishModelSubAssetEvents(const std::shared_ptr<const Query
 }
 
 void AssetDatabase::UpdateModelSubAssets(const std::string &owner, const QuerySnapshot &previous,
-                                       QuerySnapshot &snapshot, std::unordered_set<std::string> &changedGuids)
+                                         QuerySnapshot &snapshot, std::unordered_set<std::string> &changedGuids)
 {
     std::unordered_map<std::string, std::shared_ptr<InxResourceMeta>> children;
     std::string sourcePath;

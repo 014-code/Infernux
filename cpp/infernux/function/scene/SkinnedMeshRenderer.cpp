@@ -27,7 +27,9 @@ SemanticTypeDescriptor DescribeSkinnedMeshRenderer()
     type.readableId = "infernux.component.skinned_mesh_renderer";
     type.displayName = "SkinnedMeshRenderer";
     type.baseTypeGuid = "native:infernux.MeshRenderer";
-    type.fields.push_back({"SkinnedMeshRenderer.active_take_name", "FieldType.STRING", false,
+    type.fields.push_back({"SkinnedMeshRenderer.active_take_name",
+                           "FieldType.STRING",
+                           false,
                            {{"field_id", "active_take_name"},
                             {"serialized_name", "activeTakeName"},
                             {"serialized", true},
@@ -468,8 +470,7 @@ void SkinnedMeshRenderer::RefreshRuntimeSkinnedMesh()
         request.blendTakeName = m_blendTakeName;
         request.blendTimeSeconds = m_blendAnimationTime;
         request.blendWeight = m_blendWeight;
-        nextPose =
-            model->GetOrBuildEvaluatedPose(request, animationSource.get(), m_blendAnimationSourceModel.get());
+        nextPose = model->GetOrBuildEvaluatedPose(request, animationSource.get(), m_blendAnimationSourceModel.get());
     }
     m_skinPoseHistory.Publish(std::move(nextPose), modelChanged);
     SceneManager::Instance().QueueSkinPoseHistoryCommit(this);

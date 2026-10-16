@@ -129,8 +129,8 @@ void BindSkinnedMeshRenderer(py::module_ &m)
             "get_skeleton_node_world_matrices",
             [](const SkinnedMeshRenderer &renderer, const std::vector<std::string> &nodeNames) {
                 const auto matrices = renderer.GetSkeletonNodeWorldMatrices(nodeNames);
-                py::array_t<float> result(
-                    py::array::ShapeContainer{static_cast<py::ssize_t>(matrices.size()), py::ssize_t{4}, py::ssize_t{4}});
+                py::array_t<float> result(py::array::ShapeContainer{static_cast<py::ssize_t>(matrices.size()),
+                                                                    py::ssize_t{4}, py::ssize_t{4}});
                 auto values = result.mutable_unchecked<3>();
                 for (size_t index = 0; index < matrices.size(); ++index)
                     for (int row = 0; row < 4; ++row)
