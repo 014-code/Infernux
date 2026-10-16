@@ -146,9 +146,12 @@ class RuntimeTypeDispatchDescriptor:
                 continue
 
             dispatch.append((method.raw, method.bind_instance))
+            if method.bind_instance:
+                invokers.append(method.raw)
+                continue
 
-            def invoke(instance: Any, value: Any, _method=method) -> Any:
-                return _method.invoke(instance, value)
+            def invoke(instance: Any, value: Any, _raw=method.raw) -> Any:
+                return _raw(value)
 
             invokers.append(invoke)
         object.__setattr__(self, "_phase_dispatch", tuple(dispatch))

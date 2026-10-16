@@ -186,6 +186,8 @@ def test_phase_plan_is_not_rebuilt_for_update_or_helper_replacement():
 
 
 def test_direct_lifecycle_entry_requires_a_published_epoch_descriptor():
+    extra_calls = []
+
     class DirectEntryProbe(ComponentLifecycleMixin):
         def __init__(self):
             self._enabled = True
@@ -201,6 +203,14 @@ def test_direct_lifecycle_entry_requires_a_published_epoch_descriptor():
         def late_update(self, _delta_time):
             self.calls.append("late")
 
+        @staticmethod
+        def physics_pre_step(delta_time):
+            extra_calls.append(("static", delta_time))
+
+        @classmethod
+        def physics_post_step(cls, delta_time):
+            extra_calls.append((cls, delta_time))
+
     assert "_runtime_phase_dispatch" not in DirectEntryProbe.__dict__
     assert "_runtime_phase_invokers" not in DirectEntryProbe.__dict__
     probe = DirectEntryProbe()
@@ -212,6 +222,9 @@ def test_direct_lifecycle_entry_requires_a_published_epoch_descriptor():
         probe._call_late_update(0.1)
         descriptor = current_runtime_epoch().require_descriptor(DirectEntryProbe)
         assert len(descriptor.phase_invokers) == 5
+        descriptor.phase_invokers[3](probe, 0.2)
+        descriptor.phase_invokers[4](probe, 0.3)
+        assert extra_calls == [("static", 0.2), (DirectEntryProbe, 0.3)]
         assert probe.calls == ["update", "fixed", "late"]
         assert "_runtime_phase_dispatch" not in DirectEntryProbe.__dict__
         assert "_runtime_phase_invokers" not in DirectEntryProbe.__dict__
