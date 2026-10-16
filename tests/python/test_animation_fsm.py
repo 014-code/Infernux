@@ -189,7 +189,7 @@ def test_imported_root_motion_updates_owner_transform_once_per_frame(monkeypatch
     owner.transform = transform
     animator = _make_animator()
     animator._fsm = AnimStateMachine(states=[AnimState(name="Walk", loop=True)], default_state="Walk")
-    animator._current_state_name = "Walk"
+    animator._current_state = animator._fsm.get_state("Walk")
     animator._current_clip = _FakeClip("Walk", duration_hint=2.0, source_model_guid="d" * 32, apply_root_motion=True)
     animator._elapsed = 0.5
     animator._playing = True
@@ -211,7 +211,7 @@ def test_imported_non_looping_clip_cannot_be_forced_to_wrap_by_fsm(monkeypatch):
     monkeypatch.setattr(SkeletalAnimator, "game_object", property(lambda _self: owner))
     state = AnimState(name="Once", loop=True)
     animator._fsm = AnimStateMachine(states=[state, AnimState(name="Next")], default_state="Once")
-    animator._current_state_name = "Once"
+    animator._current_state = animator._fsm.get_state("Once")
     animator._current_clip = _FakeClip("Once", duration_hint=1.0, default_loop=False)
     animator._clip_cache = {"Once": animator._current_clip, "Next": _FakeClip("Next")}
     animator._elapsed = 0.9
@@ -241,15 +241,15 @@ def test_skeletal_animator_reacquires_renderer_after_scene_replacement(monkeypat
     stale = _RendererBinding(None)
     live = _RendererBinding(object())
     owner = _RendererOwner(live)
-    animator._skinned_renderer = stale
+    animator._skinned_renderers = [stale]
     monkeypatch.setattr(
         SkeletalAnimator,
         "game_object",
         property(lambda _self: owner),
     )
 
-    assert animator._resolve_skinned_renderer() is live
-    assert animator._skinned_renderer is live
+    assert animator._resolve_native_renderers() == [live.native]
+    assert animator._skinned_renderers == [live]
     assert owner.lookups == 1
 
 
@@ -272,7 +272,7 @@ def test_skeletal_animator_submits_same_pose_to_all_descendant_renderers(monkeyp
         states=[AnimState(name="Walk", loop=True)],
         default_state="Walk",
     )
-    animator._current_state_name = "Walk"
+    animator._current_state = animator._fsm.get_state("Walk")
     animator._current_clip = _FakeClip("Walk", duration_hint=2.0)
     animator._elapsed = 0.5
     animator._playing = True
@@ -293,7 +293,7 @@ def test_skeletal_animator_submits_clip_source_separately_from_render_model(monk
         states=[AnimState(name="Walk", loop=True)],
         default_state="Walk",
     )
-    animator._current_state_name = "Walk"
+    animator._current_state = animator._fsm.get_state("Walk")
     animator._current_clip = _FakeClip("Walk", source_model_guid="d" * 32)
     animator._elapsed = 0.5
     animator._playing = True
@@ -311,7 +311,7 @@ def test_imported_bone_mask_uses_native_pose_stack(monkeypatch):
     owner = _HierarchyOwner(renderer=_RendererBinding(native))
     monkeypatch.setattr(SkeletalAnimator, "game_object", property(lambda _self: owner))
     animator._fsm = AnimStateMachine(states=[AnimState(name="Upper", loop=True)], default_state="Upper")
-    animator._current_state_name = "Upper"
+    animator._current_state = animator._fsm.get_state("Upper")
     animator._current_clip = _FakeClip("Wave", bone_mask=["Spine", "Arm"])
     animator._elapsed = 0.5
     animator._playing = True
@@ -383,7 +383,7 @@ def test_imported_events_dispatch_every_occurrence_across_multiple_wraps(monkeyp
     monkeypatch.setattr(SkeletalAnimator, "game_object", property(lambda _self: owner))
     animator = _make_animator()
     animator._fsm = AnimStateMachine(states=[AnimState(name="Loop", loop=True)], default_state="Loop")
-    animator._current_state_name = "Loop"
+    animator._current_state = animator._fsm.get_state("Loop")
     animator._current_clip = _FakeClip("Loop", duration_hint=1.0)
     animator._current_clip.events = [AnimationEvent(0.25, "step", "L", 1.0)]
     animator._elapsed = 0.9
@@ -406,7 +406,7 @@ def test_native_pose_submission_failure_propagates(monkeypatch):
     owner = _HierarchyOwner(renderer=_RendererBinding(Native()))
     monkeypatch.setattr(SkeletalAnimator, "game_object", property(lambda _self: owner))
     animator._fsm = AnimStateMachine(states=[AnimState(name="Walk")], default_state="Walk")
-    animator._current_state_name = "Walk"
+    animator._current_state = animator._fsm.get_state("Walk")
     animator._current_clip = _FakeClip("Walk")
 
     with pytest.raises(RuntimeError, match="native pose rejected"):
@@ -440,7 +440,7 @@ class TestEmptyConditionTransition:
         state = AnimState(name="S", loop=loop)
         fsm.states.append(state)
         anim._fsm = fsm
-        anim._current_state_name = "S"
+        anim._current_state = anim._fsm.get_state("S")
         anim._current_clip = _FakeClip("S_take", duration_hint=duration)
         return anim, state
 
@@ -808,7 +808,7 @@ def test_crossfade_can_sync_phase_then_restart_the_return_state(monkeypatch, sta
         "Walk": _FakeClip("Walk", duration_hint=2.0, default_loop=clip_loop),
         "Run": _FakeClip("Run", duration_hint=4.0),
     }
-    animator._current_state_name = "Walk"
+    animator._current_state = animator._fsm.get_state("Walk")
     animator._current_clip = animator._clip_cache["Walk"]
     animator._elapsed, animator._playing = 1.5, True
     assert animator.cross_fade("Run", 2.0, preserve_phase=True)
@@ -830,7 +830,7 @@ def test_non_looping_clip_end_condition_follows_clamped_progress():
     animator = _make_animator()
     state = AnimState(name="Once", loop=False)
     animator._fsm = AnimStateMachine(states=[state], default_state=state.name)
-    animator._current_state_name = state.name
+    animator._current_state = state
     animator._current_clip = _FakeClip("Once", duration_hint=1.0)
     transition = AnimTransition(target_state="Next")
     animator._elapsed = 0.4

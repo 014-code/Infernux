@@ -692,6 +692,8 @@ void InxVkCoreModular::PrepareMaterialRenderState(const std::shared_ptr<InxMater
 {
     if (!material)
         return;
+    if (!material->IsPipelineDirty() && m_materialPipelineManager.GetRenderData(material->GetMaterialKey()))
+        return;
     const ShaderStagePair stages{material->GetVertShaderName(), material->GetFragShaderName()};
     const std::string rejectionKey = material->GetMaterialKey() + "|" + stages.ToString() + "|Mesh";
     if (m_rejectedGeometryMaterialPrograms.count(rejectionKey))
@@ -700,8 +702,7 @@ void InxVkCoreModular::PrepareMaterialRenderState(const std::shared_ptr<InxMater
         // Queue classification is part of geometry publication. A rejected
         // shader must not change blending, depth or routing on the retained
         // valid pipeline before ResolveMeshMaterial reports the bad selection.
-        if (material->IsPipelineDirty() || !m_materialPipelineManager.GetRenderData(material->GetMaterialKey()))
-            (void)ResolveShaderProgramArtifact(material, stages, ShaderProgramDomain::Mesh);
+        (void)ResolveShaderProgramArtifact(material, stages, ShaderProgramDomain::Mesh);
     } catch (const ShaderProgramDomainMismatch &) {
         return;
     }
@@ -730,13 +731,15 @@ MaterialRenderData *InxVkCoreModular::ResolveMeshMaterial(const std::shared_ptr<
 {
     if (!material)
         return nullptr;
-    const std::string materialKey = material->GetMaterialKey();
+    const std::string &materialKey = material->GetMaterialKey();
     auto *forward = m_materialPipelineManager.GetRenderData(materialKey);
     if (forward && forward->descriptorSet != VK_NULL_HANDLE &&
         !m_materialPipelineManager.IsDescriptorSetLive(forward->descriptorSet)) {
         m_materialPipelineManager.RemoveRenderData(materialKey);
         forward = nullptr;
     }
+    if (forward && !material->IsPipelineDirty())
+        return forward->isValid && forward->descriptorSet != VK_NULL_HANDLE ? forward : nullptr;
 
     const ShaderStagePair requestedStages{material->GetVertShaderName(), material->GetFragShaderName()};
     const std::string rejectionKey = materialKey + "|" + requestedStages.ToString() + "|Mesh";
@@ -1432,15 +1435,12 @@ VkDescriptorSet InxVkCoreModular::EnsureMaterialShadowPipeline(const std::shared
 
     VkDevice device = GetDevice();
 
-    std::string materialKey = material->GetMaterialKey();
-    if (materialKey.empty()) {
-        materialKey = material->GetName();
-    }
+    const std::string &materialKey = material->GetMaterialKey();
 
     MaterialRenderData *forwardRenderData = ResolveMeshMaterial(material);
     if (!forwardRenderData)
         return VK_NULL_HANDLE;
-    const ShaderStagePair stagePair = forwardRenderData->programKey.stages;
+    const ShaderStagePair &stagePair = forwardRenderData->programKey.stages;
     const ShaderProgramArtifact *linkedArtifact = m_shaderCache.FindProgramArtifact(stagePair);
     // ResolveMeshMaterial publishes the program before its Forward pipeline.
     // Standalone stages have no linked artifact or generated Shadow variant.

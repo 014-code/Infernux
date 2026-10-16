@@ -99,6 +99,8 @@ void BindComponent(py::module_ &m)
         .def_property_readonly(
             "game_object", [](Component *c) { return c->GetGameObject(); }, py::return_value_policy::reference,
             "Get the GameObject this component is attached to")
+        .def("get_transform", &Component::GetTransform, py::return_value_policy::reference,
+             "Get the Transform attached to this component's owner")
         .def("serialize", &Component::Serialize, "Serialize component to JSON string")
         .def("deserialize", &Component::Deserialize, py::arg("json_str"), "Deserialize component from JSON string")
         .def(

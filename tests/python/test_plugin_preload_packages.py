@@ -260,6 +260,7 @@ def test_native_guid_index_avoids_meta_walk_and_drives_preload_catalog(tmp_path,
         encoding="utf-8",
     )
     guid = "1234567890abcdef1234567890abcdef"
+    subasset_guid = "abcdef1234567890abcdef1234567890"
     Path(str(script) + ".meta").write_text(_meta(guid), encoding="utf-8")
 
     class Database:
@@ -267,11 +268,11 @@ def test_native_guid_index_avoids_meta_walk_and_drives_preload_catalog(tmp_path,
 
         @staticmethod
         def get_all_guids():
-            return [guid]
+            return [guid, subasset_guid]
 
         @staticmethod
         def get_path_from_guid(value):
-            return str(script) if value == guid else ""
+            return str(script) if value == guid else str(project / "Assets" / "model.glb") + "::subanim:Walk"
 
     class Engine:
         @staticmethod
@@ -282,6 +283,14 @@ def test_native_guid_index_avoids_meta_walk_and_drives_preload_catalog(tmp_path,
         "infernux.plugins.project_index._scan_guid_paths",
         lambda _root: pytest.fail("native GUID catalog fell back to os.walk"),
     )
+    import os
+    isfile = os.path.isfile
+
+    def physical_asset(path):
+        assert "::" not in str(path), "virtual subassets must not enter filesystem discovery"
+        return isfile(path)
+
+    monkeypatch.setattr(os.path, "isfile", physical_asset)
     paths, native = project_guid_paths(str(project), engine=Engine())
     assert native is True
     assert paths == {guid: str(script.resolve())}

@@ -69,11 +69,9 @@ class ComponentNativeMixin:
             if go is None:
                 self._invalidate_native_binding()
                 return None
-            if not self._is_native_game_object_alive(go):
-                self._invalidate_native_binding()
-                return None
-            self._game_object = go
-            self._game_object_ref = weakref.ref(go)
+            if self._game_object is not go:
+                self._game_object = go
+                self._game_object_ref = weakref.ref(go)
             return go
         # Use weak reference if available for safety
         if self._game_object_ref is not None:
@@ -93,6 +91,15 @@ class ComponentNativeMixin:
 
     def _try_get_transform(self) -> Optional['Transform']:
         """Return the attached Transform, or None when the component is invalid."""
+        if self._is_destroyed:
+            return None
+        cpp_component = self._get_bound_native_component()
+        if cpp_component is not None:
+            try:
+                return cpp_component.get_transform()
+            except RuntimeError:
+                self._invalidate_native_binding()
+                return None
         go = self._try_get_game_object()
         if go is None:
             return None

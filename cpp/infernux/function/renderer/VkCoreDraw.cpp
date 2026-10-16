@@ -1530,7 +1530,7 @@ void InxVkCoreModular::DrawSceneFiltered(VkCommandBuffer cmdBuf, uint32_t width,
         // generation used by this draw. Texture resolution may publish a new
         // Resolve again only when an update can publish different render data.
         if (matRaw != currentMaterialRaw) {
-            const std::string materialKey = matRaw->GetMaterialKey();
+            const std::string &materialKey = matRaw->GetMaterialKey();
             const bool hasPendingTextures = m_materialPipelineManager.HasPendingTextureProperties(materialKey);
             const bool needsMaterialUpdate = matRaw->IsPropertiesDirty() || hasPendingTextures;
             // Pending texture resolution may become ready between draw-list
