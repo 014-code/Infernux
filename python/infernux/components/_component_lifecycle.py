@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import weakref
 from collections import defaultdict
-from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Mapping, Optional
@@ -26,25 +25,6 @@ _RUNTIME_SCHEDULER_PHASES = (
     "late_update",
 )
 _MISSING = object()
-
-
-@contextmanager
-def _compute_recording_scope():
-    """Batch GPU launches emitted by one runtime lifecycle phase.
-
-    Compute is optional for CPU-only projects, so importing the public compute
-    frontend is deliberately late. The normal path uses its authoritative
-    recording boundary; a missing frontend simply keeps the lifecycle path
-    usable for lightweight scheduler tests.
-    """
-    try:
-        from infernux.compute import recording
-    except ImportError:
-        with nullcontext():
-            yield
-        return
-    with recording():
-        yield
 
 
 def _missing_runtime_phase(*_args):
@@ -633,8 +613,10 @@ class RuntimeExecutionScheduler:
         *,
         editor_only: bool = False,
     ) -> None:
+        from infernux.compute import recording
+
         phase_index = _RUNTIME_PHASE_NAMES.index(phase)
-        with _compute_recording_scope():
+        with recording():
             for component in frame.phase_plan[phase]:
                 snapshot = frame.component_snapshots[id(component)]
                 _component, invokers = snapshot
