@@ -127,7 +127,7 @@ class TestBuiltinComponent:
         class _Scene:
             structure_version = 4
 
-            def resolve_component(self, _handle):
+            def _resolve_native_component(self, _handle, _owner):
                 return None
 
         class _GameObject:
@@ -155,7 +155,7 @@ class TestBuiltinComponent:
         class _Scene:
             structure_version = 4
 
-            def resolve_component(self, _handle):
+            def _resolve_native_component(self, _handle, _owner):
                 return cpp
 
         class _GameObject:
@@ -180,7 +180,7 @@ class TestBuiltinComponent:
         class _Scene:
             structure_version = 4
 
-            def resolve_component(self, _handle):
+            def _resolve_native_component(self, _handle, _owner):
                 return None
 
         class _GameObject:
@@ -420,7 +420,7 @@ class TestInxComponentSceneMutation:
         class _Scene:
             structure_version = 4
 
-            def resolve_component(self, _handle):
+            def _resolve_native_component(self, _handle, _owner):
                 return cpp
 
         class _GameObject:

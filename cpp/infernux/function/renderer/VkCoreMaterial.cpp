@@ -40,27 +40,11 @@
 #include <glm/glm.hpp>
 #include <unordered_set>
 
-#include <cstring>
-
 namespace infernux
 {
 
 namespace
 {
-
-template <typename Handle> uint64_t VulkanHandleBits(Handle handle)
-{
-    static_assert(sizeof(Handle) <= sizeof(uint64_t));
-    uint64_t bits = 0;
-    std::memcpy(&bits, &handle, sizeof(Handle));
-    return bits;
-}
-
-void HashCombine(size_t &seed, uint64_t value)
-{
-    const size_t hash = std::hash<uint64_t>{}(value);
-    seed ^= hash + 0x9e3779b97f4a7c15ull + (seed << 6) + (seed >> 2);
-}
 
 ShadowViewGpuData PackShadowView(const lighting::ShadowView &view, uint32_t atlasSize)
 {
@@ -1187,8 +1171,7 @@ void InxVkCoreModular::CollectUnusedShadowMaterialBindings()
 VkDescriptorSet InxVkCoreModular::EnsureShadowMaterialBinding(const std::shared_ptr<InxMaterial> &material,
                                                               const MaterialDescriptorSet *forwardMaterialDesc,
                                                               const ShaderProgram *forwardProgram,
-                                                              const ShaderProgram *shadowProgram,
-                                                              uint64_t artifactRevision)
+                                                              const ShaderProgram *shadowProgram)
 {
     if (!material)
         return VK_NULL_HANDLE;
@@ -1210,8 +1193,25 @@ VkDescriptorSet InxVkCoreModular::EnsureShadowMaterialBinding(const std::shared_
         hasVertexMaterialUBO || hasVertexMaterialTextures || hasFragmentMaterialUBO || usesBindlessTextures;
     const InxMaterial *identity = material.get();
 
+    const auto markBindlessShadowResourcesUsed = [&]() {
+        if (usesBindlessTextures) {
+            m_backend.Device().GetRhiDevice().MarkBindlessTexturesUsed(
+                forwardMaterialDesc->bindlessTextureIndices.data(),
+                forwardMaterialDesc->bindlessTextureIndices.size());
+        }
+    };
+    auto existing = m_shadowMaterialBindingCache.find(identity);
+    // Forward resource replacements publish a new, never-reused descriptor lease.
+    // Numeric edits and texture residency changes use this same publication path.
+    if (existing != m_shadowMaterialBindingCache.end() && forwardMaterialDesc &&
+        existing->second.forwardDescriptorId == forwardMaterialDesc->descriptorLease.id &&
+        existing->second.program.get() == shadowProgram) {
+        ++m_shadowMaterialBindingCacheHits;
+        markBindlessShadowResourcesUsed();
+        return existing->second.descriptorSet;
+    }
+
     if (!needsDescriptor) {
-        auto existing = m_shadowMaterialBindingCache.find(identity);
         if (existing != m_shadowMaterialBindingCache.end()) {
             ShadowMaterialBindingEntry retired = std::move(existing->second);
             m_shadowMaterialBindingCache.erase(existing);
@@ -1267,55 +1267,6 @@ VkDescriptorSet InxVkCoreModular::EnsureShadowMaterialBinding(const std::shared_
             INXLOG_ERROR("EnsureShadowMaterialBinding: material '", material->GetName(), "' requires ",
                          sortedTextures.size(), " shadow texture slots, maximum is ", kMaxShadowMaterialTextures);
             return VK_NULL_HANDLE;
-        }
-    }
-
-    size_t resourceSignature = 0;
-    HashCombine(resourceSignature, artifactRevision);
-    HashCombine(resourceSignature, hasVertexMaterialUBO ? 1u : 0u);
-    HashCombine(resourceSignature, hasVertexMaterialTextures ? 1u : 0u);
-    HashCombine(resourceSignature, hasFragmentMaterialUBO ? 1u : 0u);
-    HashCombine(resourceSignature, usesBindlessTextures ? 1u : 0u);
-    HashCombine(resourceSignature, VulkanHandleBits(forwardMaterialDesc->descriptorSet));
-    HashCombine(resourceSignature, VulkanHandleBits(defaultView));
-    HashCombine(resourceSignature, VulkanHandleBits(defaultSampler));
-    if (forwardMaterialDesc->materialUBO) {
-        HashCombine(resourceSignature, VulkanHandleBits(forwardMaterialDesc->materialUBO->GetBuffer()));
-        HashCombine(resourceSignature, forwardMaterialDesc->materialUBO->GetSize());
-    }
-    if (forwardMaterialDesc->vertexMaterialUBO) {
-        HashCombine(resourceSignature, VulkanHandleBits(forwardMaterialDesc->vertexMaterialUBO->GetBuffer()));
-        HashCombine(resourceSignature, forwardMaterialDesc->vertexMaterialUBO->GetSize());
-    }
-    if (usesBindlessTextures && forwardMaterialDesc->textureIndexUBO) {
-        HashCombine(resourceSignature, VulkanHandleBits(forwardMaterialDesc->textureIndexUBO->GetBuffer()));
-        HashCombine(resourceSignature, forwardMaterialDesc->textureIndexUBO->GetSize());
-    }
-    for (const auto &[binding, texture] : sortedTextures) {
-        HashCombine(resourceSignature, binding);
-        HashCombine(resourceSignature, VulkanHandleBits(texture.imageView));
-        HashCombine(resourceSignature, VulkanHandleBits(texture.sampler));
-    }
-
-    const auto markBindlessShadowResourcesUsed = [&]() {
-        if (!usesBindlessTextures)
-            return;
-        auto &rhiDevice = m_backend.Device().GetRhiDevice();
-        rhiDevice.MarkBindlessTexturesUsed(forwardMaterialDesc->bindlessTextureIndices.empty()
-                                               ? nullptr
-                                               : forwardMaterialDesc->bindlessTextureIndices.data(),
-                                           forwardMaterialDesc->bindlessTextureIndices.size());
-    };
-
-    auto existing = m_shadowMaterialBindingCache.find(identity);
-    if (existing != m_shadowMaterialBindingCache.end()) {
-        const auto owner = existing->second.owner.lock();
-        if (owner.get() == identity && existing->second.resourceSignature == resourceSignature &&
-            existing->second.descriptorSet != VK_NULL_HANDLE) {
-            existing->second.materialVersion = material->GetVersion();
-            ++m_shadowMaterialBindingCacheHits;
-            markBindlessShadowResourcesUsed();
-            return existing->second.descriptorSet;
         }
     }
 
@@ -1399,10 +1350,8 @@ VkDescriptorSet InxVkCoreModular::EnsureShadowMaterialBinding(const std::shared_
 
     ShadowMaterialBindingEntry replacement{};
     replacement.owner = material;
-    replacement.materialKey = material->GetMaterialKey();
-    replacement.materialVersion = material->GetVersion();
-    replacement.artifactRevision = artifactRevision;
-    replacement.resourceSignature = resourceSignature;
+    replacement.program = material->GetPassShaderProgramPublication(ShaderCompileTarget::Shadow);
+    replacement.forwardDescriptorId = forwardMaterialDesc->descriptorLease.id;
     replacement.descriptorSet = allocation.descriptorSet;
     replacement.descriptorLease = allocation.descriptorLease;
     replacement.textureKeepAlive.push_back(defaultTex);
@@ -1423,8 +1372,7 @@ VkDescriptorSet InxVkCoreModular::EnsureShadowMaterialBinding(const std::shared_
 }
 
 VkDescriptorSet InxVkCoreModular::EnsureMaterialShadowPipeline(const std::shared_ptr<InxMaterial> &material,
-                                                               const std::string &vertShaderName,
-                                                               const std::string &fragShaderName, VkFormat depthFormat)
+                                                               VkFormat depthFormat)
 {
     // Shared shadow resources must be ready
     if (m_shadowPipelineLayout == VK_NULL_HANDLE || depthFormat == VK_FORMAT_UNDEFINED)
@@ -1435,42 +1383,26 @@ VkDescriptorSet InxVkCoreModular::EnsureMaterialShadowPipeline(const std::shared
 
     VkDevice device = GetDevice();
 
-    const std::string &materialKey = material->GetMaterialKey();
-
     MaterialRenderData *forwardRenderData = ResolveMeshMaterial(material);
     if (!forwardRenderData)
         return VK_NULL_HANDLE;
     const ShaderStagePair &stagePair = forwardRenderData->programKey.stages;
-    const ShaderProgramArtifact *linkedArtifact = m_shaderCache.FindProgramArtifact(stagePair);
-    // ResolveMeshMaterial publishes the program before its Forward pipeline.
-    // Standalone stages have no linked artifact or generated Shadow variant.
-    if (!linkedArtifact || !linkedArtifact->FindVariant(ShaderCompileTarget::Shadow)) {
-        // An unsupported or not-yet-imported material simply has no shadow
-        // caster.  The renderer must not turn this expected absence into a
-        // release-visible error during first-frame scene bootstrap.
-        INXLOG_DEBUG_INTERNAL("EnsureMaterialShadowPipeline: linked Shadow variant is unavailable for material '",
-                              material->GetName(), "'");
-        return VK_NULL_HANDLE;
+    if (!material->GetPassShaderProgram(ShaderCompileTarget::Shadow)) {
+        const auto *artifact = m_shaderCache.FindProgramArtifact(stagePair);
+        if (!artifact || !artifact->FindVariant(ShaderCompileTarget::Shadow))
+            return VK_NULL_HANDLE;
+        auto publication = m_shaderCache.MaterializeProgramVariant(stagePair, ShaderCompileTarget::Shadow);
+        if (!publication) {
+            INXLOG_ERROR("Failed to materialize Shadow variant for '", stagePair.ToString(), "'");
+            return VK_NULL_HANDLE;
+        }
+        // Shader and stage-pair invalidation clear this publication on the material.
+        material->SetPassShaderProgram(ShaderCompileTarget::Shadow, std::move(publication));
     }
-    // Resolve the linked artifact before preparing its reflected material
-    // resources. A newly selected stage pair has no cached Forward code until
-    // that publication; preparing descriptors earlier skips its first shadow
-    // draw even though the Shadow variant itself is subsequently available.
-    MaterialDescriptorSet *forwardMaterialDesc = forwardRenderData ? forwardRenderData->materialDescSet : nullptr;
-    if ((!forwardRenderData || !forwardRenderData->isValid || !forwardMaterialDesc || !forwardMaterialDesc->isValid) &&
-        RefreshMaterialPipeline(material, stagePair.vertexShaderId, stagePair.fragmentShaderId)) {
-        forwardRenderData = m_materialPipelineManager.GetRenderData(materialKey);
-        forwardMaterialDesc = forwardRenderData ? forwardRenderData->materialDescSet : nullptr;
-    }
-    const ShaderProgram *forwardProgram = forwardRenderData ? forwardRenderData->shaderProgram.get() : nullptr;
-    ShaderProgramPublication linkedShadowPublication =
-        m_shaderCache.MaterializeProgramVariant(stagePair, ShaderCompileTarget::Shadow);
+    MaterialDescriptorSet *forwardMaterialDesc = forwardRenderData->materialDescSet;
+    const ShaderProgram *forwardProgram = forwardRenderData->shaderProgram.get();
+    const auto &linkedShadowPublication = material->GetPassShaderProgramPublication(ShaderCompileTarget::Shadow);
     const ShaderProgram *linkedShadowProgram = linkedShadowPublication.get();
-    if (!linkedShadowProgram) {
-        INXLOG_ERROR("EnsureMaterialShadowPipeline: failed to materialize linked Shadow variant '",
-                     linkedArtifact->key.stages.ToString(), "'");
-        return VK_NULL_HANDLE;
-    }
     material->SetPassDescriptorSet(ShaderCompileTarget::Shadow, VK_NULL_HANDLE);
 
     const VkShaderModule vertModule = linkedShadowProgram->GetVertexModule();
@@ -1481,19 +1413,13 @@ VkDescriptorSet InxVkCoreModular::EnsureMaterialShadowPipeline(const std::shared
         return VK_NULL_HANDLE;
     }
 
-    // ---- Shadow pipeline cache: share VkPipeline across materials with same shader + cull mode ----
-    VkCullModeFlags matCullMode = vk::ToVkCullMode(material->GetRenderState().cullMode);
-    std::string shadowShaderKey = linkedArtifact->key.stages.ToString() + "|";
-    shadowShaderKey += std::to_string(linkedArtifact->key.revision) + ":Shadow";
-    shadowShaderKey += "|cull" + std::to_string(matCullMode);
-    shadowShaderKey += "|depth" + std::to_string(static_cast<uint32_t>(depthFormat));
+    const VkCullModeFlags matCullMode = vk::ToVkCullMode(material->GetRenderState().cullMode);
+    const ShadowPipelineKey shadowShaderKey{linkedShadowPublication, matCullMode, depthFormat};
     auto cacheIt = m_shadowPipelineCache.find(shadowShaderKey);
     if (cacheIt != m_shadowPipelineCache.end()) {
         material->SetPassPipeline(ShaderCompileTarget::Shadow, cacheIt->second);
         material->SetPassPipelineLayout(ShaderCompileTarget::Shadow, m_shadowPipelineLayout);
-        material->SetPassShaderProgram(ShaderCompileTarget::Shadow, linkedShadowPublication);
-        return EnsureShadowMaterialBinding(material, forwardMaterialDesc, forwardProgram, linkedShadowProgram,
-                                           linkedArtifact->key.revision);
+        return EnsureShadowMaterialBinding(material, forwardMaterialDesc, forwardProgram, linkedShadowProgram);
     }
 
     // Shader stages
@@ -1581,16 +1507,14 @@ VkDescriptorSet InxVkCoreModular::EnsureMaterialShadowPipeline(const std::shared
     VkPipelineCache pipelineCache = m_materialPipelineManager.GetVkPipelineCache();
     if (vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineInfo, nullptr, &shadowPipeline) != VK_SUCCESS) {
         INXLOG_WARN("Failed to create linked shadow pipeline for '", material->GetName(), "' (program='",
-                    linkedArtifact->key.stages.ToString(), "')");
+                    stagePair.ToString(), "')");
         return VK_NULL_HANDLE;
     }
 
     m_shadowPipelineCache[shadowShaderKey] = shadowPipeline;
     material->SetPassPipeline(ShaderCompileTarget::Shadow, shadowPipeline);
     material->SetPassPipelineLayout(ShaderCompileTarget::Shadow, m_shadowPipelineLayout);
-    material->SetPassShaderProgram(ShaderCompileTarget::Shadow, linkedShadowPublication);
-    return EnsureShadowMaterialBinding(material, forwardMaterialDesc, forwardProgram, linkedShadowProgram,
-                                       linkedArtifact->key.revision);
+    return EnsureShadowMaterialBinding(material, forwardMaterialDesc, forwardProgram, linkedShadowProgram);
 }
 
 // ============================================================================

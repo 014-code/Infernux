@@ -1910,8 +1910,7 @@ void InxVkCoreModular::DrawShadowCasters(VkCommandBuffer cmdBuf, uint32_t width,
             } else {
                 auto resolved = m_resolvedShadowMaterialsScratch.find(material.get());
                 if (resolved == m_resolvedShadowMaterialsScratch.end()) {
-                    const VkDescriptorSet descriptorSet = EnsureMaterialShadowPipeline(
-                        material, material->GetVertShaderName(), material->GetFragShaderName(), depthFormat);
+                    const VkDescriptorSet descriptorSet = EnsureMaterialShadowPipeline(material, depthFormat);
                     resources.pipeline = material->GetPassPipeline(ShaderCompileTarget::Shadow);
                     resources.descriptorSet = descriptorSet;
                     resolved = m_resolvedShadowMaterialsScratch.emplace(material.get(), resources).first;
@@ -2373,31 +2372,20 @@ void InxVkCoreModular::DrawShadowCasters(VkCommandBuffer cmdBuf, uint32_t width,
         uint32_t batchIdxStart = 0;
         uint32_t batchIdxCount = 0;
         int32_t batchVtxStart = 0;
+        auto &rhiDevice = m_backend.Device().GetRhiDevice();
+        const VkDescriptorSet bindlessSet =
+            m_shadowUsesBindlessTextureTable ? rhiDevice.Resolve(rhiDevice.GetBindlessTextureTableBinding().group)
+                                             : VK_NULL_HANDLE;
+        if (m_shadowUsesBindlessTextureTable && bindlessSet == VK_NULL_HANDLE) {
+            INXLOG_ERROR("Shadow pass requires the RHI bindless texture table");
+            return;
+        }
 
         auto emitShadowBatch = [&]() {
             if (batchCount == 0)
                 return;
-            const VkDescriptorSet materialDescSet = batchShadowMaterialDescSet != VK_NULL_HANDLE
-                                                        ? batchShadowMaterialDescSet
-                                                        : m_shadowMaterialDummyDescSet;
-            if (materialDescSet == VK_NULL_HANDLE) {
-                batchCount = 0;
-                return;
-            }
-            auto &rhiDevice = m_backend.Device().GetRhiDevice();
-            const VkDescriptorSet bindlessSet =
-                m_shadowUsesBindlessTextureTable ? rhiDevice.Resolve(rhiDevice.GetBindlessTextureTableBinding().group)
-                                                 : VK_NULL_HANDLE;
-            if (m_shadowUsesBindlessTextureTable && bindlessSet == VK_NULL_HANDLE) {
-                static int missingShadowBindlessSetErrorCount = 0;
-                if (missingShadowBindlessSetErrorCount++ < 8) {
-                    INXLOG_ERROR("Shadow draw batch skipped because the RHI bindless texture table is unavailable");
-                }
-                batchCount = 0;
-                return;
-            }
-            const std::array<VkDescriptorSet, 4> descriptorSets = {cascadeDescSet, shadowStreamDescSet, materialDescSet,
-                                                                   bindlessSet};
+            const std::array<VkDescriptorSet, 4> descriptorSets = {
+                cascadeDescSet, shadowStreamDescSet, batchShadowMaterialDescSet, bindlessSet};
             vkdebug::CmdBindDescriptorSetsTracked(
                 "VkCoreDraw.DrawShadowCasters.AllSets", cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_shadowPipelineLayout,
                 0, m_shadowUsesBindlessTextureTable ? 4u : 3u, descriptorSets.data(), 0, nullptr);

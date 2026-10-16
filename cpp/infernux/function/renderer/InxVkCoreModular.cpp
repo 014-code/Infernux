@@ -396,9 +396,7 @@ bool InxVkCoreModular::PrepareSurface()
                                                                  rhiDevice.Resolve(view->GetSampler()));
             },
             [this](const rhi::ResourceIndex *resources, size_t count, rhi::SubmissionSerial serial) {
-                m_bindlessTextureTable.MarkSetUsed(serial);
-                for (size_t index = 0; index < count; ++index)
-                    (void)m_bindlessTextureTable.MarkUsed(resources[index], serial);
+                m_bindlessTextureTable.MarkUsed(resources, count, serial);
             })) {
         INXLOG_ERROR("Bindless texture table could not publish its RHI binding; using bounded material descriptors");
     }
@@ -618,13 +616,10 @@ bool InxVkCoreModular::PublishShaderProgramArtifact(const ShaderProgramArtifact 
     if (m_materialPipelineManagerInitialized)
         m_materialPipelineManager.InvalidateMaterialsUsingProgramPair(artifact.key.stages);
 
-    // Linked shadow pipelines are keyed by the stable stage pair plus artifact
-    // revision. Retire every older revision for this pair before its owning
-    // ShaderProgram modules leave the cache.
-    const std::string shadowProgramPrefix = artifact.key.stages.ToString() + "|";
+    // Retire this pair's previous shadow pipelines with their owning publication.
     const VkDevice device = GetDevice();
     for (auto it = m_shadowPipelineCache.begin(); it != m_shadowPipelineCache.end();) {
-        if (it->first.rfind(shadowProgramPrefix, 0) != 0) {
+        if (it->first.program->GetProgramKey().stages != artifact.key.stages) {
             ++it;
             continue;
         }
@@ -813,14 +808,8 @@ void InxVkCoreModular::InvalidateShaderCache(const std::string &shaderId, const 
         return stage == shaderId || stage.rfind(shaderId + "/", 0) == 0;
     };
     for (auto it = m_shadowPipelineCache.begin(); it != m_shadowPipelineCache.end();) {
-        const size_t firstPipe = it->first.find('|');
-        const size_t secondPipe =
-            firstPipe == std::string::npos ? std::string::npos : it->first.find('|', firstPipe + 1);
-        const std::string vertStage = firstPipe == std::string::npos ? it->first : it->first.substr(0, firstPipe);
-        const std::string fragStage = firstPipe == std::string::npos
-                                          ? std::string{}
-                                          : it->first.substr(firstPipe + 1, secondPipe - firstPipe - 1);
-        if (!matchesShadowStage(vertStage) && !matchesShadowStage(fragStage)) {
+        const auto &stages = it->first.program->GetProgramKey().stages;
+        if (!matchesShadowStage(stages.vertexShaderId) && !matchesShadowStage(stages.fragmentShaderId)) {
             ++it;
             continue;
         }

@@ -708,7 +708,7 @@ class SpriteAnimator(InxComponent):
     def _try_auto_transition(self):
         """Evaluate outgoing transitions from the current state."""
         state = self._get_current_state()
-        if not state:
+        if not state or not state.transitions:
             return
         if not self._exit_time_gate_ok(state):
             return

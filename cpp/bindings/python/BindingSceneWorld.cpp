@@ -5,6 +5,7 @@
 #include "function/scene/Camera.h"
 #include "function/scene/ComponentFactory.h"
 #include "function/scene/GameObject.h"
+#include "function/scene/PyComponentProxy.h"
 #include "function/scene/Scene.h"
 #include "function/scene/SceneManager.h"
 #include "function/scene/Transform.h"
@@ -138,6 +139,16 @@ static void BindSceneObjects(NativeClass<Scene> &cls)
              "Find a GameObject by ID")
         .def("resolve_game_object", &Scene::ResolveGameObject, py::return_value_policy::reference, py::arg("handle"),
              "Resolve a stable GameObject handle, or return None when stale")
+        .def(
+            "_resolve_native_component",
+            [](Scene &scene, const ObjectHandle &handle, py::handle owner) -> Component * {
+                Component *component = scene.ResolveComponent(handle);
+                if (auto *proxy = dynamic_cast<PyComponentProxy *>(component);
+                    proxy && !proxy->GetPyComponent().is(owner))
+                    return nullptr;
+                return component;
+            },
+            py::return_value_policy::reference, py::arg("handle"), py::arg("owner"))
         .def(
             "resolve_component",
             [](Scene &scene, const ObjectHandle &handle) -> py::object {

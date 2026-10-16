@@ -668,10 +668,6 @@ class SkeletalAnimator(InxComponent):
         duration = _clip_duration_hint(clip)
         if duration > 0.0 or clip is None:
             return duration
-        renderers = self._resolve_native_renderers()
-        if not renderers:
-            return 0.0
-        cpp = renderers[0]
         take_name = str(getattr(clip, "take_name", "") or "")
         if not take_name:
             return 0.0
@@ -679,7 +675,10 @@ class SkeletalAnimator(InxComponent):
         cache_key = (source_guid, take_name)
         if cache_key in self._duration_cache:
             return self._duration_cache[cache_key]
-        duration = max(float(cpp.get_animation_duration_seconds(take_name, source_guid)), 0.0)
+        renderers = self._resolve_native_renderers()
+        if not renderers:
+            return 0.0
+        duration = max(float(renderers[0].get_animation_duration_seconds(take_name, source_guid)), 0.0)
         self._duration_cache[cache_key] = duration
         return duration
 
@@ -845,7 +844,7 @@ class SkeletalAnimator(InxComponent):
 
     def _try_auto_transition(self):
         state = self._get_current_state()
-        if not state:
+        if not state or not state.transitions:
             return
         if not self._exit_time_gate_ok(state):
             return

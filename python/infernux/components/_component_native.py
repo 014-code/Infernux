@@ -91,6 +91,9 @@ class ComponentNativeMixin:
 
     def _try_get_transform(self) -> Optional['Transform']:
         """Return the attached Transform, or None when the component is invalid."""
+        cleanup_binding = self.__dict__.get("_native_cleanup_binding")
+        if cleanup_binding is not None:
+            return cleanup_binding[1].get_transform()
         if self._is_destroyed:
             return None
         cpp_component = self._get_bound_native_component()
@@ -301,23 +304,10 @@ class ComponentNativeMixin:
         scene = getattr(self, '_native_scene', None)
         if handle is not None and scene is not None:
             try:
-                resolved = scene.resolve_component(handle)
-            except (RuntimeError, AttributeError):
+                resolved = scene._resolve_native_component(handle, self)
+            except RuntimeError:
                 resolved = None
             if resolved is None:
-                self._invalidate_native_binding()
-                return None
-            # Native scene resolution normally returns the private proxy. Some
-            # public/facade resolution paths may already unwrap that proxy to
-            # this Python component; that still proves the handle is live, but
-            # must not make _cpp_component self-referential.
-            if resolved is self:
-                if self._tracks_scene_structure_binding():
-                    self._capture_bound_structure_version()
-                return cpp_component
-            # A different public Python object at the same handle means this
-            # wrapper belongs to the scene generation that was replaced.
-            if getattr(resolved, "_get_bound_native_component", None) is not None:
                 self._invalidate_native_binding()
                 return None
             self._cpp_component = resolved

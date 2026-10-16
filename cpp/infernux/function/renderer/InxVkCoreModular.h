@@ -956,7 +956,6 @@ class InxVkCoreModular
     /// @brief Resolve the shared shadow pipeline and cached material binding.
     /// @return The material descriptor set used at set 2, or VK_NULL_HANDLE on failure.
     VkDescriptorSet EnsureMaterialShadowPipeline(const std::shared_ptr<InxMaterial> &material,
-                                                 const std::string &vertShaderName, const std::string &fragShaderName,
                                                  VkFormat depthFormat);
 
     /// Shadow pipeline layout always includes set 2; bind this when a material
@@ -1879,19 +1878,34 @@ class InxVkCoreModular
     VkSampler m_shadowDepthSampler = VK_NULL_HANDLE;
     bool m_shadowPipelineReady = false;
 
-    /// Cache of shadow pipelines keyed by shader ID (vert|frag).
-    /// Materials sharing the same shader share the same shadow VkPipeline.
-    std::unordered_map<std::string, VkPipeline> m_shadowPipelineCache;
+    struct ShadowPipelineKey
+    {
+        ShaderProgramPublication program;
+        VkCullModeFlags cullMode;
+        VkFormat depthFormat;
+
+        bool operator==(const ShadowPipelineKey &other) const noexcept
+        {
+            return program == other.program && cullMode == other.cullMode && depthFormat == other.depthFormat;
+        }
+    };
+    struct ShadowPipelineKeyHash
+    {
+        size_t operator()(const ShadowPipelineKey &key) const noexcept
+        {
+            return std::hash<const ShaderProgram *>{}(key.program.get()) ^
+                   std::hash<uint64_t>{}((static_cast<uint64_t>(key.depthFormat) << 32u) | key.cullMode);
+        }
+    };
+    std::unordered_map<ShadowPipelineKey, VkPipeline, ShadowPipelineKeyHash> m_shadowPipelineCache;
     uint64_t m_shaderHotReloadRetirementCount = 0;
 
     static constexpr uint32_t kMaxShadowMaterialTextures = 8;
     struct ShadowMaterialBindingEntry
     {
         std::weak_ptr<InxMaterial> owner;
-        std::string materialKey;
-        uint64_t materialVersion = 0;
-        uint64_t artifactRevision = 0;
-        size_t resourceSignature = 0;
+        ShaderProgramPublication program;
+        uint64_t forwardDescriptorId = 0;
         VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
         vk::DescriptorLease descriptorLease;
         std::vector<std::shared_ptr<const rhi::TextureGpuView>> textureKeepAlive;
@@ -1920,8 +1934,7 @@ class InxVkCoreModular
     [[nodiscard]] VkDescriptorSet EnsureShadowMaterialBinding(const std::shared_ptr<InxMaterial> &material,
                                                               const MaterialDescriptorSet *forwardMaterialDesc,
                                                               const ShaderProgram *forwardProgram,
-                                                              const ShaderProgram *shadowProgram,
-                                                              uint64_t artifactRevision);
+                                                              const ShaderProgram *shadowProgram);
     void RetireShadowMaterialBinding(ShadowMaterialBindingEntry entry);
     void CollectUnusedShadowMaterialBindings();
     /// @brief Create shadow depth sampler for shadow map sampling.
