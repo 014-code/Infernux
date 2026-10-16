@@ -267,9 +267,10 @@ def test_text_edit_and_font_epoch_preserve_packet_locality(ui, monkeypatch):
 
 
 def test_retained_submission_tracks_hierarchy_viewport_and_visibility_edits(ui):
+    from infernux.components import serialized_field
     from infernux.lib import Vector3
-    from infernux.ui import UIGroup
-    from infernux.ui.ui_render_revision import mark_runtime_ui_dirty
+    from infernux.ui import UIGroup, UIImage
+    from infernux.ui.ui_render_revision import get_runtime_ui_revision, mark_runtime_ui_dirty
 
     group = UIGroup()
     ui.root.add_py_component(group)
@@ -310,6 +311,42 @@ def test_retained_submission_tracks_hierarchy_viewport_and_visibility_edits(ui):
     mark_runtime_ui_dirty()
     ui.matches_fresh()
     assert ui.frame()[0] is False
+
+    image = ui.add(UIImage)
+    image.color = [1.0, 1.0, 1.0, 0.0]
+    image.game_object.active = False
+    ui.frame()
+    revision = get_runtime_ui_revision()
+    captures, appends = ui.renderer.captures, ui.renderer.appends
+    image.color = [1, 1, 1, 0]
+    assert get_runtime_ui_revision() == revision
+    assert ui.frame() == (False, [])
+    assert (ui.renderer.captures, ui.renderer.appends) == (captures, appends)
+
+    image.game_object.active = True
+    ui.frame()
+    image.color = (0.25, 0.5, 1, 1)
+    assert get_runtime_ui_revision() > revision
+    assert ui.frame()[0] and ui.extracted == [image]
+    color = image.color
+    color[0] = 0.75
+    image.color = color
+    assert ui.frame()[0] and ui.extracted == [image]
+    image.color[1] = 0.25
+    mark_runtime_ui_dirty(image)
+    assert ui.frame()[0] and ui.extracted == [image]
+
+    class VectorImage(UIImage):
+        offset: Vector3 = serialized_field(default=Vector3(1, 2, 3))
+
+    vector_image = ui.add(VectorImage)
+    ui.frame()
+    revision = get_runtime_ui_revision()
+    vector_image.offset = [1, 2, 3]
+    assert get_runtime_ui_revision() == revision
+    assert ui.frame() == (False, [])
+    vector_image.offset = (4, 2, 3)
+    assert ui.frame()[0] and ui.extracted == [vector_image]
 
 
 @pytest.mark.parametrize("ui", [True], indirect=True, ids=["world"])

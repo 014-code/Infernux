@@ -27,7 +27,7 @@ from infernux.components.fields import FieldType
 from .inx_ui_component import InxUIComponent
 from .inx_ui_screen_component import is_ui_screen_component
 from .enums import RenderMode, UIScaleMode, ScreenMatchMode
-from .ui_render_revision import is_unchanged_ui_scalar, mark_runtime_ui_dirty
+from .ui_render_revision import is_unchanged_ui_value, mark_runtime_ui_dirty
 
 
 @disallow_multiple
@@ -126,7 +126,7 @@ class UICanvas(InxUIComponent):
             self._publish_canvas_membership_change()
 
     def __setattr__(self, name, value):
-        unchanged = is_unchanged_ui_scalar(self, name, value)
+        unchanged = is_unchanged_ui_value(self, name, value)
         super().__setattr__(name, value)
         if not name.startswith("_") and not unchanged:
             mark_runtime_ui_dirty()

@@ -12,7 +12,7 @@ from infernux.components import DrivenTransformProperties, GameObjectRef, serial
 from infernux.components.fields import FieldType
 from .inx_ui_component import InxUIComponent
 from .enums import ScreenAlignH, ScreenAlignV, UILayoutPosition, UILayoutSizing
-from .ui_render_revision import is_unchanged_ui_scalar, mark_runtime_ui_dirty
+from .ui_render_revision import is_unchanged_ui_value, mark_runtime_ui_dirty
 
 # Rect cache — avoids repeated hierarchy walks and serialized-field reads.
 # Runtime callers retain it until hierarchy or geometry changes; editor tools
@@ -71,7 +71,7 @@ class InxUIScreenComponent(InxUIComponent):
         if name.startswith("_"):
             super().__setattr__(name, value)
             return
-        unchanged = is_unchanged_ui_scalar(self, name, value)
+        unchanged = is_unchanged_ui_value(self, name, value)
         super().__setattr__(name, value)
         if unchanged:
             return
