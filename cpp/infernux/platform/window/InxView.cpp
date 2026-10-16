@@ -841,9 +841,8 @@ void InxView::DrainSyntheticInputEvents(bool &hadInputEvent)
 
 void InxView::NotifyGuiFrameBuilt() noexcept
 {
-    // This is called only after InxGUI::BuildFrameIfDue() returned true. It
-    // therefore marks the exact boundary at which ImGui::NewFrame() and the
-    // Python renderables have consumed the synthetic press state.
+    // ImGui::NewFrame() and the Python renderables have consumed the
+    // synthetic press state at this boundary.
     m_syntheticMouseButtonsReadyForRelease |= m_syntheticMouseButtonsAwaitingGuiFrame;
 }
 

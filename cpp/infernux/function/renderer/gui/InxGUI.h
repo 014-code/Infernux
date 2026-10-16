@@ -41,7 +41,8 @@ class InxGUI
         return m_dpiScale;
     }
     void BuildFrame();
-    [[nodiscard]] bool BuildFrameIfDue(bool force = false);
+    [[nodiscard]] bool ScheduleFrameBuild(bool force = false);
+    void BuildScheduledFrame();
     void RequestFrame() noexcept;
     void RequestSyntheticInputFrame() noexcept;
     [[nodiscard]] uint64_t GetFrameCounter() const noexcept
@@ -253,7 +254,6 @@ class InxGUI
     EditorGuiInputRearmBudget m_syntheticInputRearm;
     EditorGuiFrameScheduler m_editorFrameScheduler;
 
-    void BuildFrameInternal();
     void ApplyPendingDockTabSelections();
     void PromoteActiveModal();
     void PumpTextureUploads();

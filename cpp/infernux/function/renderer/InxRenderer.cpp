@@ -1276,9 +1276,11 @@ void InxRenderer::DrawFrame()
         // deferred release can never be stranded behind a minimized window.
         if (m_view->NeedsImmediateGuiRefresh() || InxGUISemantics::HasPendingCaptureRequest()) {
             const auto guiBuildStart = std::chrono::high_resolution_clock::now();
-            const bool guiBuilt = m_gui->BuildFrameIfDue(true);
-            if (guiBuilt)
+            const bool guiBuilt = m_gui->ScheduleFrameBuild(true);
+            if (guiBuilt) {
+                m_gui->BuildScheduledFrame();
                 m_view->NotifyGuiFrameBuilt();
+            }
             m_guiBuildMs =
                 std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - guiBuildStart)
                     .count();
@@ -1288,43 +1290,46 @@ void InxRenderer::DrawFrame()
         return;
     }
 
-    // ========================================================================
-    // Wait for this frame slot before reusing its resources. Deletion and
-    // transient recycling follow completed submission epochs, never frame age.
-    // ========================================================================
-    if (m_vkCore) {
-        m_vkCore->WaitForCurrentFrame();
-        m_vkCore->CollectRetiredGpuResources();
-        // SDL pixel-size changes are authoritative even when acquire/present
-        // keep succeeding. Commit the new attachments before GUI layout and
-        // render-graph construction, rather than relying on driver errors.
-        if (!m_vkCore->RefreshPresentationSize()) {
+    const bool forceGuiBuild =
+        m_view->NeedsImmediateGuiRefresh() || (!m_guiPlayerMode && InxGUISemantics::HasPendingCaptureRequest());
+    const bool guiBuilt = m_gui->ScheduleFrameBuild(forceGuiBuild);
+#if INFERNUX_FRAME_PROFILE
+    double gpuPrepareMs = 0.0;
+#endif
+    const auto prepareGpuFrame = [&]() {
+#if INFERNUX_FRAME_PROFILE
+        const auto start = std::chrono::high_resolution_clock::now();
+#endif
+        if (m_vkCore) {
+            m_vkCore->WaitForCurrentFrame();
+            m_vkCore->CollectRetiredGpuResources();
+            // Commit SDL pixel-size changes before GUI layout and rendering.
+            if (!m_vkCore->RefreshPresentationSize())
+                return false;
+        }
+#if INFERNUX_FRAME_PROFILE
+        gpuPrepareMs =
+            std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - start).count();
+#endif
+        return true;
+    };
+
+    // GUI input capture must precede gameplay. On frames that reuse the GUI,
+    // let scene updates overlap the previous GPU submission before waiting.
+    m_guiBuildMs = 0.0;
+    if (guiBuilt) {
+        if (!prepareGpuFrame()) {
             runDeferredTasks();
             SDL_Delay(16);
             return;
         }
-    }
-#if INFERNUX_FRAME_PROFILE
-    _fp.stamp(); // [2] after WaitForCurrentFrame (GPU fence)
-#endif
-
-    // Resolve editor focus and pointer capture before gameplay consumes this
-    // frame's input edges. ImGui owns hit testing, including floating windows
-    // and popups; no click is replayed on a later frame.
-    auto _guiBuildStart = std::chrono::high_resolution_clock::now();
-    const bool forceGuiBuild =
-        m_view->NeedsImmediateGuiRefresh() || (!m_guiPlayerMode && InxGUISemantics::HasPendingCaptureRequest());
-    const bool guiBuilt = m_gui->BuildFrameIfDue(forceGuiBuild);
-    if (guiBuilt)
+        const auto start = std::chrono::high_resolution_clock::now();
+        m_gui->BuildScheduledFrame();
         m_view->NotifyGuiFrameBuilt();
-    auto _guiBuildEnd = std::chrono::high_resolution_clock::now();
-    m_guiBuildMs = guiBuilt ? std::chrono::duration<double, std::milli>(_guiBuildEnd - _guiBuildStart).count() : 0.0;
-    if (guiBuilt)
+        m_guiBuildMs =
+            std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - start).count();
         RecordUIPerformanceFrame();
-#if INFERNUX_FRAME_PROFILE
-    _fp.stamp(); // [3] after GUI::BuildFrame (ImGui → Python panels)
-#endif
-
+    }
     // Update scene system
     auto _sceneUpdateStart = std::chrono::high_resolution_clock::now();
     auto _scenePhaseT0 = std::chrono::high_resolution_clock::now();
@@ -1371,8 +1376,14 @@ void InxRenderer::DrawFrame()
 #endif
     auto _sceneUpdateEnd = std::chrono::high_resolution_clock::now();
     m_sceneUpdateMs = std::chrono::duration<double, std::milli>(_sceneUpdateEnd - _sceneUpdateStart).count();
+    if (!guiBuilt && !prepareGpuFrame()) {
+        sceneManager.EndFrame();
+        runDeferredTasks();
+        SDL_Delay(16);
+        return;
+    }
 #if INFERNUX_FRAME_PROFILE
-    _fp.stamp(); // [4] after SceneManager::Update + LateUpdate
+    _fp.stamp(); // [2] after scene update and GPU frame preparation
 #endif
 
     const bool sceneViewActive = ((m_sceneViewVisible || HasPendingCapture(CaptureSource::Scene) ||
@@ -1390,7 +1401,7 @@ void InxRenderer::DrawFrame()
     auto _prepareEnd = std::chrono::high_resolution_clock::now();
     m_prepareFrameMs = std::chrono::duration<double, std::milli>(_prepareEnd - _prepareStart).count();
 #if INFERNUX_FRAME_PROFILE
-    _fp.stamp(); // [5] after PrepareFrame (CollectRenderables)
+    _fp.stamp(); // [3] after PrepareFrame (CollectRenderables)
 #endif
 
     // Advance EnsureObjectBuffers frame counter so duplicate calls this frame are skipped.
@@ -1512,7 +1523,7 @@ void InxRenderer::DrawFrame()
         return;
     }
 #if INFERNUX_FRAME_PROFILE
-    _fp.stamp(); // [6] after RenderPipeline::Render (Python SRP)
+    _fp.stamp(); // [4] after RenderPipeline::Render (Python SRP)
 #endif
 
     // Hidden views are allowed to go unused, but a frame with no cameras must
@@ -1521,12 +1532,12 @@ void InxRenderer::DrawFrame()
     if (sceneViewActive || gameViewActive)
         CleanupDrawCallBuffers();
 #if INFERNUX_FRAME_PROFILE
-    _fp.stamp(); // [7] after CleanupUnusedBuffers
+    _fp.stamp(); // [5] after CleanupUnusedBuffers
 #endif
 
     UpdateSceneLighting();
 #if INFERNUX_FRAME_PROFILE
-    _fp.stamp(); // [8] after UpdateSceneLighting
+    _fp.stamp(); // [6] after UpdateSceneLighting
 #endif
 
     // Lazy-init and update outline renderer
@@ -1580,7 +1591,7 @@ void InxRenderer::DrawFrame()
         }
     }
 #if INFERNUX_FRAME_PROFILE
-    _fp.stamp(); // [9] after Outline+GraphBuild+UBO staging
+    _fp.stamp(); // [7] after Outline+GraphBuild+UBO staging
 #endif
 
     // Descriptor set 2 is shared by every render graph recorded this frame.
@@ -1631,7 +1642,7 @@ void InxRenderer::DrawFrame()
     }
     sceneManager.EmitRuntimeFrameBarrier(SceneManager::RuntimeFrameBarrier::SnapshotPublication);
 #if INFERNUX_FRAME_PROFILE
-    _fp.stamp(); // [10] after VkCore::DrawFrame (GPU submit + present)
+    _fp.stamp(); // [8] after VkCore::DrawFrame (GPU submit + present)
 #endif
 
     sceneManager.EndFrame();
@@ -1665,19 +1676,19 @@ void InxRenderer::DrawFrame()
     // ========================================================================
 #if INFERNUX_FRAME_PROFILE
     {
-        _fp.stamp();                    // [11] end of frame
-        _fpAccum[0] += _fp.ms(0, 11);   // total frame
+        _fp.stamp();                    // [9] end of frame
+        _fpAccum[0] += _fp.ms(0, 9);    // total frame
         _fpAccum[1] += _fp.ms(0, 1);    // Input
-        _fpAccum[2] += _fp.ms(3, 4);    // Scene+Late
-        _fpAccum[3] += _fp.ms(1, 2);    // GPUFence
-        _fpAccum[4] += _fp.ms(2, 3);    // UI
-        _fpAccum[5] += _fp.ms(4, 5);    // Prepare
-        _fpAccum[6] += _fp.ms(5, 6);    // Render (Python SRP)
-        _fpAccum[7] += _fp.ms(6, 7);    // CleanupBuffers
-        _fpAccum[8] += _fp.ms(7, 8);    // Lighting
-        _fpAccum[9] += _fp.ms(8, 9);    // Outline+Graph+UBO
-        _fpAccum[10] += _fp.ms(9, 10);  // DrawFrame (submit+present)
-        _fpAccum[11] += _fp.ms(10, 11); // End
+        _fpAccum[2] += m_sceneUpdateMs; // Scene+Late
+        _fpAccum[3] += gpuPrepareMs;    // GPUFence
+        _fpAccum[4] += m_guiBuildMs;    // UI
+        _fpAccum[5] += _fp.ms(2, 3);    // Prepare
+        _fpAccum[6] += _fp.ms(3, 4);    // Render (Python SRP)
+        _fpAccum[7] += _fp.ms(4, 5);    // CleanupBuffers
+        _fpAccum[8] += _fp.ms(5, 6);    // Lighting
+        _fpAccum[9] += _fp.ms(6, 7);    // Outline+Graph+UBO
+        _fpAccum[10] += _fp.ms(7, 8);   // DrawFrame (submit+present)
+        _fpAccum[11] += _fp.ms(8, 9);   // End
 
         _detailAccum.frameCacheBeginMs += m_frameDetailTiming.frameCacheBeginMs;
         _detailAccum.sceneUpdateCallMs += m_frameDetailTiming.sceneUpdateCallMs;
@@ -1692,7 +1703,7 @@ void InxRenderer::DrawFrame()
         _detailAccum.lightingUploadMs += m_frameDetailTiming.lightingUploadMs;
 
         const auto &sceneProfile = SceneManager::Instance().GetLastFrameProfile();
-        const double totalFrameMs = _fp.ms(0, 11);
+        const double totalFrameMs = _fp.ms(0, 9);
         _frameTimeSamples.push_back(totalFrameMs);
         if (sceneProfile.fixedSteps > 0.0)
             _fixedStepFrameSamples.push_back(totalFrameMs);

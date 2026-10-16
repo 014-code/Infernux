@@ -470,10 +470,10 @@ void InxGUI::PumpTextureUploads()
 void InxGUI::BuildFrame()
 {
     (void)m_editorFrameScheduler.Consume(EditorGuiFrameScheduler::Clock::now(), true);
-    BuildFrameInternal();
+    BuildScheduledFrame();
 }
 
-bool InxGUI::BuildFrameIfDue(bool force)
+bool InxGUI::ScheduleFrameBuild(bool force)
 {
     // Geometry invalidation is level-triggered, unlike the scheduler's input
     // force edge. Consecutive resize/DPI events must not reuse an old layout
@@ -492,7 +492,6 @@ bool InxGUI::BuildFrameIfDue(bool force)
         return false;
     }
 
-    BuildFrameInternal();
     return true;
 }
 
@@ -507,7 +506,7 @@ void InxGUI::RequestSyntheticInputFrame() noexcept
     m_editorFrameScheduler.Request();
 }
 
-void InxGUI::BuildFrameInternal()
+void InxGUI::BuildScheduledFrame()
 {
     auto &ctx = m_guiContext;
     ++m_guiFrameCounter;
