@@ -1196,8 +1196,7 @@ VkDescriptorSet InxVkCoreModular::EnsureShadowMaterialBinding(const std::shared_
     const auto markBindlessShadowResourcesUsed = [&]() {
         if (usesBindlessTextures) {
             m_backend.Device().GetRhiDevice().MarkBindlessTexturesUsed(
-                forwardMaterialDesc->bindlessTextureIndices.data(),
-                forwardMaterialDesc->bindlessTextureIndices.size());
+                forwardMaterialDesc->bindlessTextureIndices.data(), forwardMaterialDesc->bindlessTextureIndices.size());
         }
     };
     auto existing = m_shadowMaterialBindingCache.find(identity);

@@ -204,7 +204,7 @@ bool VulkanBindlessTextureTable::RetireAfter(rhi::ResourceIndex resource, rhi::S
 }
 
 void VulkanBindlessTextureTable::MarkUsed(const rhi::ResourceIndex *resources, size_t count,
-                                         rhi::SubmissionSerial serial) noexcept
+                                          rhi::SubmissionSerial serial) noexcept
 {
     if (serial == rhi::InvalidSubmissionSerial)
         return;

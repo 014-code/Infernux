@@ -955,8 +955,7 @@ class InxVkCoreModular
 
     /// @brief Resolve the shared shadow pipeline and cached material binding.
     /// @return The material descriptor set used at set 2, or VK_NULL_HANDLE on failure.
-    VkDescriptorSet EnsureMaterialShadowPipeline(const std::shared_ptr<InxMaterial> &material,
-                                                 VkFormat depthFormat);
+    VkDescriptorSet EnsureMaterialShadowPipeline(const std::shared_ptr<InxMaterial> &material, VkFormat depthFormat);
 
     /// Shadow pipeline layout always includes set 2; bind this when a material
     /// has no per-material shadow descriptors (e.g. alpha clip off, no vtx UBO).
