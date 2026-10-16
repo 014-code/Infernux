@@ -317,6 +317,10 @@ endif()
 
 # assimp
 add_subdirectory(assimp)
+if(WIN32)
+    # Bundled runtime names must not depend on the MSVC toolset version.
+    set_target_properties(assimp PROPERTIES OUTPUT_NAME assimp DEBUG_POSTFIX "")
+endif()
 
 # glslang
 # Keep glslang static even though most runtime dependencies are shared.
