@@ -79,10 +79,6 @@ def _metric(ctx, value: float) -> float:
     return scaled_editor_metric(ctx, value)
 
 
-def _metric_pair(ctx, value) -> tuple[float, float]:
-    return (_metric(ctx, value[0]), _metric(ctx, value[1]))
-
-
 def _bind_build_settings_panel(panel: object) -> PanelCommandAdapter:
     required = (
         "can_start_build",

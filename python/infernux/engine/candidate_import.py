@@ -21,7 +21,6 @@ import tokenize
 import types
 from collections import ChainMap
 from dataclasses import dataclass
-from typing import Iterable
 
 from .path_utils import is_path_within, path_key, resolved_path
 from .module_classification import is_stdlib_module

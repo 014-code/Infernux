@@ -225,12 +225,6 @@ def _get_asset_database():
     return AssetManager.require_asset_database()
 
 
-def _resolve_path_to_guid(path_str):
-    """Resolve a filesystem path to an asset GUID."""
-    adb = _get_asset_database()
-    return adb.get_guid_from_path(path_str) or ""
-
-
 def _texture_display_name(database, path):
     if "::subtex:" in path:
         metadata = database.get_meta_by_path(path)
@@ -554,15 +548,6 @@ def _surface_batch_cache_is_current(entries) -> bool:
         if required_keys is None or any(key not in descriptor for key in required_keys):
             return False
     return True
-
-
-def _ping_shader_reference(value, ext: str) -> None:
-    path = _shader_reference_path(value, ext)
-    if not path:
-        return
-    from ._inspector_references import ping_asset_in_project
-
-    ping_asset_in_project(path)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1522,18 +1507,6 @@ def render_inline_material_body(ctx: InxGUIContext, panel, native_mat, cache_key
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
-
-def _on_shader_drop(path: str, required_ext: str, shaders_dict: dict):
-    if path.lower().endswith(required_ext):
-        key = "vertex" if required_ext == ".vert" else "fragment"
-        old = shaders_dict.get(key, "")
-        reference = shader_utils.make_shader_reference(path, required_ext)
-        shaders_dict[key] = reference
-        if reference != old and _cached_data:
-            vert_id = shaders_dict.get("vertex", "")
-            frag_id = shaders_dict.get("fragment", "")
-            shader_utils.sync_all_shader_properties(_cached_data, vert_id, frag_id, remove_unknown=True)
 
 
 def _render_obj_field(ctx: InxGUIContext, fid: str, display: str, type_hint: str,

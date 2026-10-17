@@ -19,7 +19,7 @@ import weakref
 import zlib
 from infernux.engine.path_utils import resolved_path, same_path
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 
 from infernux.debug import Debug
 from infernux.engine.i18n import t
@@ -40,7 +40,7 @@ from infernux.engine.interaction import (
 )
 from infernux.lib import InxGUIContext
 from infernux.core.animation_clip import AnimationClip, AnimationFrame, animation_frame_index
-from infernux.core.animation_event import AnimationEvent, events_from_list
+from infernux.core.animation_event import events_from_list
 
 from .asset_save_dialog import AssetSaveAsDialog
 from .editor_panel import EditorPanel

@@ -571,11 +571,6 @@ def _clear_track_audio_clip(comp, track_index: int) -> None:
         Debug.log_error(f"Audio clip clear failed: {e}")
 
 
-def _apply_track_audio_clip_drop(comp, track_index: int, payload):
-    """Route drag assignment through the same registered-asset path as picker."""
-    _apply_track_audio_clip_pick(comp, track_index, payload)
-
-
 # ============================================================================
 # MeshRenderer extra renderer (material slots)
 # ============================================================================

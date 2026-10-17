@@ -482,14 +482,6 @@ def _resolve_component_on_game_object(game_object, component_type: str = "", com
     return None
 
 
-def _infer_component_type_on_game_object(game_object) -> str:
-    """Infer a default component type name for a generic ComponentRef."""
-    resolved = _resolve_component_on_game_object(game_object, "")
-    if resolved is None:
-        return ""
-    return getattr(resolved, "type_name", type(resolved).__name__) or ""
-
-
 def _get_component_handle(component):
     """Return the native ObjectHandle behind a component wrapper, if any."""
     if component is None:

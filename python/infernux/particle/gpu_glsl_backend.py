@@ -2759,10 +2759,6 @@ def _std430_attribute_layout(
     return tuple(result), _align_up(offset, struct_alignment)
 
 
-def _std430_state_stride(fields: tuple[tuple[str, TypeRef, str], ...]) -> int:
-    return _std430_attribute_layout(fields)[1]
-
-
 def _align_up(value: int, alignment: int) -> int:
     return (value + alignment - 1) // alignment * alignment
 

@@ -2287,17 +2287,6 @@ def _render_animclip_preview(ctx: InxGUIContext, clip, state: _State):
     ctx.image(tex_id, pw, ph, uv0_x, uv0_y, uv1_x, uv1_y)
 
 
-def _get_sprite_frames(texture_guid: str, texture_path: str = "") -> list[SpriteFrame]:
-    from infernux.core.assets import AssetManager
-
-    path = texture_path
-    if texture_guid:
-        path = AssetManager._get_path_from_guid(texture_guid) or path
-    if not path:
-        return []
-    return list(read_texture_import_settings(path).sprite_frames)
-
-
 # ═══════════════════════════════════════════════════════════════════════════
 # Animation State Machine inspector
 # ═══════════════════════════════════════════════════════════════════════════

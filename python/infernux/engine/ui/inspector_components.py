@@ -227,12 +227,6 @@ def _get_cached_component_value(cache_entry, refresh_values: bool, field_key, ge
     return values[field_key]
 
 
-def _invalidate_component_value_cache(cache_entry) -> None:
-    cache_entry["refreshed_at"] = _time.monotonic()
-    cache_entry["values"] = {}
-    cache_entry["field_revisions"] = {}
-
-
 def _invalidate_component_render_cache(cache_entry) -> None:
     # A committed field edit already publishes its exact field revision.
     # Rebuild only descriptors that embed the old value; retain sibling values
