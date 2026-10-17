@@ -378,11 +378,10 @@ class Input(metaclass=_InputMeta):
 
     @staticmethod
     def _accepts_game_input() -> bool:
-        manager = _NativeInputManager.instance()
         return (
             Input._game_focused
             or Input._automation_game_input_depth > 0
-            or bool(manager.has_synthetic_gameplay_input)
+            or bool(_NativeInputManager.instance().has_synthetic_gameplay_input)
         )
 
     @staticmethod
