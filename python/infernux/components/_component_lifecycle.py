@@ -26,7 +26,17 @@ _RUNTIME_SCHEDULER_PHASES = (
     "late_update",
 )
 _MISSING = object()
-_has_runtime_phase_fn = None
+_runtime_phase_presence_fn = None
+
+
+def _runtime_phase_presence(component_type: type) -> tuple[bool, ...]:
+    global _runtime_phase_presence_fn
+    resolver = _runtime_phase_presence_fn
+    if resolver is None:
+        from infernux.engine.runtime_dispatch import runtime_phase_presence
+
+        resolver = _runtime_phase_presence_fn = runtime_phase_presence
+    return resolver(component_type)
 # The scheduler only derives plan invalidation from structural domains. Keeping
 # field/value domains out lets the journal skip per-field bookkeeping in the
 # Player, where no Inspector cursor subscribes to them.
@@ -111,9 +121,7 @@ class RuntimeExecutionScheduler:
     def _component_has_runtime_work(self, component: Any) -> bool:
         if self._active_coroutine_scheduler(component) is not None:
             return True
-        return any(
-            self._has_phase(component, phase) for phase in _RUNTIME_SCHEDULER_PHASES
-        )
+        return any(_runtime_phase_presence(type(component)))
 
     def _note_component_work(self, component: Any, *, present: bool) -> None:
         """Update one component's work contribution and publish transitions.
@@ -570,16 +578,6 @@ class RuntimeExecutionScheduler:
         return tuple(self._last_completed_barrier_sequence)
 
     @staticmethod
-    def _has_phase(component: Any, phase: str) -> bool:
-        global _has_runtime_phase_fn
-        resolver = _has_runtime_phase_fn
-        if resolver is None:
-            from infernux.engine.runtime_dispatch import has_runtime_phase
-
-            resolver = _has_runtime_phase_fn = has_runtime_phase
-        return resolver(type(component), phase)
-
-    @staticmethod
     def _owner_is_active_in_hierarchy(component: Any) -> bool:
         """Read the cached owner only when a plan is being changed/built.
 
@@ -657,14 +655,20 @@ class RuntimeExecutionScheduler:
             if has_coroutines or self._eligible(component):
                 entries.append((component, has_coroutines))
         entries.sort(key=lambda item: self._sort_key(item[0]))
-        self._phase_plan = {
-            phase: tuple(
+        presence_by_type = {
+            component_type: _runtime_phase_presence(component_type)
+            for component_type in {type(component) for component, _ in entries}
+        }
+        plan: dict[str, tuple[Any, ...]] = {}
+        for phase in _RUNTIME_SCHEDULER_PHASES:
+            index = _RUNTIME_PHASE_NAMES.index(phase)
+            plan[phase] = tuple(
                 component
                 for component, has_coroutines in entries
-                if has_coroutines or self._has_phase(component, phase)
+                if has_coroutines
+                or presence_by_type[type(component)][index]
             )
-            for phase in _RUNTIME_SCHEDULER_PHASES
-        }
+        self._phase_plan = plan
         self._plan_revision = self._structure_revision
         self._execution_snapshot = None
         self._counters["plan_builds"] += 1

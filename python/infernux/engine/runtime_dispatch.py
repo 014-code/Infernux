@@ -25,6 +25,7 @@ RUNTIME_PHASE_NAMES = (
     "physics_post_step",
 )
 _MISSING = object()
+_PHASE_INDEX = {name: index for index, name in enumerate(RUNTIME_PHASE_NAMES)}
 
 
 def _missing_runtime_phase(*_args: Any) -> None:
@@ -132,11 +133,15 @@ class RuntimeTypeDispatchDescriptor:
     methods: Mapping[str, RuntimeMethodDescriptor]
     _phase_dispatch: tuple[tuple[Any, bool], ...] = field(init=False, repr=False, compare=False)
     _phase_invokers: tuple[Any, ...] = field(init=False, repr=False, compare=False)
+    _phase_presence: tuple[bool, ...] = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if len(self.phase_methods) != len(RUNTIME_PHASE_NAMES):
             raise ValueError("runtime phase descriptor has an invalid phase count")
         object.__setattr__(self, "methods", MappingProxyType(dict(self.methods)))
+        object.__setattr__(
+            self, "_phase_presence", tuple(method is not None for method in self.phase_methods)
+        )
         dispatch = []
         invokers = []
         for method in self.phase_methods:
@@ -164,17 +169,16 @@ class RuntimeTypeDispatchDescriptor:
     @property
     def phase_presence(self) -> tuple[bool, ...]:
         """Whether each authoritative runtime phase exists in this descriptor."""
-        return tuple(method is not None for method in self.phase_methods)  # type: ignore[return-value]
+        return self._phase_presence
 
     @property
     def phase_invokers(self) -> tuple[Any, ...]:
         return self._phase_invokers
 
     def has_phase(self, phase: str) -> bool:
-        try:
-            index = RUNTIME_PHASE_NAMES.index(phase)
-        except ValueError:
-            raise ValueError(f"unknown runtime phase: {phase}") from None
+        index = _PHASE_INDEX.get(phase)
+        if index is None:
+            raise ValueError(f"unknown runtime phase: {phase}")
         return self.phase_methods[index] is not None
 
     def resolve_method(self, instance: Any, name: str) -> Any:
@@ -846,26 +850,52 @@ def resolve_runtime_method(
 
 
 def has_runtime_phase(component_type: type, phase: str) -> bool:
-    """Return whether *component_type* overrides one runtime phase.
+    """Return whether *component_type* overrides one runtime phase."""
+    index = _PHASE_INDEX.get(phase)
+    if index is None:
+        raise ValueError(f"unknown runtime phase: {phase}")
+    return runtime_phase_presence(component_type)[index]
 
-    Types that are already published answer from the immutable epoch. For a
-    type that is still being staged (scene load registers components before
-    the next safe-point publication), inspect only the phase method instead of
-    rebuilding a complete dispatch descriptor with ``inspect.signature`` for
-    every method on the class.
+
+_NO_PHASES = (False,) * len(RUNTIME_PHASE_NAMES)
+_PRESENCE_CACHE: dict[tuple[type, int], tuple[bool, ...]] = {}
+
+
+def _declared_phase_presence(component_type: type) -> tuple[bool, ...]:
+    presence = []
+    for phase in RUNTIME_PHASE_NAMES:
+        raw = _find_raw_method(component_type, phase)
+        if raw is _MISSING:
+            presence.append(False)
+        elif isinstance(raw, (staticmethod, classmethod)):
+            presence.append(True)
+        else:
+            presence.append(callable(raw))
+    return tuple(presence)
+
+
+def runtime_phase_presence(component_type: type) -> tuple[bool, ...]:
+    """Return the immutable phase-presence tuple for this type and epoch.
+
+    Plan builds and registration ask for all phases at once; resolving them per
+    phase multiplied an epoch lock and descriptor lookup by five.
     """
     epoch = current_runtime_epoch()
+    key = (component_type, epoch.epoch_id)
+    cached = _PRESENCE_CACHE.get(key)
+    if cached is not None:
+        return cached
     descriptor = epoch.descriptor_for(component_type)
     if descriptor is not None:
-        return descriptor.has_phase(phase)
-    if component_type in epoch.retired_types:
-        return False
-    raw = _find_raw_method(component_type, phase)
-    if raw is _MISSING:
-        return False
-    if isinstance(raw, (staticmethod, classmethod)):
-        return True
-    return callable(raw)
+        presence = descriptor.phase_presence
+    elif component_type in epoch.retired_types:
+        presence = _NO_PHASES
+    else:
+        presence = _declared_phase_presence(component_type)
+    if len(_PRESENCE_CACHE) >= 4096:
+        _PRESENCE_CACHE.clear()
+    _PRESENCE_CACHE[key] = presence
+    return presence
 
 
 def runtime_descriptor_diagnostic(component_type: type) -> dict[str, Any]:
