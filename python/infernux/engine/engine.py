@@ -550,19 +550,11 @@ class Engine():
         # between frames, sandwiched by SDL_PumpEvents() in C++.  This prevents
         # Windows from flagging the application as "Not Responding" during long
         # scene loads that previously ran inside BuildFrame().
-        #
-        # Manual GC collection also runs here at controlled wall-clock
-        # intervals.  Frame-count scheduling turns into an accidental GC
-        # stress test when the editor renders at several thousand FPS.
-        # Automatic GC is disabled below to prevent unpredictable ~5ms
-        # pauses inside the hot UI/render path.  With 1000+ scene objects,
-        # CPython's default gen0 threshold (700) triggers collections on
-        # nearly every frame inside random timing windows.
-        _gc_deadlines = {
-            0: time.monotonic() + 1.0,
-            1: time.monotonic() + 15.0,
-            2: time.monotonic() + 180.0,
-        }
+        # Automatic GC stays enabled. Startup objects are frozen before the
+        # loop, and a large gen0 budget keeps collection out of the per-frame
+        # path while still bounding cyclic garbage. One full collection every
+        # three minutes is the safety net for long editor sessions.
+        _gc_next_full = time.monotonic() + 180.0
         _asset_import_progress = None
         _build_preflight_progress = None
         _plugin_install_progress = None
@@ -588,6 +580,7 @@ class Engine():
         # Same policy as _pre_gui_tick: failures propagate to the C++
         # DrawFrame boundary instead of being swallowed step by step.
         def _post_draw_tick():
+            nonlocal _gc_next_full
             # UI pointer callbacks may replace scenes or destroy renderables.
             # Drain them only after native GUI drawing and present have
             # released the current renderable traversal.
@@ -619,33 +612,14 @@ class Engine():
                 sfm = SceneFileManager.instance()
                 if sfm is not None:
                     sfm.poll_deferred_load()
-            # Keep collection cadence independent of render FPS. At 3000 FPS
-            # the old 120/600/3000-frame policy ran at 40/200/1000 ms and a
-            # script reload's retired module graph made the following full
-            # collection visibly stall the editor.
+            # One full collection every three minutes bounds cycles that
+            # survive automatic collection. Everything else is left to CPython.
             now = time.monotonic()
-            generation = None
-            if now >= _gc_deadlines[2]:
-                generation = 2
-            elif now >= _gc_deadlines[1]:
-                generation = 1
-            elif now >= _gc_deadlines[0]:
-                generation = 0
-            if generation is not None:
-                gc.collect(generation)
-                if generation == 2:
-                    _gc_deadlines[2] = now + 180.0
-                    _gc_deadlines[1] = now + 15.0
-                    _gc_deadlines[0] = now + 1.0
-                elif generation == 1:
-                    _gc_deadlines[1] = now + 15.0
-                    _gc_deadlines[0] = now + 1.0
-                else:
-                    _gc_deadlines[0] = now + 1.0
+            if now >= _gc_next_full:
+                gc.collect(2)
+                _gc_next_full = now + 180.0
         self._engine.set_post_draw_callback(_post_draw_tick)
 
-        # Disable automatic GC to eliminate unpredictable pauses during
-        # rendering.  Manual collection runs in _post_draw_tick above.
         self._run_native_loop()
 
     def _run_native_loop(self):
@@ -665,8 +639,15 @@ class Engine():
         owns_signals = threading.current_thread() is threading.main_thread()
         if owns_signals:
             previous_sigint = signal.signal(signal.SIGINT, interrupt_loop)
-        gc_enabled = gc.isenabled()
-        gc.disable()
+        gc_was_enabled = gc.isenabled()
+        previous_threshold = gc.get_threshold()
+        if gc_was_enabled:
+            # Startup objects never change again; freezing them keeps the
+            # per-frame collector focused on live scene/editor garbage. The
+            # larger gen0 budget removes the ~700-allocation default cadence.
+            gc.collect()
+            gc.freeze()
+            gc.set_threshold(50_000, 20, 20)
         try:
             self._engine.run()
             if interrupted:
@@ -674,8 +655,7 @@ class Engine():
         finally:
             if owns_signals:
                 signal.signal(signal.SIGINT, previous_sigint)
-            if gc_enabled:
-                gc.enable()
+            gc.set_threshold(*previous_threshold)
             # Includes KeyboardInterrupt and native loop failures, not just
             # the SDL window-close path. Cleanup must run before Python joins
             # the non-daemon resource observer during interpreter shutdown.

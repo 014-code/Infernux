@@ -17,13 +17,15 @@ from dataclasses import dataclass
 import copy
 import os
 import weakref
-import threading
 from types import MappingProxyType
 from infernux.debug import Debug
 
 if TYPE_CHECKING:
     from .component import InxComponent
     from infernux.field_schema import FieldSchema
+
+
+_MISSING = object()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -309,27 +311,28 @@ class SerializedFieldDescriptor:
     def __init__(self, metadata: FieldMetadata):
         self.metadata = metadata
         self._explicit_type_options: frozenset[str] = frozenset()
-        self._values: Dict[int, Any] = {}  # instance id -> value
-        self._weak_refs: Dict[int, weakref.ref] = {}  # instance id -> weak ref
-        # Replacing a stale weakref can synchronously invoke its callback while
-        # this descriptor is being updated. The callback must be able to
-        # re-enter and then prove it still owns the slot before removing data.
-        self._lock = threading.RLock()
-        # CDS backing (set by _cds_bridge.register_class; None = Python-only).
+        # Scalar fields without a range contract round-trip through the raw
+        # value: normalize/resolve would only return the same object.
+        self._direct_value = (
+            metadata.range is None
+            and metadata.field_type in (
+                FieldType.INT,
+                FieldType.FLOAT,
+                FieldType.BOOL,
+                FieldType.STRING,
+                FieldType.ENUM,
+            )
+        )
+        # CDS backing (set by _cds_bridge when the class is published; None =
+        # Python storage).  Native accessors are cached on the descriptor so the
+        # hot path never resolves the extension module or imports the bridge.
         self._cds_class_id: Optional[int] = None
         self._cds_field_id: Optional[int] = None
         self._cds_type_code: Optional[int] = None
+        self._cds_native_get: Optional[Callable[..., Any]] = None
+        self._cds_native_set: Optional[Callable[..., None]] = None
+        self._cds_wrap: Optional[Callable[[Any], Any]] = None
 
-    def _make_ref_callback(self, inst_id: int):
-        """Create a weak-ref callback that auto-cleans on GC."""
-        def _on_gc(_ref, _iid=inst_id, _self=self):
-            with _self._lock:
-                if _self._weak_refs.get(_iid) is not _ref:
-                    return
-                _self._values.pop(_iid, None)
-                _self._weak_refs.pop(_iid, None)
-        return _on_gc
-    
     def __set_name__(self, owner: Type, name: str):
         self.metadata.name = name
         # Register this field in the owner class
@@ -338,23 +341,34 @@ class SerializedFieldDescriptor:
         owner._serialized_fields_[name] = self.metadata
     
     def _python_value(self, instance):
-        """Read instance-owned storage, initializing an unset/deleted declaration."""
-        inst_id = id(instance)
-        with self._lock:
-            tracked = self._weak_refs.get(inst_id)
-            if tracked is None or tracked() is not instance:
-                value = copy_serialized_field_default(self.metadata)
-                self._weak_refs[inst_id] = weakref.ref(instance, self._make_ref_callback(inst_id))
-                self._values[inst_id] = value
-            return self._values[inst_id]
+        """Read instance-owned storage, initializing an unset/deleted declaration.
+
+        Components are owner-thread objects; the value dictionary needs no lock.
+        A missing declaration is materialized once on first read so mutable
+        defaults keep their existing semantics.
+        """
+        values = instance.__dict__.get("_field_values")
+        if values is None:
+            values = {}
+            instance.__dict__["_field_values"] = values
+        else:
+            value = values.get(self.metadata.name, _MISSING)
+            if value is not _MISSING:
+                return value
+        value = copy_serialized_field_default(self.metadata)
+        values[self.metadata.name] = value
+        return value
     
     def get_raw(self, instance: 'InxComponent') -> Any:
         """Get the raw stored value without auto-resolution."""
         if self._cds_class_id is not None:
-            slot = getattr(instance, '_cds_slot', None)
-            if slot is not None and getattr(instance, '_cds_class_id', None) == self._cds_class_id:
-                from ._cds_bridge import cds_get
-                return cds_get(self._cds_class_id, self._cds_field_id, self._cds_type_code, slot)
+            key = instance._cds_key
+            if key is not None and key[0] == self._cds_class_id:
+                raw = self._cds_native_get(
+                    self._cds_class_id, self._cds_field_id, key[1], self._cds_type_code
+                )
+                wrap = self._cds_wrap
+                return raw if wrap is None else wrap(raw)
         return self._python_value(instance)
 
     def __get__(self, instance: Optional['InxComponent'], owner: Type) -> Any:
@@ -362,40 +376,40 @@ class SerializedFieldDescriptor:
             return self
         # CDS fast path for numeric fields.
         if self._cds_class_id is not None:
-            slot = getattr(instance, '_cds_slot', None)
-            if slot is not None and getattr(instance, '_cds_class_id', None) == self._cds_class_id:
-                from ._cds_bridge import cds_get
-                return cds_get(self._cds_class_id, self._cds_field_id, self._cds_type_code, slot)
+            key = instance._cds_key
+            if key is not None and key[0] == self._cds_class_id:
+                raw = self._cds_native_get(
+                    self._cds_class_id, self._cds_field_id, key[1], self._cds_type_code
+                )
+                wrap = self._cds_wrap
+                return raw if wrap is None else wrap(raw)
         value = self._python_value(instance)
         # Reference wrappers own their caches and lifetime checks. Bypassing
         # resolve() here can expose a retired native wrapper after scene reload.
-        return resolve_runtime_field_value(value, self.metadata)
+        return value if self._direct_value else resolve_runtime_field_value(value, self.metadata)
     
     def __set__(self, instance: 'InxComponent', value: Any):
         # ``readonly`` is an authoring/Inspector contract.  Runtime component
         # code must still be able to publish counters and other observed state
         # through the same serialized descriptor.
-        value = normalize_runtime_field_value(value, self.metadata)
+        if not self._direct_value:
+            value = normalize_runtime_field_value(value, self.metadata)
 
         # CDS fast path for numeric fields.
         if self._cds_class_id is not None:
-            slot = getattr(instance, '_cds_slot', None)
-            if slot is not None and getattr(instance, '_cds_class_id', None) == self._cds_class_id:
-                from ._cds_bridge import cds_set
-                cds_set(self._cds_class_id, self._cds_field_id, self._cds_type_code, slot, value)
+            key = instance._cds_key
+            if key is not None and key[0] == self._cds_class_id:
+                self._cds_native_set(
+                    self._cds_class_id, self._cds_field_id, key[1], self._cds_type_code, value
+                )
                 self._notify_runtime_value_changed(instance)
                 return
 
-        inst_id = id(instance)
-
-        # Normal set path
-        with self._lock:
-            # Track instance with weak reference for cleanup
-            tracked = self._weak_refs.get(inst_id)
-            if tracked is None or tracked() is not instance:
-                self._weak_refs[inst_id] = weakref.ref(instance, self._make_ref_callback(inst_id))
-            self._values[inst_id] = value
-
+        values = instance.__dict__.get("_field_values")
+        if values is None:
+            values = {}
+            instance.__dict__["_field_values"] = values
+        values[self.metadata.name] = value
         self._notify_runtime_value_changed(instance)
 
     def _notify_runtime_value_changed(self, instance: 'InxComponent') -> None:
@@ -409,10 +423,9 @@ class SerializedFieldDescriptor:
         notify_runtime_component_value_changed(instance, self.metadata.name)
     
     def __delete__(self, instance: 'InxComponent'):
-        inst_id = id(instance)
-        with self._lock:
-            self._values.pop(inst_id, None)
-            self._weak_refs.pop(inst_id, None)
+        values = instance.__dict__.get("_field_values")
+        if values is not None:
+            values.pop(self.metadata.name, None)
 
     def default_value(self) -> Any:
         """Return an instance-owned copy of the declared default value."""
@@ -1745,18 +1758,26 @@ def _compile_serialized_fields(
     own_annotations = dict(cls.__dict__.get('__annotations__', {}))
     resolved_hints: dict = {}
     if own_annotations:
-        import sys as _sys
-        _module = _sys.modules.get(cls.__module__)
-        _globalns = getattr(_module, '__dict__', {})
-        for _k, _v in own_annotations.items():
-            if isinstance(_v, str):
-                try:
-                    resolved_hints[_k] = eval(_v, _globalns, dict(vars(cls)))  # noqa: S307
-                except NameError:
-                    # Forward references may resolve after the class/module exists.
+        # inspect.get_annotations only inspects this class (not the whole MRO)
+        # and evaluates against the defining module plus this class namespace,
+        # which is exactly the contract this compiler needs.
+        import inspect as _inspect
+        try:
+            resolved_hints = _inspect.get_annotations(cls, eval_str=True)
+        except (NameError, TypeError):
+            # A forward reference that is not defined yet must not poison the
+            # other annotations. Resolve per name and keep the raw string.
+            import sys as _sys
+            _module = _sys.modules.get(cls.__module__)
+            _globalns = getattr(_module, '__dict__', {})
+            for _k, _v in own_annotations.items():
+                if isinstance(_v, str):
+                    try:
+                        resolved_hints[_k] = eval(_v, _globalns, dict(vars(cls)))  # noqa: S307
+                    except NameError:
+                        resolved_hints[_k] = _v
+                else:
                     resolved_hints[_k] = _v
-            else:
-                resolved_hints[_k] = _v
 
     def _annotation_for(name):
         return resolved_hints.get(name, own_annotations.get(name))

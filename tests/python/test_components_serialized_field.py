@@ -38,22 +38,43 @@ def test_null_serialized_reference_uses_annotation_and_retains_constraints():
 
 
 class TestSerializedFieldFactory:
-    def test_stale_weakref_callback_cannot_remove_reused_instance_slot(self):
-        descriptor = SerializedFieldDescriptor(FieldMetadata(name="value", field_type=FieldType.STRING, default=""))
+    @staticmethod
+    def _owner_type():
+        descriptor = SerializedFieldDescriptor(
+            FieldMetadata(name="value", field_type=FieldType.STRING, default="")
+        )
 
         class Owner:
-            pass
+            value = descriptor
 
-        stale_owner = Owner()
-        current_owner = Owner()
-        stale_ref = weakref.ref(stale_owner)
-        current_ref = weakref.ref(current_owner)
-        slot = 17
-        descriptor._weak_refs[slot] = current_ref
-        descriptor._values[slot] = "current"
+        return Owner
 
-        with descriptor._lock:
-            descriptor._make_ref_callback(slot)(stale_ref)
+    def test_values_are_owned_by_the_instance(self):
+        Owner = self._owner_type()
+        first = Owner()
+        second = Owner()
 
-        assert descriptor._weak_refs[slot] is current_ref
-        assert descriptor._values[slot] == "current"
+        first.value = "first"
+        second.value = "second"
+        assert first.value == "first"
+        assert second.value == "second"
+
+        del first.value
+        assert first.value == ""
+        assert second.value == "second"
+
+    def test_collected_instance_does_not_affect_a_live_sibling(self):
+        import gc
+
+        Owner = self._owner_type()
+        live = Owner()
+        live.value = "kept"
+        dying = Owner()
+        dying.value = "temporary"
+        reference = weakref.ref(dying)
+
+        del dying
+        gc.collect()
+
+        assert reference() is None
+        assert live.value == "kept"

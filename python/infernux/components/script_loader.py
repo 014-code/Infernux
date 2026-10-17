@@ -82,6 +82,10 @@ class _SchemaInstanceBeforeImage:
     old_class_id: object
     old_values: dict[str, object]
     instance_dict: dict[str, tuple[bool, object]]
+    # Non-CDS fields live in the component-owned dictionary. Candidate schema
+    # preparation writes prepared values there, so a rejected publication needs
+    # the exact pre-preparation mapping to restore value identity.
+    old_field_values: dict[str, object] | None = None
     new_slot: object = None
     new_class_id: object = None
 
@@ -471,6 +475,7 @@ def _prepare_transaction_schema_state(
                     old_values[name] = descriptor.get_raw(instance)
 
                 instance_values = getattr(instance, "__dict__", {})
+                instance_field_values = instance_values.get("_field_values")
                 image = _SchemaInstanceBeforeImage(
                     migration.target_type,
                     migration.candidate_type,
@@ -482,6 +487,11 @@ def _prepare_transaction_schema_state(
                         name: (name in instance_values, instance_values.get(name))
                         for name in field_names
                     },
+                    old_field_values=(
+                        dict(instance_field_values)
+                        if instance_field_values is not None
+                        else None
+                    ),
                 )
 
                 if entry is not None and entry.candidate_id is not None:
@@ -611,6 +621,10 @@ def _restore_transaction_instance_schemas(
                     )
         image.instance._set_component_data_slot(restored_slot, image.old_class_id)
         values = getattr(image.instance, "__dict__", {})
+        if image.old_field_values is not None:
+            values["_field_values"] = dict(image.old_field_values)
+        else:
+            values.pop("_field_values", None)
         for name, (present, value) in image.instance_dict.items():
             if present:
                 values[name] = value

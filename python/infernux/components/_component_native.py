@@ -90,30 +90,44 @@ class ComponentNativeMixin:
         return self._game_object
 
     def _try_get_transform(self) -> Optional['Transform']:
-        """Return the attached Transform, or None when the component is invalid."""
+        """Return the attached Transform, or None when the component is invalid.
+
+        The native Transform identity is stable for as long as the component is
+        bound to the same GameObject, so the wrapper is cached on the instance.
+        Rebinding or invalidation drops the cache; a retired native wrapper is
+        still protected by the global lifetime guard on first use.
+        """
         cleanup_binding = self.__dict__.get("_native_cleanup_binding")
         if cleanup_binding is not None:
             return cleanup_binding[1].get_transform()
         if self._is_destroyed:
             return None
+        cached = self.__dict__.get("_transform_cache")
+        if cached is not None:
+            return cached
         cpp_component = self._get_bound_native_component()
         if cpp_component is not None:
             try:
-                return cpp_component.get_transform()
+                transform = cpp_component.get_transform()
             except RuntimeError:
                 self._invalidate_native_binding()
                 return None
-        go = self._try_get_game_object()
-        if go is None:
-            return None
-        try:
-            return go.get_transform()
-        except RuntimeError:
-            self._invalidate_native_binding()
-            return None
+        else:
+            go = self._try_get_game_object()
+            if go is None:
+                return None
+            try:
+                transform = go.get_transform()
+            except RuntimeError:
+                self._invalidate_native_binding()
+                return None
+        self.__dict__["_transform_cache"] = transform
+        return transform
 
     def _set_game_object(self, game_object: Optional['GameObject']):
         """Internal: Set the owning GameObject. Called by the engine."""
+        # A different owner means a different native Transform.
+        self.__dict__.pop("_transform_cache", None)
         # ---- Update active-instances registry ----
         self._remove_from_active_registry()
 
@@ -202,6 +216,7 @@ class ComponentNativeMixin:
 
     def _invalidate_native_binding(self, *, release_fields: bool = True):
         """Invalidate native references after scene rebuild/destruction."""
+        self.__dict__.pop("_transform_cache", None)
         if release_fields:
             self._release_component_data_slot()
         self._cpp_component = None

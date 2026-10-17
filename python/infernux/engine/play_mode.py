@@ -846,7 +846,14 @@ class PlayModeManager(PlayModeSerializationMixin):
             from infernux.lib import RuntimeMode
             if self._native_engine is not None and self._native_engine.runtime_mode == RuntimeMode.Graphical:
                 from infernux.engine.ui.busy_progress import BusyProgress
-                progress = BusyProgress()
+                try:
+                    progress = BusyProgress()
+                except OSError as exc:
+                    # The progress window is presentation-only. A missing or
+                    # blocked helper executable must never block Enter Play.
+                    from infernux.debug import Debug
+                    Debug.report_recovered(exc, "PlayMode.progress_window")
+                    progress = None
             try:
                 step_enter()
             finally:

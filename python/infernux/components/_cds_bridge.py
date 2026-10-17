@@ -447,6 +447,9 @@ class CDSSchemaPublication:
                     descriptor._cds_class_id = entry.class_id
                     descriptor._cds_field_id = field_id
                     descriptor._cds_type_code = type_code
+                    descriptor._cds_native_get = self._lib._cds_get
+                    descriptor._cds_native_set = self._lib._cds_set
+                    descriptor._cds_wrap = _cds_value_wrapper(self._lib, type_code)
             for key in self._retired_keys:
                 _class_registry.pop(key, None)
             self._committed = True
@@ -543,6 +546,31 @@ def register_class(cls) -> Optional[int]:
     return publish_class(cls)
 
 
+def _cds_value_wrapper(lib, type_code: int):
+    """Return the constructor that rebuilds one vector value, or None.
+
+    Stamped on the descriptor so the hot path never branches on the type code
+    or re-resolves the native module.
+    """
+    if type_code == _CDS_VEC2:
+        return lambda raw: lib.Vector2(raw[0], raw[1])
+    if type_code == _CDS_VEC3:
+        return lambda raw: lib.Vector3(raw[0], raw[1], raw[2])
+    if type_code == _CDS_VEC4:
+        return lambda raw: lib.vec4f(raw[0], raw[1], raw[2], raw[3])
+    return None
+
+
+def _stamp_descriptor(descriptor, lib, class_id: int, field_id: int, type_code: int) -> None:
+    """Publish one descriptor's complete CDS read/write contract."""
+    descriptor._cds_class_id = class_id
+    descriptor._cds_field_id = field_id
+    descriptor._cds_type_code = type_code
+    descriptor._cds_native_get = lib._cds_get
+    descriptor._cds_native_set = lib._cds_set
+    descriptor._cds_wrap = _cds_value_wrapper(lib, type_code)
+
+
 def publish_class(cls) -> Optional[int]:
     """Register a class during owner commit, bypassing candidate deferral."""
     key = _class_key(cls)
@@ -550,11 +578,11 @@ def publish_class(cls) -> Optional[int]:
     if not numeric_fields:
         return None
 
+    lib = _get_lib()
     existing = _class_registry.get(key)
     if existing is not None:
         class_id, field_map = existing
     else:
-        lib = _get_lib()
         class_id = lib._cds_register_class(key)
         field_map = {}
         for fname, meta in numeric_fields.items():
@@ -567,9 +595,7 @@ def publish_class(cls) -> Optional[int]:
     for fname, (fid, tc) in field_map.items():
         descriptor = cls.__dict__.get(fname)
         if descriptor is not None and hasattr(descriptor, 'metadata'):
-            descriptor._cds_class_id = class_id
-            descriptor._cds_field_id = fid
-            descriptor._cds_type_code = tc
+            _stamp_descriptor(descriptor, lib, class_id, fid, tc)
 
     return class_id
 

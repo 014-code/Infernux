@@ -6,7 +6,7 @@ import weakref
 from collections import defaultdict
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, NamedTuple, Optional
 
 
 
@@ -572,6 +572,14 @@ class RuntimeExecutionScheduler:
                 descriptor = epoch.require_descriptor(type(component))
                 components[component_key] = (component, descriptor.phase_invokers)
 
+        dispatch_plan: dict[str, tuple[_DispatchEntry, ...]] = {}
+        for phase, phase_components in self._phase_plan.items():
+            invoker_index = _RUNTIME_PHASE_NAMES.index(phase)
+            dispatch_plan[phase] = tuple(
+                _DispatchEntry(component, components[id(component)][1][invoker_index])
+                for component in phase_components
+            )
+
         snapshot = _RuntimeExecutionSnapshot(
             structure_revision=self._structure_revision,
             epoch=epoch,
@@ -579,6 +587,7 @@ class RuntimeExecutionScheduler:
                 {phase: tuple(values) for phase, values in self._phase_plan.items()}
             ),
             component_snapshots=MappingProxyType(components),
+            dispatch_plan=MappingProxyType(dispatch_plan),
         )
         self._execution_snapshot = snapshot
         self._counters["execution_snapshot_builds"] += 1
@@ -615,40 +624,29 @@ class RuntimeExecutionScheduler:
     ) -> None:
         from infernux.compute import recording
 
-        phase_index = _RUNTIME_PHASE_NAMES.index(phase)
+        counters = self._counters
+        tick_coroutines = (
+            phase == "update" or phase == "fixed_update" or phase == "late_update"
+        )
         with recording():
-            for component in frame.phase_plan[phase]:
-                snapshot = frame.component_snapshots[id(component)]
-                _component, invokers = snapshot
-                if bool(getattr(component, "_is_destroyed", False)):
-                    self._counters["phase_skips"] += 1
+            for component, invoke in frame.dispatch_plan[phase]:
+                # ComponentLifecycleMixin declares these mirrors as class
+                # defaults, so the steady-state path is a direct LOAD_ATTR.
+                if component._is_destroyed:
+                    counters["phase_skips"] += 1
+                    continue
+                if not component._runtime_active_in_hierarchy:
+                    counters["phase_skips"] += 1
+                    continue
+                if editor_only and not component._execute_in_edit_mode:
+                    counters["phase_skips"] += 1
                     continue
 
-                # Owner activation is mirrored when the plan is invalidated or
-                # rebuilt.  Reading this Python bool here handles a same-frame
-                # disable callback without crossing the native boundary.
-                if not bool(getattr(component, "_runtime_active_in_hierarchy", True)):
-                    self._counters["phase_skips"] += 1
-                    continue
-
-                if editor_only and not bool(getattr(component, "_execute_in_edit_mode", False)):
-                    self._counters["phase_skips"] += 1
-                    continue
-
-                enabled = bool(getattr(component, "_enabled", True))
-
-                try:
-                    if enabled:
-                        invokers[phase_index](component, delta_time)
-                except Exception as exc:
-                    reporter = getattr(component, "_report_lifecycle_exception", None)
-                    if callable(reporter):
-                        reporter(exc)
-                    else:
-                        # Keep the scheduler useful for lightweight test/runtime
-                        # component doubles without weakening real component error
-                        # isolation.
-                        self._counters["phase_errors"] += 1
+                if component._enabled:
+                    try:
+                        invoke(component, delta_time)
+                    except Exception as exc:
+                        self._report_phase_error(component, exc)
 
                 # Keep the component/invoker tuple stable for the frame, but make
                 # enabled transitions visible between phases just like the legacy
@@ -656,26 +654,29 @@ class RuntimeExecutionScheduler:
                 # the following update/late_update callbacks immediately.
                 # Component ``enabled`` gates the user callback, while the owning
                 # hierarchy independently gates coroutine work.
-                coroutine_scheduler = self._active_coroutine_scheduler(component)
-                if not bool(getattr(component, "_runtime_active_in_hierarchy", True)):
+                if not component._runtime_active_in_hierarchy:
                     continue
-                try:
-                    if phase == "update":
-                        if coroutine_scheduler is not None:
-                            coroutine_scheduler.tick_update(delta_time, epoch=frame.epoch)
-                    elif phase == "fixed_update":
-                        if coroutine_scheduler is not None:
-                            coroutine_scheduler.tick_fixed_update(delta_time, epoch=frame.epoch)
-                    elif phase == "late_update":
-                        if coroutine_scheduler is not None:
-                            coroutine_scheduler.tick_late_update(delta_time, epoch=frame.epoch)
-                except Exception as exc:
-                    reporter = getattr(component, "_report_lifecycle_exception", None)
-                    if callable(reporter):
-                        reporter(exc)
-                    else:
-                        self._counters["phase_errors"] += 1
-                self._counters["phase_dispatches"] += 1
+                if tick_coroutines:
+                    scheduler = component.__dict__.get("_runtime_coroutine_scheduler")
+                    if scheduler is not None and scheduler.count > 0:
+                        try:
+                            if phase == "update":
+                                scheduler.tick_update(delta_time, epoch=frame.epoch)
+                            elif phase == "fixed_update":
+                                scheduler.tick_fixed_update(delta_time, epoch=frame.epoch)
+                            else:
+                                scheduler.tick_late_update(delta_time, epoch=frame.epoch)
+                        except Exception as exc:
+                            self._report_phase_error(component, exc)
+                counters["phase_dispatches"] += 1
+
+    def _report_phase_error(self, component: Any, exc: Exception) -> None:
+        """Route one phase failure; only the error path pays for the fallback."""
+        reporter = getattr(component, "_report_lifecycle_exception", None)
+        if reporter is None:
+            self._counters["phase_errors"] += 1
+        else:
+            reporter(exc)
 
     def execute_frame(
         self,
@@ -861,6 +862,20 @@ class _RuntimeExecutionSnapshot:
     epoch: Any
     phase_plan: Mapping[str, tuple[Any, ...]]
     component_snapshots: Mapping[int, tuple[Any, tuple[Any, ...]]]
+    dispatch_plan: Mapping[str, tuple["_DispatchEntry", ...]]
+
+
+class _DispatchEntry(NamedTuple):
+    """One component and the phase invoker captured for this frame epoch.
+
+    The entry removes two steady-state costs from the dispatch loop: the
+    ``id(component)`` snapshot lookup and the per-phase invoker tuple index.
+    Phase membership and the invoker are both immutable for the frame; only
+    the runtime state flags are read per phase.
+    """
+
+    component: Any
+    invoke: Any
 
 
 class RuntimeExecutionFrame:
@@ -880,6 +895,7 @@ class RuntimeExecutionFrame:
         self._scheduler = scheduler
         self.phase_plan = snapshot.phase_plan
         self.component_snapshots = snapshot.component_snapshots
+        self.dispatch_plan = snapshot.dispatch_plan
         self.structure_revision = snapshot.structure_revision
         self.epoch = snapshot.epoch
         self.barrier_changes: dict[Any, Any] = {}
@@ -995,6 +1011,16 @@ def notify_runtime_component_value_changed(component: Any, field_id: Any) -> Non
 class ComponentLifecycleMixin:
     """ComponentLifecycleMixin method group for InxComponent."""
 
+    # Runtime state mirrors used by the dispatch hot loop. Declaring them on the
+    # class makes ``component._enabled`` a direct attribute load for every real
+    # component and test double, instead of a per-phase ``getattr(..., default)``.
+    # Instances that need another value assign the instance attribute as before.
+    _is_destroyed = False
+    _enabled = True
+    _runtime_active_in_hierarchy = True
+    _execute_in_edit_mode = False
+    _cds_key = None
+
     def _resolve_runtime_method(self, name: str, *, epoch: Any = None) -> Any:
         """Resolve a helper through the owner-published runtime epoch."""
         return resolve_runtime_method(self, name, epoch=epoch)
@@ -1027,8 +1053,12 @@ class ComponentLifecycleMixin:
             return True
         except Exception as exc:
             try:
-                from infernux.debug import debug
-                debug.log_exception(exc, context=self)
+                from infernux.debug import Debug
+                Debug.report_script_error(
+                    exc,
+                    f"{type(self).__name__}.{method_name}",
+                    self,
+                )
             except (ImportError, RuntimeError):
                 # Absolute fallback if debug itself cannot be imported.
                 import traceback
@@ -1038,8 +1068,8 @@ class ComponentLifecycleMixin:
     def _report_lifecycle_exception(self, exc: Exception) -> None:
         """Route a phase exception without adding work to the success path."""
         try:
-            from infernux.debug import debug
-            debug.log_exception(exc, context=self)
+            from infernux.debug import Debug
+            Debug.report_script_error(exc, f"{type(self).__name__}.lifecycle", self)
         except (ImportError, RuntimeError):
             import traceback
             traceback.print_exc()
@@ -1188,6 +1218,8 @@ class ComponentLifecycleMixin:
             self._cds_finalizer.detach()
         self._cds_slot = slot
         self._cds_class_id = class_id
+        # One tuple carries both identity words for the descriptor fast path.
+        self._cds_key = (class_id, slot) if slot is not None and class_id is not None else None
         self._cds_finalizer = None
         if slot is not None and class_id is not None:
             from ._cds_bridge import release_slot

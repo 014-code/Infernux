@@ -219,6 +219,7 @@ class InxComponent(ComponentNativeMixin, ComponentLifecycleMixin, ComponentPhysi
 
         self._cds_slot: Optional[tuple[int, int]] = None
         self._cds_class_id: Optional[int] = None
+        self._cds_key: Optional[tuple[int, tuple[int, int]]] = None
         self._cds_finalizer = None
         if self._uses_component_data_store:
             from ._cds_bridge import allocate_slot as _cds_alloc, get_class_id as _cds_class_id
@@ -259,11 +260,12 @@ class InxComponent(ComponentNativeMixin, ComponentLifecycleMixin, ComponentPhysi
                     cds_set(descriptor._cds_class_id, descriptor._cds_field_id,
                             descriptor._cds_type_code, self._cds_slot, default_value)
                 else:
-                    # Non-CDS field: Python dict.
-                    inst_id = id(self)
-                    with descriptor._lock:
-                        descriptor._weak_refs[inst_id] = weakref.ref(self, descriptor._make_ref_callback(inst_id))
-                        descriptor._values[inst_id] = default_value
+                    # Non-CDS field: per-instance storage owned by the component.
+                    values = self.__dict__.get("_field_values")
+                    if values is None:
+                        values = {}
+                        self.__dict__["_field_values"] = values
+                    values[name] = default_value
             elif hasattr(descriptor, '_is_cpp_property'):
                 # Skip ALL CppProperty descriptors — their values come from C++.
                 continue

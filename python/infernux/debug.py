@@ -4,6 +4,23 @@ Debug - Unity-style debug utility for infernux.
 Provides logging methods that output to the Console Panel.
 Supports Log, Warning, Error levels with timestamps and stack traces.
 
+Unified error policy
+--------------------
+Every caught exception belongs to exactly one tier:
+
+* ``Debug.report_script_error`` - a user script callback failed. The first
+  occurrence carries the real traceback; repeats are counted and shown at
+  10/100/1000 instead of flooding the Console.
+* ``Debug.report_internal_error`` - an engine or editor failure. Same
+  visibility contract, labelled ``Internal``.
+* ``Debug.report_recovered`` / ``Debug.log_suppressed`` - a deliberately
+  recovered failure (optional feature, best-effort tooling). Visible as a
+  warning with the first traceback, then counted.
+
+Main-path code does not swallow exceptions: it either lets them propagate or
+routes them through one of the three tiers above. A catch site that does not
+report is a bug.
+
 Usage:
     from infernux.debug import Debug
     
@@ -148,7 +165,10 @@ class DebugConsole:
         self._project_root = ""
         self._native_bridge_lock = RLock()
         self._pending_native_entries = deque()
-        self._suppressed_errors: dict[str, tuple[str, str]] = {}
+        # Unified error reporting: one count per (category, site, type,
+        # message). Repeats are counted, not silently dropped; the first and
+        # every 10th/100th/1000th occurrence reach the Console.
+        self._report_counts: dict[tuple[str, str, str, str], int] = {}
 
         # Counters for quick filtering
         self._log_count: int = 0
@@ -300,21 +320,21 @@ class DebugConsole:
         with self._native_bridge_lock:
             self._entries.clear()
             self._pending_native_entries.clear()
-            self._suppressed_errors.clear()
+            self._report_counts.clear()
             self._log_count = 0
             self._warning_count = 0
             self._error_count = 0
             if self._native_console is not None:
                 self._native_console.clear()
 
-    def _record_suppressed(self, where: str, signature: tuple[str, str]) -> bool:
+    def _record_report(self, key: tuple[str, str, str, str]) -> int:
+        """Count one report and return its occurrence number (1-based)."""
         with self._native_bridge_lock:
-            if self._suppressed_errors.get(where) == signature:
-                return False
-            if where not in self._suppressed_errors and len(self._suppressed_errors) >= self._max_entries:
-                del self._suppressed_errors[next(iter(self._suppressed_errors))]
-            self._suppressed_errors[where] = signature
-            return True
+            count = self._report_counts.get(key, 0) + 1
+            if key not in self._report_counts and len(self._report_counts) >= self._max_entries:
+                del self._report_counts[next(iter(self._report_counts))]
+            self._report_counts[key] = count
+            return count
 
     @staticmethod
     def _source_key(source_file: str) -> str:
@@ -500,18 +520,15 @@ class Debug:
         DebugConsole.instance().log(entry)
     
     @staticmethod
-    def log_exception(exception: Exception, context: Any = None):
-        """
-        Log an exception with full traceback.
-        
-        Args:
-            exception: The exception to log
-            context: Optional context object
-        """
+    def _exception_entry(exception: BaseException, *, log_type: LogType = LogType.EXCEPTION,
+                         prefix: str = "", context: Any = None) -> LogEntry:
+        """Build one Console entry carrying the exception's real traceback."""
         message = _sanitize_text(f"{type(exception).__name__}: {exception}")
-        stack_trace = _sanitize_text(''.join(traceback.format_exception(type(exception), exception, exception.__traceback__)))
-        
-        # Extract source location from the innermost traceback frame
+        if prefix:
+            message = f"{prefix} {message}"
+        stack_trace = _sanitize_text(
+            ''.join(traceback.format_exception(type(exception), exception, exception.__traceback__))
+        )
         source_file = ""
         source_line = 0
         tb = exception.__traceback__
@@ -520,37 +537,88 @@ class Debug:
         if tb:
             source_file = _sanitize_text(tb.tb_frame.f_code.co_filename)
             source_line = tb.tb_lineno
-        
-        entry = LogEntry(
+        return LogEntry(
             message=message,
-            log_type=LogType.EXCEPTION,
+            log_type=log_type,
             timestamp=datetime.now(),
             stack_trace=stack_trace,
             context=context,
             source_file=source_file,
             source_line=source_line,
         )
-        DebugConsole.instance().log(entry)
-    
-    @staticmethod
-    def log_suppressed(where: str, exc: BaseException, context: Any = None):
-        """Log an exception that was deliberately swallowed by the caller.
 
-        Repeated identical failures at one site are recorded once until the
-        Console is cleared. A changed failure is recorded again. Ordinary
-        log_warning/error calls are never deduplicated.
+    @staticmethod
+    def log_exception(exception: Exception, context: Any = None):
+        """
+        Log an exception with full traceback.
 
         Args:
-            where: Short human-readable label of the suppression site
-                (e.g. ``"DeferredTaskRunner.tick"``).
-            exc: The caught exception instance.
-            context: Optional context object forwarded to the console entry.
+            exception: The exception to log
+            context: Optional context object
         """
-        signature = (type(exc).__name__, str(exc))
-        if not DebugConsole.instance()._record_suppressed(str(where), signature):
+        DebugConsole.instance().log(Debug._exception_entry(exception, context=context))
+
+    @staticmethod
+    def _should_emit_report(count: int) -> bool:
+        """Keep the first occurrence and logarithmic progress afterwards."""
+        return count == 1 or count == 10 or count == 100 or count % 1000 == 0
+
+    @staticmethod
+    def _report_suffix(count: int) -> str:
+        return "" if count <= 1 else f" (repeated {count} times)"
+
+    @staticmethod
+    def _report_exception(category: str, site: str, exception: BaseException,
+                          context: Any, *, log_type: LogType, label: str) -> None:
+        """Count one failure and emit the first plus periodic occurrences."""
+        count = DebugConsole.instance()._record_report(
+            (category, str(site), type(exception).__name__, str(exception))
+        )
+        if not Debug._should_emit_report(count):
             return
-        message = f"[Suppressed @ {where}] {signature[0]}: {signature[1]}"
-        Debug.log_warning(message, context=context)
+        prefix = f"[{label} @ {site}]" if site else f"[{label}]"
+        entry = Debug._exception_entry(exception, log_type=log_type, prefix=prefix, context=context)
+        if count > 1:
+            entry.message = f"{entry.message}{Debug._report_suffix(count)}"
+            # The full traceback for this failure is already in the Console.
+            entry.stack_trace = ""
+        DebugConsole.instance().log(entry)
+
+    @staticmethod
+    def report_script_error(exception: BaseException, site: str = "", context: Any = None):
+        """Report a user-script callback failure without flooding per frame."""
+        Debug._report_exception(
+            "script", site, exception, context,
+            log_type=LogType.EXCEPTION, label="Script",
+        )
+
+    @staticmethod
+    def report_internal_error(exception: BaseException, site: str = "", context: Any = None):
+        """Report an engine/editor failure that must stay visible in the Console."""
+        Debug._report_exception(
+            "internal", site, exception, context,
+            log_type=LogType.EXCEPTION, label="Internal",
+        )
+
+    @staticmethod
+    def report_recovered(exception: BaseException, site: str = "", context: Any = None):
+        """Report a deliberately recovered failure; visible, but not fatal."""
+        Debug._report_exception(
+            "recovered", site, exception, context,
+            log_type=LogType.WARNING, label="Recovered",
+        )
+
+    @staticmethod
+    def log_suppressed(where: str, exc: BaseException, context: Any = None):
+        """Report an exception the caller recovered from.
+
+        This is the recoverable tier of the unified error policy. The first
+        occurrence carries the real traceback; repeats are counted and shown at
+        10/100/1000 instead of being dropped. Use :meth:`report_script_error`
+        for user callbacks and :meth:`report_internal_error` for engine or
+        editor failures.
+        """
+        Debug.report_recovered(exc, str(where), context)
 
     @staticmethod
     def log_assert(condition: bool, message: Any = "Assertion failed", context: Any = None):
