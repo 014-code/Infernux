@@ -259,7 +259,7 @@ class PlatformFixtureBootstrap(inx.InxComponent):
         from infernux.renderstack.render_effect import RenderEffect
         from infernux.renderstack.render_effect_asset import RenderEffectAsset
 
-        for key in "5678":
+        for key in "567890":
             if not inx.input.Input.get_key_down(key):
                 continue
             camera = inx.SceneManager.get_active_scene().main_camera
@@ -278,6 +278,13 @@ class PlatformFixtureBootstrap(inx.InxComponent):
                 self._render_settings_stack.effect_slots[0].enabled = False
             elif key == "8":
                 self._render_settings_stack.enabled = False
+                camera.clear_flags = CameraClearFlags.Skybox
+            elif key == "9":
+                camera.culling_mask = 0
+                camera.clear_flags = CameraClearFlags.SolidColor
+                camera.background_color = (.1, .35, .7, 1.)
+            elif key == "0":
+                camera.culling_mask = 0xffffffff
                 camera.clear_flags = CameraClearFlags.Skybox
             inx.Debug.log("INFERNUX_RENDER_SETTINGS_PROBE " + key)
 
