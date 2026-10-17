@@ -324,6 +324,6 @@ endif()
 if(NOT INFERNUX_ZSTD_TARGET)
     message(FATAL_ERROR
         "InfernuxFoundation requires the native InxPack Zstandard target; "
-        "set INFERNUX_ZSTD_SOURCE_DIR or enable INFERNUX_PLAYER_PACK_FETCH_ZSTD")
+        "initialize external/zstd_for_infernux with git submodule update --init --recursive")
 endif()
 target_link_libraries(InfernuxFoundation PRIVATE ${INFERNUX_ZSTD_TARGET})
