@@ -192,6 +192,89 @@ def _try_cds_scatter(targets: Sequence, data: np.ndarray, prop_name: str) -> boo
     return True
 
 
+class ComponentFieldBatch:
+    """Validated component-field batch for repeated reads and writes.
+
+    Creating a handle resolves the CDS layout, validates every target and packs
+    the generational slot handles once. Repeated ``read``/``write`` calls then
+    skip target validation and slot packing; the native store still validates
+    generations, so a destroyed target keeps raising instead of writing to a
+    reused slot.
+
+    The handle holds strong references to its targets. Keep it for the lifetime
+    of the batch (for example one training loop) rather than across a scene
+    unload.
+    """
+
+    __slots__ = (
+        "targets",
+        "prop_name",
+        "class_id",
+        "field_id",
+        "type_code",
+        "slots",
+        "dtype",
+    )
+
+    def __init__(self, targets, prop_name, class_id, field_id, type_code, slots, dtype):
+        self.targets = targets
+        self.prop_name = prop_name
+        self.class_id = class_id
+        self.field_id = field_id
+        self.type_code = type_code
+        self.slots = slots
+        self.dtype = dtype
+
+    def read(self):
+        """Read the whole batch from the native store."""
+        np = _get_np()
+        result = np.asarray(
+            _get_lib()._cds_batch_gather(
+                self.class_id, self.field_id, self.type_code, self.slots
+            )
+        )
+        return result.astype(self.dtype, copy=False)
+
+    def write(self, data) -> None:
+        """Scatter the whole batch; data is validated against the field contract."""
+        prepared = _prepare_component_data(self.targets, data, self.prop_name)
+        _get_lib()._cds_batch_scatter(
+            self.class_id, self.field_id, self.type_code, self.slots, prepared
+        )
+        from .components._component_lifecycle import notify_runtime_component_values
+
+        notify_runtime_component_values(self.targets, self.prop_name)
+
+
+def create_component_batch_handle(targets: Sequence, prop: Any) -> ComponentFieldBatch:
+    """Build a reusable handle for one CDS-backed component field."""
+    from infernux.components._cds_bridge import get_class_info
+
+    prop_name = _resolve_property_name(prop)
+    _validate_targets(targets)
+    cls = type(targets[0])
+    info = get_class_info(cls)
+    if info is None:
+        raise TypeError(
+            f"{cls.__name__} has no CDS-backed numeric fields; "
+            "a component batch handle requires native field storage"
+        )
+    class_id, field_map = info
+    entry = field_map.get(prop_name)
+    if entry is None:
+        raise TypeError(
+            f"{cls.__name__}.{prop_name} is not a CDS-backed numeric field"
+        )
+    field_id, type_code = entry
+    _elem_shape, dtype = _field_shape_dtype(
+        _component_metadata(targets, prop_name).field_type
+    )
+    return ComponentFieldBatch(
+        tuple(targets), prop_name, class_id, field_id, type_code,
+        _cds_slots(targets, class_id), dtype,
+    )
+
+
 # ── FieldType → numpy dtype/shape mapping ───────────────────────────────
 
 def _field_shape_dtype(field_type) -> tuple[tuple[int, ...], "np.dtype"]:
@@ -301,14 +384,14 @@ def _prepare_component_data(targets: Sequence, data: NDArray, prop_name: str):
     return np.ascontiguousarray(values, dtype=dtype)
 
 
-def batch_read(targets: Sequence, prop: Any) -> NDArray:
+def batch_read(targets: Sequence, prop: Any = None) -> NDArray:
     """Read a property from all *targets* into a numpy array.
 
     Parameters
     ----------
-    targets : list[Transform] | list[InxComponent] | TransformBatchHandle
+    targets : list[Transform] | list[InxComponent] | TransformBatchHandle | ComponentFieldBatch
         Non-empty list of engine objects of the same concrete type, or a pre-built
-        ``TransformBatchHandle`` for zero-overhead repeated reads.
+        handle for repeated reads without re-validation.
     prop : str | descriptor
         Property name (``'position'``, ``'velocity'``) or a class-level
         descriptor (``MyComponent.velocity``).
@@ -322,6 +405,10 @@ def batch_read(targets: Sequence, prop: Any) -> NDArray:
         - ``Vector3`` → ``(N, 3)``
         - ``quatf`` / ``vec4f`` → ``(N, 4)``
     """
+    if isinstance(targets, ComponentFieldBatch):
+        return targets.read()
+    if prop is None:
+        raise TypeError("batch_read requires a property for a target list")
     prop_name = _resolve_property_name(prop)
 
     # Handle-based fast path (cached Transform pointers).
@@ -352,14 +439,13 @@ def batch_read(targets: Sequence, prop: Any) -> NDArray:
     return _component_gather(targets, prop_name)
 
 
-def batch_write(targets: Sequence, data: NDArray, prop: Any):
+def batch_write(targets: Sequence, data: NDArray, prop: Any = None):
     """Write a numpy array back to a property on all *targets*.
 
     Parameters
     ----------
-    targets : list[Transform] | list[InxComponent] | TransformBatchHandle
-        Same list used for the preceding ``batch_read``, or a
-        ``TransformBatchHandle``.
+    targets : list[Transform] | list[InxComponent] | TransformBatchHandle | ComponentFieldBatch
+        Same list used for the preceding ``batch_read``, or a pre-built handle.
     data : numpy.ndarray
         Array with ``data.shape[0] >= len(targets)`` and the field's element
         shape. Component numeric conversions must be safe; declared scalar
@@ -367,6 +453,11 @@ def batch_write(targets: Sequence, data: NDArray, prop: Any):
     prop : str | descriptor
         Same property specifier used for ``batch_read``.
     """
+    if isinstance(targets, ComponentFieldBatch):
+        targets.write(data)
+        return
+    if prop is None:
+        raise TypeError("batch_write requires a property for a target list")
     prop_name = _resolve_property_name(prop)
 
     # Handle-based fast path.
