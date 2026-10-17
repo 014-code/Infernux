@@ -100,6 +100,8 @@ class SkeletalAnimator(InxComponent):
 
     _fsm: Optional[AnimStateMachine] = None
     _skinned_renderers: list[SkinnedMeshRenderer] = per_instance(list)
+    _native_renderers: list = per_instance(list)
+    native_pose_submission: bool = True
     _clip_cache: dict[object, Optional[AnimationClip3D]] = per_instance(dict)
 
     _current_state: Optional[AnimState] = None
@@ -142,6 +144,7 @@ class SkeletalAnimator(InxComponent):
         self._elapsed = 0.0
         self._playing = False
         self._skinned_renderers = []
+        self._native_renderers = []
         self._clear_blend_state()
 
     def start(self):
@@ -792,12 +795,11 @@ class SkeletalAnimator(InxComponent):
             self._clear_blend_state()
 
     def _resolve_native_renderers(self, *, force: bool = False):
-        if not force and self._skinned_renderers:
-            native = [renderer._get_bound_native_component() for renderer in self._skinned_renderers]
-            if all(renderer is not None for renderer in native):
-                return native
+        if not force and self._native_renderers:
+            return self._native_renderers
 
         self._skinned_renderers = []
+        self._native_renderers = []
         try:
             owner = self.game_object
         except (ReferenceError, RuntimeError):
@@ -816,9 +818,12 @@ class SkeletalAnimator(InxComponent):
                     self._skinned_renderers.append(renderer)
                     native.append(cpp)
             pending.extend(owner.get_children())
+        self._native_renderers = native
         return native
 
     def _sync_native_runtime_playback(self) -> None:
+        if not self.native_pose_submission:
+            return
         native_renderers = self._resolve_native_renderers()
         if not native_renderers:
             return
