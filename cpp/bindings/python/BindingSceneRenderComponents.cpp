@@ -200,6 +200,10 @@ void BindSkinnedMeshRenderer(py::module_ &m)
                         layer.loop = d["loop"].cast<bool>();
                     if (d.contains("bone_mask"))
                         layer.boneMask = d["bone_mask"].cast<std::vector<std::string>>();
+                    if (d.contains("blend_group"))
+                        layer.blendGroup = d["blend_group"].cast<std::string>();
+                    if (d.contains("group_weight"))
+                        layer.groupWeight = d["group_weight"].cast<float>();
                     stack.push_back(std::move(layer));
                 }
                 sr.SubmitPoseStack(stack);
@@ -207,7 +211,7 @@ void BindSkinnedMeshRenderer(py::module_ &m)
             py::arg("layers"),
             "Submit a multi-layer pose stack (AnimationTree output). Each layer is a dict: "
             "{take_name:str, source_model_guid:str, time:float, weight:float, additive:bool, loop:bool, "
-            "bone_mask:list[str]}. "
+            "bone_mask:list[str], blend_group:str, group_weight:float}. "
             "Enables N-way weighted + additive + bone-masked blending beyond the 2-clip crossfade.")
         .def("clear_pose_stack", &SkinnedMeshRenderer::ClearPoseStack,
              "Clear the pose stack and revert to the single-clip / crossfade path")

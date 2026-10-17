@@ -145,11 +145,19 @@ void SkinnedMeshRenderer::ComputeWorldBounds(const glm::mat4 &worldMatrix, glm::
 {
     const auto model = GetOrLoadRuntimeModel();
     const auto palette = m_skinPoseHistory.Current();
-    glm::vec3 localMin;
-    glm::vec3 localMax;
-    if (model && palette &&
-        model->ComputeSkinnedBounds(*palette, localMin, localMax, GetNodeGroup(), GetSubmeshIndex())) {
-        TransformBounds(worldMatrix, localMin, localMax, outMin, outMax);
+    // Camera and world-transform changes reuse the same local deformation bounds.
+    if (model != m_boundsModel || palette != m_boundsPalette || GetNodeGroup() != m_boundsNodeGroup ||
+        GetSubmeshIndex() != m_boundsSubmeshIndex) {
+        m_boundsModel = model;
+        m_boundsPalette = palette;
+        m_boundsNodeGroup = GetNodeGroup();
+        m_boundsSubmeshIndex = GetSubmeshIndex();
+        m_skinnedBoundsValid = model && palette &&
+                               model->ComputeSkinnedBounds(*palette, m_skinnedBoundsMin, m_skinnedBoundsMax,
+                                                           m_boundsNodeGroup, m_boundsSubmeshIndex);
+    }
+    if (m_skinnedBoundsValid) {
+        TransformBounds(worldMatrix, m_skinnedBoundsMin, m_skinnedBoundsMax, outMin, outMax);
         return;
     }
     MeshRenderer::ComputeWorldBounds(worldMatrix, outMin, outMax);
@@ -340,7 +348,7 @@ void SkinnedMeshRenderer::SubmitPoseStack(const std::vector<PoseStackLayer> &lay
     if (!layers.empty()) {
         const PoseStackLayer *dominant = &layers.front();
         for (const auto &ly : layers)
-            if (!ly.additive && ly.weight > dominant->weight)
+            if (!ly.additive && ly.weight * ly.groupWeight > dominant->weight * dominant->groupWeight)
                 dominant = &ly;
         m_activeTakeName = dominant->takeName;
         m_runtimeAnimationTime = dominant->timeSeconds;
@@ -375,6 +383,9 @@ RootMotionDelta SkinnedMeshRenderer::GetRootMotionDelta(const std::string &takeN
 void SkinnedMeshRenderer::ReloadSourceModel()
 {
     m_runtimeModel.reset();
+    m_boundsModel.reset();
+    m_boundsPalette.reset();
+    m_skinnedBoundsValid = false;
     m_animationSourceModel.reset();
     m_blendAnimationSourceModel.reset();
     m_poseStackAnimationSources.clear();
@@ -399,6 +410,9 @@ void SkinnedMeshRenderer::ClearRuntimeSkinnedMesh()
         m_poseStackAnimationSources.empty() && (!pose || (!pose->current && !pose->previous)))
         return;
     m_runtimeModel.reset();
+    m_boundsModel.reset();
+    m_boundsPalette.reset();
+    m_skinnedBoundsValid = false;
     m_animationSourceModel.reset();
     m_blendAnimationSourceModel.reset();
     m_poseStackAnimationSources.clear();

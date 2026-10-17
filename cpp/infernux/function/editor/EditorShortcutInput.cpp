@@ -1,6 +1,7 @@
 #include "EditorShortcutInput.h"
 
 #include <function/renderer/gui/InxGUIContext.h>
+#include <platform/input/InputManager.h>
 
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -54,6 +55,15 @@ void EditorShortcutInput::OnRender(InxGUIContext *ctx)
         const auto key = static_cast<ImGuiKey>(value);
         if ((key >= ImGuiKey_LeftCtrl && key <= ImGuiKey_RightSuper) || !pressedOnce(key))
             continue;
+        if (key == ImGuiKey_Escape) {
+            auto &input = InputManager::Instance();
+            const int escape = InputManager::NameToScancode("escape");
+            if (input.IsKeyDownConsumed(escape))
+                continue;
+            // Escape unlocks the Editor Game View only when gameplay did not
+            // consume it for an in-game modal.
+            input.SetEditorCursorCaptureAllowed(false);
+        }
         if (key == ImGuiKey_KeypadEnter && pressedOnce(ImGuiKey_Enter))
             continue;
 

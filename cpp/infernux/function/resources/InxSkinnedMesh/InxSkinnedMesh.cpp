@@ -942,11 +942,28 @@ std::vector<glm::mat4> InxSkinnedMesh::EvaluatePoseStackGlobals(
     std::vector<glm::quat> addRot(N, glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
     std::vector<bool> hasAdd(N, false);
 
+    std::unordered_map<std::string, std::vector<float>> groupCoverage;
+    for (const auto &layer : layers) {
+        if (layer.blendGroup.empty() || layer.additive)
+            continue;
+        auto &coverage = groupCoverage.try_emplace(layer.blendGroup, N, 0.0f).first->second;
+        const float weight = glm::clamp(layer.weight, 0.0f, 1.0f);
+        if (layer.boneMask.empty()) {
+            for (float &value : coverage)
+                value += weight;
+        } else {
+            for (size_t ni = 0; ni < N; ++ni)
+                if (std::find(layer.boneMask.begin(), layer.boneMask.end(), skeleton.nodes[ni].name) != layer.boneMask.end())
+                    coverage[ni] += weight;
+        }
+    }
+
     for (size_t layerIndex = 0; layerIndex < layers.size(); ++layerIndex) {
         const PoseStackLayer &layer = layers[layerIndex];
-        const float w = glm::clamp(layer.weight, 0.0f, 1.0f);
-        if (w <= kEpsilon)
+        const float weight = glm::clamp(layer.weight, 0.0f, 1.0f) * glm::clamp(layer.groupWeight, 0.0f, 1.0f);
+        if (weight <= kEpsilon)
             continue;
+        const auto group = groupCoverage.find(layer.blendGroup);
         const InxSkinnedMesh *source = layerIndex < animationSources.size() && animationSources[layerIndex]
                                            ? animationSources[layerIndex].get()
                                            : this;
@@ -974,6 +991,7 @@ std::vector<glm::mat4> InxSkinnedMesh::EvaluatePoseStackGlobals(
         for (size_t ni = 0; ni < N; ++ni) {
             if (masked && maskSet.find(skeleton.nodes[ni].name) == maskSet.end())
                 continue;
+            const float w = group == groupCoverage.end() ? weight : weight / std::max(group->second[ni], 1.0f);
             const SkinnedNodePose &pose = retargetedPoses[ni];
             if (layer.additive) {
                 addPos[ni] += (pose.translation - bind[ni].translation) * w;

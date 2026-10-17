@@ -158,6 +158,7 @@ from infernux.core import AnimationClip as AnimationClip
 from infernux.core import AnimationFrame as AnimationFrame
 from infernux.core import AnimStateMachine as AnimStateMachine
 from infernux.core import AnimState as AnimState
+from infernux.core import AnimClipEntry as AnimClipEntry
 from infernux.core import AnimTransition as AnimTransition
 from infernux.core import AnimCondition as AnimCondition
 from infernux.core import AnimParameter as AnimParameter

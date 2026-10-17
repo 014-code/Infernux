@@ -67,6 +67,16 @@ class SkinnedMeshRenderer(MeshRenderer):
         """
         return self._require_cpp_component().get_skeleton_node_world_matrices(node_names)
 
+    def submit_pose_stack(self, layers: Sequence[dict]) -> None:
+        """Sample and combine weighted animation layers with exact bone masks.
+
+        Each layer provides take_name, time, weight, loop and optional
+        source_model_guid, bone_mask and additive. blend_group normalizes member
+        weights per bone before group_weight applies a fade. Call after animator updates
+        when composing their poses with independent locomotion or aiming.
+        """
+        self._require_cpp_component().submit_pose_stack(list(layers))
+
     def get_root_motion_delta(
         self, take_name: str, from_seconds: float, to_seconds: float,
         loop: bool = True, animation_source_guid: str = "",

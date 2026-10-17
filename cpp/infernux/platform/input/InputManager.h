@@ -209,6 +209,14 @@ class InputManager
     /// @brief Returns true during the frame any key was pressed down.
     [[nodiscard]] bool AnyKeyDown() const;
 
+    /// @brief Consume one key-down edge before Editor shortcut routing.
+    ///
+    /// Gameplay UI uses this for modal keys such as Escape. The key remains
+    /// visible to gameplay queries, but the Editor does not execute the same
+    /// edge as a global shortcut.
+    void ConsumeKeyDown(int scancode);
+    [[nodiscard]] bool IsKeyDownConsumed(int scancode) const;
+
     // ---- Mouse button queries (Unity: Input.GetMouseButton / Down / Up) ----
     // button: 0 = left, 1 = right, 2 = middle, 3/4 = side buttons
 
@@ -439,6 +447,7 @@ class InputManager
     std::array<uint8_t, INPUT_MAX_KEYS> m_keys{};
     std::array<uint8_t, INPUT_MAX_KEYS> m_keyDown{};
     std::array<uint8_t, INPUT_MAX_KEYS> m_keyUp{};
+    std::array<uint8_t, INPUT_MAX_KEYS> m_keyDownConsumed{};
     std::array<uint8_t, INPUT_MAX_MOUSE_BUTTONS> m_mouseButtons{};
     std::array<uint8_t, INPUT_MAX_MOUSE_BUTTONS> m_mouseButtonDown{};
     std::array<uint8_t, INPUT_MAX_MOUSE_BUTTONS> m_mouseButtonUp{};

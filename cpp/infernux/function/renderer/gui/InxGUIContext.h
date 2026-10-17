@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <optional>
 #include <string>
@@ -110,6 +111,7 @@ class InxGUIContext
     [[nodiscard]] bool IsPointerActivationBlockedByPopup() const;
     /* basic text & labels */
     void Label(const std::string &text);
+    void FieldLabel(const std::string &text, float columnWidth);
     void TextWrapped(const std::string &text);
 
     /* buttons / clickables */
@@ -187,6 +189,9 @@ class InxGUIContext
     /* layout helpers */
     void BeginGroup(const std::string &name = "");
     void EndGroup();
+    void BeginFramedGroup(float paddingX, float paddingY, float rounding,
+                          const std::array<float, 4> &background, const std::array<float, 4> &border);
+    void EndFramedGroup();
 
     void SameLine(float offsetFromStartX = 0.0f, float spacing = -1.0f);
     void AlignTextToFramePadding();
@@ -458,6 +463,16 @@ class InxGUIContext
                                                                           uint64_t pickerTextureId, float labelWidth);
 
   private:
+    struct FramedGroup
+    {
+        ImDrawListSplitter splitter;
+        ImDrawList *drawList = nullptr;
+        float paddingX = 0, paddingY = 0, width = 0, rounding = 0;
+        ImU32 background = 0, border = 0;
+    };
+    std::deque<FramedGroup> m_framedGroups;
+    size_t m_framedGroupDepth = 0;
+
     struct SearchableComboState
     {
         std::array<char, 256> filter{};

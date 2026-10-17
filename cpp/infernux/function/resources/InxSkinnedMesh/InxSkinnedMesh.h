@@ -207,6 +207,9 @@ struct PoseStackLayer
     bool additive = false;
     bool loop = true;
     std::vector<std::string> boneMask;
+    // Normalize overlapping members per bone before applying the group's fade.
+    std::string blendGroup;
+    float groupWeight = 1.0f;
 };
 
 class InxSkinnedMesh

@@ -6,7 +6,7 @@ from infernux.engine.i18n import t
 from .inspector_utils import (
     max_label_w, field_label, render_serialized_field, has_field_changed,
     render_compact_section_header, render_info_text, pretty_field_name,
-    semantic_capture_enabled, inspector_component_semantic_id,
+    semantic_capture_enabled, inspector_component_semantic_id, serialized_field_label,
 )
 from ._inspector_undo import (
     _record_property, _record_builtin_property,
@@ -265,7 +265,7 @@ def _get_reference_display_name(element_type, value) -> str:
 
 def _render_serializable_value(ctx, parent_id, field_name, metadata, value, label_width):
     return render_serialized_field(
-        ctx, f"##{parent_id}_{field_name}", pretty_field_name(field_name), metadata, value, label_width,
+        ctx, f"##{parent_id}_{field_name}", serialized_field_label(field_name, metadata), metadata, value, label_width,
     )
 
 
@@ -277,7 +277,7 @@ def _render_serializable_members(ctx, parent_id, current_value, *, readonly=Fals
         (name, metadata) for name, metadata in get_serialized_fields(type(current_value)).items()
         if not metadata.hidden and (metadata.visible_when is None or metadata.visible_when(current_value))
     ]
-    label_width = max_label_w(ctx, [pretty_field_name(name) for name, _ in fields]) if fields else 0.0
+    label_width = max_label_w(ctx, [serialized_field_label(name, metadata) for name, metadata in fields]) if fields else 0.0
     render_value = value_renderer or _render_serializable_value
     changes = {}
     for name, metadata in fields:

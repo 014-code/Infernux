@@ -7,6 +7,8 @@ from pathlib import Path
 import pytest
 
 from infernux.components.skeletal_animator import SkeletalAnimator
+from infernux.components.fields import get_raw_field_value
+from infernux.core.anim_state_machine import AnimClipEntry
 from infernux.core.animation_clip3d import AnimationClip3D
 from infernux.core.asset_ref import AnimationClip3DRef
 from infernux.core.asset_types import read_meta_file, read_mesh_import_settings
@@ -30,14 +32,25 @@ def test_imported_clip_guid_picker_fsm_and_cook(model, tmp_path, monkeypatch, sc
     assert guid != model_guid and database.get_guid_from_path(virtual) == guid
     assert model_guid in AssetDependencyGraph.instance().get_dependencies(guid)
     assert not Path(virtual).exists()
+    from infernux.engine.interaction import AssetReferenceCatalog
+    monkeypatch.setattr("infernux.engine.project_context.get_project_root", lambda: str(Path(database.assets_root).parent))
+    catalog = AssetReferenceCatalog()
+    assert any(database.get_guid_from_path(path) == guid for _name, path in catalog.items("AnimationClip3D", ""))
 
     panel = AnimFSMEditorPanel()
     panel._fsm.mode = "3d"
     state = panel._fsm.add_state("Imported")
     panel._assign_clip_to_state(state, virtual, record_undo=False)
     assert state.clip_guid == guid
-    panel._assign_clip_b_to_state(state, virtual, record_undo=False)
-    assert state.clip_b_guid == guid
+    item = panel._group_item_for_path(virtual)
+    assert get_raw_field_value(item, "clip").guid == guid
+    from infernux.engine.ui.animfsm_editor_panel import _ClipGroupItem
+    from infernux.engine.ui.inspector_utils import serialized_field_label
+    from infernux.components.fields import get_serialized_fields
+    from infernux.engine.i18n import t
+    assert get_raw_field_value(_ClipGroupItem(), "clip").guid == ""
+    assert serialized_field_label("weight", get_serialized_fields(_ClipGroupItem)["weight"]) == t("animfsm_editor.clip_weight")
+    state.clips = [AnimClipEntry(guid)]
     animator = SkeletalAnimator()
     animator._clip_cache = {}
     def path_loader(*_args, **_kwargs):
@@ -48,7 +61,7 @@ def test_imported_clip_guid_picker_fsm_and_cook(model, tmp_path, monkeypatch, sc
         loading.setattr(AnimationClip3D, "load", path_loader)
         loading.setattr("infernux.core.asset_types.read_asset_metadata", path_loader)
         clip = animator._resolve_clip(state)
-        assert animator._resolve_clip_b(state) is clip
+        assert animator._resolve_group_clips(state) == [clip]
         assert AnimationClip3DRef(guid=guid).resolve() is clip
         assert AssetManager.load_by_guid(guid) is clip
         assert AnimationClip3D.from_embedded_take_virtual_path(virtual) is clip

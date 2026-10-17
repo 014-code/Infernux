@@ -13,6 +13,7 @@ from infernux.core.anim_state_machine import (
     AnimParameter,
     AnimCondition,
     AnimConditionError,
+    AnimClipEntry,
     evaluate_anim_condition,
 )
 
@@ -64,7 +65,8 @@ def test_fsm_authored_document_roundtrip_copy_and_file(tmp_path):
     ]
     idle = fsm.add_state("Idle")
     blend = fsm.add_state("Blend")
-    blend.kind, blend.clip_guid, blend.clip_b_guid, blend.blend_value = "blend", "clip-a", "clip-b", 0.3
+    blend.kind = "group"
+    blend.clips = [AnimClipEntry("clip-a", 0.3), AnimClipEntry("clip-b", 0.7), AnimClipEntry("clip-c", 1.0)]
     sequence = fsm.add_state("Sequence")
     sequence.kind, sequence.timeline_guid = "timeline", "timeline-guid"
     idle.transitions.append(
@@ -78,7 +80,7 @@ def test_fsm_authored_document_roundtrip_copy_and_file(tmp_path):
     restored = AnimStateMachine.from_dict(document)
     assert restored.to_dict() == document
     assert restored.default_state == "Idle"
-    assert restored.get_state("Blend").blend_value == pytest.approx(0.3)
+    assert [item.weight for item in restored.get_state("Blend").clips] == pytest.approx([0.3, 0.7, 1.0])
     assert restored.get_state("Sequence").timeline_guid == "timeline-guid"
     clone = fsm.copy()
     clone.file_path = "a-different-local-path.animfsm"

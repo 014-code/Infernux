@@ -72,6 +72,7 @@ infernux = [
     "*.so",
     "*.dylib",
     "lib/PlayerNativeContract.json",
+    "lib/InfernuxEditorProgress*",
     "**/_Infernux*.pyd",
     "**/_Infernux*.so",
     "**/_Infernux*.dylib",

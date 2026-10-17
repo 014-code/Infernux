@@ -1,4 +1,5 @@
 #include <function/editor/EditorShortcutInput.h>
+#include <platform/input/InputManager.h>
 
 #include <cassert>
 #include <string>
@@ -79,6 +80,22 @@ int main()
     press({ImGuiKey_LeftCtrl, ImGuiMod_Ctrl, ImGuiKey_Z}, "Ctrl+Z");
     press({ImGuiKey_LeftCtrl, ImGuiMod_Ctrl, ImGuiKey_LeftShift, ImGuiMod_Shift, ImGuiKey_Z}, "Ctrl+Shift+Z");
     press({ImGuiKey_LeftCtrl, ImGuiMod_Ctrl, ImGuiKey_Y}, "Ctrl+Y");
+
+    auto &gameInput = infernux::InputManager::Instance();
+    const int escape = infernux::InputManager::NameToScancode("escape");
+    gameInput.BeginFrame();
+    gameInput.ProcessKeyEvent(escape, true);
+    gameInput.ConsumeKeyDown(escape);
+    const size_t beforeEscape = chords.size();
+    io.AddKeyEvent(ImGuiKey_Escape, true);
+    frame();
+    assert(chords.size() == beforeEscape);
+    io.AddKeyEvent(ImGuiKey_Escape, false);
+    frame();
+    gameInput.BeginFrame();
+    gameInput.ProcessKeyEvent(escape, false);
+    gameInput.ProcessKeyEvent(escape, true);
+    press({ImGuiKey_Escape}, "Escape");
 
     const auto mouseFrame = [&](bool captured) {
         infernux::EditorShortcutInput::PrepareFrame(captured);

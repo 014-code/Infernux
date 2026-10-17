@@ -189,6 +189,7 @@ void InputManager::BeginFrame()
     m_droppedFiles.clear();
     m_syntheticInputThisFrame = false;
     m_syntheticKeyDown.fill(0);
+    m_keyDownConsumed.fill(0);
 
     // Re-apply relative mouse mode for the current window/focus state without
     // disturbing persistent capture flags. Editor capture is released on
@@ -204,8 +205,6 @@ void InputManager::ProcessKeyEvent(int scancode, bool pressed)
     if (scancode < 0 || scancode >= INPUT_MAX_KEYS)
         return;
     const size_t index = static_cast<size_t>(scancode);
-    if (pressed && scancode == SDL_SCANCODE_ESCAPE && m_editorCursorCaptureManaged)
-        SetEditorCursorCaptureAllowed(false);
     if (pressed) {
         if (m_keys[index] == 0)
             m_keyDown[index] = 1;
@@ -775,6 +774,18 @@ bool InputManager::AnyKeyDown() const
     return false;
 }
 
+void InputManager::ConsumeKeyDown(int scancode)
+{
+    if (scancode < 0 || scancode >= INPUT_MAX_KEYS || m_keyDown[static_cast<size_t>(scancode)] == 0)
+        return;
+    m_keyDownConsumed[static_cast<size_t>(scancode)] = 1;
+}
+
+bool InputManager::IsKeyDownConsumed(int scancode) const
+{
+    return scancode >= 0 && scancode < INPUT_MAX_KEYS && m_keyDownConsumed[static_cast<size_t>(scancode)] != 0;
+}
+
 // ============================================================================
 // Mouse button queries
 // ============================================================================
@@ -863,6 +874,7 @@ void InputManager::ResetAll()
     m_keys.fill(0);
     m_keyDown.fill(0);
     m_keyUp.fill(0);
+    m_keyDownConsumed.fill(0);
     m_mouseButtons.fill(0);
     m_mouseButtonDown.fill(0);
     m_mouseButtonUp.fill(0);

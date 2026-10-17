@@ -690,6 +690,54 @@ void InxGUIContext::EndGroup()
     ImGui::EndGroup();
 }
 
+void InxGUIContext::FieldLabel(const std::string &text, float columnWidth)
+{
+    const float width = std::min(columnWidth, std::max(0.0f, ImGui::GetContentRegionAvail().x - 48.0f * GetDpiScale()));
+    const ImVec2 origin = ImGui::GetCursorScreenPos();
+    ImGui::AlignTextToFramePadding();
+    ImGui::Dummy(ImVec2(width, ImGui::GetFrameHeight()));
+    const ImRect clip(origin, ImVec2(origin.x + width, origin.y + ImGui::GetFrameHeight()));
+    ImGui::RenderTextClipped(clip.Min, clip.Max, text.c_str(), nullptr, nullptr, ImVec2(0, 0.5f), &clip);
+    if (ImGui::IsItemHovered() && ImGui::CalcTextSize(text.c_str()).x > width)
+        ImGui::SetTooltip("%s", text.c_str());
+    ImGui::SameLine(0, 0);
+    ImGui::SetNextItemWidth(-FLT_MIN);
+}
+
+void InxGUIContext::BeginFramedGroup(float paddingX, float paddingY, float rounding,
+                                     const std::array<float, 4> &background, const std::array<float, 4> &border)
+{
+    if (m_framedGroupDepth == m_framedGroups.size())
+        m_framedGroups.emplace_back();
+    auto &group = m_framedGroups[m_framedGroupDepth++];
+    group.drawList = ImGui::GetWindowDrawList();
+    group.paddingX = paddingX;
+    group.paddingY = paddingY;
+    group.width = ImGui::GetContentRegionAvail().x + paddingX * 2;
+    group.rounding = rounding;
+    group.background = ImGui::GetColorU32(ImVec4(background[0], background[1], background[2], background[3]));
+    group.border = ImGui::GetColorU32(ImVec4(border[0], border[1], border[2], border[3]));
+    group.splitter.Split(group.drawList, 2);
+    group.splitter.SetCurrentChannel(group.drawList, 1);
+    ImGui::BeginGroup();
+    ImGui::Dummy(ImVec2(0, paddingY));
+}
+
+void InxGUIContext::EndFramedGroup()
+{
+    auto &group = m_framedGroups[--m_framedGroupDepth];
+    ImGui::Dummy(ImVec2(0, group.paddingY));
+    ImGui::EndGroup();
+    ImVec2 minimum = ImGui::GetItemRectMin();
+    const float bottom = ImGui::GetItemRectMax().y;
+    minimum.x -= group.paddingX;
+    const ImVec2 maximum(minimum.x + group.width, bottom);
+    group.splitter.SetCurrentChannel(group.drawList, 0);
+    group.drawList->AddRectFilled(minimum, maximum, group.background, group.rounding);
+    group.drawList->AddRect(minimum, maximum, group.border, group.rounding);
+    group.splitter.Merge(group.drawList);
+}
+
 void InxGUIContext::SameLine(float offsetFromStartX, float spacing)
 {
     ImGui::SameLine(offsetFromStartX, spacing);

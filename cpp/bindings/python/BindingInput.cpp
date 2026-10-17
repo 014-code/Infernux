@@ -91,6 +91,9 @@ void RegisterInputBindings(py::module_ &m)
         .def("get_key_up", &InputManager::GetKeyUp, py::arg("scancode"), "True during the frame the key was released")
         .def("any_key", &InputManager::AnyKey, "True if any key is currently held down")
         .def("any_key_down", &InputManager::AnyKeyDown, "True during the frame any key was first pressed")
+        .def("consume_key_down", &InputManager::ConsumeKeyDown, py::arg("scancode"),
+             "Consume one key-down edge before Editor shortcut routing")
+        .def("is_key_down_consumed", &InputManager::IsKeyDownConsumed, py::arg("scancode"))
 
         // ---- Mouse buttons ----
         .def("get_mouse_button", &InputManager::GetMouseButton, py::arg("button"),

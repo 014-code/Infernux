@@ -174,6 +174,13 @@ class SkinnedMeshRenderer : public MeshRenderer
     std::vector<std::shared_ptr<const InxSkinnedMesh>> m_poseStackAnimationSources;
     bool m_usePoseStack = false;
     SkinPoseHistory m_skinPoseHistory;
+    mutable std::shared_ptr<const InxSkinnedMesh> m_boundsModel;
+    mutable SkinPoseHistory::PalettePtr m_boundsPalette;
+    mutable int32_t m_boundsNodeGroup = -1;
+    mutable int32_t m_boundsSubmeshIndex = -1;
+    mutable glm::vec3 m_skinnedBoundsMin{0.0f};
+    mutable glm::vec3 m_skinnedBoundsMax{0.0f};
+    mutable bool m_skinnedBoundsValid = false;
     mutable std::shared_ptr<const InxSkinnedMesh> m_runtimeModel;
     mutable std::shared_ptr<const InxSkinnedMesh> m_animationSourceModel;
     mutable std::shared_ptr<const InxSkinnedMesh> m_blendAnimationSourceModel;

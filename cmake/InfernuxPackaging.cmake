@@ -48,6 +48,14 @@ endif()
 # Desktop extensions are built before both wheel and precompiled Player staging.
 # Android/Web staging retains the same Python sources and excludes host binaries.
 if(NOT INFERNUX_USE_TARGET_PYTHON AND NOT EMSCRIPTEN)
+    add_executable(InfernuxEditorProgress cpp/apps/editor/EditorProgress.cpp)
+    target_link_libraries(InfernuxEditorProgress PRIVATE SDL3::SDL3)
+    set_target_properties(InfernuxEditorProgress PROPERTIES
+        BUILD_RPATH "$ORIGIN" INSTALL_RPATH "$ORIGIN")
+    install(TARGETS InfernuxEditorProgress RUNTIME DESTINATION python/infernux/lib
+        COMPONENT ${INFERNUX_PYTHON_INSTALL_COMPONENT})
+    add_dependencies(stage_python_package InfernuxEditorProgress)
+
     foreach(_module IN ITEMS components/_component_native components/_component_lifecycle
             components/skeletal_animator ui/ui_render_dispatch)
         get_filename_component(_name "${_module}" NAME)

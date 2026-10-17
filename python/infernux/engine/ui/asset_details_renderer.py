@@ -1931,6 +1931,7 @@ def _render_animclip3d_body(ctx: InxGUIContext, panel, state: _State):
         t("asset.animclip3d_name"),
         t("asset.animclip3d_source_model"),
         t("asset.animclip3d_take"),
+        t("asset.animation_bone_mask"),
     ]
     lw = max_label_w(ctx, labels)
 
@@ -1951,19 +1952,13 @@ def _render_animclip3d_body(ctx: InxGUIContext, panel, state: _State):
     ctx.end_disabled()
 
     # ── Source model reference ────────────────────────────────────
-    model_path = ""
-    if (clip.source_model_guid or "").strip():
-        try:
-            adb = getattr(AssetManager, "_asset_database", None)
-            if adb:
-                model_path = adb.get_path_from_guid(clip.source_model_guid) or ""
-        except Exception:
-            model_path = ""
+    adb = AssetManager._asset_database
+    model_path = adb.get_path_from_guid(clip.source_model_guid) if adb and clip.source_model_guid else ""
 
-    if model_path and os.path.isfile(model_path):
+    if model_path:
         model_display = os.path.basename(model_path)
     elif clip.source_model_guid:
-        model_display = "(missing) " + clip.source_model_guid[:8] + "…"
+        model_display = t("asset.missing")
     else:
         model_display = "None (Model)"
 
@@ -2050,6 +2045,18 @@ def _render_animclip3d_body(ctx: InxGUIContext, panel, state: _State):
 
     if embedded:
         ctx.end_disabled()
+
+    if not embedded:
+        mask_text = ", ".join(clip.bone_mask)
+        field_label(ctx, t("asset.animation_bone_mask"), lw)
+        next_mask = ctx.text_input("##animclip3d_mask", mask_text, 4096)
+        ctx.record_semantic_item("text_input", t("asset.animation_bone_mask"), True, "animclip3d.bone_mask")
+        if next_mask != mask_text:
+            document = clip.serialize_document()
+            document["bone_mask"] = list(dict.fromkeys(name.strip() for name in next_mask.split(",") if name.strip()))
+            _apply_editable_resource_document(
+                state, document, edit_key="bone_mask", description="Set Animation Clip Bone Mask",
+            )
 
     from .model_animation_preview import render_clip_animation_preview
     render_clip_animation_preview(ctx, panel, state, model_path, clip.take_name)
@@ -2378,6 +2385,9 @@ def _render_animfsm_body(ctx: InxGUIContext, panel, state: _State):
             is_default = (s.name == fsm.default_state)
             prefix = "► " if is_default else "  "
             ctx.label(f"{prefix}{s.name}")
+            if s.kind == "group":
+                ctx.same_line()
+                ctx.label(f"  [{t('animfsm_editor.node_kind_group')} · {len(s.clips)}]")
             clip_path = ""
             if s.clip_guid:
                 from infernux.core.assets import AssetManager
@@ -2604,20 +2614,9 @@ def invalidate_asset(path: str, *, keep_view: bool = False):
 
 def _render_header(ctx: InxGUIContext, cat_def: AssetCategoryDef,
                    state: _State):
-    """Render the standard asset header: name, GUID, path, extra meta."""
+    """Render the standard asset header: name, path, extra metadata."""
     filename = (state.meta or {}).get("resource_name") or os.path.basename(state.file_path)
     ctx.label(f"{t(cat_def.display_name)}: {filename}")
-
-    # GUID — try .meta first, then serialized data (material stores it inside)
-    guid = (state.meta or {}).get("guid", "")
-    if not guid:
-        cached = state.extra.get("cached_data")
-        if cached:
-            guid = cached.get("guid", "")
-    if guid:
-        ctx.push_style_color(ImGuiCol.Text, *Theme.META_TEXT)
-        ctx.label(t("asset.guid_label").format(guid=guid))
-        ctx.pop_style_color(1)
 
     # Path
     ctx.push_style_color(ImGuiCol.Text, *Theme.META_TEXT)

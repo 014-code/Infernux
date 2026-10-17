@@ -12,7 +12,7 @@ from infernux.engine.interaction import (
     GraphElementRef,
     SelectionService,
 )
-from infernux.core.anim_state_machine import AnimCondition, AnimState, AnimTransition
+from infernux.core.anim_state_machine import AnimClipEntry, AnimCondition, AnimState, AnimTransition
 from infernux.engine.ui.animfsm_editor_panel import AnimFSMEditorPanel
 from infernux.engine.undo import UndoManager
 
@@ -354,7 +354,7 @@ def test_animfsm_transition_reconnect_is_one_precise_undo_step():
 
 def test_animfsm_copy_paste_uses_global_typed_clipboard_and_is_atomic():
     panel, manager = _panel_with_history()
-    first = AnimState(name="First", position=[10.0, 20.0])
+    first = AnimState(name="First", kind="group", clips=[AnimClipEntry("a", 1.0), AnimClipEntry("b", .6), AnimClipEntry("c", .4)], position=[10.0, 20.0])
     second = AnimState(name="Second", position=[30.0, 40.0])
     assert panel._insert_state(first, "Add First", make_default=True)
     assert panel._insert_state(second, "Add Second", make_default=False)
@@ -396,12 +396,25 @@ def test_animfsm_copy_paste_uses_global_typed_clipboard_and_is_atomic():
     pasted_second = panel._fsm.get_state("Second 2")
     assert pasted_first.position == [58.0, 68.0]
     assert pasted_second.position == [78.0, 88.0]
+    assert [clip.to_dict() for clip in pasted_first.clips] == [clip.to_dict() for clip in first.clips]
     assert [item.target_state for item in pasted_first.transitions] == ["Second 2"]
     assert len(manager.action_journal.applied_entries()[-1].action.diff.mutations) == 3
 
     manager.undo()
     assert panel._fsm.to_dict() == baseline
     assert panel._fsm_document().revision == baseline_revision
+
+    panel._graph_selection.select(
+        (GraphElementRef(GraphElementKind.NODE, first.stable_id),
+         GraphElementRef(GraphElementKind.NODE, second.stable_id)), record_history=False)
+    assert panel.command_edit_cut()
+    assert not panel._fsm.states
+    manager.undo()
+    assert panel._fsm.to_dict() == baseline
+    manager.redo()
+    assert not panel._fsm.states
+    assert panel.command_edit_paste()
+    assert len(panel._fsm.states) == 2
 
 
 @pytest.mark.parametrize("target_count,mode", [(2, "2d"), (2, "timeline")])

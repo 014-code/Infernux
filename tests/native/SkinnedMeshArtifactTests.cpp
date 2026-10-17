@@ -126,6 +126,40 @@ void CheckSkeletonPoseQueries()
     PoseStackLayer first;
     first.takeName = "A";
     first.timeSeconds = 1;
+    first.loop = false;
+    first.boneMask = {"Root"};
+    PoseStackLayer upper = first;
+    upper.takeName = "B";
+    upper.timeSeconds = 0;
+    upper.boneMask = {"Socket"};
+    check(model.EvaluatePoseStack({first, upper}), 6, 7);
+    PoseStackLayer third = upper;
+    third.takeName = "A";
+    third.timeSeconds = 1;
+    third.weight = 0.75f;
+    upper.weight = 0.25f;
+    check(model.EvaluatePoseStack({first, upper, third}), 6, 5.5f);
+
+    for (auto *layer : {&first, &upper, &third}) {
+        layer->weight = 1;
+        layer->blendGroup = "outgoing";
+        layer->groupWeight = 0.5f;
+    }
+    PoseStackLayer incoming = first;
+    incoming.blendGroup = "incoming";
+    incoming.boneMask.clear();
+    check(model.EvaluatePoseStack({first, upper, third, incoming}), 6, 5.5f);
+    // Three overlapping outgoing clips still account for half of the result.
+    upper.boneMask.clear();
+    third.boneMask.clear();
+    first.boneMask.clear();
+    incoming.takeName = "B";
+    incoming.timeSeconds = 0;
+    check(model.EvaluatePoseStack({first, upper, third, incoming}), 26.0f / 3.0f, 19.0f / 3.0f);
+
+    first = {};
+    first.takeName = "A";
+    first.timeSeconds = 1;
     first.weight = 0.5f;
     first.loop = false;
     PoseStackLayer second = first;

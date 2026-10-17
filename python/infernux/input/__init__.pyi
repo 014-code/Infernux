@@ -188,6 +188,11 @@ class Input:
         ...
 
     @staticmethod
+    def consume_key_down(key: Union[str, int]) -> None:
+        """Prevent one gameplay key edge from reaching Editor shortcuts."""
+        ...
+
+    @staticmethod
     def get_mouse_button(button: int) -> bool:
         """Returns True while the given mouse button is held down."""
         ...

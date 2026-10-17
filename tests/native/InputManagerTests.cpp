@@ -176,8 +176,15 @@ int main()
     assert(input.GetMouseButtonDown(0));
     input.ProcessPointerButtonEvent(0, false);
     input.ProcessKeyEvent(SDL_SCANCODE_ESCAPE, true);
-    assert(!input.IsCursorLocked() && !input.IsEditorCursorCaptureAllowed());
+    assert(input.IsCursorLocked() && input.IsEditorCursorCaptureAllowed());
     assert(input.GetKeyDown(SDL_SCANCODE_ESCAPE));
+    input.ConsumeKeyDown(SDL_SCANCODE_ESCAPE);
+    assert(input.IsKeyDownConsumed(SDL_SCANCODE_ESCAPE));
+    assert(input.GetKeyDown(SDL_SCANCODE_ESCAPE));
+    input.BeginFrame();
+    assert(!input.IsKeyDownConsumed(SDL_SCANCODE_ESCAPE));
+    input.SetEditorCursorCaptureAllowed(false);
+    assert(!input.IsCursorLocked());
     input.SetEditorCursorCaptureAllowed(true);
     assert(input.IsCursorLocked());
     input.ProcessFocusEvent(false);

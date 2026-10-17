@@ -50,6 +50,25 @@ def _registry() -> EditorCommandRegistry:
     )
 
 
+def test_graph_menu_labels_follow_the_current_locale():
+    from infernux.engine.i18n import get_locale, set_locale
+
+    registry = _registry()
+    commands = ("edit.copy", "edit.cut", "edit.paste", "edit.duplicate", "edit.delete", "graph.center_view")
+    for command in commands:
+        registry.register(EditorCommand(command, lambda context: True, display_name=command))
+    builder = ContextMenuBuilder(registry)
+    specs = tuple(ContextMenuCommand(command) for command in commands)
+    previous = get_locale()
+    try:
+        set_locale("zh")
+        assert [item.label for item in builder.resolve(specs)] == ["复制", "剪切", "粘贴", "创建副本", "删除", "居中视图"]
+        set_locale("en")
+        assert [item.label for item in builder.resolve(specs)][:3] == ["Copy", "Cut", "Paste"]
+    finally:
+        set_locale(previous)
+
+
 def test_deferred_context_menu_executes_the_frozen_focus_and_selection():
     focus = FocusService()
     selection = SelectionService()

@@ -440,6 +440,7 @@ void RegisterGUIBindings(py::module_ &m)
 
     py::class_<InxGUIContext>(m, "InxGUIContext")
         .def("label", &InxGUIContext::Label)
+        .def("field_label", &InxGUIContext::FieldLabel, py::arg("text"), py::arg("column_width"))
         .def("text_wrapped", &InxGUIContext::TextWrapped)
         .def("button", &InxGUIContext::Button, py::arg("label"), py::arg("on_click") = py::none(),
              py::arg("width") = 0.0f, py::arg("height") = 0.0f,
@@ -649,6 +650,9 @@ void RegisterGUIBindings(py::module_ &m)
         .def("progress_bar", &InxGUIContext::ProgressBar)
         .def("begin_group", &InxGUIContext::BeginGroup, py::arg("name") = "")
         .def("end_group", &InxGUIContext::EndGroup)
+        .def("begin_framed_group", &InxGUIContext::BeginFramedGroup,
+             py::arg("padding_x"), py::arg("padding_y"), py::arg("rounding"), py::arg("background"), py::arg("border"))
+        .def("end_framed_group", &InxGUIContext::EndFramedGroup)
         .def("same_line", &InxGUIContext::SameLine, py::arg("offset_from_start_x") = 0.0f, py::arg("spacing") = -1.0f)
         .def("align_text_to_frame_padding", &InxGUIContext::AlignTextToFramePadding,
              "Vertically align upcoming text baseline to FramePadding.y so it aligns with framed widgets")

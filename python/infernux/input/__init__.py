@@ -443,6 +443,15 @@ class Input(metaclass=_InputMeta):
         sc = Input._resolve_key(key)
         return sc >= 0 and _NativeInputManager.instance().get_key_up(sc)
 
+    @staticmethod
+    def consume_key_down(key: Union[str, int]) -> None:
+        """Prevent one gameplay key edge from also reaching Editor shortcuts."""
+        if not Input._accepts_game_input():
+            return
+        sc = Input._resolve_key(key)
+        if sc >= 0:
+            _NativeInputManager.instance().consume_key_down(sc)
+
     # ------------------------------------------------------------------
     # Mouse buttons — Unity: Input.GetMouseButton / Down / Up
     # ------------------------------------------------------------------

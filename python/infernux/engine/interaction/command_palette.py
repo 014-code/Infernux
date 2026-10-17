@@ -187,7 +187,7 @@ class CommandPaletteService:
             result.append(
                 CommandPaletteEntry(
                     command.command_id,
-                    command.display_name,
+                    command.localized_name,
                     command.category,
                     self._shortcut_label(command.command_id),
                     enabled,
@@ -287,6 +287,7 @@ class CommandPaletteService:
             " ".join(
                 (
                     command.display_name,
+                    command.localized_name,
                     command.category,
                     command.command_id,
                     *command.palette_keywords,

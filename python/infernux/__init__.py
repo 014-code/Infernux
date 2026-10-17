@@ -233,6 +233,7 @@ __all__ = [
     "AnimationFrame",
     "AnimStateMachine",
     "AnimState",
+    "AnimClipEntry",
     "AnimTransition",
     "AnimCondition",
     "AnimParameter",

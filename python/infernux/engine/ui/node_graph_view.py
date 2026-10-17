@@ -843,7 +843,7 @@ class NodeGraphView:
             return float(len(text)) * (_NODE_FONT * 0.52)
 
         node_data = getattr(node, "data", {})
-        title = str(node_data.get("label", getattr(typedef, "label", "")))
+        title = t(str(node_data.get("label", getattr(typedef, "label", ""))))
         header_reserve = (
             _HEADER_COLOR_SWATCH_SIZE + _HEADER_COLOR_SWATCH_PAD * 2.0
             if getattr(typedef, "show_header_color_swatch", True)
@@ -854,10 +854,10 @@ class NodeGraphView:
         inputs = typedef.input_pins()
         outputs = typedef.output_pins()
         input_width = max(
-            (text_width(getattr(pin, "label", "")) for pin in inputs), default=0.0
+            (text_width(t(getattr(pin, "label", ""))) for pin in inputs), default=0.0
         )
         output_width = max(
-            (text_width(getattr(pin, "label", "")) for pin in outputs), default=0.0
+            (text_width(t(getattr(pin, "label", ""))) for pin in outputs), default=0.0
         )
         pin_reserve = _NODE_PAD_X + _PIN_RADIUS * 2.0 + 8.0
 
@@ -970,7 +970,7 @@ class NodeGraphView:
             self._draw_one_node(ctx, layout)
             if not self._semantic_capture_active:
                 continue
-            label = str(layout.node.data.get("label", layout.typedef.label))
+            label = t(str(layout.node.data.get("label", layout.typedef.label)))
             center_x = layout.sx + layout.w * 0.5
             center_y = layout.sy + layout.h * 0.5
             interaction_point = self._find_node_drag_semantic_point(uid, layout)
@@ -1089,7 +1089,7 @@ class NodeGraphView:
                 )
 
         # Header label — node name only (no category chips / Particle subtitle).
-        label = layout.node.data.get("label", layout.typedef.label)
+        label = t(layout.node.data.get("label", layout.typedef.label))
         font_sz = self._zoom_font(_NODE_FONT)
         sw_x1, sw_y1, sw_x2, sw_y2 = self._node_header_swatch_rect(layout)
         label_right = (
@@ -1184,13 +1184,13 @@ class NodeGraphView:
             ctx.draw_text_aligned(
                 pl.cx + pin_r + 4 * z, pl.cy - label_half,
                 pl.cx + w * 0.45, pl.cy + label_half,
-                pl.pin_def.label, *_TEXT_DIM_COLOR, 0.0, 0.5, dim_font, True,
+                t(pl.pin_def.label), *_TEXT_DIM_COLOR, 0.0, 0.5, dim_font, True,
             )
         for pl in layout.output_pins:
             ctx.draw_text_aligned(
                 sx + w * 0.55, pl.cy - label_half,
                 pl.cx - pin_r - 4 * z, pl.cy + label_half,
-                pl.pin_def.label, *_TEXT_DIM_COLOR, 1.0, 0.5, dim_font, True,
+                t(pl.pin_def.label), *_TEXT_DIM_COLOR, 1.0, 0.5, dim_font, True,
             )
 
         # Custom body renderer
@@ -1730,7 +1730,7 @@ class NodeGraphView:
             self._record_semantic_rect(
                 ctx,
                 "node_graph_port",
-                f"{node_label} {pl.pin_def.label} Input",
+                f"{node_label} {t(pl.pin_def.label)}",
                 enabled,
                 f"port.{node_uid}.input.{pl.pin_def.id}",
                 pl.cx - pin_hit_r,
@@ -1744,7 +1744,7 @@ class NodeGraphView:
             self._record_semantic_rect(
                 ctx,
                 "node_graph_port",
-                f"{node_label} {pl.pin_def.label} Output",
+                f"{node_label} {t(pl.pin_def.label)}",
                 enabled,
                 f"port.{node_uid}.output.{pl.pin_def.id}",
                 pl.cx - pin_hit_r,
@@ -1826,8 +1826,8 @@ class NodeGraphView:
             mid_x, mid_y = hit_point or points[len(points) // 2]
             source = self.graph.find_node(lk.source_node)
             target = self.graph.find_node(lk.target_node)
-            source_label = str(source.data.get("label", lk.source_node)) if source else lk.source_node
-            target_label = str(target.data.get("label", lk.target_node)) if target else lk.target_node
+            source_label = t(str(source.data.get("label", lk.source_node))) if source else lk.source_node
+            target_label = t(str(target.data.get("label", lk.target_node))) if target else lk.target_node
             link_hit_r = 7.0 * max(1.0, self.zoom)
             self._record_semantic_rect(
                 ctx,
@@ -2623,7 +2623,7 @@ class NodeGraphView:
             entries.append(
                 NodeCreationEntry(
                     key=typedef.type_id,
-                    label=typedef.label,
+                    label=t(typedef.label),
                     category=(
                         typedef.category_label
                         or typedef.type_id.split(".", 1)[0].upper()

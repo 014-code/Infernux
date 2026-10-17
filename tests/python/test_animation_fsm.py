@@ -11,6 +11,7 @@ from infernux.core.anim_state_machine import (
     AnimState,
     AnimStateMachine,
     AnimTransition,
+    AnimClipEntry,
 )
 from infernux.graph import TypeRef, ValueType
 from infernux.components.skeletal_animator import SkeletalAnimator
@@ -116,6 +117,35 @@ class _NativePoseRecorder:
         self.pose_stacks.append(layers)
 
 
+def test_skeletal_restart_and_rejected_transition_preserve_playback(monkeypatch):
+    animator = _make_animator()
+    native = _NativePoseRecorder()
+    owner = _HierarchyOwner(renderer=_RendererBinding(native))
+    monkeypatch.setattr(SkeletalAnimator, "game_object", property(lambda _self: owner))
+    animator._fsm = AnimStateMachine(default_state="Walk", states=[
+        AnimState(name="Walk"), AnimState(name="Missing"),
+        AnimState(name="MissingTimeline", kind="timeline"),
+    ])
+    animator._clip_cache = {"Walk": _FakeClip()}
+    assert animator.play("Walk")
+    animator.update(0.5)
+    revision = animator._playback_revision
+    assert animator.play("Walk")
+    assert animator._elapsed == 0.5 and animator._playback_revision == revision
+    for missing in ("Missing", "MissingTimeline"):
+        assert not animator.play(missing)
+        assert animator.current_state == "Walk" and animator.is_playing
+        assert animator._elapsed == 0.5 and animator._playback_revision == revision
+    assert animator.play("Walk", restart=True)
+    assert animator._elapsed == 0.0 and animator._playback_revision == revision + 1
+    animator.update(0.25)
+    assert native.calls[-1][1] == pytest.approx(0.25)
+    layers = animator.get_pose_layers()
+    assert layers[0]["time"] == pytest.approx(0.25) and layers[0]["take_name"] == "Walk"
+    layers[0]["bone_mask"].append("Arm")
+    assert animator.get_pose_layers()[0]["bone_mask"] == []
+
+
 @pytest.mark.parametrize("phase", ["switch", "terminal", "restart"])
 def test_skeletal_event_state_change_keeps_the_new_playback_cursor(monkeypatch, phase):
     from infernux.core.animation_clip3d import AnimationClip3D
@@ -155,17 +185,12 @@ def test_skeletal_event_state_change_keeps_the_new_playback_cursor(monkeypatch, 
 
 
 def test_imported_root_motion_updates_owner_transform_once_per_frame(monkeypatch):
-    class Rotation:
-        def __init__(self, value):
-            self.value = value
-
-        def __mul__(self, other):
-            return Rotation((self.value, other.value))
+    from infernux.lib import Vector3, quatf
 
     class Transform:
         def __init__(self):
             self.translations = []
-            self.local_rotation = Rotation("base")
+            self.local_rotation = quatf.identity()
 
         def translate_local(self, value):
             self.translations.append(value)
@@ -177,7 +202,7 @@ def test_imported_root_motion_updates_owner_transform_once_per_frame(monkeypatch
 
         def get_root_motion_delta(self, *args):
             self.root_calls.append(args)
-            return "move", Rotation("delta")
+            return Vector3(3.0 if args[0] == "Run" else 1.0, 0.0, 0.0), quatf.euler(0.0, 90.0, 0.0)
 
         def get_animation_duration_seconds(self, *_args):
             return 2.0
@@ -199,9 +224,12 @@ def test_imported_root_motion_updates_owner_transform_once_per_frame(monkeypatch
     animator.update(0.25)
 
     assert native.root_calls == [("Walk", 0.5, 0.75, True, "d" * 32)]
-    assert transform.translations == ["move"]
-    assert transform.local_rotation.value == ("base", "delta")
+    assert transform.translations[0].x == pytest.approx(1.0)
+    assert quatf.angle(transform.local_rotation, quatf.euler(0.0, 90.0, 0.0)) < 0.01
     assert len(native.calls) == 1
+    animator._apply_root_motion([(animator._current_clip, .25, True), (_FakeClip("Run"), .75, True)], .5, .75)
+    assert transform.translations[1].x == pytest.approx(2.5)
+    assert [call[0] for call in native.root_calls] == ["Walk", "Walk", "Run"]
 
 
 def test_imported_non_looping_clip_cannot_be_forced_to_wrap_by_fsm(monkeypatch):
@@ -334,27 +362,77 @@ def test_imported_bone_mask_uses_native_pose_stack(monkeypatch):
     ]
 
 
-def test_blend_state_pose_cache_includes_each_clip_mask_and_loop_policy(monkeypatch):
+def test_clip_group_pose_cache_weights_masks_and_loop_policy(monkeypatch):
     animator = _make_animator()
     native = _NativePoseRecorder()
+    owner = _HierarchyOwner(renderer=_RendererBinding(native))
+    monkeypatch.setattr(SkeletalAnimator, "game_object", property(lambda _self: owner))
     clip_b = _FakeClip("Run", bone_mask=["Leg"], default_loop=False)
-    monkeypatch.setattr(animator, "_resolve_clip_b", lambda _state: clip_b)
     animator._current_clip = _FakeClip("Walk", bone_mask=["Spine"])
+    animator._group_clips = [animator._current_clip, clip_b, _FakeClip("Recoil", bone_mask=["Arm"])]
+    animator._group_weights = [1.0, 1.0, 0.2]
     animator._elapsed = 0.5
-    state = AnimState(name="Locomotion", kind="blend", blend_value=0.5)
+    animator._current_state = AnimState(name="Locomotion", kind="group")
 
-    assert animator._submit_blend_state([native], state)
-    assert [layer["loop"] for layer in native.pose_stacks[-1]] == [True, False]
+    animator._sync_native_runtime_playback()
+    assert [layer["loop"] for layer in native.pose_stacks[-1]] == [True, False, True]
     animator._current_clip.bone_mask = ["Arm"]
-    assert animator._submit_blend_state([native], state)
+    animator._sync_native_runtime_playback()
 
     assert len(native.pose_stacks) == 2
     assert native.pose_stacks[-1][0]["bone_mask"] == ["Arm"]
     assert native.pose_stacks[-1][1]["bone_mask"] == ["Leg"]
     clip_b.default_loop = True
-    assert animator._submit_blend_state([native], state)
+    animator._sync_native_runtime_playback()
     assert len(native.pose_stacks) == 3
-    assert [layer["loop"] for layer in native.pose_stacks[-1]] == [True, True]
+    assert [layer["loop"] for layer in native.pose_stacks[-1]] == [True, True, True]
+    animator.set_clip_weight(2, 0.0)
+    assert [layer["weight"] for layer in native.pose_stacks[-1]] == [1.0, 1.0]
+    animator._sync_native_runtime_playback()
+    assert len(native.pose_stacks) == 4
+
+
+def test_clip_group_events_independent_loop_clocks_and_whole_group_crossfade(monkeypatch):
+    from infernux.core.assets import AssetManager
+    from infernux.core.animation_clip3d import ImportedFloatCurve
+
+    animator = _make_animator()
+    native = _NativePoseRecorder()
+    owner = _HierarchyOwner(renderer=_RendererBinding(native))
+    monkeypatch.setattr(SkeletalAnimator, "game_object", property(lambda _self: owner))
+    clips = {"legs": _FakeClip("Run", duration_hint=1.0, bone_mask=["Leg"]),
+             "arms": _FakeClip("Reload", duration_hint=3.0, default_loop=False, bone_mask=["Arm"]),
+             "head": _FakeClip("Look", duration_hint=2.0, bone_mask=["Head"])}
+    clips["legs"].curves = [ImportedFloatCurve("FootPlant", ((0.0, 2.0), (1.0, 2.0)))]
+    clips["arms"].curves = [ImportedFloatCurve("FootPlant", ((0.0, 4.0), (1.0, 4.0)))]
+    monkeypatch.setattr(AssetManager, "load_by_guid", lambda guid, _kind: clips.get(guid))
+    animator._fsm = AnimStateMachine(default_state="Group", states=[
+        AnimState(name="Group", kind="group", clips=[AnimClipEntry(guid) for guid in clips]),
+        AnimState(name="Idle"), AnimState(name="Incomplete", kind="group", clips=[AnimClipEntry("missing")]),
+    ])
+    animator._clip_cache["Idle"] = _FakeClip("Idle")
+    received = []
+    monkeypatch.setattr(animator, "_dispatch_clip_events", lambda clip, *args, **kwargs: received.append((clip.take_name, args)))
+    assert animator.play("Group")
+    animator.update(2.5)
+    assert animator._elapsed == 2.5 and animator.normalized_time == pytest.approx(2.5 / 3)
+    assert len(received) == 3
+    assert animator.get_curve_value("FootPlant") == pytest.approx(3.0)
+    assert received[0][1] == (0.0, 0.5, True)
+    assert received[1][1] == (0.0, 2.5 / 3, False)
+    assert not animator.play("Incomplete")
+    assert animator.current_state == "Group" and animator._elapsed == 2.5
+    assert animator.cross_fade("Idle", .2)
+    animator.update(.1)
+    layers = native.pose_stacks[-1]
+    assert [layer["take_name"] for layer in layers] == ["Run", "Reload", "Look", "Idle"]
+    assert [layer["weight"] for layer in layers] == [1.0] * 4
+    assert [layer["group_weight"] for layer in layers] == pytest.approx([.5] * 4)
+    assert len({layer["blend_group"] for layer in layers[:3]}) == 1
+    assert layers[-1]["blend_group"] != layers[0]["blend_group"]
+    assert [layer["time"] for layer in layers[:3]] == pytest.approx([2.6] * 3)
+    animator.update(.2)
+    assert native.calls[-1][0] == "Idle"
 
 
 def test_imported_float_curve_drives_animator_float_parameter():
