@@ -9,6 +9,7 @@ from infernux.lib import Infernux, InxGUIRenderable, LogLevel, RuntimeMode, lib_
 from infernux.engine.project_context import set_project_root
 from infernux.engine.path_utils import safe_path as _safe_path
 from infernux.debug import Debug
+from infernux.engine.runtime_change_journal import RuntimeChangeDomain, RuntimeFrameBarrier
 
 if TYPE_CHECKING:
     from infernux.engine.play_mode import PlayModeManager
@@ -388,12 +389,8 @@ class Engine():
         scheduler.bind_native_bridge(scene_manager)
 
     def _consume_runtime_frame_barrier(self, barrier):
-        from infernux.engine.runtime_change_journal import (
-            RuntimeChangeDomain,
-            RuntimeFrameBarrier,
-        )
-
-        barrier = RuntimeFrameBarrier(barrier)
+        if not isinstance(barrier, RuntimeFrameBarrier):
+            barrier = RuntimeFrameBarrier(barrier)
         if barrier == RuntimeFrameBarrier.SNAPSHOT_PUBLICATION:
             scene_manager = getattr(self, "_runtime_scene_manager", None)
             getter = getattr(scene_manager, "get_global_transform_serial", None)
@@ -577,15 +574,20 @@ class Engine():
             _plugin_install_progress = PluginInstallProgressService.instance()
             _plugin_reload_progress = PluginReloadProgressService.instance()
 
+        from infernux.engine.runtime_event_queue import drain as _drain_runtime_events
+        from infernux.engine.interaction import DocumentRegistry as _DocumentRegistry
+        from infernux.core.assets import AssetManager as _AssetManager
+
         # Same policy as _pre_gui_tick: failures propagate to the C++
         # DrawFrame boundary instead of being swallowed step by step.
         def _post_draw_tick():
             nonlocal _gc_next_full
+            pmm = getattr(self, "_play_mode_manager", None)
+            playing = pmm is not None and pmm.is_playing
             # UI pointer callbacks may replace scenes or destroy renderables.
             # Drain them only after native GUI drawing and present have
             # released the current renderable traversal.
-            from infernux.engine.runtime_event_queue import drain
-            drain()
+            _drain_runtime_events()
             if _plugin_install_progress is not None:
                 _plugin_install_progress.post_present_tick()
             if _plugin_reload_progress is not None:
@@ -594,20 +596,17 @@ class Engine():
                 _build_preflight_progress.post_present_tick()
             if _asset_import_progress is not None:
                 _asset_import_progress.post_present_tick()
-                from infernux.engine.interaction import DocumentRegistry
-                DocumentRegistry.instance().process_deferred_saves()
-            from infernux.core.assets import AssetManager
-            AssetManager.flush_pending_gpu_texture_reloads()
-            if not _PLAYER_MODE:
+            _AssetManager.flush_pending_gpu_texture_reloads()
+            if not _PLAYER_MODE and not playing:
                 # Asset persistence is an editor service, not a panel
-                # rendering side effect.  Drain due debounced snapshots
-                # even when no Inspector/Project view is visible.
-                AssetManager.flush_scheduled_saves()
-                AssetManager.poll_pending_asset_writes()
-                from infernux.engine.interaction import DocumentRegistry
-                DocumentRegistry.instance().process_pending_saves()
+                # rendering side effect.  Play has no authoring writes, so the
+                # per-frame persistence/deferred-load polls are pure overhead.
+                _AssetManager.flush_scheduled_saves()
+                _AssetManager.poll_pending_asset_writes()
+                _DocumentRegistry.instance().process_pending_saves()
+                _DocumentRegistry.instance().process_deferred_saves()
 
-            if not _PLAYER_MODE:
+            if not _PLAYER_MODE and not playing:
                 from infernux.engine.scene_manager import SceneFileManager
                 sfm = SceneFileManager.instance()
                 if sfm is not None:
