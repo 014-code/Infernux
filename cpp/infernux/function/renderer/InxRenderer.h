@@ -780,6 +780,7 @@ class InxRenderer
     std::unique_ptr<OutlineRenderer> m_outlineRenderer;
     uint64_t m_gpuResidencyBudgetBytes = 0;
     uint32_t m_gpuResidencyCheckFrames = 0;
+    double m_gpuResidencyCheckAccumulatorMs = 0.0;
 
     // Game cameras share one output target but own independent RenderGraphs.
     // This keeps camera matrices, shadows, Forward+ lists, particles and

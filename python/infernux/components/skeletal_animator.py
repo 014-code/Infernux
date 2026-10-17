@@ -102,6 +102,10 @@ class SkeletalAnimator(InxComponent):
     _skinned_renderers: list[SkinnedMeshRenderer] = per_instance(list)
     _native_renderers: list = per_instance(list)
     native_pose_submission: bool = True
+    # Optional fixed animation update interval in seconds. Zero keeps the
+    # historical per-frame update; a positive value advances in accumulated
+    # steps so remote characters can sample at the rate their poses are used.
+    update_interval: float = 0.0
     _clip_cache: dict[object, Optional[AnimationClip3D]] = per_instance(dict)
 
     _current_state: Optional[AnimState] = None
@@ -143,6 +147,7 @@ class SkeletalAnimator(InxComponent):
         self._group_weights = []
         self._elapsed = 0.0
         self._playing = False
+        self._update_accum = 0.0
         self._skinned_renderers = []
         self._native_renderers = []
         self._clear_blend_state()
@@ -165,6 +170,13 @@ class SkeletalAnimator(InxComponent):
             self.play(self._fsm.default_state)
 
     def update(self, delta_time: float):
+        interval = float(self.update_interval)
+        if interval > 0.0:
+            self._update_accum += delta_time
+            if self._update_accum < interval:
+                return
+            delta_time = self._update_accum
+            self._update_accum = 0.0
         if self._current_timeline is not None:
             self._update_timeline(delta_time)
             return

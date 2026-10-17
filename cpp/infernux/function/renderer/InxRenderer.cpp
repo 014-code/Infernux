@@ -1285,6 +1285,7 @@ void InxRenderer::DrawFrame()
                 std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - guiBuildStart)
                     .count();
         }
+        m_gui->CompleteInputFrame();
         runDeferredTasks();
         SDL_Delay(16);
         return;
@@ -1354,6 +1355,9 @@ void InxRenderer::DrawFrame()
     // Unity's execution order: FixedUpdate → Update → LateUpdate → Render.
     _scenePhaseT0 = std::chrono::high_resolution_clock::now();
     sceneManager.LateUpdate(sceneDeltaTime);
+    // GUI capture is prepared before gameplay; unconsumed Editor Escape is
+    // resolved afterwards, including frames that reuse the previous GUI.
+    m_gui->CompleteInputFrame();
 #if INFERNUX_FRAME_PROFILE
     m_frameDetailTiming.lateUpdateCallMs =
         std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - _scenePhaseT0).count();
@@ -1647,8 +1651,13 @@ void InxRenderer::DrawFrame()
 
     sceneManager.EndFrame();
 
-    if (++m_gpuResidencyCheckFrames == 60) {
-        m_gpuResidencyCheckFrames = 0;
+    // Budget accounting is diagnostic work, not a per-second render task. At
+    // uncapped frame rates a 60-frame cadence runs every ~86 ms and the VMA
+    // statistics query dominates the 99th percentile. Five seconds still
+    // bounds residency well before a scene can exhaust the device budget.
+    m_gpuResidencyCheckAccumulatorMs += static_cast<double>(m_deltaTime) * 1000.0;
+    if (m_gpuResidencyCheckAccumulatorMs >= 5000.0) {
+        m_gpuResidencyCheckAccumulatorMs = 0.0;
         (void)TrimGpuResidencyBudget();
     }
 
