@@ -26,6 +26,8 @@ if TYPE_CHECKING:
 
 
 _MISSING = object()
+# Resolved once; the descriptor avoids a module import on every field write.
+_notify_value_changed = None
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -414,13 +416,19 @@ class SerializedFieldDescriptor:
 
     def _notify_runtime_value_changed(self, instance: 'InxComponent') -> None:
         """Publish one authoritative field write after storage accepted it."""
-        if getattr(instance, '_registered_go_id', None) is None:
-            # Defaults and candidate instances are initialized before they
-            # enter a scene and must not invalidate runtime consumers.
+        # Defaults and candidate instances are initialized before they
+        # enter a scene and must not invalidate runtime consumers. Descriptors
+        # are also reused by authoring objects (render pipelines), which have no
+        # scene registration mirror at all.
+        if getattr(instance, "_registered_go_id", None) is None:
             return
-        from ._component_lifecycle import notify_runtime_component_value_changed
+        global _notify_value_changed
+        notifier = _notify_value_changed
+        if notifier is None:
+            from ._component_lifecycle import notify_runtime_component_value_changed
 
-        notify_runtime_component_value_changed(instance, self.metadata.name)
+            notifier = _notify_value_changed = notify_runtime_component_value_changed
+        notifier(instance, self.metadata.name)
     
     def __delete__(self, instance: 'InxComponent'):
         values = instance.__dict__.get("_field_values")

@@ -78,6 +78,16 @@ def cds_type_code(field_type) -> int:
 # stable component type GUID + layout revision -> CDS field registration
 _class_registry: Dict[str, tuple] = {}
 
+# Class-key hashing is deliberately outside the batch/instance hot path. A
+# published class answers from this generation-checked cache instead.
+_class_info_cache: dict[type, tuple[int, Any]] = {}
+_class_info_generation = 0
+
+
+def _invalidate_class_info_cache() -> None:
+    global _class_info_generation
+    _class_info_generation += 1
+
 
 @dataclass
 class _RetiredLayoutState:
@@ -452,6 +462,7 @@ class CDSSchemaPublication:
                     descriptor._cds_wrap = _cds_value_wrapper(self._lib, type_code)
             for key in self._retired_keys:
                 _class_registry.pop(key, None)
+            _invalidate_class_info_cache()
             self._committed = True
             return self.class_info()
         except Exception:
@@ -507,6 +518,7 @@ class CDSSchemaPublication:
                     _class_registry[key] = value
                 else:
                     _class_registry.pop(key, None)
+            _invalidate_class_info_cache()
         for class_id, reference in self._retired_epoch_holds:
             _cancel_layout_epoch(class_id, reference)
         self._retired_epoch_holds.clear()
@@ -597,6 +609,8 @@ def publish_class(cls) -> Optional[int]:
         if descriptor is not None and hasattr(descriptor, 'metadata'):
             _stamp_descriptor(descriptor, lib, class_id, fid, tc)
 
+    _invalidate_class_info_cache()
+    _class_info_cache[cls] = (_class_info_generation, (class_id, field_map))
     return class_id
 
 
@@ -606,31 +620,27 @@ def get_class_info(cls):
 
     if is_component_registration_pending(cls):
         return None
-    return _class_registry.get(_class_key(cls))
+    cached = _class_info_cache.get(cls)
+    if cached is not None and cached[0] == _class_info_generation:
+        return cached[1]
+    info = _class_registry.get(_class_key(cls))
+    _class_info_cache[cls] = (_class_info_generation, info)
+    return info
 
 
 # ── Slot management ─────────────────────────────────────────────────────
 
 def allocate_slot(cls) -> Optional[tuple[int, int]]:
     """Allocate a CDS slot for a new component instance. Returns slot or None."""
-    from ._component_registration import is_component_registration_pending
-
-    if is_component_registration_pending(cls):
-        return None
-    info = _class_registry.get(_class_key(cls))
+    info = get_class_info(cls)
     if info is None:
         return None
-    lib = _get_lib()
-    return lib._cds_alloc(info[0])
+    return _get_lib()._cds_alloc(info[0])
 
 
 def get_class_id(cls) -> Optional[int]:
     """Return the CDS class_id for *cls*, or None if not registered."""
-    from ._component_registration import is_component_registration_pending
-
-    if is_component_registration_pending(cls):
-        return None
-    info = _class_registry.get(_class_key(cls))
+    info = get_class_info(cls)
     if info is None:
         return None
     return info[0]

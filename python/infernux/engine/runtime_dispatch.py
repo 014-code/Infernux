@@ -846,13 +846,26 @@ def resolve_runtime_method(
 
 
 def has_runtime_phase(component_type: type, phase: str) -> bool:
+    """Return whether *component_type* overrides one runtime phase.
+
+    Types that are already published answer from the immutable epoch. For a
+    type that is still being staged (scene load registers components before
+    the next safe-point publication), inspect only the phase method instead of
+    rebuilding a complete dispatch descriptor with ``inspect.signature`` for
+    every method on the class.
+    """
     epoch = current_runtime_epoch()
     descriptor = epoch.descriptor_for(component_type)
     if descriptor is not None:
         return descriptor.has_phase(phase)
     if component_type in epoch.retired_types:
         return False
-    return build_type_dispatch_descriptor(component_type).has_phase(phase)
+    raw = _find_raw_method(component_type, phase)
+    if raw is _MISSING:
+        return False
+    if isinstance(raw, (staticmethod, classmethod)):
+        return True
+    return callable(raw)
 
 
 def runtime_descriptor_diagnostic(component_type: type) -> dict[str, Any]:

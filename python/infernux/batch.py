@@ -104,14 +104,20 @@ def _validate_targets(targets: Sequence) -> None:
     if not targets:
         raise ValueError("targets must be non-empty; use a TransformBatchHandle for an empty batch")
     cls = type(targets[0])
-    if any(type(target) is not cls for target in targets):
-        raise TypeError("batch targets must have the same concrete type")
+    if isinstance(targets[0], _get_lib().Transform):
+        for target in targets:
+            if type(target) is not cls:
+                raise TypeError("batch targets must have the same concrete type")
+        return
     from infernux.components.component import InxComponent
 
-    if not isinstance(targets[0], (_get_lib().Transform, InxComponent)):
+    if not isinstance(targets[0], InxComponent):
         raise TypeError("batch targets must be Transform or InxComponent instances")
-    if any(getattr(target, '_is_destroyed', False) for target in targets):
-        raise RuntimeError("batch contains a destroyed component")
+    for target in targets:
+        if type(target) is not cls:
+            raise TypeError("batch targets must have the same concrete type")
+        if target._is_destroyed:
+            raise RuntimeError("batch contains a destroyed component")
 
 
 def _component_metadata(targets: Sequence, prop_name: str):
@@ -125,13 +131,15 @@ def _component_metadata(targets: Sequence, prop_name: str):
 
 
 def _cds_slots(targets: Sequence, class_id: int):
-    slots = []
+    """Pack validated CDS slot handles as an (N, 2) uint32 array."""
+    packed: list[int] = []
+    extend = packed.extend
     for target in targets:
-        slot = getattr(target, '_cds_slot', None)
-        if getattr(target, '_cds_class_id', None) != class_id or slot is None:
+        key = target._cds_key
+        if key is None or key[0] != class_id:
             raise RuntimeError("batch contains an unavailable or mismatched CDS layout")
-        slots.append(slot)
-    return _get_np().asarray(slots, dtype='uint32')
+        extend(key[1])
+    return _get_np().asarray(packed, dtype='uint32').reshape(-1, 2)
 
 
 # ── ComponentDataStore fast path ────────────────────────────────────────
@@ -176,11 +184,11 @@ def _try_cds_scatter(targets: Sequence, data: np.ndarray, prop_name: str) -> boo
     lib = _get_lib()
     lib._cds_batch_scatter(class_id, field_id, type_code, slots, data)
     # Native scatter validates every generation before writing any value.
-    # Reuse the descriptor's publication rule only after the whole write succeeds;
-    # journals coalesce these keys at the existing phase/safe-point boundary.
-    descriptor = getattr(cls, prop_name)
-    for target in targets:
-        descriptor._notify_runtime_value_changed(target)
+    # Publish the whole batch through one journal pass; per-component calls
+    # dominated the write cost for large batches.
+    from .components._component_lifecycle import notify_runtime_component_values
+
+    notify_runtime_component_values(tuple(targets), prop_name)
     return True
 
 
@@ -250,7 +258,6 @@ def _component_scatter(targets: Sequence, data: np.ndarray, prop_name: str) -> N
 
     meta = _component_metadata(targets, prop_name)
 
-    n = len(targets)
     lib = _get_lib()
 
     for i, obj in enumerate(targets):

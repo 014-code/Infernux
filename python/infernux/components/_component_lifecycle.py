@@ -7,6 +7,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Mapping, NamedTuple, Optional
+import sys
 
 
 
@@ -25,6 +26,16 @@ _RUNTIME_SCHEDULER_PHASES = (
     "late_update",
 )
 _MISSING = object()
+_has_runtime_phase_fn = None
+# The scheduler only derives plan invalidation from structural domains. Keeping
+# field/value domains out lets the journal skip per-field bookkeeping in the
+# Player, where no Inspector cursor subscribes to them.
+_SCHEDULER_CHANGE_DOMAINS = (
+    "scene_topology",
+    "component_structure",
+    "component_enabled",
+    "script_schema",
+)
 
 
 def _missing_runtime_phase(*_args):
@@ -43,6 +54,7 @@ class RuntimeExecutionScheduler:
     """
 
     _live_schedulers = weakref.WeakSet()
+    _primary_scheduler: Any = None
     _runtime_service_phases: dict[str, set[str]] = {}
 
     def __init__(
@@ -61,7 +73,8 @@ class RuntimeExecutionScheduler:
         self._native_scene_manager = None
         self._change_journal = change_journal
         self._change_cursor = change_journal.create_cursor(
-            f"runtime-execution:{self.name}:{id(self):x}"
+            f"runtime-execution:{self.name}:{id(self):x}",
+            domains=_SCHEDULER_CHANGE_DOMAINS,
         )
         # Scene replacement publishes the new graph before the retained old
         # graph is finalized. Component IDs are scene-local, and freshly bound
@@ -82,21 +95,62 @@ class RuntimeExecutionScheduler:
         self._native_frame: RuntimeExecutionFrame | None = None
         self._cpu_mesh_frame_open = False
         self._execution_snapshot: _RuntimeExecutionSnapshot | None = None
+        # Native work availability is maintained incrementally: registration is
+        # O(1) and only a false<->true transition crosses to the SceneManager.
+        self._work_components: set[int] = set()
+        self._native_work_available = False
+        self._native_work_dirty = False
         self._last_barrier_changes: dict[Any, Any] = {}
         self._last_completed_frame_changes: dict[Any, Any] = {}
         self._last_completed_barrier_sequence: tuple[tuple[Any, Any], ...] = ()
         self._live_schedulers.add(self)
+        primary = RuntimeExecutionScheduler._primary_scheduler
+        if primary is None or primary() is None:
+            RuntimeExecutionScheduler._primary_scheduler = weakref.ref(self)
 
-    def _sync_native_work_availability(self) -> None:
-        """Publish structural work state without adding a per-frame crossing."""
+    def _component_has_runtime_work(self, component: Any) -> bool:
+        if self._active_coroutine_scheduler(component) is not None:
+            return True
+        return any(
+            self._has_phase(component, phase) for phase in _RUNTIME_SCHEDULER_PHASES
+        )
+
+    def _note_component_work(self, component: Any, *, present: bool) -> None:
+        """Update one component's work contribution and publish transitions.
+
+        Scene loading registers thousands of components; each registration must
+        stay O(1). The native lifecycle fast path only needs to know whether any
+        work exists, so a set membership plus a level check is sufficient.
+        """
+        key = id(component)
+        if present and self._component_has_runtime_work(component):
+            self._work_components.add(key)
+        else:
+            self._work_components.discard(key)
+        self._recompute_work_availability()
+
+    def _recompute_work_availability(self) -> None:
         if not self._native_bridge or self._native_scene_manager is None:
             return
-        has_work = any(self._runtime_service_phases.values()) or any(
-            self._active_coroutine_scheduler(component) is not None
-            or any(self._has_phase(component, phase) for phase in _RUNTIME_SCHEDULER_PHASES)
-            for component in self._components.values()
-        )
-        self._native_scene_manager.set_runtime_lifecycle_work_available(has_work)
+        has_work = bool(self._work_components) or any(self._runtime_service_phases.values())
+        if has_work == self._native_work_available and not self._native_work_dirty:
+            return
+        self._native_work_dirty = False
+        if has_work != self._native_work_available:
+            self._native_work_available = has_work
+            self._native_scene_manager.set_runtime_lifecycle_work_available(has_work)
+
+    def _sync_native_work_availability(self, *, force: bool = False) -> None:
+        """Recompute the work mirror; force rebuilds it from live membership."""
+        if not self._native_bridge or self._native_scene_manager is None:
+            return
+        if force:
+            self._work_components = {
+                id(component)
+                for component in self._components.values()
+                if self._component_has_runtime_work(component)
+            }
+        self._recompute_work_availability()
 
     @classmethod
     def set_runtime_service_phase_active(
@@ -122,7 +176,7 @@ class RuntimeExecutionScheduler:
         if not changed:
             return
         for scheduler in tuple(cls._live_schedulers):
-            scheduler._sync_native_work_availability()
+            scheduler._recompute_work_availability()
             scheduler._publish_native_plan()
 
     @classmethod
@@ -160,7 +214,7 @@ class RuntimeExecutionScheduler:
     def sync_native_work_availability(self) -> None:
         """Synchronize the native fast-path after lifecycle bridge installation."""
         self._sync_active_registry_once()
-        self._sync_native_work_availability()
+        self._sync_native_work_availability(force=True)
         self._publish_native_plan()
 
     def refresh_scene_membership(self) -> None:
@@ -175,12 +229,23 @@ class RuntimeExecutionScheduler:
         """
         self._registry_scan_pending = True
         self.prepare_frame()
-        self._sync_native_work_availability()
+        self._sync_native_work_availability(force=True)
 
     @classmethod
     def _notify_component_structure(cls, component: Any, *, present: bool) -> None:
         from infernux.engine.runtime_change_journal import RuntimeChangeDomain
 
+        primary_ref = cls._primary_scheduler
+        primary = primary_ref() if primary_ref is not None else None
+        if primary is not None and len(cls._live_schedulers) == 1:
+            # Scene load registers one component at a time; the single-scheduler
+            # case must not iterate the WeakSet or dedupe journals per call.
+            primary._change_journal.publish(
+                RuntimeChangeDomain.COMPONENT_STRUCTURE,
+                stable_id=cls._component_token(component),
+            )
+            primary._on_component_structure(component, present=present)
+            return
         schedulers = tuple(cls._live_schedulers)
         cls._publish_to_scheduler_journals(
             schedulers,
@@ -213,7 +278,23 @@ class RuntimeExecutionScheduler:
             self._structure_revision += 1
             self._execution_snapshot = None
             self._counters["coroutine_plan_invalidations"] += 1
-        self._sync_native_work_availability()
+        self._note_component_work(component, present=True)
+
+    @staticmethod
+    def _journal_type_id(component_type: type) -> str:
+        type_id = component_type.__dict__.get("_runtime_journal_type_id")
+        if type_id is None:
+            type_id = sys.intern(
+                str(
+                    getattr(component_type, "_type_guid_", None)
+                    or f"{component_type.__module__}.{component_type.__qualname__}"
+                )
+            )
+            try:
+                component_type._runtime_journal_type_id = type_id
+            except (AttributeError, TypeError):
+                pass
+        return type_id
 
     @classmethod
     def _notify_component_value(
@@ -223,20 +304,59 @@ class RuntimeExecutionScheduler:
     ) -> None:
         from infernux.engine.runtime_change_journal import RuntimeChangeDomain
 
-        component_type = type(component)
-        type_id = (
-            getattr(component_type, "_type_guid_", None)
-            or f"{component_type.__module__}.{component_type.__qualname__}"
-        )
-        component_id = cls._component_token(component)[0]
-        schedulers = tuple(cls._live_schedulers)
-        journals = cls._scheduler_journals(schedulers)
+        type_id = cls._journal_type_id(type(component))
+        component_id = component._component_id or id(component)
+        primary_ref = cls._primary_scheduler
+        primary = primary_ref() if primary_ref is not None else None
+        if primary is not None and len(cls._live_schedulers) == 1:
+            # Steady state: one scheduler owns one journal. Avoid iterating the
+            # WeakSet and the generic per-publish validation below. When no
+            # consumer subscribes to field domains the write is journal-free.
+            journal = primary._change_journal
+            if journal._field_tracking:
+                journal.publish_component_field_value(
+                    type_id, component_id, field_id
+                )
+            return
+        journals = cls._scheduler_journals(tuple(cls._live_schedulers))
         for journal in journals:
+            if not journal._field_tracking:
+                continue
             journal.publish_component_field(type_id, component_id, field_id)
             journal.publish(
                 RuntimeChangeDomain.SCRIPT_VALUE,
                 stable_id=component_id,
             )
+
+    @classmethod
+    def _notify_component_values(
+        cls,
+        components: tuple[Any, ...],
+        field_id: Any,
+    ) -> None:
+        """Publish one homogeneous batch write without per-component calls."""
+        if not components:
+            return
+        type_id = cls._journal_type_id(type(components[0]))
+        # Unregistered candidates are private: their values must not invalidate
+        # runtime consumers even though the native scatter already succeeded.
+        component_ids = [
+            component._component_id or id(component)
+            for component in components
+            if component._registered_go_id is not None
+        ]
+        if not component_ids:
+            return
+        primary_ref = cls._primary_scheduler
+        primary = primary_ref() if primary_ref is not None else None
+        if primary is not None and len(cls._live_schedulers) == 1:
+            journal = primary._change_journal
+            if journal._field_tracking:
+                journal.publish_component_fields(type_id, component_ids, field_id)
+            return
+        for journal in cls._scheduler_journals(tuple(cls._live_schedulers)):
+            if journal._field_tracking:
+                journal.publish_component_fields(type_id, component_ids, field_id)
 
     @staticmethod
     def _scheduler_journals(schedulers: tuple[Any, ...]) -> tuple[Any, ...]:
@@ -309,7 +429,9 @@ class RuntimeExecutionScheduler:
             previous = self._component_tokens.pop(id(component), None)
             if previous is not None and self._components.get(previous) is component:
                 self._components.pop(previous, None)
-        self._sync_native_work_availability()
+        # Registration happens per component during scene load; the work mirror
+        # is updated incrementally so loading stays O(1) per component.
+        self._note_component_work(component, present=present)
         # The typed journal advances the plan revision at the next explicit
         # runtime barrier.  The object map is updated immediately so that the
         # next frame can build from authoritative membership without a scan.
@@ -365,7 +487,7 @@ class RuntimeExecutionScheduler:
                 RuntimeChangeDomain.SCRIPT_SCHEMA,
                 stable_id=type_id,
             )
-            self._sync_native_work_availability()
+            self._sync_native_work_availability(force=True)
 
     def mark_runtime_revision(self, revision: int) -> None:
         """Apply an external structural revision monotonically."""
@@ -449,9 +571,13 @@ class RuntimeExecutionScheduler:
 
     @staticmethod
     def _has_phase(component: Any, phase: str) -> bool:
-        from infernux.engine.runtime_dispatch import has_runtime_phase
+        global _has_runtime_phase_fn
+        resolver = _has_runtime_phase_fn
+        if resolver is None:
+            from infernux.engine.runtime_dispatch import has_runtime_phase
 
-        return has_runtime_phase(type(component), phase)
+            resolver = _has_runtime_phase_fn = has_runtime_phase
+        return resolver(type(component), phase)
 
     @staticmethod
     def _owner_is_active_in_hierarchy(component: Any) -> bool:
@@ -518,7 +644,7 @@ class RuntimeExecutionScheduler:
         return scheduler if scheduler.count > 0 else None
 
     def _build_plan(self) -> None:
-        components = []
+        entries: list[tuple[Any, bool]] = []
         for component in self._components.values():
             # Re-read the native owner's active state when rebuilding a plan.
             # A component can be deserialized before its GameObject is
@@ -527,15 +653,15 @@ class RuntimeExecutionScheduler:
             owner_active = self._refresh_owner_active_mirror(component)
             if not owner_active:
                 continue
-            if self._eligible(component) or self._active_coroutine_scheduler(component) is not None:
-                components.append(component)
-        components.sort(key=self._sort_key)
+            has_coroutines = self._active_coroutine_scheduler(component) is not None
+            if has_coroutines or self._eligible(component):
+                entries.append((component, has_coroutines))
+        entries.sort(key=lambda item: self._sort_key(item[0]))
         self._phase_plan = {
             phase: tuple(
                 component
-                for component in components
-                if self._has_phase(component, phase)
-                or self._active_coroutine_scheduler(component) is not None
+                for component, has_coroutines in entries
+                if has_coroutines or self._has_phase(component, phase)
             )
             for phase in _RUNTIME_SCHEDULER_PHASES
         }
@@ -725,6 +851,9 @@ class RuntimeExecutionScheduler:
         from infernux.engine.runtime_change_journal import RuntimeFrameBarrier
 
         self.consume_runtime_changes(RuntimeFrameBarrier.SAFE_POINT)
+        # Registration marks the native work mirror dirty; flush it once at the
+        # frame boundary instead of once per component during scene load.
+        self._sync_native_work_availability()
         if self._plan_revision == self._structure_revision:
             self._counters["plan_hits"] += 1
         else:
@@ -840,7 +969,7 @@ class RuntimeExecutionScheduler:
             frame.close()
         self._components.clear()
         self._component_tokens.clear()
-        self._sync_native_work_availability()
+        self._sync_native_work_availability(force=True)
         self._invalidate()
         self._phase_plan = {phase: () for phase in _RUNTIME_SCHEDULER_PHASES}
         self._plan_revision = self._structure_revision
@@ -852,7 +981,8 @@ class RuntimeExecutionScheduler:
         self._last_completed_frame_changes.clear()
         self._last_completed_barrier_sequence = ()
         self._change_cursor = self._change_journal.create_cursor(
-            f"runtime-execution:{self.name}:{id(self):x}"
+            f"runtime-execution:{self.name}:{id(self):x}",
+            domains=_SCHEDULER_CHANGE_DOMAINS,
         )
 
 
@@ -1008,6 +1138,11 @@ def notify_runtime_component_value_changed(component: Any, field_id: Any) -> Non
     RuntimeExecutionScheduler._notify_component_value(component, field_id)
 
 
+def notify_runtime_component_values(components: tuple[Any, ...], field_id: Any) -> None:
+    """Publish one homogeneous batch write (CDS scatter) in a single pass."""
+    RuntimeExecutionScheduler._notify_component_values(components, field_id)
+
+
 class ComponentLifecycleMixin:
     """ComponentLifecycleMixin method group for InxComponent."""
 
@@ -1020,6 +1155,8 @@ class ComponentLifecycleMixin:
     _runtime_active_in_hierarchy = True
     _execute_in_edit_mode = False
     _cds_key = None
+    _component_id = 0
+    _registered_go_id = None
 
     def _resolve_runtime_method(self, name: str, *, epoch: Any = None) -> Any:
         """Resolve a helper through the owner-published runtime epoch."""
