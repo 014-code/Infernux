@@ -1363,6 +1363,10 @@ void infernux::RegisterInfernuxBindings(py::module_ &m)
         .def("try_commit_linked_shader_programs", &Infernux::TryCommitLinkedShaderPrograms, py::arg("ticket"),
              "Publish a completed linked-shader preload on the engine owner thread")
         .def_property_readonly("has_renderer", [](const Infernux &self) { return self.GetRenderer() != nullptr; })
+        .def_property_readonly("game_presentation_ready", [](Infernux &self) {
+            auto *renderer = self.GetRenderer();
+            return renderer && renderer->IsGamePresentationReady();
+        })
         .def_property_readonly("pending_mesh_gpu_upload_count",
                                [](const Infernux &self) {
                                    const auto *renderer = self.GetRenderer();

@@ -91,6 +91,7 @@ void InxVkCoreModular::PumpPendingTextureLoads()
             }
             changedTextures.push_back(pending->first);
         } catch (const std::exception &exception) {
+            m_failedTextureUploads[pending->first] = {pending->first, registry.GetAssetVersion(pending->first)};
             INXLOG_ERROR("Texture CPU load failed for GUID '", pending->first, "': ", exception.what());
         }
         pending = m_pendingTextureAssetLoads.erase(pending);
@@ -230,6 +231,9 @@ TextureResolveResult InxVkCoreModular::ResolveTextureAsset(const std::string &te
 
     auto infTex = registry.GetAsset<InxTexture>(textureGuid);
     if (!infTex) {
+        const auto failedLoad = m_failedTextureUploads.find(textureGuid);
+        if (failedLoad != m_failedTextureUploads.end() && failedLoad->second.runtimeVersion == publishedRuntimeVersion)
+            return {TextureResolveStatus::Failed, {}};
         auto pending = m_pendingTextureAssetLoads.find(textureGuid);
         if (pending == m_pendingTextureAssetLoads.end()) {
             try {
@@ -237,6 +241,7 @@ TextureResolveResult InxVkCoreModular::ResolveTextureAsset(const std::string &te
                               .emplace(textureGuid, registry.BeginLoadAsset(textureGuid, ResourceType::Texture))
                               .first;
             } catch (const std::exception &exception) {
+                m_failedTextureUploads[textureGuid] = {textureGuid, publishedRuntimeVersion};
                 INXLOG_ERROR("TextureResolver: failed to schedule texture metadata load for '", textureGuid,
                              "': ", exception.what());
                 return {TextureResolveStatus::Failed, {}};
@@ -250,6 +255,7 @@ TextureResolveResult InxVkCoreModular::ResolveTextureAsset(const std::string &te
             m_pendingTextureAssetLoads.erase(pending);
             infTex = registry.GetAsset<InxTexture>(textureGuid);
         } catch (const std::exception &exception) {
+            m_failedTextureUploads[textureGuid] = {textureGuid, publishedRuntimeVersion};
             INXLOG_ERROR("TextureResolver: metadata load failed for '", textureGuid, "': ", exception.what());
             m_pendingTextureAssetLoads.erase(textureGuid);
             return {TextureResolveStatus::Failed, {}};
@@ -595,25 +601,6 @@ void InxVkCoreModular::InitializeMaterialSystem()
                 binding.sampler = device.Resolve(binding.gpuView->GetSampler());
                 return binding;
             });
-    }
-
-    auto defaultMaterial = AssetRegistry::Instance().GetBuiltinMaterial("DefaultLit");
-    if (defaultMaterial) {
-        const std::string &vertId = defaultMaterial->GetVertShaderName();
-        const std::string &fragId = defaultMaterial->GetFragShaderName();
-
-        const auto *vertCode = m_shaderCache.FindVertCode(vertId);
-        const auto *fragCode = m_shaderCache.FindFragCode(fragId);
-
-        if (vertCode && fragCode) {
-            m_materialPipelineManager.GetOrCreateRenderDataWithReflection(defaultMaterial, *vertCode, *fragCode,
-                                                                          ShaderProgramKey{{vertId, fragId}, 0});
-        } else {
-            // Headless/bootstrap users can prepare the renderer before a
-            // project shader catalog exists.  This is not a failed material:
-            // the normal material publication path reflects DefaultLit as
-            // soon as Standard|Lit enters the shader cache.
-        }
     }
 
     // Pre-build error material pipeline (unlit magenta-black checkerboard).

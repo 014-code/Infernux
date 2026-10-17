@@ -4226,6 +4226,9 @@ Infernux::EnsureLinkedShaderProgramArtifact(const std::shared_ptr<InxMaterial> &
     if (!adb)
         return {};
 
+    if (material->GetGuid().empty())
+        AssetRegistry::Instance().RegisterRuntimeMaterial(material);
+
     auto resolvePath = [&](const ShaderAssetReference &reference, const char *stage) {
         if (!reference.guid.empty()) {
             // A missing GUID remains a missing reference. Never fall through

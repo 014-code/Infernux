@@ -210,6 +210,15 @@ class TestSceneSerialization:
             encoding="utf-8",
         )
         guid = database.import_asset(str(asset_path)).guid
+        texture_path = asset_path.with_suffix(".ppm")
+        texture_path.write_text("P3\n1 1\n255\n255 0 0\n", encoding="ascii")
+        texture_guid = database.import_asset(str(texture_path)).guid
+        texture_artifact = Path(database.assets_root).parent / "Library/Artifacts/Texture" / f"{texture_guid}.inxtex"
+        assert texture_artifact.is_file()
+        texture_artifact.write_bytes(b"invalid texture artifact")
+        textured = scene.create_game_object("UnreadableTexture").add_component("MeshRenderer")
+        textured.material = InxMaterial.create_default_unlit()
+        textured.material.set_texture("texSampler", texture_guid)
         try:
             document = scene.serialize_document()
             by_name = {record["name"]: record for record in document["objects"]}
@@ -221,6 +230,10 @@ class TestSceneSerialization:
             transaction = SceneDocumentTransaction(scene, path=path)
             assert transaction.run_to_completion(raise_on_failure=False)
             assert transaction.state is SceneDocumentTransactionState.COMPLETED
+            assert (
+                scene.find("UnreadableTexture").get_component("MeshRenderer").material.get_texture("texSampler")
+                == texture_guid
+            )
             missing = scene.find("MissingResourceReference").get_component("MeshRenderer").serialize_document()
             assert missing["meshAssetGuid"] == "missing-scene-mesh-guid"
             assert missing["materials"] == ["missing-scene-material-guid"]
@@ -243,6 +256,7 @@ class TestSceneSerialization:
             )
         finally:
             database.delete_asset(str(asset_path))
+            database.delete_asset(str(texture_path))
 
     def test_scene_navigation_undo_redo_restores_both_session_scenes(
         self,

@@ -531,6 +531,9 @@ class InxRenderer
     /// @brief Get Game View texture ID for ImGui display
     uint64_t GetGameTextureId();
 
+    /// Screen-camera graphs have executed and initial uploads have drained.
+    [[nodiscard]] bool IsGamePresentationReady();
+
     /// @brief Monotonic generation of the native Game render target.
     ///
     /// The ImGui descriptor changes whenever resize or MSAA reconfiguration

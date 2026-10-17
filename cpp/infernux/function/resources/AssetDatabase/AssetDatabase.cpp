@@ -1058,13 +1058,9 @@ void AssetDatabase::Initialize(const std::string &projectRoot)
 {
     if (m_initialized)
         throw std::logic_error("AssetDatabase::Initialize may only be called once");
-    m_projectRoot = FromFsPath(ToFsPath(projectRoot));
+    m_projectRoot = ResolveFilesystemPath(projectRoot);
     if (m_projectRoot.empty())
         throw std::invalid_argument("AssetDatabase project root cannot be empty");
-    if (!m_projectRoot.empty() && m_projectRoot.back() == '/') {
-        m_projectRoot.pop_back();
-    }
-
     const std::filesystem::path assetsPath = ToFsPath(m_projectRoot) / "Assets";
     std::error_code directoryError;
     std::filesystem::create_directories(assetsPath, directoryError);
@@ -1102,12 +1098,9 @@ void AssetDatabase::InitializeRuntime(const std::string &projectRoot)
 {
     if (m_initialized)
         throw std::logic_error("AssetDatabase::InitializeRuntime may only be called once");
-    m_projectRoot = FromFsPath(ToFsPath(projectRoot));
+    m_projectRoot = ResolveFilesystemPath(projectRoot);
     if (m_projectRoot.empty())
         throw std::invalid_argument("AssetDatabase runtime project root cannot be empty");
-    if (m_projectRoot.back() == '/')
-        m_projectRoot.pop_back();
-
     m_assetsRoot = FromFsPath(ToFsPath(m_projectRoot) / "Assets");
     m_assetIndexPath = FromFsPath(ToFsPath(m_projectRoot) / "Library" / "AssetIndex.json");
     m_assetStartupCachePath = FromFsPath(ToFsPath(m_projectRoot) / "Library" / "AssetIndex.startup-cache.json");
@@ -1124,7 +1117,7 @@ void AssetDatabase::AddScanRoot(const std::string &path)
     AssertNoPendingCommit("AddScanRoot");
     if (m_pendingAssetScan)
         throw std::logic_error("AssetDatabase scan roots cannot change during an asynchronous refresh");
-    auto norm = FromFsPath(ToFsPath(path));
+    auto norm = ResolveFilesystemPath(path);
     for (const auto &existing : m_extraScanRoots) {
         if (existing == norm)
             return;
@@ -1136,7 +1129,7 @@ void AssetDatabase::AddReadOnlyScanRoot(const std::string &path)
 {
     AssertMutationThread("AddReadOnlyScanRoot");
     AddScanRoot(path);
-    m_readOnlyScanRoots.insert(FromFsPath(ToFsPath(path)));
+    m_readOnlyScanRoots.insert(ResolveFilesystemPath(path));
 }
 
 bool AssetDatabase::RestoreCachedCatalog()

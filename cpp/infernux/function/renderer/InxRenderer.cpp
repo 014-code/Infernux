@@ -4617,6 +4617,21 @@ Camera *InxRenderer::FindGameCameraCached()
     return m_cachedGameCamera;
 }
 
+bool InxRenderer::IsGamePresentationReady()
+{
+    if (!m_gameRenderTarget || !m_gameRenderTarget->IsReady())
+        return false;
+    for (Camera *camera : FindGameCamerasCached()) {
+        if (camera->HasTargetTexture())
+            continue;
+        const auto graph = m_gameRenderGraphs.find(camera->GetComponentID());
+        if (graph == m_gameRenderGraphs.end() || !graph->second->HasExecutedCurrentGraph())
+            return false;
+    }
+    return GetPendingMeshUploadCount() == 0 && GetPendingTextureCpuLoadCount() == 0 &&
+           GetPendingTextureUploadCount() == 0 && GetPendingImGuiTextureUploadCount() == 0;
+}
+
 uint64_t InxRenderer::GetGameTextureId()
 {
     if (m_gameRenderTarget && m_gameRenderTarget->IsReady()) {

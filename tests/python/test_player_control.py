@@ -93,8 +93,16 @@ def test_release_player_does_not_enable_validation_control(tmp_path, monkeypatch
 def test_standalone_player_dispatches_runtime_ui_without_desktop_hover(monkeypatch):
     dispatched: list[tuple[int, int]] = []
     viewport_origins: list[tuple[float, float]] = []
+    images = []
 
     class _PlayerEngine:
+        game_presentation_ready = False
+        readiness_queries = 0
+
+        def get_native_engine(self):
+            self.readiness_queries += 1
+            return self
+
         def resize_game_render_target(self, width, height):
             assert (width, height) == (1280, 720)
 
@@ -104,6 +112,7 @@ def test_standalone_player_dispatches_runtime_ui_without_desktop_hover(monkeypat
     class _Context:
         def image(self, *args):
             assert args == (17, 1280.0, 720.0, 0.0, 0.0, 1.0, 1.0)
+            images.append(args)
 
     monkeypatch.setattr(
         player_gui_module,
@@ -129,6 +138,7 @@ def test_standalone_player_dispatches_runtime_ui_without_desktop_hover(monkeypat
     player._last_w = 0
     player._last_h = 0
     player._render_scale = 1.0
+    player._initial_image_pending = True
     mouse_frame = (32.0, 48.0, 0.0, 0.0, True, True, False)
     samples = []
     routed = []
@@ -152,14 +162,20 @@ def test_standalone_player_dispatches_runtime_ui_without_desktop_hover(monkeypat
     # no desktop hover API because native touchscreen input does not define it.
     try:
         player._render_game(_Context(), 1280.0, 720.0)
+        assert not images and not dispatched and not samples
+        player._engine.game_presentation_ready = True
+        player._render_game(_Context(), 1280.0, 720.0)
+        player._render_game(_Context(), 1280.0, 720.0)
         assert native_input.is_cursor_locked
     finally:
         native_input.set_cursor_locked(False)
 
-    assert viewport_origins == [(8.0, 12.0)]
-    assert dispatched == [(1280, 720)]
-    assert samples == [0]
-    assert len(routed) == 2 and all(frame is mouse_frame for frame in routed)
+    assert len(images) == 2
+    assert player._engine.readiness_queries == 2
+    assert viewport_origins == [(8.0, 12.0)] * 2
+    assert dispatched == [(1280, 720)] * 2
+    assert samples == [0, 0]
+    assert len(routed) == 4 and all(frame is mouse_frame for frame in routed)
 
 
 def test_player_primary_touch_drives_gameplay_pointer_in_top_left_pixels():

@@ -2,15 +2,15 @@
 #include <function/resources/AssetDatabase/AssetDatabase.h>
 #include <function/resources/AssetDatabase/AssetIndex.h>
 #include <function/resources/AssetDependencyGraph.h>
-#include <function/resources/AssetImporter/ImporterRegistry.h>
 #include <function/resources/AssetImporter/ConcreteImporters.h>
+#include <function/resources/AssetImporter/ImporterRegistry.h>
 #include <function/resources/AssetImporter/PluginPageTextureMetadata.h>
 #include <function/resources/AssetRegistry/AssetRegistry.h>
 #include <function/resources/InxFileLoader/InxDefaultLoader.hpp>
 #include <function/resources/InxFileLoader/InxPythonScriptLoader.hpp>
 #include <function/resources/InxMesh/MeshLoader.h>
-#include <function/resources/InxTexture/TextureLoader.h>
 #include <function/resources/InxTexture/TextureArtifact.h>
+#include <function/resources/InxTexture/TextureLoader.h>
 #include <platform/filesystem/InxPath.h>
 
 #include <algorithm>
@@ -321,7 +321,8 @@ void TestProjectPackagesScanRootSharesTheGuidCatalog()
         Require(!assetGuid.empty(), "Assets script was not registered in the shared catalog");
         Require(!packageGuid.empty(), "Packages script was not registered in the shared catalog");
         Require(assetGuid != packageGuid, "Assets and Packages scripts received the same GUID");
-        Require(assetDatabase->GetPathFromGuid(packageGuid) == infernux::FromFsPath(packageScript),
+        Require(assetDatabase->GetPathFromGuid(packageGuid) ==
+                    infernux::ResolveFilesystemPath(infernux::FromFsPath(packageScript)),
                 "Packages GUID did not resolve to its current path");
         Require(std::filesystem::is_regular_file(infernux::ToFsPath(infernux::FromFsPath(packageScript) + ".meta")),
                 "Packages scan root did not persist stable GUID metadata");
@@ -339,7 +340,7 @@ void TestProjectPackagesScanRootSharesTheGuidCatalog()
 }
 
 void TestRegisteredScriptKeepsGuidWhenSidecarAndDerivedIndexAreMissing(bool keepIndex, bool changeSource,
-                                                                     bool packageScript)
+                                                                       bool packageScript)
 {
     const auto root = std::filesystem::temp_directory_path() /
                       (std::string("infernux-live-script-sidecar-") + (keepIndex ? "indexed-" : "unindexed-") +
@@ -365,8 +366,7 @@ void TestRegisteredScriptKeepsGuidWhenSidecarAndDerivedIndexAreMissing(bool keep
         const auto originalMetadata = assetDatabase->GetMetaByGuid(originalGuid);
         Require(!originalGuid.empty() && originalMetadata != nullptr,
                 "initial refresh did not register the identity fixture");
-        const std::string originalHash =
-            originalMetadata->GetDataAs<std::string>("content_hash");
+        const std::string originalHash = originalMetadata->GetDataAs<std::string>("content_hash");
         assetDatabase->FlushDerivedIndex();
         const auto sidecar = infernux::ToFsPath(scriptPath + ".meta");
         Require(std::filesystem::remove(sidecar), "identity fixture sidecar was not removed");
@@ -379,7 +379,7 @@ void TestRegisteredScriptKeepsGuidWhenSidecarAndDerivedIndexAreMissing(bool keep
         assetDatabase->Refresh();
         Require(assetDatabase->GetGuidFromPath(scriptPath) == originalGuid,
                 "refresh replaced a registered script GUID after its sidecar/index was removed");
-        Require(assetDatabase->GetPathFromGuid(originalGuid) == scriptPath,
+        Require(assetDatabase->GetPathFromGuid(originalGuid) == infernux::ResolveFilesystemPath(scriptPath),
                 "refresh retired the original GUID-to-path mapping");
         const auto rebuilt = assetDatabase->GetMetaByGuid(originalGuid);
         Require(rebuilt != nullptr && rebuilt->GetGuid() == originalGuid,
@@ -438,7 +438,7 @@ void TestMovedSidecarOwnsGuidWhenOldPathIsReused(bool keepIndex, bool replacemen
         Require(!replacementGuid.empty() && replacementGuid != originalGuid,
                 "new source at a reused path inherited the moved asset's GUID");
         Require(assetDatabase->GetGuidFromPath(movedPath) == originalGuid &&
-                    assetDatabase->GetPathFromGuid(originalGuid) == movedPath,
+                    assetDatabase->GetPathFromGuid(originalGuid) == infernux::ResolveFilesystemPath(movedPath),
                 "moved authored sidecar did not retain its original identity");
         Require(assetDatabase->GetMetaByGuid(originalGuid)->GetDataAs<std::string>("content_hash") == originalHash,
                 "moved GUID was published with replacement source content");
@@ -483,8 +483,7 @@ void TestCopiedAuthoredSidecarStillRejectsDuplicateGuid(bool keepIndex)
         const std::string originalGuid = assetDatabase->GetGuidFromPath(sourcePath);
         assetDatabase->FlushDerivedIndex();
         WriteText(copy, "VALUE = 2\n");
-        std::filesystem::copy_file(infernux::ToFsPath(sourcePath + ".meta"),
-                                   infernux::ToFsPath(copyPath + ".meta"));
+        std::filesystem::copy_file(infernux::ToFsPath(sourcePath + ".meta"), infernux::ToFsPath(copyPath + ".meta"));
         if (!keepIndex)
             Require(std::filesystem::remove(root / "Library" / "AssetIndex.json"),
                     "duplicate-sidecar fixture index was not removed");
@@ -496,7 +495,7 @@ void TestCopiedAuthoredSidecarStillRejectsDuplicateGuid(bool keepIndex)
         }
         Require(rejected, "copied authored GUID was silently reassigned instead of rejected");
         Require(assetDatabase->GetGuidFromPath(sourcePath) == originalGuid &&
-                    assetDatabase->GetPathFromGuid(originalGuid) == sourcePath &&
+                    assetDatabase->GetPathFromGuid(originalGuid) == infernux::ResolveFilesystemPath(sourcePath) &&
                     assetDatabase->GetGuidFromPath(copyPath).empty(),
                 "rejected authored GUID collision changed the accepted catalog");
         registry.Shutdown();
@@ -516,8 +515,8 @@ void TestPluginPageImagesAndCachedImportPolicy()
     const auto root = std::filesystem::temp_directory_path() /
                       ("infernux-plugin-page-textures-" +
                        std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
-    const auto source = root / "Packages" / "vendor" / "example" / "runtime" / "nested" /
-                        "plugin_pages" / "images" / "screenshot.ppm";
+    const auto source =
+        root / "Packages" / "vendor" / "example" / "runtime" / "nested" / "plugin_pages" / "images" / "screenshot.ppm";
     std::string pixels;
     for (int i = 0; i < 3001 * 2; ++i) {
         pixels.push_back(static_cast<char>(i % 251));
@@ -547,7 +546,8 @@ void TestPluginPageImagesAndCachedImportPolicy()
             const auto artifactPath = db->GetRuntimeArtifactPath(guid, infernux::ResourceType::Texture);
             std::ifstream input(infernux::ToFsPath(artifactPath), std::ios::binary);
             const std::string bytes((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-            const auto texture = infernux::TextureArtifact::Deserialize(bytes, meta->GetDataAs<std::string>("content_hash"));
+            const auto texture =
+                infernux::TextureArtifact::Deserialize(bytes, meta->GetDataAs<std::string>("content_hash"));
             Require(texture->format == infernux::TextureFormat::Rgba8Srgb && texture->mipLevels.size() == 1,
                     "plugin page image was compressed or generated mipmaps");
             Require(texture->mipLevels.front().width == 3001 && texture->mipLevels.front().height == 2,
@@ -560,8 +560,9 @@ void TestPluginPageImagesAndCachedImportPolicy()
         };
         verify();
         const auto current = *db->GetMetaByGuid(guid);
-        for (const auto &relative : {"Assets/plugin_pages/image.png", "Packages/example/plugin_pages_backup/image.png",
-                                     "Packages/example/plugin_pages.png", "Other/Packages/example/plugin_pages/image.png"})
+        for (const auto &relative :
+             {"Assets/plugin_pages/image.png", "Packages/example/plugin_pages_backup/image.png",
+              "Packages/example/plugin_pages.png", "Other/Packages/example/plugin_pages/image.png"})
             Require(!infernux::IsPluginPageTexture(current, infernux::FromFsPath(root / relative), rootPath),
                     "plugin documentation import policy escaped its directory scope");
 
@@ -580,7 +581,8 @@ void TestPluginPageImagesAndCachedImportPolicy()
             for (const auto *name : {"AssetIndex.json", "AssetIndex.startup-cache.json"}) {
                 const auto indexPath = infernux::FromFsPath(root / "Library" / name);
                 infernux::AssetIndex index;
-                Require(index.Load(indexPath, infernux::FilesystemPathKey(rootPath)), "cannot read texture cache index");
+                Require(index.Load(indexPath, infernux::FilesystemPathKey(rootPath)),
+                        "cannot read texture cache index");
                 auto entry = *index.Find(infernux::FilesystemPathKey(path));
                 entry.metadata = compressed.metadata;
                 index.Upsert(std::move(entry));
@@ -694,7 +696,7 @@ void TestRuntimeAssetCatalogInstallsStableIdentityWithoutSidecar()
     const std::string materialPath = infernux::FromFsPath(material);
     Require(database.GetGuidFromPath(materialPath) == "runtime-material-guid",
             "runtime asset catalog did not install the stable path mapping");
-    Require(database.GetPathFromGuid("runtime-material-guid") == materialPath,
+    Require(database.GetPathFromGuid("runtime-material-guid") == infernux::ResolveFilesystemPath(materialPath),
             "runtime asset catalog did not install the stable GUID mapping");
     const auto metadata = database.GetMetaByGuid("runtime-material-guid");
     Require(metadata != nullptr, "runtime asset catalog did not install metadata");
@@ -787,7 +789,8 @@ void TestModelSubAssetsPublishOnlyTheirOwner()
         registry.Initialize(std::move(database));
         registry.RegisterLoader(ResourceType::Mesh, std::make_unique<MeshLoader>());
         registry.RegisterLoader(ResourceType::Texture, std::make_unique<TextureLoader>());
-        registry.RegisterLoader(ResourceType::DefaultText, std::make_unique<InxDefaultTextLoader>(ResourceType::DefaultText));
+        registry.RegisterLoader(ResourceType::DefaultText,
+                                std::make_unique<InxDefaultTextLoader>(ResourceType::DefaultText));
         registry.PopulateAssetDatabaseLoaders();
         auto *db = registry.GetAssetDatabase();
         db->Refresh();
@@ -807,7 +810,8 @@ void TestModelSubAssetsPublishOnlyTheirOwner()
                 "catalog lookup case-folded an exact virtual identity");
         const auto modelDirectory =
             db->GetDirectoryCatalog(FromFsPath(ToFsPath(db->GetPathFromGuid(firstGuid)).parent_path()));
-        Require(!modelDirectory.empty() && std::all_of(modelDirectory.begin(), modelDirectory.end(),
+        Require(!modelDirectory.empty(), "directory catalog omitted its source assets");
+        Require(std::all_of(modelDirectory.begin(), modelDirectory.end(),
                             [](const AssetCatalogEntry &entry) { return entry.path.find("::") == std::string::npos; }),
                 "directory catalog exposed model sub-assets as loose files");
         const auto otherMetadata = db->GetMetaByGuid(otherClip);
@@ -820,20 +824,21 @@ void TestModelSubAssetsPublishOnlyTheirOwner()
         Require(db->ReimportAsset(FromFsPath(first), {{"animation_loop_time", false}}).succeeded,
                 "single model settings reimport failed");
         unchangedOther();
-        Require(db->GetMetaByGuid(texture) == textureMetadata,
-                "animation import rebuilt an unrelated model Texture");
+        Require(db->GetMetaByGuid(texture) == textureMetadata, "animation import rebuilt an unrelated model Texture");
 
         const auto take = table(firstGuid, "source_animations").at(0);
         const auto duration = take.at("duration").get<double>();
         const auto clip = [&](const char *id, const char *name) {
-            return nlohmann::json{{"id", id}, {"name", name}, {"source_take", take.at("name")},
-                                  {"start", 0.0}, {"end", duration}};
+            return nlohmann::json{
+                {"id", id}, {"name", name}, {"source_take", take.at("name")}, {"start", 0.0}, {"end", duration}};
         };
         const auto firstClip = clip("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "Opening");
         const auto removedClip = clip("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "Closing");
-        Require(db->ReimportAsset(FromFsPath(first), {{"custom_animation_clips", true},
-                                                    {"animation_clips", nlohmann::json::array({firstClip, removedClip})}}).succeeded,
-                "custom clips were not published");
+        Require(
+            db->ReimportAsset(FromFsPath(first), {{"custom_animation_clips", true},
+                                                  {"animation_clips", nlohmann::json::array({firstClip, removedClip})}})
+                .succeeded,
+            "custom clips were not published");
         const auto clips = table(firstGuid, "model_animations");
         const auto survivingGuid = clips.at(0).at("guid").get<std::string>();
         const auto removedGuid = clips.at(1).at("guid").get<std::string>();
@@ -852,13 +857,16 @@ void TestModelSubAssetsPublishOnlyTheirOwner()
         graph.RegisterCallback(ResourceType::Texture, observe);
         auto renamedClip = firstClip;
         renamedClip["name"] = "Renamed";
-        Require(db->ReimportAsset(FromFsPath(first), {{"animation_clips", nlohmann::json::array({renamedClip})}}).succeeded,
-                "clip rename/removal failed");
+        Require(
+            db->ReimportAsset(FromFsPath(first), {{"animation_clips", nlohmann::json::array({renamedClip})}}).succeeded,
+            "clip rename/removal failed");
         const auto renamed = table(firstGuid, "model_animations").at(0);
         Require(renamed.at("guid") == survivingGuid && renamed.at("name") == "Renamed" &&
-                    !db->ContainsGuid(removedGuid), "clip rename changed identity or retained a removed clip");
+                    !db->ContainsGuid(removedGuid),
+                "clip rename changed identity or retained a removed clip");
         Require(events.size() == 2 &&
-                    std::count(events.begin(), events.end(), std::make_pair(survivingGuid, AssetEvent::Modified)) == 1 &&
+                    std::count(events.begin(), events.end(), std::make_pair(survivingGuid, AssetEvent::Modified)) ==
+                        1 &&
                     std::count(events.begin(), events.end(), std::make_pair(removedGuid, AssetEvent::Deleted)) == 1,
                 "clip edit did not publish exactly its changed/deleted children");
         unchangedOther();
@@ -940,11 +948,11 @@ void TestRuntimeAssetCatalogResolvesBuiltInArchiveResources()
     database.InstallRuntimeAssetCatalog(infernux::FromFsPath(catalog));
 
     const std::string shaderPath = infernux::FromFsPath(shader);
-    Require(database.GetPathFromGuid("runtime-standard-vertex-guid") == shaderPath,
+    Require(database.GetPathFromGuid("runtime-standard-vertex-guid") == infernux::ResolveFilesystemPath(shaderPath),
             "runtime built-in identity did not resolve to the extracted resource path");
     Require(database.GetGuidFromPath(shaderPath) == "runtime-standard-vertex-guid",
             "runtime built-in extracted path did not preserve its cooked GUID");
-    Require(database.FindShaderPathById("Standard", "vertex") == shaderPath,
+    Require(database.FindShaderPathById("Standard", "vertex") == infernux::ResolveFilesystemPath(shaderPath),
             "runtime shader lookup returned the non-existent authoring cache path");
     std::filesystem::remove_all(root);
 }
@@ -1148,7 +1156,7 @@ void TestRuntimeAssetCatalogResolvesPrimaryContentArtifact()
     database.InstallRuntimeAssetCatalog(infernux::FromFsPath(catalog));
 
     const std::string cookedPath = infernux::FromFsPath(cookedMaterial);
-    Require(database.GetPathFromGuid("runtime-material-guid") == cookedPath,
+    Require(database.GetPathFromGuid("runtime-material-guid") == infernux::ResolveFilesystemPath(cookedPath),
             "runtime identity did not resolve to its primary Content artifact");
     Require(database.GetGuidFromPath(cookedPath) == "runtime-material-guid",
             "primary Content artifact did not preserve its cooked GUID");
@@ -1185,7 +1193,8 @@ void TestCookedModelTexturesKeepArtifactPaths()
     infernux::AssetDatabase database;
     database.InitializeRuntime(infernux::FromFsPath(root));
     database.InstallRuntimeAssetCatalog(infernux::FromFsPath(catalog));
-    Require(database.GetPathFromGuid(texture.GetGuid()) == infernux::FromFsPath(root / texturePath),
+    Require(database.GetPathFromGuid(texture.GetGuid()) ==
+                infernux::ResolveFilesystemPath(infernux::FromFsPath(root / texturePath)),
             "Player expanded editor-only model children over cooked Texture paths");
     Require(database.GetMetaByGuid(texture.GetGuid())->GetResourceType() == infernux::ResourceType::Texture,
             "Player lost imported Texture type");
@@ -1429,7 +1438,7 @@ int main()
             for (const bool changeSource : {false, true})
                 for (const bool packageScript : {false, true})
                     TestRegisteredScriptKeepsGuidWhenSidecarAndDerivedIndexAreMissing(keepIndex, changeSource,
-                                                                                     packageScript);
+                                                                                      packageScript);
         for (const bool keepIndex : {true, false})
             for (const bool replacementSortsFirst : {false, true})
                 TestMovedSidecarOwnsGuidWhenOldPathIsReused(keepIndex, replacementSortsFirst);
