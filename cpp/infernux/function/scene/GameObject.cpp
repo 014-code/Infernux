@@ -300,12 +300,11 @@ void GameObject::RefreshLifecycleDispatchFlags()
 
 void GameObject::SetActive(bool active)
 {
-    bool wasActiveInHierarchy = IsActiveInHierarchy();
-
     if (m_active == active) {
         return;
     }
 
+    bool wasActiveInHierarchy = IsActiveInHierarchy();
     m_active = active;
 
     // Active state participates in hierarchy-derived render and editor caches.

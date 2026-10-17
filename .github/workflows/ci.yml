@@ -236,6 +236,8 @@ jobs:
           # The shipping wheel is rebuilt below without that rule.
           cmake --build --preset windows-msvc-install-wheel
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -c "from importlib import import_module; from importlib.machinery import EXTENSION_SUFFIXES; names = ('components._component_native', 'components._component_lifecycle', 'components.skeletal_animator', 'ui.ui_render_dispatch'); assert all(import_module('infernux.' + name).__file__.endswith(tuple(EXTENSION_SUFFIXES)) for name in names)"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Run project shader declaration tests
         id: shader-declarations
@@ -393,6 +395,7 @@ jobs:
         run: |
           conda activate infernux
           cmake --build --preset linux-clang-install-wheel
+          python -c "from importlib import import_module; from importlib.machinery import EXTENSION_SUFFIXES; names = ('components._component_native', 'components._component_lifecycle', 'components.skeletal_animator', 'ui.ui_render_dispatch'); assert all(import_module('infernux.' + name).__file__.endswith(tuple(EXTENSION_SUFFIXES)) for name in names)"
 
       - name: Run project shader declaration tests
         id: shader-declarations

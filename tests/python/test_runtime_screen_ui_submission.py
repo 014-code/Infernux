@@ -11,6 +11,26 @@ class _CanvasStub(SimpleNamespace):
     pixel_adjust_rect = UICanvas.pixel_adjust_rect
 
 
+def test_pending_image_waits_for_its_texture_without_a_colored_placeholder(scene):
+    from infernux.core.asset_ref import TextureRef
+    from infernux.ui import UIImage
+    from infernux.ui.ui_render_dispatch import _runtime_render_image
+
+    image = scene.create_game_object("HUD image").add_component(UIImage)
+    image.texture = TextureRef(guid="a" * 32)
+    draws = []
+    renderer = SimpleNamespace(add_image=lambda *args: draws.append("image"),
+                               add_filled_rect=lambda *args: draws.append("rect"))
+    arguments = dict(renderer=renderer, ui_list=1, sx=0, sy=0, sw=20, sh=25, scale_x=1, scale_y=1)
+    _runtime_render_image(image, get_tex_id=lambda _: 0, **arguments)
+    assert not draws
+    _runtime_render_image(image, get_tex_id=lambda _: 71, **arguments)
+    assert draws == ["image"]
+    image.texture = None
+    _runtime_render_image(image, get_tex_id=lambda _: 0, **arguments)
+    assert draws == ["image", "rect"]
+
+
 class _Renderer:
     def __init__(self) -> None:
         self.cached_key = None

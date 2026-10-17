@@ -472,7 +472,7 @@ class TestSelectionUndoIntegration:
 
         selection = module.BootstrapSelectionMixin()
         selection.window_manager = None
-        selection._present_selection_snapshot = lambda _snapshot: None
+        selection._present_selection_snapshot = lambda _snapshot, *, preserve_console_selection=False: None
         selection._prev_selection_snapshot = SelectionService.instance().snapshot
         SelectionService.instance().add_listener(selection._on_global_selection_changed)
         manager = UndoManager.instance()

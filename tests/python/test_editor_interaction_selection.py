@@ -319,7 +319,7 @@ def test_project_click_records_focus_then_selection_as_distinct_user_actions():
             overrides.get("selection", selection.snapshot),
         ),
     )
-    bootstrap._present_selection_snapshot = lambda _snapshot: None
+    bootstrap._present_selection_snapshot = lambda _snapshot, *, preserve_console_selection=False: None
     focus.add_change_listener(bootstrap._on_global_focus_changed)
     selection.add_listener(bootstrap._on_global_selection_changed)
 

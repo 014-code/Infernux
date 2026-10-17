@@ -545,6 +545,9 @@ def test_android_engine_staging_excludes_desktop_runtime_payloads(
     shader_template = package / "resources/shaders/_templates/surface_main.glsl"
     shader_template.parent.mkdir()
     shader_template.write_text("void main() {}\n", encoding="utf-8")
+    component_source = package / "components/_component_native.py"
+    component_source.parent.mkdir()
+    component_source.write_text("class ComponentNativeMixin: pass\n", encoding="utf-8")
     excluded = (
         package / "_runtime_packs/Runtime.inxrt",
         package / "_runtime_modules/Parallel.inxmod",
@@ -553,6 +556,8 @@ def test_android_engine_staging_excludes_desktop_runtime_payloads(
         package / "templates/project/EmptyProject.json",
         package / "test/test_runtime.py",
         package / "engine/platform_player_bootstrap.pyi",
+        package / "components/_component_native.cp313-win_amd64.pyd",
+        package / "components/_component_native.cpython-313-x86_64-linux-gnu.so",
     )
     for path in excluded:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -576,6 +581,11 @@ def test_android_engine_staging_excludes_desktop_runtime_payloads(
     assert Path(importlib.util.cache_from_source(str(destination / "engine/platform_player_bootstrap.py"))).is_file()
     assert (destination / "resources/shaders/standard.vert").is_file()
     assert (destination / "resources/shaders/_templates/surface_main.glsl").is_file()
+    assert (destination / "components/_component_native.py").read_text(
+        encoding="utf-8"
+    ) == component_source.read_text(encoding="utf-8")
+    assert not tuple((destination / "components").glob("*.pyd"))
+    assert not tuple((destination / "components").glob("*.so"))
     assert not (destination / "_runtime_packs").exists()
     assert not (destination / "_runtime_modules").exists()
     assert not (destination / "resources/official_packages").exists()

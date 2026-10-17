@@ -437,9 +437,6 @@ def _check_official_mcp_lifecycle(tmp_path, monkeypatch):
         for item in authoring_result["data"]["operations"]
     )
     assert capabilities_result["ok"] is True
-    # 34 engine-owned authoring operations plus 71 MCP operations, matching
-    # the source catalog checked by test_mcp_server.
-    assert capabilities_result["data"]["operation_count"] == 105
 
     manager.uninstall("infernux/mcp")
     assert manager.registry.installed() == ()

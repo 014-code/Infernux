@@ -285,10 +285,11 @@ def test_real_blend_scene_instance_sync_preserves_authoring_and_roundtrips(
 
 
 def test_blend_structure_material_rig_and_authoring_boundary_matrix(
-    engine, tmp_path, blender_executable, blender_matrix
+    engine, tmp_path, blender_executable, blender_matrix, monkeypatch
 ):
     tool = blender_executable
     database = engine.get_asset_database()
+    monkeypatch.setattr(AssetManager, "_asset_database", database)
     registry = AssetRegistry.instance()
     folder = Path(database.assets_root) / tmp_path.name
     folder.mkdir()

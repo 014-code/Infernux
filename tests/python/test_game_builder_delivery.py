@@ -34,6 +34,19 @@ from test_game_builder import (
 )
 
 
+def test_player_path_audit_distinguishes_model_names_from_absolute_paths():
+    from infernux.engine.player_package_audit import _contains_absolute_author_path
+
+    names = json.dumps(["01_backpack_01_..\\packs\\bomb", "Bip01 Pelvis"])
+    metadata = {"model_meshes": {"value": names}, "skeleton_node_names": {"value": names}}
+    assert not _contains_absolute_author_path(json.dumps(metadata))
+    for path in ("C:/Users/Author/Model.glb", r"\\server\share\Model.glb", "/home/author/Model.glb"):
+        assert _contains_absolute_author_path(json.dumps({"source": path}))
+        reference = {"$type": "asset_ref", "path_hint": path}
+        assert _contains_absolute_author_path(json.dumps(reference), game_content=True)
+    assert not _contains_absolute_author_path(json.dumps({"source": "Assets/Models/Model.glb"}))
+
+
 def test_cooked_python_component_keeps_script_and_runtime_guid_identity(tmp_path):
     builder = _make_builder(tmp_path, tmp_path / "build_output")
     project = Path(builder.project_path)

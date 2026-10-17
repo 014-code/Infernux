@@ -71,10 +71,9 @@ class InxUIScreenComponent(InxUIComponent):
         if name.startswith("_"):
             super().__setattr__(name, value)
             return
-        unchanged = is_unchanged_ui_value(self, name, value)
-        super().__setattr__(name, value)
-        if unchanged:
+        if is_unchanged_ui_value(self, name, value):
             return
+        super().__setattr__(name, value)
         mark_runtime_ui_dirty(
             self,
             binding=name in ("material", "text_material", "texture", "background_texture"),
@@ -202,10 +201,13 @@ class InxUIScreenComponent(InxUIComponent):
         units = WORLD_UI_PIXELS_PER_UNIT if self.is_world_space() else 1.0
         center_x = float(rect_x) + float(self.width) * 0.5
         center_y = float(rect_y) + float(self.height) * 0.5
+        _, _, reference, _ = self._layout_reference()
+        anchor_x, anchor_y = self._anchor_origin(pw, ph)
+        reference_x, reference_y = self._anchor_origin(reference[2], reference[3])
         position = game_object.transform.local_position
         return Vector3(
-            (center_x - (px + pw * 0.5)) / units,
-            -((center_y - (py + ph * 0.5)) / units),
+            (center_x - px - anchor_x + reference_x - reference[2] * 0.5) / units,
+            -(center_y - py - anchor_y + reference_y - reference[3] * 0.5) / units,
             float(position.z),
         )
 
@@ -495,7 +497,8 @@ class InxUIScreenComponent(InxUIComponent):
             px, py, pw, ph = reference_rect
         width, height = size if size is not None else self._layout_desired_size()
         anchor_x, anchor_y = self._anchor_origin(pw, ph)
-        offset_x, offset_y = self._layout_offset(pw, ph)
+        _, _, reference, _ = self._layout_reference()
+        offset_x, offset_y = self._layout_offset(reference[2], reference[3])
         return (px + anchor_x + offset_x, py + anchor_y + offset_y, width, height)
 
     def _rot_sincos(self):

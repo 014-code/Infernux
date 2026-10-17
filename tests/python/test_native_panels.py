@@ -49,7 +49,7 @@ def test_console_selection_intent_and_silent_projection_remain_distinct():
     panel.log_from_python(LogLevel.Warn, "second")
     panel.log_from_python(LogLevel.Error, "latest")
     message, level, info, warning, error, uid = panel._get_status_snapshot()
-    assert (message, level, info, warning, error) == ("latest", "error", 1, 1, 1)
+    assert (message, level, info, warning, error) == ("[Error] latest", "error", 1, 1, 1)
     assert uid > 0
 
     panel.select_entry(uid)

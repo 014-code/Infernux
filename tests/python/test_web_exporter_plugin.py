@@ -20,6 +20,13 @@ ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_EDITOR = ROOT / "external" / "plugins" / "infernux_web" / "package" / "editor"
 
 
+def test_web_bootstrap_publishes_the_normal_runtime_components():
+    subprocess.run(
+        [sys.executable, str(ROOT / "tests/python/fixtures/web_runtime_namespace.py"), "components", "surface"],
+        check=True, capture_output=True, text=True, timeout=30,
+    )
+
+
 def _web_python_runtime_manifest():
     return {
         "implementation": "cpython",

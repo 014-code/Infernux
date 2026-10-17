@@ -52,6 +52,20 @@ def test_screen_canvas_pose_does_not_move_geometry_or_hit_target(scene, mode):
     assert canvas.raycast(230, 40) is button
 
 
+def test_canvas_anchors_follow_viewport_and_live_rect_edits_roundtrip(scene):
+    from infernux.ui.enums import ScreenAlignH, ScreenAlignV
+
+    owner, _ = _canvas(scene)
+    for horizontal, dx in ((ScreenAlignH.Left, 0), (ScreenAlignH.Center, 100), (ScreenAlignH.Right, 200)):
+        for vertical, dy in ((ScreenAlignV.Top, 0), (ScreenAlignV.Center, 150), (ScreenAlignV.Bottom, 300)):
+            button = _button(scene, owner)
+            button.align_h, button.align_v = horizontal, vertical
+            assert button.get_rect(800, 600) == pytest.approx((20, 30, 100, 40))
+            assert button.get_rect(1000, 900) == pytest.approx((20 + dx, 30 + dy, 100, 40))
+            button.set_rect(55, 66, 100, 40, 1000, 900)
+            assert button.get_rect(1000, 900) == pytest.approx((55, 66, 100, 40))
+
+
 def test_canvas_stops_ancestor_layout_and_clipping(scene):
     outer_owner, outer_canvas = _canvas(scene)
     frame_owner = scene.create_game_object("Outer Frame")
