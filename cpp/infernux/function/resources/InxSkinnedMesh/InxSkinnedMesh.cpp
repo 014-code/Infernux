@@ -953,7 +953,8 @@ std::vector<glm::mat4> InxSkinnedMesh::EvaluatePoseStackGlobals(
                 value += weight;
         } else {
             for (size_t ni = 0; ni < N; ++ni)
-                if (std::find(layer.boneMask.begin(), layer.boneMask.end(), skeleton.nodes[ni].name) != layer.boneMask.end())
+                if (std::find(layer.boneMask.begin(), layer.boneMask.end(), skeleton.nodes[ni].name) !=
+                    layer.boneMask.end())
                     coverage[ni] += weight;
         }
     }

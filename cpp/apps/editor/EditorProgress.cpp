@@ -17,7 +17,8 @@ int main(int, char **)
         return 1;
     }
     SDL_Window *window = SDL_CreateWindow("Infernux - Preparing Play", 520, 150,
-        SDL_WINDOW_HIDDEN | SDL_WINDOW_BORDERLESS | SDL_WINDOW_ALWAYS_ON_TOP | SDL_WINDOW_NOT_FOCUSABLE);
+                                          SDL_WINDOW_HIDDEN | SDL_WINDOW_BORDERLESS | SDL_WINDOW_ALWAYS_ON_TOP |
+                                              SDL_WINDOW_NOT_FOCUSABLE);
     SDL_Renderer *renderer = window ? SDL_CreateRenderer(window, "software") : nullptr;
     if (!renderer) {
         std::fprintf(stderr, "%s\n", SDL_GetError());
@@ -48,7 +49,8 @@ int main(int, char **)
     bool shown = false;
     while (!done.load()) {
         SDL_Event event;
-        while (SDL_PollEvent(&event)) {}
+        while (SDL_PollEvent(&event)) {
+        }
         const Uint64 elapsed = SDL_GetTicks() - started;
         if (!shown && elapsed >= 400) {
             SDL_ShowWindow(window);

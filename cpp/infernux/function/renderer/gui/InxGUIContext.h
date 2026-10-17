@@ -189,8 +189,8 @@ class InxGUIContext
     /* layout helpers */
     void BeginGroup(const std::string &name = "");
     void EndGroup();
-    void BeginFramedGroup(float paddingX, float paddingY, float rounding,
-                          const std::array<float, 4> &background, const std::array<float, 4> &border);
+    void BeginFramedGroup(float paddingX, float paddingY, float rounding, const std::array<float, 4> &background,
+                          const std::array<float, 4> &border);
     void EndFramedGroup();
 
     void SameLine(float offsetFromStartX = 0.0f, float spacing = -1.0f);
