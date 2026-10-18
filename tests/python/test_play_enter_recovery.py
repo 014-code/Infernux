@@ -175,6 +175,42 @@ def test_enter_publishes_playing_only_after_native_start(authoring_project):
     assert observed == [("ENTERING", False), ("PLAYING", True)]
 
 
+@pytest.mark.parametrize("role", ["editor", "player", "headless"])
+def test_play_progress_window_is_editor_only(authoring_project, monkeypatch, role):
+    from infernux import application
+    from infernux.engine.ui import busy_progress
+
+    events = []
+
+    class Progress:
+        def __init__(self):
+            events.append("open")
+
+        def update(self, value, message):
+            events.append((value, message))
+
+        def close(self):
+            events.append("close")
+
+    monkeypatch.setattr(application, "_runtime_kind", role)
+    monkeypatch.setattr(busy_progress, "BusyProgress", Progress)
+    state = authoring_project
+
+    def capture_preparation():
+        events.append("prepare")
+        raise RuntimeError("Stop at the progress presentation boundary")
+
+    monkeypatch.setattr(state.manager, "_save_scene_state", capture_preparation)
+    assert state.manager.enter_play_mode()
+    state.runner.tick()
+    assert state.manager.is_edit_mode and not state.native.is_playing()
+    if role == "editor":
+        assert events[0] == "open" and events[-1] == "close"
+        assert any(isinstance(event, tuple) for event in events)
+    else:
+        assert events == ["prepare"]
+
+
 @pytest.mark.parametrize("restore_failure", ["rejected", "raised", "notification"])
 def test_failed_enter_with_failed_rollback_retains_snapshot(authoring_project, monkeypatch, restore_failure):
     state = authoring_project

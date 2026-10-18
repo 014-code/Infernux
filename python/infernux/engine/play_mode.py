@@ -843,8 +843,13 @@ class PlayModeManager(PlayModeSerializationMixin):
 
         def enter_with_progress():
             nonlocal progress
+            from infernux.application import Application
             from infernux.lib import RuntimeMode
-            if self._native_engine is not None and self._native_engine.runtime_mode == RuntimeMode.Graphical:
+            if (
+                Application.is_editor()
+                and self._native_engine is not None
+                and self._native_engine.runtime_mode == RuntimeMode.Graphical
+            ):
                 from infernux.engine.ui.busy_progress import BusyProgress
                 try:
                     progress = BusyProgress()
