@@ -589,6 +589,7 @@ class AssetDatabase : public NativeLifetimeOwner
         std::unordered_map<std::string, std::string> guidToPath;
         std::unordered_map<std::string, std::string> pathToGuid;
         std::unordered_map<std::string, std::shared_ptr<const InxResourceMeta>> metas;
+        std::unordered_map<std::string, std::string> shaderPaths;
         std::shared_ptr<const AssetCatalogSnapshot> catalog;
     };
 
@@ -671,6 +672,7 @@ class AssetDatabase : public NativeLifetimeOwner
     void PublishRefreshAssetEvents(const WorkingSet &previous);
     void PublishQuerySnapshotForPaths(const std::vector<std::string> &paths);
     void InstallQuerySnapshot(std::shared_ptr<QuerySnapshot> snapshot) noexcept;
+    static void BuildShaderPathIndex(QuerySnapshot &snapshot);
     [[nodiscard]] std::shared_ptr<const QuerySnapshot> LoadQuerySnapshot() const;
     [[nodiscard]] AssetScanRequest CaptureScanRequest() const;
     [[nodiscard]] static AssetScanArtifact BuildScanArtifact(const AssetScanRequest &request);

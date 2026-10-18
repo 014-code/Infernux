@@ -5,10 +5,10 @@
 #include <platform/filesystem/InxPath.h>
 
 #include <cassert>
-#include <iostream>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <vector>
 
 namespace
@@ -22,7 +22,8 @@ std::vector<char> Spirv(size_t words, char value)
 void VerifyPreparedStagePublication()
 {
     using namespace infernux;
-    const auto root = std::filesystem::temp_directory_path() /
+    const auto root =
+        std::filesystem::temp_directory_path() /
         ("infernux-prepared-shader-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     const auto path = root / "Assets" / "Publication.vert";
     std::filesystem::create_directories(path.parent_path());
@@ -40,9 +41,13 @@ void VerifyPreparedStagePublication()
     registry.PopulateAssetDatabaseLoaders();
     const auto imported = registry.GetAssetDatabase()->ImportAsset(FromFsPath(path));
     assert(imported.succeeded);
+    auto &assets = *registry.GetAssetDatabase();
+    assert(assets.FindShaderPathById("Prepared Publication", "vertex") == assets.GetPathFromGuid(imported.guid));
+    assert(assets.FindShaderPathById("Prepared Publication", "fragment").empty());
     const auto prepare = [&] {
         return registry.GetLoader(ResourceType::Shader)
-            ->Load(FromFsPath(path), imported.guid, registry.GetAssetDatabase()).Get<ShaderAsset>();
+            ->Load(FromFsPath(path), imported.guid, registry.GetAssetDatabase())
+            .Get<ShaderAsset>();
     };
     auto candidate = prepare();
     assert(candidate && !registry.IsLoaded(imported.guid));
@@ -67,6 +72,17 @@ void VerifyPreparedStagePublication()
     assert(rejected && registry.GetAssetVersion(imported.guid) == version + 1);
     assert(registry.GetAsset<ShaderAsset>(imported.guid) == resident);
     assert(resident->HasVariant(ShaderCompileTarget::Forward));
+    {
+        std::ofstream output(path);
+        output << "#version 450\nShaderInfo { Name \"Renamed Publication\" Capabilities [\"Standalone\"] }\n"
+                  "void main() { gl_Position = vec4(0.0); }\n";
+    }
+    assert(assets.ReimportAsset(FromFsPath(path)).succeeded);
+    assert(assets.FindShaderPathById("Prepared Publication", "vertex").empty());
+    assert(assets.FindShaderPathById("Renamed Publication", "vert") == assets.GetPathFromGuid(imported.guid));
+    std::filesystem::remove(path);
+    assert(assets.DeleteAsset(FromFsPath(path)).succeeded);
+    assert(assets.FindShaderPathById("Renamed Publication", "vertex").empty());
     registry.Shutdown();
     JobSystem::Shutdown();
     std::filesystem::remove_all(root);

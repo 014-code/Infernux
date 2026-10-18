@@ -1028,6 +1028,7 @@ void AssetDatabase::PublishQuerySnapshotForPaths(const std::vector<std::string> 
     }
 
     snapshot->catalog = std::move(catalog);
+    BuildShaderPathIndex(*snapshot);
     InstallQuerySnapshot(std::move(snapshot));
     PublishModelSubAssetEvents(previous, &changedSubAssets);
 }
@@ -2403,6 +2404,7 @@ std::shared_ptr<AssetDatabase::QuerySnapshot> AssetDatabase::BuildQuerySnapshotA
             throw std::logic_error("Query snapshot build found null metadata");
         snapshot->metas.emplace(guid, metadata);
     }
+    BuildShaderPathIndex(*snapshot);
 
     auto catalog = std::make_shared<AssetCatalogSnapshot>();
     catalog->m_generation = generation;
@@ -3859,40 +3861,33 @@ void AssetDatabase::MoveMetadata(const std::string &oldPath, const std::string &
 
 std::string AssetDatabase::FindShaderPathById(const std::string &shaderId, const std::string &shaderType) const
 {
-    std::string expectedExt;
+    const char *stage;
     if (shaderType == "vertex" || shaderType == ".vert" || shaderType == "vert") {
-        expectedExt = ".vert";
+        stage = "vertex";
     } else if (shaderType == "fragment" || shaderType == ".frag" || shaderType == "frag") {
-        expectedExt = ".frag";
+        stage = "fragment";
     } else {
         return "";
     }
 
     const auto snapshot = LoadQuerySnapshot();
-    for (const auto &[guid, meta] : snapshot->metas) {
-        if (!meta)
-            continue;
+    const auto found = snapshot->shaderPaths.find(std::string(stage) + ":" + shaderId);
+    return found == snapshot->shaderPaths.end() ? std::string{} : found->second;
+}
 
-        if (!meta->HasKey("type"))
+void AssetDatabase::BuildShaderPathIndex(QuerySnapshot &snapshot)
+{
+    snapshot.shaderPaths.clear();
+    for (const auto &[guid, meta] : snapshot.metas) {
+        if (!meta || !meta->HasKey("type") || !meta->HasKey("shader_id"))
             continue;
-        std::string type = meta->GetDataAs<std::string>("type");
-        bool matchesType =
-            (expectedExt == ".vert" && type == "vertex") || (expectedExt == ".frag" && type == "fragment");
-        if (!matchesType)
+        const auto type = meta->GetDataAs<std::string>("type");
+        if (type != "vertex" && type != "fragment")
             continue;
-
-        if (meta->HasKey("shader_id") && meta->HasKey("file_path")) {
-            std::string metaShaderId = meta->GetDataAs<std::string>("shader_id");
-            const auto runtimePath = snapshot->guidToPath.find(guid);
-            if (runtimePath == snapshot->guidToPath.end())
-                continue;
-            if (metaShaderId == shaderId) {
-                return runtimePath->second;
-            }
-        }
+        const auto path = snapshot.guidToPath.find(guid);
+        if (path != snapshot.guidToPath.end())
+            snapshot.shaderPaths.try_emplace(type + ":" + meta->GetDataAs<std::string>("shader_id"), path->second);
     }
-
-    return "";
 }
 
 } // namespace infernux
