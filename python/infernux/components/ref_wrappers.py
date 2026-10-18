@@ -5,9 +5,9 @@ These wrappers track the validity of references so that accessing a
 destroyed/missing object returns ``None`` instead of crashing with a
 C++ exception.
 
-``GameObjectRef`` stores a persistent scene-ID and lazily resolves the
-live object via ``Scene.find_by_id``.  If the object has been destroyed
-the wrapper evaluates to falsy and all attribute access returns ``None``.
+``GameObjectRef`` resolves a persistent scene-ID once and reuses the native
+object while its lifetime is valid. Missing or destroyed targets resolve to
+``None`` until the identity appears in a resident scene again.
 
 ``MaterialRef`` is defined in ``infernux.core.asset_ref`` and re-exported
 here for module-level import convenience.
@@ -102,10 +102,9 @@ def _is_python_component_entry(component) -> bool:
 class GameObjectRef:
     """Null-safe wrapper around a scene GameObject.
 
-    Stores the persistent ``id`` (uint64, written into the .scene file) and
-    lazily resolves the live C++ object each time it is accessed.  If the
-    object has been destroyed or the scene was reloaded, the wrapper simply
-    returns ``None`` instead of raising a pybind11 segfault.
+    Stores the persistent ``id`` (uint64, written into the .scene file).
+    A live native reference is reused; after retirement, the same identity
+    can reconnect when its Scene is reloaded.
 
     Supports truthiness check::
 
@@ -163,14 +162,9 @@ class GameObjectRef:
         obj = self._cached_obj
         handle = self._cached_handle
         if obj is not None and handle is not None:
-            try:
-                for scene in _iter_reference_scenes():
-                    resolved = scene.resolve_game_object(handle)
-                    if resolved is not None:
-                        self._cached_obj = resolved
-                        return resolved
-            except (ImportError, RuntimeError):
-                pass
+            retiring = _retiring_worlds.get()
+            if bool(obj) and (not retiring or obj.handle.world_id not in retiring):
+                return obj
             self._cached_obj = None
             self._cached_handle = None
         elif obj is not None:

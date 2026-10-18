@@ -27,7 +27,7 @@ def test_component_ref_rebinds_invalidated_wrapper_when_native_identity_survives
     assert fresh.camera_to_world_matrix.shape == (4, 4)
 
 
-def test_retiring_scene_reference_scope_keeps_other_worlds_and_restores_after_error(scene):
+def test_retiring_scene_reference_scope_keeps_other_worlds_and_restores_after_error(scene, monkeypatch):
     from infernux.lib import SceneManager
 
     manager = SceneManager.instance()
@@ -39,6 +39,11 @@ def test_retiring_scene_reference_scope_keeps_other_worlds_and_restores_after_er
     object_ref = GameObjectRef(obj)
     component_ref = ComponentRef(go_id=obj.id, component_type='Camera')
     resident_ref = ComponentRef(go_id=resident.id, component_type='Camera')
+    with monkeypatch.context() as patch:
+        def unexpected_scan():
+            raise AssertionError('a live cached object reference must not enumerate scenes')
+        patch.setattr(ref_wrappers, '_iter_reference_scenes', unexpected_scan)
+        assert object_ref.resolve() is obj
     assert component_ref.resolve().is_valid
     try:
         with pytest.raises(RuntimeError, match='cleanup failed'):
@@ -134,6 +139,8 @@ def test_reference_resolution_tracks_live_persistent_scene_lifetime(scene):
         persistent = manager.get_runtime_persistent_scene()
         assert target.scene is persistent and persistent is not scene
         assert object_reference.resolve() is target
+        with ref_wrappers.retiring_scene_references(scene.world_id):
+            assert object_reference.resolve() is target
         assert target.game_object is target
         assert component_reference.resolve().game_object is target
         persistent.destroy_game_object(target)
