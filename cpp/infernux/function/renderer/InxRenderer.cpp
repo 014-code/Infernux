@@ -1071,6 +1071,7 @@ void InxRenderer::DrawFrame()
     } frameScope{m_drawingFrame};
     m_drawingFrame = true;
     const bool samplePerformanceFrame = m_framePerformanceWindowActive;
+    RendererFramePerformanceSample performanceSample;
     const auto performanceWindowFrameStart =
         samplePerformanceFrame ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
 
@@ -1183,6 +1184,10 @@ void InxRenderer::DrawFrame()
 
     // Window events
     m_view->ProcessEvent();
+    if (samplePerformanceFrame)
+        performanceSample.inputMs =
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - performanceWindowFrameStart)
+                .count();
     // Surface capabilities may leave the extent to the application (Wayland,
     // Retina). Publish the current pixel extent, never the requested initial
     // window size, before surface/swapchain recreation consumes it.
@@ -1239,10 +1244,15 @@ void InxRenderer::DrawFrame()
     // is minimized. Authoring/reload runs before UI work and before the native
     // scene frame, independently of whether a swapchain can present.
     // Actual ImGui/Vulkan work remains below the minimized early return.
+    const auto callbacksStart =
+        samplePerformanceFrame ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     if (auto callback = m_preSceneUpdateCallback)
         callback(m_deltaTime);
     if (auto callback = m_preGuiCallback)
         callback();
+    if (samplePerformanceFrame)
+        performanceSample.callbacksMs =
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - callbacksStart).count();
 
     // Deferred owner work must also advance when no image can be presented.
     // Call only outside SceneManager's active frame: either before Update,
@@ -1298,6 +1308,8 @@ void InxRenderer::DrawFrame()
     double gpuPrepareMs = 0.0;
 #endif
     const auto prepareGpuFrame = [&]() {
+        const auto waitStart =
+            samplePerformanceFrame ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
 #if INFERNUX_FRAME_PROFILE
         const auto start = std::chrono::high_resolution_clock::now();
 #endif
@@ -1308,6 +1320,9 @@ void InxRenderer::DrawFrame()
             if (!m_vkCore->RefreshPresentationSize())
                 return false;
         }
+        if (samplePerformanceFrame)
+            performanceSample.gpuWaitMs +=
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - waitStart).count();
 #if INFERNUX_FRAME_PROFILE
         gpuPrepareMs =
             std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - start).count();
@@ -1628,7 +1643,13 @@ void InxRenderer::DrawFrame()
     sceneManager.EmitRuntimeFrameBarrier(SceneManager::RuntimeFrameBarrier::RenderGraph);
     if (HasPendingCapture(CaptureSource::Editor))
         m_vkCore->RequestPresentationReadback();
-    m_vkCore->DrawFrame(m_cameraPos, m_cameraLookAt, m_cameraUp);
+    const auto drawStart =
+        samplePerformanceFrame ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    m_vkCore->DrawFrame(m_cameraPos, m_cameraLookAt, m_cameraUp,
+                        samplePerformanceFrame ? &performanceSample.drawPhases : nullptr);
+    if (samplePerformanceFrame)
+        performanceSample.drawMs =
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - drawStart).count();
     sceneManager.CommitSkinPoseHistories();
     if (m_vkCore->ConsumeFirstVisiblePresentation())
         m_view->RevealAfterFirstPresentation();
@@ -1673,10 +1694,10 @@ void InxRenderer::DrawFrame()
     runDeferredTasks();
 
     if (samplePerformanceFrame) {
-        const double frameMs =
+        performanceSample.frameMs =
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - performanceWindowFrameStart)
                 .count();
-        RecordFramePerformanceSample(frameMs);
+        RecordFramePerformanceSample(performanceSample);
     }
 
     // ========================================================================
@@ -3440,16 +3461,15 @@ uint64_t InxRenderer::BeginFramePerformanceWindow(size_t sampleCount)
     return m_frameCount + 1;
 }
 
-void InxRenderer::RecordFramePerformanceSample(double frameMs)
+void InxRenderer::RecordFramePerformanceSample(RendererFramePerformanceSample sample)
 {
-    auto &sample = m_framePerformanceHistory.emplace_back();
     sample.frame = m_frameCount;
-    sample.frameMs = frameMs;
     sample.gameOnlyMs = m_gameOnlyFrameMs;
     sample.renderMs = m_lastGameRenderMs;
     sample.sceneMs = m_sceneUpdateMs;
     sample.guiMs = m_guiBuildMs;
     sample.prepareMs = m_prepareFrameMs;
+    m_framePerformanceHistory.push_back(sample);
 
     if (m_framePerformanceHistory.size() == m_framePerformanceSampleLimit)
         m_framePerformanceWindowActive = false;

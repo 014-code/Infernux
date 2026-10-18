@@ -277,7 +277,8 @@ class InxVkCoreModular
      * @param viewLookAt Camera look-at point
      * @param viewUp Camera up vector
      */
-    void DrawFrame(const float *viewPos, const float *viewLookAt, const float *viewUp);
+    void DrawFrame(const float *viewPos, const float *viewLookAt, const float *viewUp,
+                   std::array<double, 6> *phaseTimings = nullptr);
 
     /// Consume a platform-surface loss reported by acquire or present. A
     /// surface loss is stronger than an out-of-date swapchain: Android may

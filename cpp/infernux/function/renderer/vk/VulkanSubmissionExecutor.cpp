@@ -10,6 +10,7 @@
 #include <core/log/InxLog.h>
 
 #include <algorithm>
+#include <chrono>
 #include <limits>
 
 namespace infernux::vk
@@ -163,6 +164,7 @@ VulkanSubmissionExecutor::ExecuteResult VulkanSubmissionExecutor::Execute(uint32
                                                                           const ExternalSync &sync)
 {
     ExecuteResult output{};
+    auto phaseStart = sync.cpuTimings ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     if (!m_deviceContext || !m_queues || frameSlot >= m_frames.size() || plan.batches.empty() || !recorder)
         return output;
     const auto firstGraphics = std::find_if(plan.batches.begin(), plan.batches.end(),
@@ -258,6 +260,11 @@ VulkanSubmissionExecutor::ExecuteResult VulkanSubmissionExecutor::Execute(uint32
     diagnostic.batchWaits.reserve(plan.batches.size());
     diagnostic.batchNames.reserve(plan.batches.size());
 
+    if (sync.cpuTimings) {
+        const auto now = std::chrono::steady_clock::now();
+        (*sync.cpuTimings)[0] = std::chrono::duration<double, std::milli>(now - phaseStart).count();
+        phaseStart = now;
+    }
     for (size_t batchIndex = 0; batchIndex < plan.batches.size(); ++batchIndex) {
         const rhi::SubmissionBatch &batch = plan.batches[batchIndex];
         VkCommandBuffer commandBuffer = AcquireCommandBuffer(frame, batch.queue);
@@ -289,6 +296,11 @@ VulkanSubmissionExecutor::ExecuteResult VulkanSubmissionExecutor::Execute(uint32
         diagnostic.batchQueuePredecessors.push_back(batch.queuePredecessor);
         diagnostic.batchWaits.push_back(batch.waitsFor);
         diagnostic.batchNames.push_back(batch.diagnosticName);
+    }
+    if (sync.cpuTimings) {
+        const auto now = std::chrono::steady_clock::now();
+        (*sync.cpuTimings)[1] = std::chrono::duration<double, std::milli>(now - phaseStart).count();
+        phaseStart = now;
     }
 
     // Recording may publish asynchronous resource uploads. Reserve frame
@@ -557,6 +569,9 @@ VulkanSubmissionExecutor::ExecuteResult VulkanSubmissionExecutor::Execute(uint32
     output.result = VK_SUCCESS;
     diagnostic.completionTimeline = output.completionTimeline;
     diagnostic.completionTimelineValue = output.completionTimelineValue;
+    if (sync.cpuTimings)
+        (*sync.cpuTimings)[2] =
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - phaseStart).count();
     return output;
 }
 

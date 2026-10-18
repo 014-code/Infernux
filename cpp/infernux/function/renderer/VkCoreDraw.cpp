@@ -77,10 +77,14 @@ bool IsPackagedPlayerRuntime()
 // Rendering
 // ============================================================================
 
-void InxVkCoreModular::DrawFrame(const float *viewPos, const float *viewLookAt, const float *viewUp)
+void InxVkCoreModular::DrawFrame(const float *viewPos, const float *viewLookAt, const float *viewUp,
+                                 std::array<double, 6> *phaseTimings)
 try {
     if (m_frameFailure)
         std::rethrow_exception(m_frameFailure);
+    auto phaseStart = phaseTimings ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    if (phaseTimings)
+        phaseTimings->fill(0.0);
 #if INFERNUX_FRAME_PROFILE
     using Clock = std::chrono::high_resolution_clock;
     auto _t0 = Clock::now();
@@ -124,6 +128,11 @@ try {
 
     if (result == vk::SwapchainResult::Error) {
         throw std::runtime_error("Failed to acquire swapchain image");
+    }
+    if (phaseTimings) {
+        const auto now = std::chrono::steady_clock::now();
+        (*phaseTimings)[0] = std::chrono::duration<double, std::milli>(now - phaseStart).count();
+        phaseStart = now;
     }
 #if INFERNUX_FRAME_PROFILE
     _tNow = Clock::now();
@@ -387,6 +396,8 @@ try {
     }
 
     vk::VulkanSubmissionExecutor::ExternalSync externalSync{};
+    std::array<double, 3> executionTimings{};
+    externalSync.cpuTimings = phaseTimings ? &executionTimings : nullptr;
     externalSync.imageAvailable = m_backend.Presentation().GetImageAvailableSemaphore(frameSlot);
     externalSync.imageAvailableStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     externalSync.uploadTimeline = m_resourceManager.GetUploadTimelineSemaphore();
@@ -468,6 +479,8 @@ try {
                 return RecordFrameCommands(commandBuffer, imageIndex);
             },
             externalSync);
+        if (phaseTimings)
+            std::copy(executionTimings.begin(), executionTimings.end(), phaseTimings->begin() + 3);
     } catch (...) {
         if (m_frameComputeSubmissionCallback)
             m_frameComputeSubmissionCallback(false);
@@ -522,6 +535,11 @@ try {
     _tPrev = _tNow;
 #endif
 
+    if (phaseTimings) {
+        const auto now = std::chrono::steady_clock::now();
+        (*phaseTimings)[1] = std::chrono::duration<double, std::milli>(now - phaseStart).count();
+        phaseStart = now;
+    }
     // Present
     result = m_backend.Presentation().Present(m_backend.Queues(), imageIndex);
     if (result == vk::SwapchainResult::Success && m_firstVisiblePresentationPending) {
@@ -548,6 +566,9 @@ try {
 
     // Advance frame
     m_currentFrame = (m_currentFrame + 1) % m_maxFramesInFlight;
+    if (phaseTimings)
+        (*phaseTimings)[2] =
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - phaseStart).count();
 } catch (...) {
     if (!m_frameFailure)
         m_frameFailure = std::current_exception();

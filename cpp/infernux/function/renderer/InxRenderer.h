@@ -227,6 +227,11 @@ struct RendererFramePerformanceSample
     double sceneMs = 0.0;
     double guiMs = 0.0;
     double prepareMs = 0.0;
+    double inputMs = 0.0;
+    double callbacksMs = 0.0;
+    double gpuWaitMs = 0.0;
+    double drawMs = 0.0;
+    std::array<double, 6> drawPhases{};
 };
 
 struct RendererFramePerformanceSnapshot
@@ -833,7 +838,7 @@ class InxRenderer
     std::vector<RendererFramePerformanceSample> m_framePerformanceHistory;
     bool m_framePerformanceWindowActive = false;
     size_t m_framePerformanceSampleLimit = 0;
-    void RecordFramePerformanceSample(double frameMs);
+    void RecordFramePerformanceSample(RendererFramePerformanceSample sample);
 
     static constexpr size_t UI_PERFORMANCE_HISTORY_SIZE = 240;
     struct UIMetricHistory

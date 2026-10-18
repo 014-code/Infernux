@@ -1883,6 +1883,16 @@ void infernux::RegisterInfernuxBindings(py::module_ &m)
                     frame["scene_ms"] = sample.sceneMs;
                     frame["gui_ms"] = sample.guiMs;
                     frame["prepare_ms"] = sample.prepareMs;
+                    frame["input_ms"] = sample.inputMs;
+                    frame["callbacks_ms"] = sample.callbacksMs;
+                    frame["gpu_wait_ms"] = sample.gpuWaitMs;
+                    frame["draw_ms"] = sample.drawMs;
+                    frame["acquire_ms"] = sample.drawPhases[0];
+                    frame["record_submit_ms"] = sample.drawPhases[1];
+                    frame["present_ms"] = sample.drawPhases[2];
+                    frame["command_prepare_ms"] = sample.drawPhases[3];
+                    frame["command_record_ms"] = sample.drawPhases[4];
+                    frame["queue_submit_ms"] = sample.drawPhases[5];
                     slowestFrames.append(std::move(frame));
                 }
                 result["slowest_frames"] = std::move(slowestFrames);
