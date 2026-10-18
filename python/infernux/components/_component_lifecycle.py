@@ -312,8 +312,6 @@ class RuntimeExecutionScheduler:
         component: Any,
         field_id: Any,
     ) -> None:
-        from infernux.engine.runtime_change_journal import RuntimeChangeDomain
-
         type_id = cls._journal_type_id(type(component))
         component_id = component._component_id or id(component)
         primary_ref = cls._primary_scheduler
@@ -328,6 +326,8 @@ class RuntimeExecutionScheduler:
                     type_id, component_id, field_id
                 )
             return
+        from infernux.engine.runtime_change_journal import RuntimeChangeDomain
+
         journals = cls._scheduler_journals(tuple(cls._live_schedulers))
         for journal in journals:
             if not journal._field_tracking:

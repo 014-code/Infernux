@@ -59,6 +59,18 @@ class ComponentNativeMixin:
             return cleanup_binding[1]
         if self._is_destroyed:
             return None
+        cached = self.__dict__.get("_game_object")
+        if cached is not None:
+            version = self.__dict__.get("_game_object_bound_version")
+            scene = getattr(self, "_native_scene", None)
+            if version is not None and scene is not None:
+                try:
+                    current = int(getattr(scene, "structure_version"))
+                    valid = bool(getattr(cached, "is_valid", True))
+                except (RuntimeError, TypeError, ValueError):
+                    current, valid = None, False
+                if valid and current == version:
+                    return cached
         cpp_component = self._get_bound_native_component()
         if cpp_component is not None:
             try:
@@ -72,6 +84,13 @@ class ComponentNativeMixin:
             if self._game_object is not go:
                 self._game_object = go
                 self._game_object_ref = weakref.ref(go)
+            scene = getattr(self, "_native_scene", None)
+            try:
+                self._game_object_bound_version = (
+                    int(getattr(scene, "structure_version")) if scene is not None else None
+                )
+            except (RuntimeError, TypeError, ValueError):
+                self._game_object_bound_version = None
             return go
         # Use weak reference if available for safety
         if self._game_object_ref is not None:
@@ -132,6 +151,7 @@ class ComponentNativeMixin:
         self._remove_from_active_registry()
 
         self._game_object = game_object
+        self.__dict__.pop("_game_object_bound_version", None)
         # Also store weak reference for safe access
         if game_object is not None:
             self._game_object_ref = weakref.ref(game_object)
@@ -231,6 +251,7 @@ class ComponentNativeMixin:
         self._remove_from_active_registry()
         self._game_object = None
         self._game_object_ref = None
+        self.__dict__.pop("_game_object_bound_version", None)
 
     def _detach_native_binding_for_replacement(self):
         """Detach for script reload without invoking the user's on_destroy hook."""
