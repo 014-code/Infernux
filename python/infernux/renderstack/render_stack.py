@@ -286,7 +286,22 @@ class RenderStack(PipelineReloadMixin, InxComponent):
         if RenderStack._is_effectively_active(self):
             scene = getattr(self.game_object, "scene", None)
             self._owning_scene = scene
+            self._shadow_poll_elapsed = 0.0
+            self._shadow_lights_present = None
             RenderStack.activate_instance(self, scene)
+            self.invalidate_graph()
+
+    def update(self, delta_time: float) -> None:
+        """Poll light shadow state so topology follows authored light changes."""
+        if not hasattr(self.pipeline, "shadows_enabled"):
+            return
+        self._shadow_poll_elapsed = getattr(self, "_shadow_poll_elapsed", 0.0) + delta_time
+        if self._shadow_poll_elapsed < 0.5:
+            return
+        self._shadow_poll_elapsed = 0.0
+        present = self._scene_has_shadow_casting_lights()
+        if present != getattr(self, "_shadow_lights_present", None):
+            self._shadow_lights_present = present
             self.invalidate_graph()
 
     def on_disable(self) -> None:
@@ -620,6 +635,20 @@ class RenderStack(PipelineReloadMixin, InxComponent):
                 self._pipeline._render_stack = self
         return self._pipeline
 
+    def _scene_has_shadow_casting_lights(self) -> bool:
+        scene = getattr(self.game_object, "scene", None)
+        if scene is None:
+            return True
+        from infernux import Light
+
+        for obj in scene.get_all_objects():
+            if not obj.is_active_in_hierarchy():
+                continue
+            light = obj.get_component(Light)
+            if light is not None and light.enabled and int(light.shadows) != 0:
+                return True
+        return False
+
     # ==================================================================
     # Graph construction
     # ==================================================================
@@ -637,6 +666,9 @@ class RenderStack(PipelineReloadMixin, InxComponent):
 
         try:
             g = RenderGraph("_FullTopologyProbe")
+            if hasattr(self.pipeline, "shadows_enabled"):
+                self.pipeline.shadows_enabled = self._scene_has_shadow_casting_lights()
+                self._shadow_lights_present = self.pipeline.shadows_enabled
             self.pipeline._defining_graph = g
             try:
                 self.pipeline.define_topology(g)
@@ -824,6 +856,9 @@ class RenderStack(PipelineReloadMixin, InxComponent):
         )
 
         # Pipeline populates graph with passes + injection points
+        if hasattr(self.pipeline, "shadows_enabled"):
+            self.pipeline.shadows_enabled = self._scene_has_shadow_casting_lights()
+            self._shadow_lights_present = self.pipeline.shadows_enabled
         self.pipeline._defining_graph = graph
         try:
             self.pipeline.define_topology(graph)

@@ -38,6 +38,11 @@ class DefaultForwardParameters(SerializedFieldCollectorMixin):
         tooltip="Shadow map resolution (width & height)",
         header="Shadows",
     )
+    shadows_enabled: bool = serialized_field(
+        default=True,
+        tooltip="Render shadow casters. Disabled automatically when the scene has no shadow-casting lights.",
+        header="Shadows",
+    )
     msaa_samples: MSAASamples = serialized_field(
         default=MSAASamples.X4,
         enum_labels=["X1 (Off)", "X2", "X4", "X8"],
