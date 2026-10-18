@@ -77,6 +77,7 @@ def publish_player_asset_catalog_for_host(project_root: str) -> dict[str, Any]:
             return MainThreadCommandQueue.instance().run_sync(
                 "player.build.publish_asset_catalog",
                 lambda: publish_player_asset_catalog(root, active_database),
+                timeout_ms=600000,
             )
         if active_root:
             raise RuntimeError(
