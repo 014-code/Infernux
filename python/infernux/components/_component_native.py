@@ -317,6 +317,12 @@ class ComponentNativeMixin:
             return None
         if not self._tracks_scene_structure_binding():
             return cpp_component
+        if bool(getattr(self, "_is_destroyed", False)):
+            self._invalidate_native_binding()
+            return None
+        bound = getattr(self, "_bound_structure_version", None)
+        if bound is not None and self._native_binding_scene_revision() == bound:
+            return cpp_component
         handle = getattr(self, '_native_handle', None)
         scene = getattr(self, '_native_scene', None)
         if handle is not None and scene is not None:
