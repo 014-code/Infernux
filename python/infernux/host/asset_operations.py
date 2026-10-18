@@ -209,7 +209,7 @@ def _list_assets(
 ) -> dict[str, object]:
     def read():
         database = asset_database()
-        needle = str(query or "").casefold()
+        needle = str(query or "").replace("\\", "/").casefold()
         suffix = str(extension or "").casefold()
         scope = str(root or "assets").strip().casefold()
         if scope not in {"assets", "packages", "all"}:
@@ -233,7 +233,7 @@ def _list_assets(
             scoped_count += 1
             if len(values) >= result_limit:
                 continue
-            if needle and needle not in text.casefold():
+            if needle and needle not in text.replace("\\", "/").casefold():
                 continue
             if suffix and not text.casefold().endswith(suffix):
                 continue

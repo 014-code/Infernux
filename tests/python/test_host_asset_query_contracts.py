@@ -79,14 +79,19 @@ def _exercise(project, case):
             full = execute("infernux.asset.list", root=root, limit=2000)
             assert full["catalog_count"] == expected
             for limit in (1, 2, 2000):
-                for query, extension in (("", ""), ("Entry0", ".txt"), ("NoMatch", ""), ("", ".nope")):
+                for query, extension in (
+                    ("", ""), ("Entry0", ".txt"), ("NoMatch", ""), ("", ".nope"),
+                    ("Assets/Entry0", ".txt"), ("Assets\\Entry0", ".txt"),
+                    ("Packages/Entry0", ".txt"), ("Packages\\Entry0", ".txt"),
+                ):
                     result = execute("infernux.asset.list", root=root, limit=limit, query=query, extension=extension)
                     assert result["catalog_count"] == expected, result
                     assert result["global_catalog_count"] == full["global_catalog_count"]
                     matches = [
                         item
                         for item in full["assets"]
-                        if query.casefold() in item["path"].casefold() and item["path"].casefold().endswith(extension)
+                        if query.replace("\\", "/").casefold() in item["path"].replace("\\", "/").casefold()
+                        and item["path"].casefold().endswith(extension)
                     ]
                     assert result["assets"] == matches[:limit]
                     assert result["returned"] == min(limit, len(matches))
