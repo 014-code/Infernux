@@ -652,8 +652,15 @@ class RuntimeExecutionScheduler:
         return scheduler if scheduler.count > 0 else None
 
     def _build_plan(self) -> None:
+        presence_by_type = {
+            kind: _runtime_phase_presence(kind)
+            for kind in {type(component) for component in self._components.values()}
+        }
         entries: list[tuple[Any, bool]] = []
         for component in self._components.values():
+            has_coroutines = self._active_coroutine_scheduler(component) is not None
+            if not has_coroutines and not any(presence_by_type[type(component)]):
+                continue
             # Re-read the native owner's active state when rebuilding a plan.
             # A component can be deserialized before its GameObject is
             # activated; retaining the first mirror would silently exclude it
@@ -661,14 +668,9 @@ class RuntimeExecutionScheduler:
             owner_active = self._refresh_owner_active_mirror(component)
             if not owner_active:
                 continue
-            has_coroutines = self._active_coroutine_scheduler(component) is not None
             if has_coroutines or self._eligible(component):
                 entries.append((component, has_coroutines))
         entries.sort(key=lambda item: self._sort_key(item[0]))
-        presence_by_type = {
-            component_type: _runtime_phase_presence(component_type)
-            for component_type in {type(component) for component, _ in entries}
-        }
         plan: dict[str, tuple[Any, ...]] = {}
         for phase in _RUNTIME_SCHEDULER_PHASES:
             index = _RUNTIME_PHASE_NAMES.index(phase)

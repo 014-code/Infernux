@@ -267,14 +267,26 @@ def test_text_edit_and_font_epoch_preserve_packet_locality(ui, monkeypatch):
 
 
 @pytest.mark.parametrize("ui", [False], indirect=True, ids=["screen"])
-def test_unrelated_scene_edits_retain_screen_geometry(ui):
+def test_unrelated_scene_edits_retain_screen_geometry(ui, monkeypatch):
     from infernux.ui import UIGroup
 
     bridge = ui.scene.create_game_object("HUD parent")
     bridge.set_parent(ui.root)
     label = ui.add(parent=bridge)
+    walks = []
+    collect = ui.canvas.iter_ui_elements
+
+    def collect_elements():
+        walks.append(True)
+        yield from collect()
+
+    monkeypatch.setattr(ui.canvas, "iter_ui_elements", collect_elements)
     ui.frame()
     captures = ui.renderer.captures
+    ui.canvas.raycast(1, 1)
+    hit_geometry = ui.canvas._hit_geometry
+    hit_candidates = ui.canvas._hit_candidates_cache
+    walks.clear()
 
     prop = ui.scene.create_game_object("Unrelated projectile")
     assert ui.frame()[0] is False
@@ -283,6 +295,10 @@ def test_unrelated_scene_edits_retain_screen_geometry(ui):
     prop.set_parent(ui.scene.create_game_object("Unrelated parent"))
     assert ui.frame()[0] is False
     assert ui.renderer.captures == captures
+    ui.canvas.raycast(1, 1)
+    assert ui.canvas._hit_geometry is hit_geometry
+    assert ui.canvas._hit_candidates_cache is hit_candidates
+    assert walks == []
 
     # Reparenting can preserve flattened element order while changing layout.
     label.game_object.set_parent(ui.root)

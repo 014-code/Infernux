@@ -155,6 +155,34 @@ def test_phase_override_add_and_remove_are_published_to_the_next_frame():
     assert scheduler.profiler_snapshot()["plan_builds"] == 3
 
 
+def test_idle_ui_skips_gameplay_planning_but_can_start_coroutines(scene, monkeypatch):
+    from infernux.ui import UIText
+
+    label = scene.create_game_object("Label").add_component(UIText)
+    scheduler = RuntimeExecutionScheduler()
+    scheduler.register_component(label)
+    refresh = scheduler._refresh_owner_active_mirror
+    owners = []
+
+    def read_owner(component):
+        owners.append(component)
+        return refresh(component)
+
+    monkeypatch.setattr(scheduler, "_refresh_owner_active_mirror", read_owner)
+    assert scheduler.phase_plan("update") == ()
+    assert owners == []
+
+    def animate():
+        yield None
+        label.text = "Animated"
+
+    label.start_coroutine(animate())
+    assert scheduler.phase_plan("update") == (label,)
+    scheduler.execute_phase("update", 0.016)
+    assert label.text == "Animated"
+    assert scheduler.phase_plan("update") == ()
+
+
 def test_phase_plan_is_not_rebuilt_for_update_or_helper_replacement():
     class PlanProbe(ComponentLifecycleMixin):
         def __init__(self):

@@ -16,7 +16,6 @@ from infernux.engine.ui.runtime_canvas_snapshot import (
 from infernux.ui.ui_canvas_utils import runtime_ui_scenes
 from infernux.ui.inx_ui_screen_component import (
     WORLD_UI_PIXELS_PER_UNIT,
-    clear_rect_cache,
     is_ui_screen_component,
     _get_layout_revision,
 )
@@ -631,6 +630,7 @@ def map_runtime_ui_pointer(
 def _collect_world_ui_elements(*scenes):
     """Share one hierarchy snapshot between UI rendering, input and picking."""
     global _world_elements_key, _world_elements
+    from infernux.components import InxComponent
     from infernux.ui import UICanvas
 
     key = tuple(
@@ -640,6 +640,26 @@ def _collect_world_ui_elements(*scenes):
         for scene in scenes if scene is not None
     )
     if key == _world_elements_key:
+        return _world_elements
+
+    screen = {element for canvas in collect_sorted_runtime_canvas_snapshot(*scenes)
+              for element in canvas_elements(canvas)}
+    kinds = {}
+    has_world_ui = False
+    for components in InxComponent._active_instances.values():
+        for component in components:
+            if component in screen:
+                continue
+            kind = type(component)
+            if kind not in kinds:
+                kinds[kind] = is_ui_screen_component(component)
+            if kinds[kind] and component._native_scene in scenes:
+                has_world_ui = True
+                break
+        if has_world_ui:
+            break
+    if not has_world_ui:
+        _world_elements_key, _world_elements = key, ()
         return _world_elements
 
     result = []
@@ -682,8 +702,6 @@ class RuntimeScreenUISubmission:
         self._engine_ref = weakref.ref(engine)
         self._target_width = self.DEFAULT_CAPTURE_WIDTH
         self._target_height = self.DEFAULT_CAPTURE_HEIGHT
-        self._scene = None
-        self._scene_structure_version = -1
         self._canvas_snapshot_token = None
         self._canvas_snapshot = ()
         self._last_submission_frame = -1
@@ -723,11 +741,6 @@ class RuntimeScreenUISubmission:
         width, height = self.target_size
         scene_manager = SceneManager.instance()
         scenes = runtime_ui_scenes(scene_manager)
-        structure_version = tuple(int(world.structure_version) for world in scenes)
-        if scenes != self._scene or structure_version != self._scene_structure_version:
-            clear_rect_cache((tuple(id(world) for world in scenes), structure_version))
-            self._scene = scenes
-            self._scene_structure_version = structure_version
         canvas_token = runtime_canvas_snapshot_token(*scenes)
         if canvas_token != self._canvas_snapshot_token:
             self._canvas_snapshot = tuple(collect_sorted_runtime_canvas_snapshot(*scenes))

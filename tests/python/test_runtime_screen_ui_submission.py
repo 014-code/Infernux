@@ -186,7 +186,6 @@ def test_runtime_submission_publishes_latest_hud_without_a_game_panel(monkeypatc
         "collect_sorted_runtime_canvas_snapshot",
         lambda *_args, **_kwargs: [canvas],
     )
-    monkeypatch.setattr(module, "clear_rect_cache", lambda *_args: None)
     monkeypatch.setattr(module, "_get_tex_cache", lambda: texture_cache)
     monkeypatch.setattr(
         module,
@@ -258,7 +257,6 @@ def test_runtime_submission_anchors_against_live_logical_canvas(monkeypatch, sce
         "collect_sorted_runtime_canvas_snapshot",
         lambda *_args, **_kwargs: [canvas],
     )
-    monkeypatch.setattr(module, "clear_rect_cache", lambda *_args: None)
     monkeypatch.setattr(module, "_get_tex_cache", lambda: texture_cache)
     monkeypatch.setattr(module, "_runtime_ui_revision", lambda *_args: 1)
     monkeypatch.setattr(
@@ -488,25 +486,23 @@ def test_world_ui_snapshot_tracks_membership_and_canvas_reparenting(scene):
     assert _collect_world_ui_elements(None) == ()
 
 
-def test_world_ui_snapshot_uses_world_identity_when_native_scene_address_is_reused():
+def test_world_ui_snapshot_distinguishes_worlds_with_equal_structure_versions(scene):
     from infernux.engine.runtime_screen_ui import _collect_world_ui_elements
     from infernux.ui.ui_render_dispatch import runtime_ui_revision
     from infernux.ui import UIText, UIImage
+    from infernux.lib import SceneManager
 
     old = UIText()
     new = UIImage()
-    root = SimpleNamespace(get_py_components=lambda: (old,), get_children=lambda: ())
-    # pybind may return the same wrapper when a native address is reused.
-    # Equal structure counters cannot identify a different loaded World.
-    proxy = SimpleNamespace(
-        world_id=41, structure_version=3, temporal_discontinuity_revision=0, get_root_objects=lambda: (root,)
-    )
-    assert _collect_world_ui_elements(proxy) == (old,)
-    old_revision = runtime_ui_revision(proxy, (), 1920, 1080)
-    proxy.world_id = 42
-    root.get_py_components = lambda: (new,)
-    assert _collect_world_ui_elements(proxy) == (new,)
-    assert runtime_ui_revision(proxy, (), 1920, 1080) != old_revision
+    other = SceneManager.instance().create_scene("Other UI world")
+    scene.create_game_object("Old").add_py_component(old)
+    other.create_game_object("New").add_py_component(new)
+    assert scene.structure_version == other.structure_version
+    assert scene.world_id != other.world_id
+    assert _collect_world_ui_elements(scene) == (old,)
+    old_revision = runtime_ui_revision(scene, (), 1920, 1080)
+    assert _collect_world_ui_elements(other) == (new,)
+    assert runtime_ui_revision(other, (), 1920, 1080) != old_revision
 
 
 def test_world_ui_revision_tracks_group_material_visibility_and_persistent_scene(scene, monkeypatch):

@@ -209,7 +209,6 @@ class UICanvas(InxUIComponent):
     # ------------------------------------------------------------------
     _cached_elements: tuple = None
     _cached_elements_version: int = -1
-    _cached_elements_structure = None
     _cached_elements_revision: int = 0
     _input_logical_size: tuple[float, float] | None = None
 
@@ -234,35 +233,16 @@ class UICanvas(InxUIComponent):
     def _get_elements(self):
         """Inspect structural edits without invalidating unchanged UI snapshots."""
         go = self.game_object
-        if go is not None:
-            scene = go.scene
-            if scene is not None:
-                ver = scene.structure_version
-                if ver == self._cached_elements_version and self._cached_elements is not None:
-                    return self._cached_elements
-                self._cached_elements_version = ver
-        elements = tuple(self.iter_ui_elements())
+        if self.__dict__.get('_elements_owner') is not go:
+            from infernux.lib import _Infernux
 
-        def owner_state(owner):
-            return owner, tuple((component, component.enabled) for component in owner.get_py_components())
-
-        ancestors = []
-        owner = go
-        while owner is not None:
-            ancestors.append(owner_state(owner))
-            owner = owner.get_parent()
-        structure = (
-            tuple(ancestors),
-            tuple(
-                (element, element.enabled, element.game_object.active_in_hierarchy,
-                 tuple(owner_state(owner)
-                       for owner in (element.game_object, *element._layout_ancestors())))
-                for element in elements
-            ),
-        )
-        if self._cached_elements is None or structure != self._cached_elements_structure:
-            self._cached_elements = elements
-            self._cached_elements_structure = structure
+            self._element_dependencies = _Infernux._UIHierarchyDependencies(go)
+            self._elements_owner = go
+            self._cached_elements = None
+        version = self._element_dependencies.poll()
+        if self._cached_elements is None or version != self._cached_elements_version:
+            self._cached_elements = tuple(self.iter_ui_elements())
+            self._cached_elements_version = version
             self._cached_elements_revision += 1
             from .inx_ui_screen_component import _invalidate_rect_cache
 
@@ -359,7 +339,7 @@ class UICanvas(InxUIComponent):
             return ()
         owner = self.game_object
         scene = owner.scene
-        topology = (owner, scene.world_id, scene.structure_version,
+        topology = (owner, scene.world_id, self._cached_elements_revision,
                     scene.temporal_discontinuity_revision, id(elements))
         if self.__dict__.get('_hit_topology') != topology:
             self._hit_geometry = create_ui_transform_dependencies([e.game_object for e in elements], [])

@@ -28,6 +28,9 @@ namespace infernux::scene_binding
 
 void BindUITransformDependencies(py::module_ &m)
 {
+    py::class_<UIHierarchyDependencies>(m, "_UIHierarchyDependencies")
+        .def(py::init<GameObject *>(), py::arg("root"))
+        .def("poll", &UIHierarchyDependencies::Poll);
     py::class_<UITransformDependencies>(m, "_UITransformDependencies")
         .def(py::init<const std::vector<GameObject *> &, const std::vector<GameObject *> &>(), py::arg("screen"),
              py::arg("world"))
