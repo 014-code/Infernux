@@ -547,11 +547,6 @@ class Engine():
         # between frames, sandwiched by SDL_PumpEvents() in C++.  This prevents
         # Windows from flagging the application as "Not Responding" during long
         # scene loads that previously ran inside BuildFrame().
-        # Automatic GC stays enabled. Startup objects are frozen before the
-        # loop, and a large gen0 budget keeps collection out of the per-frame
-        # path while still bounding cyclic garbage. One full collection every
-        # three minutes is the safety net for long editor sessions.
-        _gc_next_full = time.monotonic() + 180.0
         _asset_import_progress = None
         _build_preflight_progress = None
         _plugin_install_progress = None
@@ -581,7 +576,6 @@ class Engine():
         # Same policy as _pre_gui_tick: failures propagate to the C++
         # DrawFrame boundary instead of being swallowed step by step.
         def _post_draw_tick():
-            nonlocal _gc_next_full
             pmm = getattr(self, "_play_mode_manager", None)
             playing = pmm is not None and pmm.is_playing
             # UI pointer callbacks may replace scenes or destroy renderables.
@@ -611,12 +605,6 @@ class Engine():
                 sfm = SceneFileManager.instance()
                 if sfm is not None:
                     sfm.poll_deferred_load()
-            # One full collection every three minutes bounds cycles that
-            # survive automatic collection. Everything else is left to CPython.
-            now = time.monotonic()
-            if now >= _gc_next_full:
-                gc.collect(2)
-                _gc_next_full = now + 180.0
         self._engine.set_post_draw_callback(_post_draw_tick)
 
         self._run_native_loop()
