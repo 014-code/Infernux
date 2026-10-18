@@ -339,10 +339,12 @@ class UICanvas(InxUIComponent):
             return ()
         owner = self.game_object
         scene = owner.scene
+        policy = _get_hit_policy_revision()
         topology = (owner, scene.world_id, self._cached_elements_revision,
-                    scene.temporal_discontinuity_revision, id(elements))
+                    scene.temporal_discontinuity_revision, id(elements), policy)
         if self.__dict__.get('_hit_topology') != topology:
-            self._hit_geometry = create_ui_transform_dependencies([e.game_object for e in elements], [])
+            self._hit_elements = tuple(element for element in elements if element.raycast_target)
+            self._hit_geometry = create_ui_transform_dependencies([e.game_object for e in self._hit_elements], [])
             self._hit_topology = topology
             self._hit_pose = None
             self._hit_key = None
@@ -352,10 +354,10 @@ class UICanvas(InxUIComponent):
             # its own local Transform signature.
             clear_rect_cache((id(self), pose))
             self._hit_pose = pose
-        key = (pose, _get_hit_policy_revision(), _get_layout_revision(), ref_w, ref_h)
+        key = (pose, policy, _get_layout_revision(), ref_w, ref_h)
         if self._hit_key != key:
             candidates = []
-            for element in reversed(elements):
+            for element in reversed(self._hit_elements):
                 if (not element.game_object.active_in_hierarchy or not element.enabled
                         or not element.effectively_blocks_raycast()):
                     continue

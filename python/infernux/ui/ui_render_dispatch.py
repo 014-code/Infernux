@@ -579,10 +579,11 @@ def _editor_render_image(elem, ctx, base_sx, base_sy, base_sw, base_sh, zoom, ge
     tex_id = get_tex_id(tex_path) if tex_path else 0
     rounding = attrs["corner_radius"] * zoom
     if tex_id:
+        uv = elem.uv_rect
         ctx.draw_image_rect(
             tex_id, base_sx, base_sy,
             base_sx + base_sw, base_sy + base_sh,
-            0.0, 0.0, 1.0, 1.0,
+            uv.x, uv.y, uv.x + uv.z, uv.y + uv.w,
             cr, cg, cb, ca,
             attrs["rotation"], attrs["mirror_h"], attrs["mirror_v"],
             rounding,
@@ -673,10 +674,11 @@ def _runtime_render_image(elem, renderer, ui_list, sx, sy, sw, sh,
     rounding = attrs["corner_radius"] * min(scale_x, scale_y)
     if tex_id:
         kind = "image"
+        uv = elem.uv_rect
         arguments = (
             ui_list, tex_id,
             sx, sy, sx + sw, sy + sh,
-            0.0, 0.0, 1.0, 1.0,
+            uv.x, uv.y, uv.x + uv.z, uv.y + uv.w,
             cr, cg, cb, ca,
             attrs["rotation"], attrs["mirror_h"], attrs["mirror_v"],
             rounding,

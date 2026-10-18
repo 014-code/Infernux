@@ -266,13 +266,47 @@ def test_text_edit_and_font_epoch_preserve_packet_locality(ui, monkeypatch):
     assert set(ui.extracted) == set(labels)
 
 
+def test_atlas_region_changes_only_image_packet(ui):
+    from infernux.core.asset_ref import TextureRef
+    from infernux.ui import UIImage
+    from infernux.ui.ui_render_dispatch import _editor_render_image
+
+    ui.add()
+    image = ui.add(UIImage)
+    image.texture = TextureRef(guid="atlas-texture")
+    commands = ui.frame()[1]
+    draw = next(args for name, args, _ in commands if name == "add_image")
+    assert draw[6:10] == (0.0, 0.0, 1.0, 1.0)
+    captures = ui.renderer.captures
+
+    image.uv_rect = (0.125, 0.25, 0.25, 0.5)
+    commands = ui.frame()[1]
+    draw = next(args for name, args, _ in commands if name == "add_image")
+    assert draw[6:10] == (0.125, 0.25, 0.375, 0.75)
+    assert ui.renderer.captures == captures + 1
+    assert ui.extracted == [image]
+    _assert_current_commands_match_fresh(ui, commands)
+    captures = ui.renderer.captures
+    image.uv_rect = (0.125, 0.25, 0.25, 0.5)
+    assert ui.frame()[0] is False
+    assert ui.renderer.captures == captures
+
+    editor = []
+    _editor_render_image(image, SimpleNamespace(draw_image_rect=lambda *args: editor.append(args)),
+                         10, 20, 100, 50, 1.0, lambda _source: 71)
+    assert editor[0][5:9] == draw[6:10]
+
+
 @pytest.mark.parametrize("ui", [False], indirect=True, ids=["screen"])
 def test_unrelated_scene_edits_retain_screen_geometry(ui, monkeypatch):
-    from infernux.ui import UIGroup
+    from infernux.ui import UIGroup, UIImage
+    from infernux.lib import Vector3
 
     bridge = ui.scene.create_game_object("HUD parent")
     bridge.set_parent(ui.root)
     label = ui.add(parent=bridge)
+    decoration = ui.add(UIImage)
+    decoration.raycast_target = False
     walks = []
     collect = ui.canvas.iter_ui_elements
 
@@ -299,6 +333,14 @@ def test_unrelated_scene_edits_retain_screen_geometry(ui, monkeypatch):
     assert ui.canvas._hit_geometry is hit_geometry
     assert ui.canvas._hit_candidates_cache is hit_candidates
     assert walks == []
+
+    decoration.game_object.transform.local_position = Vector3(20, 30, 0)
+    ui.canvas.raycast(1, 1)
+    assert ui.canvas._hit_geometry is hit_geometry
+    assert ui.canvas._hit_candidates_cache is hit_candidates
+    decoration.raycast_target = True
+    ui.canvas.raycast(1, 1)
+    assert decoration in ui.canvas._hit_elements
 
     # Reparenting can preserve flattened element order while changing layout.
     label.game_object.set_parent(ui.root)

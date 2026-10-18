@@ -1270,12 +1270,15 @@ void InxScreenUIRenderer::AddText(ScreenUIList list, float minX, float minY, flo
     ImU32 col = ImGui::ColorConvertFloat4ToU32(ImVec4(r, g, b, a));
     const int vtxStart = dl->VtxBuffer.Size;
     const VertexTransform transform = MakeVertexTransform(minX, minY, maxX, maxY, rotation, mirrorH, mirrorV);
-    if (clip)
+    const bool scissorClip = clip && (rotation != 0.0f || mirrorH || mirrorV);
+    const ImVec4 textClip(minX, minY, maxX, maxY);
+    if (scissorClip)
         dl->PushClipRect(ImVec2(minX, minY), ImVec2(maxX, maxY), true);
     dl->PushTextureID(ImGui::GetIO().Fonts->TexRef);
-    textlayout::RenderTextBox(dl, minX, minY, maxX, maxY, layout, col, alignX, alignY, letterSpacing);
+    textlayout::RenderTextBox(dl, minX, minY, maxX, maxY, layout, col, alignX, alignY, letterSpacing,
+                              clip && !scissorClip ? &textClip : nullptr);
     dl->PopTextureID();
-    if (clip)
+    if (scissorClip)
         dl->PopClipRect();
 
     ApplyVertexTransform(*dl, vtxStart, transform);
@@ -1485,31 +1488,18 @@ void InxScreenUIRenderer::Render(VkCommandBuffer cmdBuf, ScreenUIList list, uint
     const VkViewport viewport = MakeViewport(width, height);
     vkCmdSetViewport(cmdBuf, 0, 1, &viewport);
 
-    // The projection is shared by every draw, while authored material values
-    // are command-local.  The complete block is pushed per draw so the
-    // fragment shader consumes the same GUID-backed material contract that
-    // produced the retained command.
     const ScreenUIPushConstants projection = MakeOrthoPushConstants(width, height);
-
-    // ---- Bind font atlas descriptor set ----
-    {
-        const uint64_t fontDescRaw = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(m_fontDescriptorSet));
-        const uint32_t lo = static_cast<uint32_t>(fontDescRaw & 0xffffffffull);
-        const uint32_t hi = static_cast<uint32_t>((fontDescRaw >> 32) & 0xffffffffull);
-        if (hi == lo && lo != 0u && lo <= 0x000fffffu) {
-            static int badUiDescWarnCount = 0;
-            if (badUiDescWarnCount++ < 16) {
-                INXLOG_WARN("[InxScreenUIRenderer] suspicious font set0 desc=0x", fontDescRaw,
-                            " -- skip UI batch to avoid invalid bind");
-            }
-            return;
-        }
-    }
-    vkdebug::CmdBindDescriptorSetsTracked("InxScreenUIRenderer.Render.Set0Font", cmdBuf,
-                                          VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_fontDescriptorSet,
-                                          0, nullptr);
-    VkDescriptorSet lastBoundDescSet = m_fontDescriptorSet;
+    VkDescriptorSet lastBoundDescSet = VK_NULL_HANDLE;
     VkDescriptorSet lastMaterialDescSet = VK_NULL_HANDLE;
+    VkDescriptorSet checkedTexture = VK_NULL_HANDLE;
+    const UIShaderMaterialBinding emptyBinding{};
+    const UIShaderMaterialBinding *resolvedBinding = nullptr;
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    VkDescriptorSet materialDescSet = VK_NULL_HANDLE;
+    float encodeSample = 0.0f;
+    ScreenUIPushConstants lastConstants{};
+    VkRect2D lastScissor{};
+    bool constantsSet = false, scissorSet = false;
 
     // ---- Issue draw commands ----
     const float frameWidth = static_cast<float>(width);
@@ -1524,18 +1514,26 @@ void InxScreenUIRenderer::Render(VkCommandBuffer cmdBuf, ScreenUIList list, uint
             // User callbacks are not supported in scene render passes
             continue;
         }
-        const auto binding = (static_cast<size_t>(cmdI) < m_commandBindings[listIndex].size())
-                                 ? m_commandBindings[listIndex][static_cast<size_t>(cmdI)]
-                                 : UIShaderMaterialBinding{};
-        const VkPipeline pipeline = GetMaterialPipeline(binding, ShaderProgramDomain::ScreenUI);
-        VkDescriptorSet materialDescSet = VK_NULL_HANDLE;
-        if (!binding.materialGuid.empty()) {
-            const auto &artifact = m_resolvedMaterialPrograms.at(binding.materialGuid).artifact;
-            if (artifact && !artifact->properties.empty()) {
-                materialDescSet = GetMaterialDescriptor(binding, *artifact);
-                if (materialDescSet == VK_NULL_HANDLE)
-                    continue;
+        VkRect2D scissor{};
+        if (!MakeClampedScissor(cmd, frameWidth, frameHeight, scissor))
+            continue;
+        const auto &binding = (static_cast<size_t>(cmdI) < m_commandBindings[listIndex].size())
+                                  ? m_commandBindings[listIndex][static_cast<size_t>(cmdI)]
+                                  : emptyBinding;
+        if (!resolvedBinding || binding != *resolvedBinding) {
+            pipeline = GetMaterialPipeline(binding, ShaderProgramDomain::ScreenUI);
+            materialDescSet = VK_NULL_HANDLE;
+            if (!binding.materialGuid.empty()) {
+                const auto &artifact = m_resolvedMaterialPrograms.at(binding.materialGuid).artifact;
+                if (artifact && !artifact->properties.empty()) {
+                    materialDescSet = GetMaterialDescriptor(binding, *artifact);
+                    if (materialDescSet == VK_NULL_HANDLE) {
+                        resolvedBinding = nullptr;
+                        continue;
+                    }
+                }
             }
+            resolvedBinding = &binding;
         }
         if (pipeline != lastPipeline) {
             vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
@@ -1548,26 +1546,16 @@ void InxScreenUIRenderer::Render(VkCommandBuffer cmdBuf, ScreenUIList list, uint
             m_commandCacheValid = false;
             continue;
         }
-        if (texDescSet != m_fontDescriptorSet && m_textureUsageValidator &&
-            !m_textureUsageValidator(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(texDescSet)))) {
-            // Cached ImDrawLists retain raw descriptor handles. A texture replacement or
-            // residency eviction invalidates that handle, so reject this command and force
-            // Python to rebuild the list with the currently published texture next UI tick.
-            m_commandCacheValid = false;
-            continue;
-        }
-        {
-            const uint64_t texDescRaw = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(texDescSet));
-            const uint32_t lo = static_cast<uint32_t>(texDescRaw & 0xffffffffull);
-            const uint32_t hi = static_cast<uint32_t>((texDescRaw >> 32) & 0xffffffffull);
-            if (hi == lo && lo != 0u && lo <= 0x000fffffu) {
-                static int badUiTexDescWarnCount = 0;
-                if (badUiTexDescWarnCount++ < 24) {
-                    INXLOG_WARN("[InxScreenUIRenderer] suspicious cmd texture set0 desc=0x", texDescRaw,
-                                " -- skip draw command");
-                }
+        if (texDescSet != checkedTexture) {
+            const uint64_t textureId = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(texDescSet));
+            if (texDescSet != m_fontDescriptorSet && m_textureUsageValidator && !m_textureUsageValidator(textureId)) {
+                m_commandCacheValid = false;
                 continue;
             }
+            checkedTexture = texDescSet;
+            encodeSample =
+                list == ScreenUIList::Overlay && m_textureColorSpaceQuery && m_textureColorSpaceQuery(textureId) ? 1.0f
+                                                                                                                 : 0.0f;
         }
         if (texDescSet != lastBoundDescSet) {
             vkdebug::CmdBindDescriptorSetsTracked("InxScreenUIRenderer.Render.Set0Tex", cmdBuf,
@@ -1582,27 +1570,26 @@ void InxScreenUIRenderer::Render(VkCommandBuffer cmdBuf, ScreenUIList list, uint
             lastMaterialDescSet = materialDescSet;
         }
 
-        // Scissor rect from ImDrawCmd clip rect — clamped to render area
-        // to prevent Vulkan validation errors and potential DEVICE_LOST.
-        VkRect2D scissor{};
-        if (!MakeClampedScissor(cmd, frameWidth, frameHeight, scissor))
-            continue; // Degenerate scissor — skip draw
-
-        vkCmdSetScissor(cmdBuf, 0, 1, &scissor);
+        if (!scissorSet || std::memcmp(&scissor, &lastScissor, sizeof(scissor)) != 0) {
+            vkCmdSetScissor(cmdBuf, 0, 1, &scissor);
+            lastScissor = scissor;
+            scissorSet = true;
+        }
 
         ScreenUIPushConstants pushConstants = projection;
         pushConstants.materialColor = binding.baseColor;
         pushConstants.alphaClipEnabled = binding.alphaClipEnabled ? 1.0f : 0.0f;
         pushConstants.alphaClipThreshold = binding.alphaClipThreshold;
-        // Camera UI is drawn in linear space; Overlay is after display encoding.
-        // Font alpha and display-space uploads must not be gamma transformed.
-        pushConstants.encodeSample =
-            list == ScreenUIList::Overlay && m_textureColorSpaceQuery &&
-                    m_textureColorSpaceQuery(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(texDescSet)))
-                ? 1.0f
-                : 0.0f;
-        vkCmdPushConstants(cmdBuf, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                           sizeof(pushConstants), &pushConstants);
+        pushConstants.encodeSample = encodeSample;
+        if (!constantsSet || pushConstants.materialColor != lastConstants.materialColor ||
+            pushConstants.alphaClipEnabled != lastConstants.alphaClipEnabled ||
+            pushConstants.alphaClipThreshold != lastConstants.alphaClipThreshold ||
+            pushConstants.encodeSample != lastConstants.encodeSample) {
+            vkCmdPushConstants(cmdBuf, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                               sizeof(pushConstants), &pushConstants);
+            lastConstants = pushConstants;
+            constantsSet = true;
+        }
 
         vkCmdDrawIndexed(cmdBuf, cmd.ElemCount, 1, cmd.IdxOffset, static_cast<int32_t>(cmd.VtxOffset), 0);
         ++submittedDraws;

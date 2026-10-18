@@ -976,6 +976,12 @@ def _render_image_fill(ctx, img_comp: UIImage):
     # ── Tint color ──
     _render_color_field(ctx, img_comp, "color", t("ui_comp.color"), section_lw,
                         "##ui_image_fill_color")
+    from .inspector_utils import render_serialized_field
+
+    metadata = get_serialized_fields(type(img_comp))["uv_rect"]
+    uv = img_comp.uv_rect
+    updated = render_serialized_field(ctx, "##ui_image_uv", "UV Rect", metadata, uv, section_lw)
+    _apply_if_changed(img_comp, "uv_rect", uv, updated)
 
 
 def _render_image_inspector(ctx, img_comp: UIImage):

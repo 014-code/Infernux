@@ -369,6 +369,8 @@ int main(int argc, char **argv)
 {
     assert(SDL_Init(SDL_INIT_VIDEO));
     auto *window = SDL_CreateWindow("UI Vulkan regression", 128, 128, SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN);
+    if (!window)
+        std::cerr << "SDL_CreateWindow: " << SDL_GetError() << std::endl;
     vk::VkDeviceContext context;
     vk::DeviceConfig config;
     config.appName = "UI Vulkan regression";
@@ -1286,9 +1288,35 @@ int main(int argc, char **argv)
         renderer.SetMaterialTextureResolver(propertyTextureResolver);
         renderer.SetMaterialTextureGenerationResolver(propertyTextureGenerationResolver);
 
-        // A retained command resolves once per GUID/generation, not per draw.
+        // Local glyph clipping preserves pixels without splitting text batches.
         list = ScreenUIList::Overlay;
         buildGraph();
+        {
+            std::vector<uint8_t> reference(128 * 128 * 4), observed(reference.size());
+            for (bool localClip : {false, true}) {
+                renderer.BeginFrame(128, 128);
+                std::vector<std::shared_ptr<InxScreenUIRenderer::CommandPacket>> packets;
+                for (int row = 0; row < 2; ++row) {
+                    const float y = 10.0f + row * 40.0f;
+                    renderer.BeginCommandPacket();
+                    if (!localClip)
+                        renderer.PushClipRect(list, 10, y, 70, y + 15);
+                    renderer.AddText(list, 10, y, 70, y + 15, "Atlas and clipped text", 1, 1, 1, 1, 0, 0, 28, 0, 0,
+                                     false, false, "", 1, 0, localClip);
+                    if (!localClip)
+                        renderer.PopClipRect(list);
+                    packets.push_back(renderer.EndCommandPacket());
+                }
+                renderer.AppendCommandPackets(packets);
+                frame();
+                assert(device.ReadBuffer(output, 0, observed.data(), observed.size()));
+                if (localClip)
+                    assert(observed == reference);
+                else
+                    reference = observed;
+                assert(renderer.GetLastSubmittedDrawCount(list) == (localClip ? 1u : 2u));
+            }
+        }
         renderer.BeginFrame(128, 128);
         renderer.BeginCommandPacket();
         renderer.SetMaterialBinding(list, "ui-authored-guid", 1, "test-ui-program");
