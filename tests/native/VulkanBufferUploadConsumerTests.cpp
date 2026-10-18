@@ -1,9 +1,10 @@
+#include <SDL3/SDL.h>
 #include <function/renderer/vk/AsyncTransferContext.h>
 #include <function/renderer/vk/VkDeviceContext.h>
 #include <function/renderer/vk/VkResourceManager.h>
+#include <function/renderer/vk/VmaContext.h>
 #include <function/renderer/vk/VulkanQueueManager.h>
 #include <function/renderer/vk/VulkanRhiDevice.h>
-#include <SDL3/SDL.h>
 
 #include <array>
 #include <cassert>
@@ -16,8 +17,8 @@
 
 using namespace infernux;
 
-static bool Run(vk::VkDeviceContext &context, vk::VulkanQueueManager &queues,
-                vk::AsyncTransferContext &uploads, const std::vector<uint32_t> &spirv, const std::string &scenario)
+static bool Run(vk::VkDeviceContext &context, vk::VulkanQueueManager &queues, vk::AsyncTransferContext &uploads,
+                const std::vector<uint32_t> &spirv, const std::string &scenario)
 {
     const bool async = scenario.rfind("async", 0) == 0;
     const bool compute = scenario.find("compute") != std::string::npos;
@@ -39,8 +40,8 @@ static bool Run(vk::VkDeviceContext &context, vk::VulkanQueueManager &queues,
     if (compute)
         request.queueAccess = rhi::QueueAccessFlags::Graphics | rhi::QueueAccessFlags::Compute;
     if (scenario.rfind("invalid", 0) == 0) {
-        request.queueAccess = scenario == "invalid_none" ? rhi::QueueAccessFlags::None
-                                                         : static_cast<rhi::QueueAccessFlags>(128);
+        request.queueAccess =
+            scenario == "invalid_none" ? rhi::QueueAccessFlags::None : static_cast<rhi::QueueAccessFlags>(128);
         bool rejected = false;
         try {
             (void)resources.BeginBufferUpload(request);
@@ -68,6 +69,20 @@ static bool Run(vk::VkDeviceContext &context, vk::VulkanQueueManager &queues,
     outputDesc.memory = rhi::BufferMemory::Readback;
     outputDesc.queueAccess = compute ? rhi::QueueAccessFlags::Compute : rhi::QueueAccessFlags::Graphics;
     const auto output = device.CreateBuffer(outputDesc);
+    const auto allocator = context.GetVmaAllocator();
+    const auto resident = vk::QueryVmaRuntimeStatistics(allocator, context.GetPhysicalDevice());
+    VmaTotalStatistics detailed{};
+    vmaCalculateStatistics(allocator, &detailed);
+    assert(resident.allocationBytes == detailed.total.statistics.allocationBytes);
+    assert(resident.blockBytes == detailed.total.statistics.blockBytes);
+    assert(resident.allocationCount == detailed.total.statistics.allocationCount);
+    VkPhysicalDeviceMemoryProperties memoryProperties{};
+    vkGetPhysicalDeviceMemoryProperties(context.GetPhysicalDevice(), &memoryProperties);
+    uint64_t deviceLocalBytes = 0;
+    for (uint32_t heap = 0; heap < memoryProperties.memoryHeapCount; ++heap)
+        if (memoryProperties.memoryHeaps[heap].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)
+            deviceLocalBytes += detailed.memoryHeap[heap].statistics.allocationBytes;
+    assert(resident.deviceLocalAllocationBytes == deviceLocalBytes);
     const auto shader = device.CreateShaderModule(rhi::ShaderModuleDesc::FromSpirV(spirv.data(), spirv.size()));
     rhi::BindingLayoutDesc layoutDesc;
     layoutDesc.entryCount = 2;
@@ -105,8 +120,8 @@ static bool Run(vk::VkDeviceContext &context, vk::VulkanQueueManager &queues,
     barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.buffer = device.Resolve(source->GetBuffer());
     barrier.size = sizeof(input);
-    vkCmdPipelineBarrier(commands, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                         0, 0, nullptr, 1, &barrier, 0, nullptr);
+    vkCmdPipelineBarrier(commands, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr,
+                         1, &barrier, 0, nullptr);
     vk::VulkanComputeCommandContext encoderContext;
     const auto encoder = device.MakeComputeCommandEncoder(encoderContext, commands);
     encoder.BindPipeline(pipeline);
@@ -115,8 +130,8 @@ static bool Run(vk::VkDeviceContext &context, vk::VulkanQueueManager &queues,
     barrier.buffer = device.Resolve(output);
     barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
-    vkCmdPipelineBarrier(commands, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
-                         0, 0, nullptr, 1, &barrier, 0, nullptr);
+    vkCmdPipelineBarrier(commands, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 0, nullptr, 1,
+                         &barrier, 0, nullptr);
     assert(vkEndCommandBuffer(commands) == VK_SUCCESS);
 
     const uint64_t uploadValue = resources.GetRequiredUploadTimelineValue();
@@ -151,8 +166,8 @@ static bool Run(vk::VkDeviceContext &context, vk::VulkanQueueManager &queues,
     device.Release(output);
     vkDestroyFence(context.GetDevice(), fence, nullptr);
     vkDestroyCommandPool(context.GetDevice(), pool, nullptr);
-    std::cout << "GPU words verified: 256; graphics=" << graphicsFamily << " compute="
-              << queues.GetSnapshot(rhi::QueueRole::Compute).family << " transfer=" << transferFamily
+    std::cout << "GPU words verified: 256; graphics=" << graphicsFamily
+              << " compute=" << queues.GetSnapshot(rhi::QueueRole::Compute).family << " transfer=" << transferFamily
               << " consumer=" << family << " concurrent=" << concurrent << '\n';
     return true;
 }
@@ -182,9 +197,9 @@ int main(int argc, char **argv)
     assert(queues.Initialize(context, 2));
     vk::AsyncTransferContext uploads;
     const auto family = context.GetQueueIndices().transferFamily.value();
-    assert(uploads.Initialize(context.GetDevice(), family, context.HasDedicatedTransferQueue(),
-                              context.IsTimelineSemaphoreEnabled(), queues,
-                              context.HasDedicatedTransferQueue() ? rhi::QueueRole::Transfer : rhi::QueueRole::Graphics));
+    assert(uploads.Initialize(
+        context.GetDevice(), family, context.HasDedicatedTransferQueue(), context.IsTimelineSemaphoreEnabled(), queues,
+        context.HasDedicatedTransferQueue() ? rhi::QueueRole::Transfer : rhi::QueueRole::Graphics));
     const bool passed = Run(context, queues, uploads, spirv, scenario);
     uploads.Destroy();
     queues.Destroy();
