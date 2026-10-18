@@ -28,6 +28,7 @@ _RUNTIME_SCHEDULER_PHASES = (
 _MISSING = object()
 _runtime_phase_presence_fn = None
 _structure_change_domains = None
+_runtime_change_types = None
 
 
 def _runtime_phase_presence(component_type: type) -> tuple[bool, ...]:
@@ -533,10 +534,15 @@ class RuntimeExecutionScheduler:
 
     def consume_runtime_changes(self, barrier: Any, *, frame: Any = None) -> Any:
         """Consume one deterministic barrier and update derived revisions."""
-        from infernux.engine.runtime_change_journal import (
-            RuntimeChangeDomain,
-            RuntimeFrameBarrier,
-        )
+        global _runtime_change_types
+        if _runtime_change_types is None:
+            from infernux.engine.runtime_change_journal import (
+                RuntimeChangeDomain,
+                RuntimeFrameBarrier,
+            )
+
+            _runtime_change_types = (RuntimeChangeDomain, RuntimeFrameBarrier)
+        RuntimeChangeDomain, RuntimeFrameBarrier = _runtime_change_types
 
         typed_barrier = RuntimeFrameBarrier(barrier)
         changes = self._change_journal.consume(self._change_cursor)
