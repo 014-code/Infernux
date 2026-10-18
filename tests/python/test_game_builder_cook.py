@@ -683,6 +683,9 @@ def test_content_archive_keeps_compiled_scripts_and_cooked_runtime_documents(tmp
     names = {entry["path"] for entry in header["files"]}
     assert "Assets/Scripts/Player.pyc" in names
     assert "Library/Artifacts/Document/scene-guid.scene" in names
+    assert builder._packed_content_catalog_payloads["Library/Artifacts/Document/scene-guid.scene"] == read_entry(
+        data / builder._CONTENT_ARCHIVE_FILENAME, "Library/Artifacts/Document/scene-guid.scene"
+    )
     assert not any(name.endswith(".meta") for name in names)
     assert not (assets / "Player.pyc").exists()
     assert not document.exists()

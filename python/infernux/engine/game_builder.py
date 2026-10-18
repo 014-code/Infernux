@@ -4215,7 +4215,7 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
         forbidden_plaintext: list[str] = []
         forbidden_direct_payloads: list[str] = []
         forbidden_model_sources: list[str] = []
-        catalog_payloads: set[str] = set()
+        catalog_payloads: dict[str, str] = {}
         processed = 0
         last_report = 0.0
         # This cache belongs to exactly one Content.inxpkg generation.  Clear
@@ -4302,7 +4302,7 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
                     forbidden_direct_payloads.append(relative)
                 self._rewrite_player_document_paths(path, suffix)
                 if self._runtime_catalog_payload_required(portable_relative):
-                    catalog_payloads.add(portable_relative)
+                    catalog_payloads[portable_relative] = path
                 files.append((relative, path))
                 processed += 1
                 _yield_editor_thread()
@@ -4352,8 +4352,8 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
             cancel_event=cancel_event,
         )
         self._packed_content_catalog_payloads = {
-            entry_path: read_entry(archive_path, entry_path)
-            for entry_path in catalog_payloads
+            entry_path: Path(source).read_bytes()
+            for entry_path, source in catalog_payloads.items()
         }
         self._report_content_pack_progress(
             on_progress,
