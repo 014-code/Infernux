@@ -1,3 +1,4 @@
+#include <SDL3/SDL.h>
 #include <function/editor/EditorShortcutInput.h>
 #include <platform/input/InputManager.h>
 
@@ -84,18 +85,53 @@ int main()
     auto &gameInput = infernux::InputManager::Instance();
     const int escape = infernux::InputManager::NameToScancode("escape");
     gameInput.BeginFrame();
+    gameInput.SetEditorCursorCaptureAllowed(true);
     gameInput.ProcessKeyEvent(escape, true);
-    gameInput.ConsumeKeyDown(escape);
     const size_t beforeEscape = chords.size();
     io.AddKeyEvent(ImGuiKey_Escape, true);
     frame();
+    // The GUI is built before Update; gameplay consumes the edge afterwards.
+    assert(gameInput.IsEditorCursorCaptureAllowed());
+    assert(chords.size() == beforeEscape);
+    gameInput.ConsumeKeyDown(escape);
+    input.CompleteInputFrame();
+    assert(gameInput.IsEditorCursorCaptureAllowed());
     assert(chords.size() == beforeEscape);
     io.AddKeyEvent(ImGuiKey_Escape, false);
     frame();
     gameInput.BeginFrame();
     gameInput.ProcessKeyEvent(escape, false);
     gameInput.ProcessKeyEvent(escape, true);
-    press({ImGuiKey_Escape}, "Escape");
+    io.AddKeyEvent(ImGuiKey_Escape, true);
+    frame();
+    assert(chords.size() == beforeEscape);
+    input.CompleteInputFrame();
+    assert(!gameInput.IsEditorCursorCaptureAllowed());
+    assert(chords.size() == beforeEscape + 1 && chords.back() == "Escape");
+    gameInput.BeginFrame();
+    input.CompleteInputFrame(); // No GUI rebuild and no new key edge.
+    assert(chords.size() == beforeEscape + 1);
+    io.AddKeyEvent(ImGuiKey_Escape, false);
+    frame();
+    gameInput.ResetAll();
+
+    // MCP edges remain consumable even after native focus loss clears physical keys.
+    gameInput.SetEditorCursorCaptureAllowed(true);
+    SDL_Event syntheticEscape{};
+    syntheticEscape.type = SDL_EVENT_KEY_DOWN;
+    syntheticEscape.key.scancode = SDL_SCANCODE_ESCAPE;
+    gameInput.TrackSyntheticEvent(syntheticEscape);
+    assert(gameInput.GetKeyDown(escape));
+    gameInput.ConsumeKeyDown(escape);
+    input.CompleteInputFrame();
+    assert(gameInput.IsEditorCursorCaptureAllowed());
+    assert(chords.size() == beforeEscape + 1);
+    gameInput.ResetAll();
+    gameInput.ProcessKeyEvent(escape, true);
+    gameInput.ProcessKeyEvent(SDL_SCANCODE_LCTRL, true);
+    input.CompleteInputFrame(); // Works on cached GUI frames as well.
+    assert(chords.size() == beforeEscape + 2 && chords.back() == "Ctrl+Escape");
+    gameInput.ResetAll();
 
     const auto mouseFrame = [&](bool captured) {
         infernux::EditorShortcutInput::PrepareFrame(captured);

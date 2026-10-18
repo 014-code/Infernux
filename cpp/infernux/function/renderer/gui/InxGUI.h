@@ -20,6 +20,7 @@
 namespace infernux
 {
 struct TextureCpuData;
+class EditorShortcutInput;
 
 namespace vk
 {
@@ -43,6 +44,7 @@ class InxGUI
     void BuildFrame();
     [[nodiscard]] bool ScheduleFrameBuild(bool force = false);
     void BuildScheduledFrame();
+    void CompleteInputFrame();
     void RequestFrame() noexcept;
     void RequestSyntheticInputFrame() noexcept;
     [[nodiscard]] uint64_t GetFrameCounter() const noexcept
@@ -222,6 +224,7 @@ class InxGUI
     VkDescriptorPool m_descriptorPool_vk = VK_NULL_HANDLE;
 
     std::unordered_map<std::string, std::shared_ptr<InxGUIRenderable>> m_renderables_umap;
+    std::shared_ptr<EditorShortcutInput> m_editorShortcutInput;
     std::vector<std::string> m_renderableOrder;
     std::unordered_map<std::string, int> m_renderablePriorities;
     struct PendingDockTabSelection

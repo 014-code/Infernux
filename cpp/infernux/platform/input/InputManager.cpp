@@ -776,7 +776,7 @@ bool InputManager::AnyKeyDown() const
 
 void InputManager::ConsumeKeyDown(int scancode)
 {
-    if (scancode < 0 || scancode >= INPUT_MAX_KEYS || m_keyDown[static_cast<size_t>(scancode)] == 0)
+    if (!GetKeyDown(scancode))
         return;
     m_keyDownConsumed[static_cast<size_t>(scancode)] = 1;
 }

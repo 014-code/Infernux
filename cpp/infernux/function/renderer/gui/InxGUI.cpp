@@ -992,6 +992,8 @@ void InxGUI::Shutdown()
 
 void InxGUI::Register(const std::string &name, std::shared_ptr<InxGUIRenderable> renderable, int priority)
 {
+    if (name == "editor_shortcut_input")
+        m_editorShortcutInput = std::dynamic_pointer_cast<EditorShortcutInput>(renderable);
     auto existing = m_renderables_umap.find(name);
     if (existing != m_renderables_umap.end()) {
         INXLOG_WARN("InxGUI::Register(): Renderable with name '", name, "' already exists. Overwriting.");
@@ -1019,6 +1021,8 @@ void InxGUI::Register(const std::string &name, std::shared_ptr<InxGUIRenderable>
 
 void InxGUI::Unregister(const std::string &name)
 {
+    if (name == "editor_shortcut_input")
+        m_editorShortcutInput.reset();
     auto it = m_renderables_umap.find(name);
     if (it != m_renderables_umap.end()) {
         m_renderables_umap.erase(it);
@@ -1029,6 +1033,12 @@ void InxGUI::Unregister(const std::string &name)
     } else {
         INXLOG_WARN("InxGUI::Unregister(): Renderable with name '", name, "' does not exist.");
     }
+}
+
+void InxGUI::CompleteInputFrame()
+{
+    if (!m_playerMode && m_editorShortcutInput)
+        m_editorShortcutInput->CompleteInputFrame();
 }
 
 uint64_t InxGUI::SubmitTextureForImGui(const std::string &name, const unsigned char *pixels, size_t byteCount,

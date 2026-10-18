@@ -42,6 +42,8 @@ void EditorShortcutInput::OnRender(InxGUIContext *ctx)
     // so the same key edge cannot also execute a panel command.
     const bool popupActive = popupActiveNow || m_popupActivePreviousFrame;
     const bool modalActive = modalActiveNow || m_modalActivePreviousFrame;
+    m_textInputActive = textInputActive;
+    m_popupActive = popupActive;
     m_popupActivePreviousFrame = popupActiveNow;
     m_modalActivePreviousFrame = modalActiveNow;
     const auto dispatch = [&](const char *chord, bool allowTransientPopup = false) {
@@ -55,15 +57,9 @@ void EditorShortcutInput::OnRender(InxGUIContext *ctx)
         const auto key = static_cast<ImGuiKey>(value);
         if ((key >= ImGuiKey_LeftCtrl && key <= ImGuiKey_RightSuper) || !pressedOnce(key))
             continue;
-        if (key == ImGuiKey_Escape) {
-            auto &input = InputManager::Instance();
-            const int escape = InputManager::NameToScancode("escape");
-            if (input.IsKeyDownConsumed(escape))
-                continue;
-            // Escape unlocks the Editor Game View only when gameplay did not
-            // consume it for an in-game modal.
-            input.SetEditorCursorCaptureAllowed(false);
-        }
+        // Gameplay receives Escape before the Editor resolves its unconsumed edge.
+        if (key == ImGuiKey_Escape)
+            continue;
         if (key == ImGuiKey_KeypadEnter && pressedOnce(ImGuiKey_Enter))
             continue;
 
@@ -100,6 +96,33 @@ void EditorShortcutInput::OnRender(InxGUIContext *ctx)
         const bool historyChord = ctrl && !alt && !super && (key == ImGuiKey_Z || (!shift && key == ImGuiKey_Y));
         dispatch(chord.c_str(), historyChord);
     }
+}
+
+void EditorShortcutInput::CompleteInputFrame()
+{
+    auto &input = InputManager::Instance();
+    const int escape = InputManager::NameToScancode("escape");
+    if (!input.GetKeyDown(escape) || input.IsKeyDownConsumed(escape))
+        return;
+
+    input.SetEditorCursorCaptureAllowed(false);
+    if (!routeShortcut)
+        return;
+    std::string chord;
+    if (input.GetKey(InputManager::NameToScancode("left ctrl")) ||
+        input.GetKey(InputManager::NameToScancode("right ctrl")))
+        chord += "Ctrl+";
+    if (input.GetKey(InputManager::NameToScancode("left shift")) ||
+        input.GetKey(InputManager::NameToScancode("right shift")))
+        chord += "Shift+";
+    if (input.GetKey(InputManager::NameToScancode("left alt")) ||
+        input.GetKey(InputManager::NameToScancode("right alt")))
+        chord += "Alt+";
+    if (input.GetKey(InputManager::NameToScancode("left super")) ||
+        input.GetKey(InputManager::NameToScancode("right super")))
+        chord += "Super+";
+    chord += "Escape";
+    routeShortcut(chord, m_textInputActive, m_popupActive);
 }
 
 } // namespace infernux

@@ -20,11 +20,14 @@ class EditorShortcutInput final : public InxGUIRenderable
 
     static void PrepareFrame(bool gameCursorLocked);
     void OnRender(InxGUIContext *ctx) override;
+    void CompleteInputFrame();
 
   private:
     int m_lastFrame = -1;
     bool m_popupActivePreviousFrame = false;
     bool m_modalActivePreviousFrame = false;
+    bool m_textInputActive = false;
+    bool m_popupActive = false;
 };
 
 } // namespace infernux
