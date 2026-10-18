@@ -557,6 +557,7 @@ class Engine():
         _plugin_install_progress = None
         _plugin_reload_progress = None
         if not _PLAYER_MODE:
+            from infernux.engine.interaction import DocumentRegistry as _DocumentRegistry
             from infernux.engine.ui.asset_import_progress import (
                 AssetImportProgressService,
             )
@@ -575,7 +576,6 @@ class Engine():
             _plugin_reload_progress = PluginReloadProgressService.instance()
 
         from infernux.engine.runtime_event_queue import drain as _drain_runtime_events
-        from infernux.engine.interaction import DocumentRegistry as _DocumentRegistry
         from infernux.core.assets import AssetManager as _AssetManager
 
         # Same policy as _pre_gui_tick: failures propagate to the C++
