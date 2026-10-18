@@ -608,32 +608,40 @@ bool TransformECSStore::EndFrameCache()
         const bool hasChildren = (go && go->GetChildCount() > 0);
 
         const bool notifyOwner = (d & 0x40) != 0;
+        bool changed = (d & 0x3C) != 0;
 
         // World position dirty → compute local position from inverse parent.
         if (d & 0x01) {
-            if (!parent) {
-                m_localPositions[i] = m_fcWorldPositions[i];
-            } else {
-                glm::mat4 invParent = glm::inverse(parent->GetWorldMatrix());
-                m_localPositions[i] = glm::vec3(invParent * glm::vec4(m_fcWorldPositions[i], 1.0f));
+            const glm::vec3 local =
+                parent ? glm::vec3(glm::inverse(parent->GetWorldMatrix()) * glm::vec4(m_fcWorldPositions[i], 1.0f))
+                       : m_fcWorldPositions[i];
+            if (m_localPositions[i] != local) {
+                m_localPositions[i] = local;
+                m_dirty[i] = 1;
+                MarkWorldMatrixDirty(i);
+                changed = true;
             }
-            m_dirty[i] = 1;
-            MarkWorldMatrixDirty(i);
         }
 
         // World rotation dirty → compute local rotation from inverse parent.
         if (d & 0x02) {
-            if (!parent) {
-                m_localRotations[i] = m_fcWorldRotations[i];
-            } else {
-                m_localRotations[i] = glm::inverse(parent->GetWorldRotation()) * m_fcWorldRotations[i];
+            const glm::quat local =
+                parent ? glm::inverse(parent->GetWorldRotation()) * m_fcWorldRotations[i] : m_fcWorldRotations[i];
+            if (m_localRotations[i] != local) {
+                m_localRotations[i] = local;
+                m_localEulerAngles[i] = QuatToEulerYXZ(local);
+                m_hasCachedWorldEulerAngles[i] = 0;
+                m_fcRotationValid[i] = 1;
+                m_dirty[i] = 1;
+                MarkWorldMatrixDirty(i);
+                changed = true;
             }
-            m_localEulerAngles[i] = QuatToEulerYXZ(m_localRotations[i]);
-            m_hasCachedWorldEulerAngles[i] = 0;
-            m_fcRotationValid[i] = 1;
-            m_dirty[i] = 1;
-            MarkWorldMatrixDirty(i);
         }
+
+        // Compare after parent publication: an unchanged world target may
+        // still need a new local pose when its parent moved this frame.
+        if (!changed)
+            return;
 
         // Local property dirty bits (2-5) already wrote to live SoA in SetCachedLocal*.
         // Just ensure subtree invalidation.
