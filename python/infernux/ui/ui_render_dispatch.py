@@ -462,7 +462,7 @@ def runtime_ui_revision(scene, canvases, width: int, height: int,
     """Build the content revision for native command-list reuse.
 
     UI components increment a shared generation on visual mutation. Scene
-    structure covers hierarchy and active-state changes. Transform, material
+    snapshots cover hierarchy and active-state changes. Transform, material
     and RenderTexture generations also invalidate already-recorded commands.
     """
     canvases = tuple(canvases)
@@ -471,10 +471,11 @@ def runtime_ui_revision(scene, canvases, width: int, height: int,
     scenes = (scene, persistent_scene) if runtime_scenes is None else runtime_scenes
     membership = (
         tuple((id(world), int(getattr(world, "world_id", 0)),
-               int(getattr(world, "structure_version", 0)),
+               int(getattr(world, "structure_version", 0)) if world_elements else 0,
                int(getattr(world, "temporal_discontinuity_revision", 0)))
               for world in scenes if world is not None),
-        canvases, world_elements,
+        tuple((canvas, canvas_elements(canvas), canvas._cached_elements_revision)
+              for canvas in canvases), world_elements,
     )
     dependencies = _runtime_dependencies.revision(
         membership, canvases, world_elements,

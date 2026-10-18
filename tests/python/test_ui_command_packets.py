@@ -266,6 +266,45 @@ def test_text_edit_and_font_epoch_preserve_packet_locality(ui, monkeypatch):
     assert set(ui.extracted) == set(labels)
 
 
+@pytest.mark.parametrize("ui", [False], indirect=True, ids=["screen"])
+def test_unrelated_scene_edits_retain_screen_geometry(ui):
+    from infernux.ui import UIGroup
+
+    bridge = ui.scene.create_game_object("HUD parent")
+    bridge.set_parent(ui.root)
+    label = ui.add(parent=bridge)
+    ui.frame()
+    captures = ui.renderer.captures
+
+    prop = ui.scene.create_game_object("Unrelated projectile")
+    assert ui.frame()[0] is False
+    prop.active = False
+    assert ui.frame()[0] is False
+    prop.set_parent(ui.scene.create_game_object("Unrelated parent"))
+    assert ui.frame()[0] is False
+    assert ui.renderer.captures == captures
+
+    # Reparenting can preserve flattened element order while changing layout.
+    label.game_object.set_parent(ui.root)
+    ui.matches_fresh()
+    label.game_object.set_parent(bridge)
+    group = bridge.add_component(UIGroup)
+    group.alpha = 0.25
+    commands = ui.matches_fresh()
+    assert all(args[9] == 0.25 for name, args, _ in commands if name == "add_text")
+    bridge.remove_py_component(group)
+    commands = ui.matches_fresh()
+    assert all(args[9] == 1.0 for name, args, _ in commands if name == "add_text")
+    outside = ui.scene.create_game_object("Canvas ancestor")
+    ui.root.set_parent(outside)
+    group = outside.add_component(UIGroup)
+    group.alpha = 0.5
+    ui.matches_fresh()
+    group.enabled = False
+    commands = ui.matches_fresh()
+    assert all(args[9] == 1.0 for name, args, _ in commands if name == "add_text")
+
+
 def test_retained_submission_tracks_hierarchy_viewport_and_visibility_edits(ui):
     from infernux.components import serialized_field
     from infernux.lib import Vector3

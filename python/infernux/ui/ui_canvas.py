@@ -207,8 +207,10 @@ class UICanvas(InxUIComponent):
     # ------------------------------------------------------------------
     # Cached element list (invalidated when hierarchy changes)
     # ------------------------------------------------------------------
-    _cached_elements: list = None
+    _cached_elements: tuple = None
     _cached_elements_version: int = -1
+    _cached_elements_structure = None
+    _cached_elements_revision: int = 0
     _input_logical_size: tuple[float, float] | None = None
 
     def set_input_logical_size(self, width: float, height: float) -> None:
@@ -230,23 +232,41 @@ class UICanvas(InxUIComponent):
         self._cached_elements = None
 
     def _get_elements(self):
-        """Return the cached element list, rebuilding if necessary.
-
-        Uses scene.structure_version to avoid DFS every frame.
-        """
+        """Inspect structural edits without invalidating unchanged UI snapshots."""
         go = self.game_object
         if go is not None:
             scene = go.scene
             if scene is not None:
                 ver = scene.structure_version
-                if ver != self._cached_elements_version:
-                    self._cached_elements = None
-                    self._cached_elements_version = ver
-                    from .inx_ui_screen_component import _invalidate_rect_cache
+                if ver == self._cached_elements_version and self._cached_elements is not None:
+                    return self._cached_elements
+                self._cached_elements_version = ver
+        elements = tuple(self.iter_ui_elements())
 
-                    _invalidate_rect_cache()
-        if self._cached_elements is None:
-            self._cached_elements = list(self.iter_ui_elements())
+        def owner_state(owner):
+            return owner, tuple((component, component.enabled) for component in owner.get_py_components())
+
+        ancestors = []
+        owner = go
+        while owner is not None:
+            ancestors.append(owner_state(owner))
+            owner = owner.get_parent()
+        structure = (
+            tuple(ancestors),
+            tuple(
+                (element, element.enabled, element.game_object.active_in_hierarchy,
+                 tuple(owner_state(owner)
+                       for owner in (element.game_object, *element._layout_ancestors())))
+                for element in elements
+            ),
+        )
+        if self._cached_elements is None or structure != self._cached_elements_structure:
+            self._cached_elements = elements
+            self._cached_elements_structure = structure
+            self._cached_elements_revision += 1
+            from .inx_ui_screen_component import _invalidate_rect_cache
+
+            _invalidate_rect_cache()
         return self._cached_elements
 
     # ------------------------------------------------------------------
