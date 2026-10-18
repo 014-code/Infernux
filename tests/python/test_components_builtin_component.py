@@ -195,6 +195,7 @@ class TestBuiltinComponent:
         cpp.handle = 17
         demo = DemoBuiltin()
         demo._bind_cpp(cpp, _GameObject(scene))
+        scene.structure_version += 1
 
         assert demo._get_bound_native_component() is None
         assert demo._is_destroyed

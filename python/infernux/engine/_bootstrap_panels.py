@@ -135,6 +135,9 @@ class BootstrapPanelsMixin:
         overridden here before apply_all flushes them into the
         WindowManager.
         """
+        from infernux.engine.ui import _load_builtin_panels
+
+        _load_builtin_panels()
         wm = self.window_manager
         engine = self.engine
         project_path = self.project_path

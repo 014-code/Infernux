@@ -79,13 +79,17 @@ def test_native_loop_always_exits_and_restores_gc(error, gc_enabled):
     engine = Engine.__new__(Engine)
 
     def run():
-        assert not gc.isenabled()
+        assert gc.isenabled() is gc_enabled
+        if gc_enabled:
+            assert gc.get_threshold() == (50_000, 20, 20)
+        (gc.disable if gc_enabled else gc.enable)()
         if error is not None:
             raise error
 
     engine._engine = SimpleNamespace(run=run)
     engine.exit = lambda: calls.append("exit")
     previous_gc = gc.isenabled()
+    previous_frozen_count = gc.get_freeze_count()
     (gc.enable if gc_enabled else gc.disable)()
     try:
         if error is None:
@@ -96,6 +100,8 @@ def test_native_loop_always_exits_and_restores_gc(error, gc_enabled):
         assert calls == ["exit"]
         assert gc.isenabled() is gc_enabled
     finally:
+        if previous_frozen_count == 0:
+            gc.unfreeze()
         (gc.enable if previous_gc else gc.disable)()
 
 

@@ -638,7 +638,8 @@ class RenderStack(PipelineReloadMixin, InxComponent):
         return self._pipeline
 
     def _scene_has_shadow_casting_lights(self) -> bool:
-        scene = getattr(self.game_object, "scene", None)
+        owner = self._try_get_game_object()
+        scene = owner.scene if owner is not None else None
         if scene is None:
             return True
         version = int(getattr(scene, "structure_version", 0))

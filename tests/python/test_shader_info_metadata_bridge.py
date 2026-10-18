@@ -40,16 +40,7 @@ class _RangePropertyContext:
     def __init__(self):
         self.calls = []
 
-    def align_text_to_frame_padding(self):
-        pass
-
-    def label(self, _label):
-        pass
-
-    def same_line(self, _width):
-        pass
-
-    def set_next_item_width(self, _width):
+    def field_label(self, _label, _width):
         pass
 
     def float_slider(self, label, value, minimum, maximum):

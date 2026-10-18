@@ -655,6 +655,7 @@ class Engine():
             if owns_signals:
                 signal.signal(signal.SIGINT, previous_sigint)
             gc.set_threshold(*previous_threshold)
+            (gc.enable if gc_was_enabled else gc.disable)()
             # Includes KeyboardInterrupt and native loop failures, not just
             # the SDL window-close path. Cleanup must run before Python joins
             # the non-daemon resource observer during interpreter shutdown.
