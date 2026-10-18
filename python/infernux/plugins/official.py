@@ -8,6 +8,8 @@ import os
 from typing import Mapping
 from urllib.request import Request, urlopen
 
+from packaging.version import Version
+
 from infernux.core.document_store import write_document_text
 from infernux.engine.path_utils import resolved_path
 
@@ -99,20 +101,27 @@ def sync_official_registry(
     *,
     resources_root: str | None = None,
 ) -> tuple[dict[str, object], ...]:
-    """Load the shared catalog offline; the wheel seeds a not-yet-refreshed library."""
+    """Merge offline discovery without letting an old cache hide bundled releases."""
 
     official_packages = _official_packages_root(resources_root)
     cached = os.path.join(package_cache_root(), OFFICIAL_REGISTRY_FILENAME)
-    use_cached = os.path.isfile(cached)
     document = _read_document(
-        cached if use_cached else os.path.join(official_packages, OFFICIAL_REGISTRY_FILENAME),
+        os.path.join(official_packages, OFFICIAL_REGISTRY_FILENAME),
         OFFICIAL_REGISTRY_SCHEMA,
         "packages",
     )
-    return _merge_official_registry(
-        resolved_path(project_root),
-        _catalog_entries(document, "" if use_cached else official_packages),
-    )
+    entries = {
+        str(entry["reference"]).casefold(): entry
+        for entry in _catalog_entries(document, official_packages)
+    }
+    if os.path.isfile(cached):
+        cached_document = _read_document(cached, OFFICIAL_REGISTRY_SCHEMA, "packages")
+        for entry in _catalog_entries(cached_document, ""):
+            key = str(entry["reference"]).casefold()
+            bundled = entries.get(key)
+            if bundled is None or Version(str(entry["version"])) >= Version(str(bundled["version"])):
+                entries[key] = entry
+    return _merge_official_registry(resolved_path(project_root), entries.values())
 
 
 def refresh_official_registry(
@@ -153,9 +162,10 @@ def _catalog_entries(document: Mapping[str, object], official_packages: str) -> 
             )
         try:
             reference = validate_reference(str(raw.get("reference", "")).strip())
+            Version(str(raw.get("version", "")))
         except ValueError as exc:
             raise OfficialCatalogError(
-                "Official plugin registry entry has an invalid reference"
+                "Official plugin registry entry has an invalid reference or version"
             ) from exc
         artifact = str(raw.get("artifact", "")).strip()
         if not artifact or os.path.basename(artifact) != artifact:

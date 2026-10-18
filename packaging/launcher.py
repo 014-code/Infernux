@@ -34,7 +34,7 @@ from ui_project_list import ProjectListPane
 from database import ProjectDatabase
 from style import StyleManager
 from hub_resources import ICON_PATH, FONT_PATHS
-from hub_utils import HubLaunchContext, get_app_dir, is_frozen
+from hub_utils import HubLaunchContext, get_app_dir, is_frozen, merge_child_env_utf8
 from python_runtime import PythonRuntimeManager
 from android_support import AndroidSupportManager
 from blender_support import BlenderSupportManager
@@ -834,6 +834,7 @@ def run_hub() -> int:
     from hub_instance import HubInstance
     from hub_utils import get_hub_user_data_dir
 
+    os.environ.update(merge_child_env_utf8())
     app = QApplication.instance() or QApplication(sys.argv)
     instance = None
     try:

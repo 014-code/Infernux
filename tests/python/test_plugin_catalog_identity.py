@@ -204,3 +204,49 @@ def test_matching_catalog_downloads_once_then_imports_offline(package_project, t
     state = manager.install_reference(reference, install_dependencies=False)
     assert state.loaded and marker.read_text() == "executed"
     assert requests == ["/plugin.inxpkg"]
+
+
+def test_android_install_and_update_do_not_require_a_host_toolchain(package_project, tmp_path, monkeypatch):
+    root, manager, _ = package_project
+    monkeypatch.setenv("INFERNUX_SHARED_DATA_ROOT", str(tmp_path / "custom-hub/Shared"))
+    monkeypatch.delenv("INFERNUX_ANDROID_SUPPORT_ROOT", raising=False)
+    reference = "infernux/platform-android"
+    marker = tmp_path / "android-import"
+    for version in ("0.2.3", "0.2.9"):
+        archive, _ = archive_at(tmp_path, reference, version, marker)
+        state = manager.install_package(str(archive), update=version == "0.2.9")
+        assert state.loaded and not state.error
+        assert manager.registry.installed_record(reference)["version"] == version
+    assert marker.read_text() == "executed"
+    assert not (tmp_path / "custom-hub").exists()
+
+
+def test_offline_catalog_keeps_newest_discovery_without_upgrading_installed_packages(package_project, tmp_path):
+    from infernux.plugins.cache import package_cache_root
+    from infernux.plugins.official import sync_official_registry
+
+    _root, manager, install = package_project
+    reference = "test/catalog-newest"
+    install(reference, {"runtime/note.txt": "installed"})
+    registry = manager.registry.load()
+    for entry in registry["packages"]:
+        if entry["reference"] == reference:
+            entry["source"]["official"] = True
+    manager.registry.save(registry)
+    catalog = tmp_path / "resources/official_packages"
+    catalog.mkdir(parents=True)
+    cached = Path(package_cache_root()) / "official-registry.json"
+    cached.parent.mkdir(parents=True, exist_ok=True)
+
+    def document(version):
+        return json.dumps({"$schema": "infernux.official_plugin_registry", "packages": [{
+            "reference": reference, "version": version, "engine": ">=" + ENGINE_VERSION,
+            "artifact": "test.inxpkg", "source": {"type": "url", "location": f"https://example.invalid/{version}"},
+        }]})
+
+    (catalog / "official-registry.json").write_text(document("2.0.0"), encoding="utf-8")
+    for cached_version, expected in (("0.1.0", "2.0.0"), ("3.0.0", "3.0.0")):
+        cached.write_text(document(cached_version), encoding="utf-8")
+        entries = sync_official_registry(manager.project_root, resources_root=str(catalog.parent))
+        assert entries[0]["version"] == expected
+        assert manager.registry.installed_record(reference)["version"] == "1.0.0"

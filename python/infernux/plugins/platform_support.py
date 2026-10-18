@@ -13,18 +13,10 @@ from infernux.core.file_read_cache import FileReadCache
 from infernux.engine.path_utils import lexical_path, resolved_path
 
 
-ANDROID_PLUGIN_REFERENCE = "infernux/platform-android"
 ANDROID_SUPPORT_SCHEMA = "infernux.android_support"
 ANDROID_SUPPORT_KIND = "infernux-android-support"
 ANDROID_SUPPORT_VERSION = "0.1.0"
 ANDROID_SUPPORT_MANIFEST = "infernux-android-support.json"
-ANDROID_SUPPORT_REQUIRED_MESSAGE = (
-    "Install Android compatibility from Infernux Hub before importing the "
-    "Android platform plugin."
-)
-ANDROID_SUPPORT_UNSUPPORTED_HOST_MESSAGE = (
-    "Android compatibility requires Windows 10 1709 or later on x64, or Linux x64."
-)
 _manifest_reads = FileReadCache(capacity=8)
 
 
@@ -227,34 +219,9 @@ def activate_android_support_environment() -> bool:
     return True
 
 
-def plugin_install_block_reason(
-    reference: str,
-    environ: Mapping[str, str] | None = None,
-) -> str:
-    if str(reference or "").strip().casefold() != ANDROID_PLUGIN_REFERENCE:
-        return ""
-    if not _host_id():
-        return ANDROID_SUPPORT_UNSUPPORTED_HOST_MESSAGE
-    return "" if android_support_available(environ) else ANDROID_SUPPORT_REQUIRED_MESSAGE
-
-
-def require_plugin_support(
-    reference: str,
-    environ: Mapping[str, str] | None = None,
-) -> None:
-    reason = plugin_install_block_reason(reference, environ)
-    if reason:
-        raise RuntimeError(reason)
-
-
 __all__ = [
-    "ANDROID_PLUGIN_REFERENCE",
-    "ANDROID_SUPPORT_REQUIRED_MESSAGE",
-    "ANDROID_SUPPORT_UNSUPPORTED_HOST_MESSAGE",
     "android_support_available",
     "android_support_environment",
     "android_support_root",
     "activate_android_support_environment",
-    "plugin_install_block_reason",
-    "require_plugin_support",
 ]

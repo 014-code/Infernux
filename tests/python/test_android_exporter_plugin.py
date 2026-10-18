@@ -248,6 +248,39 @@ def test_android_exporter_doctor_validates_target_python_runtime(monkeypatch, tm
     assert report.details["python_prefix"] == str(prefix.resolve())
 
 
+def test_android_build_discovers_a_kit_installed_after_plugin_startup(monkeypatch, tmp_path):
+    from infernux.plugins import platform_support
+
+    module = _android_module(monkeypatch)
+    shared = tmp_path / "custom-hub/Shared"
+    monkeypatch.setenv("INFERNUX_SHARED_DATA_ROOT", str(shared))
+    names = ("INFERNUX_ANDROID_SUPPORT_ROOT", "ANDROID_SDK_ROOT", "ANDROID_HOME", "JAVA_HOME",
+             "INFERNUX_GRADLE_HOME", "GRADLE_HOME", "INFERNUX_ANDROID_PYTHON_PREFIX_ARM64",
+             "INFERNUX_ANDROID_PYTHON_PREFIX_X86_64")
+    for name in names:
+        monkeypatch.delenv(name, raising=False)
+    root = platform_support.android_support_root()
+    request = BuildRequest(str(tmp_path / "project"), "android-arm64", str(tmp_path / "output"))
+    exporter = module.AndroidPlatformExporter()
+    missing = exporter.doctor(request)
+    assert not missing.available and missing.details["android_support_root"] == str(root)
+    _toolchain(root)
+    for abi in ("arm64-v8a", "x86_64"):
+        _stamp_android_python_prefix(module, root / "python" / abi, abi=abi)
+    (root / platform_support.ANDROID_SUPPORT_MANIFEST).write_text(json.dumps({
+        "$schema": platform_support.ANDROID_SUPPORT_SCHEMA, "kind": platform_support.ANDROID_SUPPORT_KIND,
+        "version": platform_support.ANDROID_SUPPORT_VERSION, "host": platform_support._host_id(),
+        "paths": {"sdk": "sdk", "jdk": "jdk", "gradle": "gradle",
+                  "python": {"arm64-v8a": "python/arm64-v8a", "x86_64": "python/x86_64"}},
+    }), encoding="utf-8")
+    _write_native_payload(tmp_path / "player", abi="arm64-v8a")
+    monkeypatch.setattr(importlib.import_module("infernux_android.exporter"), "__file__", str(tmp_path / "exporter.py"))
+    report = exporter.doctor(request)
+    assert report.available
+    assert report.details["python_prefix"] == str(root / "python/arm64-v8a")
+    assert report.details["sdk_root"] == str(root / "sdk")
+
+
 def test_android_compute_aot_is_requested_from_shared_cook(monkeypatch, tmp_path):
     _android_module(monkeypatch)
     exporter_module = importlib.import_module("infernux_android.exporter")
