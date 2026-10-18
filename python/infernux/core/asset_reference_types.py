@@ -194,7 +194,15 @@ class AssetReferenceType:
                 head, separator, tail = portable_path.partition(marker)
                 if separator and head and tail:
                     return ""
-        if not any(portable_path.casefold().endswith(item) for item in self.extensions):
+        from infernux.application import Application
+
+        if guid and Application.is_player():
+            from infernux.engine.project_context import runtime_asset_extension
+
+            type_path = runtime_asset_extension(guid)
+        else:
+            type_path = portable_path.casefold()
+        if not any(type_path.endswith(item) for item in self.extensions):
             accepted = ", ".join(sorted(self.extensions))
             return (
                 f"{self.display_name} reference rejects '{path}': expected "
@@ -278,8 +286,15 @@ class AssetReferenceCodec:
             # asset type. Clipboard references retain the concrete resource
             # kind, so a material's sampled image can be pasted into a static
             # image slot, or its render target into a Camera slot.
-            path = _resolve_guid_path(guid)
-            extension = PurePath(path.replace("\\", "/")).suffix.casefold()
+            from infernux.application import Application
+
+            if guid and Application.is_player():
+                from infernux.engine.project_context import runtime_asset_extension
+
+                extension = runtime_asset_extension(guid)
+            else:
+                path = _resolve_guid_path(guid)
+                extension = PurePath(path.replace("\\", "/")).suffix.casefold()
             for type_id in descriptor.compatible_types:
                 member = asset_type_registry.require(type_id)
                 if extension in member.extensions:

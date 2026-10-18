@@ -28,6 +28,8 @@ class Texture:
 
     # Factory methods
     @staticmethod
+    def _load_asset(guid: str) -> Optional[Texture]: ...
+    @staticmethod
     def load(file_path: str) -> Optional[Texture]:
         """Load a texture from an image file (PNG, JPG, BMP, TGA)."""
         ...

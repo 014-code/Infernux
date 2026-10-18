@@ -179,6 +179,31 @@ def test_structured_asset_reference_keeps_explicit_concrete_type_without_path_in
     assert payload["path_hint"] == ""
 
 
+def test_player_sampled_texture_uses_authored_catalog_type(monkeypatch):
+    from types import SimpleNamespace
+    import infernux.application as application
+    import infernux.engine.project_context as project_context
+    from infernux.components.fields import _ensure_asset_ref
+    from infernux.core.asset_reference_types import AssetReferenceCodec, asset_type_registry
+    from infernux.core.assets import AssetManager
+    from infernux.core.texture import Texture
+
+    guid = "cooked-texture-guid"
+    monkeypatch.setattr(application, "_runtime_kind", "player")
+    monkeypatch.setattr(AssetManager, "_asset_database", SimpleNamespace(
+        get_path_from_guid=lambda value: f"/runtime/{value}.inxtex"))
+    context = project_context.ProjectContext(asset_extension_resolver=lambda value: ".png")
+    monkeypatch.setattr(project_context, "_context", lambda: context)
+    texture = Texture.solid_color(2, 2)
+    texture._guid = guid
+
+    payload = AssetReferenceCodec.normalize("Texture.Sampled", texture)
+    assert payload["asset_type"] == "Texture"
+    reference = _ensure_asset_ref(texture, "Texture.Sampled")
+    assert reference.guid == guid
+    assert asset_type_registry.require("Texture").incompatibility(reference) == ""
+
+
 def test_raw_project_relative_editor_path_can_resolve_to_guid(monkeypatch):
     from infernux.core.asset_reference_types import AssetReferenceCodec
     from infernux.core.assets import AssetManager

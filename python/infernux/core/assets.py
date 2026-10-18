@@ -383,7 +383,9 @@ class AssetManager:
 
         resolved_type = asset_type or (AnimationClip3D if "::subanim:" in path else cls._type_from_extension(ext))
 
-        if resolved_type is AnimationClip3D and "::subanim:" in path:
+        if resolved_type is Texture:
+            asset = Texture._load_asset(guid)
+        elif resolved_type is AnimationClip3D and "::subanim:" in path:
             asset = AnimationClip3D._load_imported_guid(guid, path, cls.require_asset_database())
         else:
             asset = cls._load_by_type(path, resolved_type)
@@ -2222,8 +2224,6 @@ class AssetManager:
             return RenderTexture.load(path)
         if asset_type is Material or (asset_type is None and path.endswith(".mat")):
             return Material.load(path)
-        if asset_type is Texture:
-            return Texture.load(path)
         # Shader is a static utility — return a ShaderAssetInfo descriptor instead
         if asset_type is Shader:
             from infernux.core.asset_types import ShaderAssetInfo
