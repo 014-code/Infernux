@@ -1873,6 +1873,19 @@ void infernux::RegisterInfernuxBindings(py::module_ &m)
                 result["target_sample_count"] = snapshot.targetSampleCount;
                 result["active"] = snapshot.active;
                 result["timings"] = std::move(timings);
+                py::list slowestFrames;
+                for (const auto &sample : snapshot.slowestFrames) {
+                    py::dict frame;
+                    frame["frame"] = sample.frame;
+                    frame["frame_ms"] = sample.frameMs;
+                    frame["game_only_ms"] = sample.gameOnlyMs;
+                    frame["render_ms"] = sample.renderMs;
+                    frame["scene_ms"] = sample.sceneMs;
+                    frame["gui_ms"] = sample.guiMs;
+                    frame["prepare_ms"] = sample.prepareMs;
+                    slowestFrames.append(std::move(frame));
+                }
+                result["slowest_frames"] = std::move(slowestFrames);
                 return result;
             },
             "Read the immutable aggregated native frame performance window")

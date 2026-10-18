@@ -218,6 +218,17 @@ struct RendererUIPerformanceSnapshot
     std::unordered_map<std::string, std::unordered_map<std::string, UIPerformanceMetricStats>> panelSubTimes;
 };
 
+struct RendererFramePerformanceSample
+{
+    uint64_t frame = 0;
+    double frameMs = 0.0;
+    double gameOnlyMs = 0.0;
+    double renderMs = 0.0;
+    double sceneMs = 0.0;
+    double guiMs = 0.0;
+    double prepareMs = 0.0;
+};
+
 struct RendererFramePerformanceSnapshot
 {
     uint64_t firstFrame = 0;
@@ -232,6 +243,7 @@ struct RendererFramePerformanceSnapshot
     UIPerformanceMetricStats scene;
     UIPerformanceMetricStats gui;
     UIPerformanceMetricStats prepare;
+    std::vector<RendererFramePerformanceSample> slowestFrames;
 };
 
 class InxRenderer
@@ -818,17 +830,7 @@ class InxRenderer
     double m_prepareFrameMs = 0.0;   ///< PrepareFrame (collect/cull) (ms)
     double m_gameOnlyFrameMs = 0.0;  ///< Sum of game-only phases (ms)
 
-    struct FramePerformanceSample
-    {
-        uint64_t frame = 0;
-        double frameMs = 0.0;
-        double gameOnlyMs = 0.0;
-        double renderMs = 0.0;
-        double sceneMs = 0.0;
-        double guiMs = 0.0;
-        double prepareMs = 0.0;
-    };
-    std::vector<FramePerformanceSample> m_framePerformanceHistory;
+    std::vector<RendererFramePerformanceSample> m_framePerformanceHistory;
     bool m_framePerformanceWindowActive = false;
     size_t m_framePerformanceSampleLimit = 0;
     void RecordFramePerformanceSample(double frameMs);

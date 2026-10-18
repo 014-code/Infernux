@@ -3467,6 +3467,12 @@ RendererFramePerformanceSnapshot InxRenderer::GetFramePerformanceWindow() const
 
     snapshot.firstFrame = m_framePerformanceHistory.front().frame;
     snapshot.lastFrame = m_framePerformanceHistory.back().frame;
+    snapshot.slowestFrames.resize((std::min)(count, size_t{16}));
+    std::partial_sort_copy(
+        m_framePerformanceHistory.begin(), m_framePerformanceHistory.end(), snapshot.slowestFrames.begin(),
+        snapshot.slowestFrames.end(), [](const auto &left, const auto &right) {
+            return left.frameMs > right.frameMs || (left.frameMs == right.frameMs && left.frame < right.frame);
+        });
 
     const auto summarize = [](std::vector<double> values) {
         UIPerformanceMetricStats stats;
