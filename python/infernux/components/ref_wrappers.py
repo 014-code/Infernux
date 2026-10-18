@@ -563,11 +563,18 @@ class ComponentRef:
     def resolve(self):
         """Return the live component instance, or ``None`` if unavailable."""
         if self._cached_handle is not None:
+            from infernux.lib import _Infernux
+
+            native = getattr(self._cached, '_cpp_component', self._cached)
             try:
-                alive = any(
-                    scene.resolve_component(self._cached_handle) is not None
-                    for scene in _iter_reference_scenes()
-                )
+                if isinstance(native, _Infernux.Component):
+                    retiring = _retiring_worlds.get()
+                    alive = bool(native) and (not retiring or native.handle.world_id not in retiring)
+                else:
+                    alive = any(
+                        scene.resolve_component(self._cached_handle) is not None
+                        for scene in _iter_reference_scenes()
+                    )
             except (ImportError, RuntimeError, AttributeError):
                 alive = False
             if not alive:
