@@ -1,9 +1,11 @@
 """Utility helpers shared across the Hub codebase."""
 
+import json
 import os
 import shutil
 import sys
 import time
+import tempfile
 from enum import Enum
 
 
@@ -151,6 +153,20 @@ def get_hub_user_data_dir() -> str:
     return os.path.expanduser("~/.local/share/InfernuxHub")
 
 
+def publish_hub_shared_data_root() -> None:
+    """Make the actual install root available to Editors launched outside Hub."""
+    root = get_hub_user_data_dir()
+    os.makedirs(root, exist_ok=True)
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=root, delete=False) as output:
+        json.dump({"shared_data_root": get_hub_shared_data_dir()}, output, ensure_ascii=False)
+        temporary = output.name
+    try:
+        replace_path(temporary, os.path.join(root, "hub-shared-root.json"))
+    finally:
+        if os.path.isfile(temporary):
+            os.unlink(temporary)
+
+
 def get_project_lock_path(project_path: str) -> str:
     """Return the lock-file path that marks a project as opened by the engine."""
     return project_lock.lock_path(project_path)
@@ -179,12 +195,14 @@ def write_project_lock(project_path: str, pid: int, token: str, mode: str, state
 def merge_child_env_utf8(extra: dict[str, str] | None = None) -> dict[str, str]:
     """Environment for subprocesses: inherit current env and prefer UTF-8 on Windows."""
     merged = {**os.environ, **(extra or {})}
-    merged.setdefault("INFERNUX_DATA_ROOT", get_hub_user_data_dir())
-    merged.setdefault("INFERNUX_SHARED_DATA_ROOT", get_hub_shared_data_dir())
-    merged.setdefault(
-        "INFERNUX_PACKAGE_CACHE_ROOT",
-        os.path.join(merged["INFERNUX_SHARED_DATA_ROOT"], "Library", "Plugins"),
-    )
+    if not merged.get("INFERNUX_DATA_ROOT", "").strip():
+        merged["INFERNUX_DATA_ROOT"] = get_hub_user_data_dir()
+    if not merged.get("INFERNUX_SHARED_DATA_ROOT", "").strip():
+        merged["INFERNUX_SHARED_DATA_ROOT"] = get_hub_shared_data_dir()
+    if not merged.get("INFERNUX_PACKAGE_CACHE_ROOT", "").strip():
+        merged["INFERNUX_PACKAGE_CACHE_ROOT"] = os.path.join(
+            merged["INFERNUX_SHARED_DATA_ROOT"], "Library", "Plugins",
+        )
     if not merged.get("PIP_CACHE_DIR", "").strip():
         merged["PIP_CACHE_DIR"] = os.path.join(
             merged["INFERNUX_SHARED_DATA_ROOT"], "Cache", "Python", "Pip"

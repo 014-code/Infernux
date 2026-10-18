@@ -832,7 +832,7 @@ def _handle_uninstall_linux() -> int:
 
 def run_hub() -> int:
     from hub_instance import HubInstance
-    from hub_utils import get_hub_user_data_dir
+    from hub_utils import get_hub_user_data_dir, publish_hub_shared_data_root
 
     os.environ.update(merge_child_env_utf8())
     app = QApplication.instance() or QApplication(sys.argv)
@@ -841,6 +841,7 @@ def run_hub() -> int:
         instance = HubInstance(get_hub_user_data_dir())
         if not instance.acquire_or_activate():
             return 0
+        publish_hub_shared_data_root()
         if is_frozen() and sys.platform == "win32":
             from installer.install_python_runtime import repair_legacy_windows_permissions
             repair_legacy_windows_permissions(get_app_dir())

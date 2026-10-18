@@ -221,6 +221,26 @@ def test_android_install_and_update_do_not_require_a_host_toolchain(package_proj
     assert not (tmp_path / "custom-hub").exists()
 
 
+def test_standalone_plugin_process_uses_the_hubs_recorded_shared_root(tmp_path, monkeypatch):
+    from infernux.engine.user_data import get_infernux_shared_data_root
+    from infernux.plugins.cache import package_cache_root
+    from infernux.plugins.platform_support import android_support_root, ANDROID_SUPPORT_VERSION, _host_id
+
+    user = tmp_path / "user"
+    shared = tmp_path / "Custom Hub/InfernuxHubData/Shared"
+    user.mkdir()
+    (user / "hub-shared-root.json").write_text(json.dumps({"shared_data_root": str(shared)}), encoding="utf-8")
+    monkeypatch.setenv("INFERNUX_DATA_ROOT", str(user))
+    for key in ("INFERNUX_SHARED_DATA_ROOT", "INFERNUX_ANDROID_SUPPORT_ROOT", "INFERNUX_PACKAGE_CACHE_ROOT"):
+        monkeypatch.delenv(key, raising=False)
+    assert Path(get_infernux_shared_data_root()) == shared
+    assert Path(package_cache_root()) == shared / "Library/Plugins"
+    assert android_support_root() == shared / "PlatformKits/android" / ANDROID_SUPPORT_VERSION / _host_id()
+    override = tmp_path / "explicit-shared"
+    monkeypatch.setenv("INFERNUX_SHARED_DATA_ROOT", str(override))
+    assert Path(get_infernux_shared_data_root()) == override
+
+
 def test_offline_catalog_keeps_newest_discovery_without_upgrading_installed_packages(package_project, tmp_path):
     from infernux.plugins.cache import package_cache_root
     from infernux.plugins.official import sync_official_registry

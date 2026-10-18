@@ -19,6 +19,27 @@ PACKAGING_DIR = Path(__file__).resolve().parents[2] / "packaging"
 import android_support
 
 
+def test_custom_hub_root_is_inherited_even_when_root_variables_are_empty(tmp_path, monkeypatch):
+    import hub_utils
+
+    app = tmp_path / "Custom Hub"
+    monkeypatch.setattr(hub_utils, "get_app_dir", lambda: str(app))
+    monkeypatch.setattr(android_support, "get_hub_shared_data_dir", hub_utils.get_hub_shared_data_dir)
+    for key in ("INFERNUX_DATA_ROOT", "INFERNUX_SHARED_DATA_ROOT", "INFERNUX_PACKAGE_CACHE_ROOT"):
+        monkeypatch.setenv(key, "")
+    environment = hub_utils.merge_child_env_utf8()
+    shared = app / "InfernuxHubData/Shared"
+    assert Path(environment["INFERNUX_SHARED_DATA_ROOT"]) == shared
+    assert Path(environment["INFERNUX_PACKAGE_CACHE_ROOT"]) == shared / "Library/Plugins"
+    assert android_support.default_android_support_root() == (
+        shared / "PlatformKits/android" / android_support.ANDROID_SUPPORT_VERSION / android_support.host_id()
+    ).resolve()
+    monkeypatch.setattr(hub_utils, "get_hub_user_data_dir", lambda: str(tmp_path / "user"))
+    hub_utils.publish_hub_shared_data_root()
+    record = json.loads((tmp_path / "user/hub-shared-root.json").read_text(encoding="utf-8"))
+    assert Path(record["shared_data_root"]) == shared
+
+
 @pytest.mark.parametrize(
     "host,code,release_after,expected_calls",
     [

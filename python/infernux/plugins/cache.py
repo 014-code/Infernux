@@ -15,7 +15,7 @@ from typing import Iterable, Mapping
 from urllib.parse import quote
 
 from infernux.engine.path_utils import resolved_path, same_path
-from infernux.engine.user_data import get_infernux_data_root
+from infernux.engine.user_data import get_infernux_shared_data_root
 
 from infernux.engine.player_package_native import read_entry
 
@@ -64,9 +64,7 @@ def package_cache_root() -> str:
         return resolved_path(os.path.expandvars(os.path.expanduser(configured)))
     return resolved_path(
         os.path.join(
-            os.path.expandvars(os.path.expanduser(os.environ["INFERNUX_SHARED_DATA_ROOT"]))
-            if os.environ.get("INFERNUX_SHARED_DATA_ROOT", "").strip()
-            else get_infernux_data_root(),
+            get_infernux_shared_data_root(),
             "Library", "Plugins",
         )
     )

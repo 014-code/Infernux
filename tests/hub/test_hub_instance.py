@@ -85,7 +85,8 @@ def test_simultaneous_launches_choose_one_owner_and_activate_it(tmp_path, launch
 @pytest.mark.parametrize("crash", [False, True])
 def test_exit_or_crash_allows_a_new_primary(tmp_path, launch, crash):
     first = launch(tmp_path)
-    wait_until(lambda: (tmp_path / "owners").exists())
+    wait_until(lambda: (tmp_path / "owners").exists()
+               and (tmp_path / "owners").read_text().splitlines() == [str(first.pid)])
     if crash:
         first.kill()
     else:

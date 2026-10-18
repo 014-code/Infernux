@@ -11,6 +11,7 @@ from typing import Mapping
 
 from infernux.core.file_read_cache import FileReadCache
 from infernux.engine.path_utils import lexical_path, resolved_path
+from infernux.engine.user_data import get_infernux_shared_data_root
 
 
 ANDROID_SUPPORT_SCHEMA = "infernux.android_support"
@@ -64,26 +65,14 @@ def _android_support_location(environ: Mapping[str, str] | None) -> Path | None:
     explicit = str(values.get("INFERNUX_ANDROID_SUPPORT_ROOT", "") or "").strip()
     if explicit:
         return Path(lexical_path(os.path.expandvars(os.path.expanduser(explicit))))
-    data_root = str(values.get("INFERNUX_SHARED_DATA_ROOT", "") or "").strip()
-    if not data_root:
-        data_root = str(values.get("INFERNUX_DATA_ROOT", "") or "").strip()
-    if data_root:
-        base = Path(lexical_path(os.path.expandvars(os.path.expanduser(data_root))))
-    elif os.name == "nt":
-        local_app_data = str(values.get("LOCALAPPDATA", "") or "").strip()
-        if not local_app_data:
-            return None
-        base = Path(lexical_path(local_app_data)) / "InfernuxHub"
-    else:
-        xdg_data = str(values.get("XDG_DATA_HOME", "") or "").strip()
-        base = (
-            Path(lexical_path(Path(xdg_data).expanduser())) / "InfernuxHub"
-            if xdg_data
-            else Path.home() / ".local/share/InfernuxHub"
-        )
     host = _host_id()
     if not host:
         return None
+    if os.name == "nt" and not any(values.get(key, "").strip() for key in (
+        "INFERNUX_SHARED_DATA_ROOT", "INFERNUX_DATA_ROOT", "LOCALAPPDATA",
+    )):
+        return None
+    base = Path(get_infernux_shared_data_root(values))
     return base / "PlatformKits/android" / ANDROID_SUPPORT_VERSION / host
 
 
