@@ -644,22 +644,21 @@ def _collect_world_ui_elements(*scenes):
 
     result = []
 
-    def walk(game_object, canvas_ancestor: bool) -> None:
+    def walk(game_object) -> None:
         if not game_object:
             return
         components = tuple(game_object.get_py_components())
-        canvas_here = canvas_ancestor or any(
-            isinstance(component, UICanvas) for component in components
-        )
+        if any(isinstance(component, UICanvas) for component in components):
+            return
         ui_component = next(
             (component for component in components if is_ui_screen_component(component)),
             None,
         )
-        if ui_component is not None and not canvas_here:
+        if ui_component is not None:
             result.append(ui_component)
         for child in game_object.get_children():
             if child:
-                walk(child, canvas_here)
+                walk(child)
 
     seen = set()
     for scene in scenes:
@@ -667,7 +666,7 @@ def _collect_world_ui_elements(*scenes):
             continue
         seen.add(id(scene))
         for root_object in scene.get_root_objects():
-            walk(root_object, False)
+            walk(root_object)
     _world_elements_key = key
     _world_elements = tuple(result)
     return _world_elements
