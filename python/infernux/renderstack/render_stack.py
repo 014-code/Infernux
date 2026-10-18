@@ -288,6 +288,8 @@ class RenderStack(PipelineReloadMixin, InxComponent):
             self._owning_scene = scene
             self._shadow_poll_elapsed = 0.0
             self._shadow_lights_present = None
+            self._shadow_light_components = []
+            self._shadow_light_scene_version = -1
             RenderStack.activate_instance(self, scene)
             self.invalidate_graph()
 
@@ -639,15 +641,22 @@ class RenderStack(PipelineReloadMixin, InxComponent):
         scene = getattr(self.game_object, "scene", None)
         if scene is None:
             return True
-        from infernux import Light
+        version = int(getattr(scene, "structure_version", 0))
+        if version != getattr(self, "_shadow_light_scene_version", -1):
+            from infernux import Light
 
-        for obj in scene.get_all_objects():
-            if not obj.is_active_in_hierarchy():
-                continue
-            light = obj.get_component(Light)
-            if light is not None and light.enabled and int(light.shadows) != 0:
-                return True
-        return False
+            self._shadow_light_components = [
+                light
+                for obj in scene.get_all_objects()
+                if obj.is_active_in_hierarchy()
+                for light in (obj.get_component(Light),)
+                if light is not None
+            ]
+            self._shadow_light_scene_version = version
+        return any(
+            light.enabled and int(light.shadows) != 0
+            for light in getattr(self, "_shadow_light_components", ())
+        )
 
     # ==================================================================
     # Graph construction
