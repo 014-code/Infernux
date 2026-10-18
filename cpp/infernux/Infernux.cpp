@@ -4429,8 +4429,10 @@ Infernux::InspectMaterialShaderDomain(const std::shared_ptr<InxMaterial> &materi
         std::shared_ptr<const InxResourceMeta> metadata;
         if (!reference.guid.empty())
             metadata = database->GetMetaByGuid(reference.guid);
-        else if (reference.pathHint.empty() && !reference.shaderId.empty())
-            metadata = database->GetMetaByPath(database->FindShaderPathById(reference.shaderId, stage));
+        else if (reference.pathHint.empty() && !reference.shaderId.empty()) {
+            const auto path = database->FindShaderPathById(reference.shaderId, stage);
+            metadata = database->GetMetaByGuid(database->GetGuidFromCatalogPath(path));
+        }
         if (!metadata) {
             if (!reference.guid.empty())
                 throw std::runtime_error("Material shader GUID cannot be resolved: " + reference.guid);
