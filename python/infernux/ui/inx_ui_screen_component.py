@@ -159,11 +159,12 @@ class InxUIScreenComponent(InxUIComponent):
         game_object = self._try_get_game_object()
         if game_object is None:
             raise RuntimeError("UI layout requires an attached GameObject Transform")
-        if self.is_world_space() and self._get_parent_ui_component() is None:
+        world_space = self.is_world_space()
+        if world_space and self._get_parent_ui_component() is None:
             return 0.0, 0.0
         position = game_object.transform.local_position
         units = 1.0
-        if self.is_world_space():
+        if world_space:
             units = WORLD_UI_PIXELS_PER_UNIT
         ref_width = float(reference_width if reference_width is not None else self.width)
         ref_height = float(reference_height if reference_height is not None else self.height)
@@ -201,11 +202,13 @@ class InxUIScreenComponent(InxUIComponent):
             return None
         from infernux.lib import Vector3
 
-        px, py, pw, ph = self._get_parent_world_rect(canvas_width, canvas_height)
-        units = WORLD_UI_PIXELS_PER_UNIT if self.is_world_space() else 1.0
+        ref_width, ref_height, reference, units = self._layout_reference()
+        px, py, pw, ph = (
+            reference if canvas_width == ref_width and canvas_height == ref_height
+            else self._get_parent_world_rect(canvas_width, canvas_height)
+        )
         center_x = float(rect_x) + float(self.width) * 0.5
         center_y = float(rect_y) + float(self.height) * 0.5
-        _, _, reference, _ = self._layout_reference()
         anchor_x, anchor_y = self._anchor_origin(pw, ph)
         reference_x, reference_y = self._anchor_origin(reference[2], reference[3])
         position = game_object.transform.local_position
@@ -292,16 +295,23 @@ class InxUIScreenComponent(InxUIComponent):
         has no Canvas and retains its ordinary scene ancestry.
         """
         canvas = self.get_canvas()
+        key = self.__dict__["_canvas_ancestor"][0]
+        cached = self.__dict__.get("_layout_ancestor_cache")
+        if key is not None and cached is not None and cached[0] == key:
+            return iter(cached[1])
         boundary = canvas.game_object if canvas is not None else None
         current = self._try_get_game_object()
         if boundary is not None and current.id == boundary.id:
-            return
+            return iter(())
         current = current.get_parent() if current is not None else None
+        parents = []
         while current is not None:
             if boundary is not None and current.id == boundary.id:
                 break
-            yield current
+            parents.append(current)
             current = current.get_parent()
+        self.__dict__["_layout_ancestor_cache"] = (key, tuple(parents))
+        return iter(parents)
 
     def _get_parent_ui_component(self):
         """Return the nearest UI parent within this layout domain."""
@@ -339,11 +349,18 @@ class InxUIScreenComponent(InxUIComponent):
     def get_effective_group_state(self) -> tuple[float, bool, bool]:
         """Return subtree alpha, interactable and raycast-blocking state."""
         from .ui_group import UIGroup
+        from .ui_render_revision import _get_shared_visual_revision
+
+        current = self._try_get_game_object()
+        self._canvas_for_owner(current)
+        key = (self.__dict__["_canvas_ancestor"][0], _get_shared_visual_revision())
+        cached = self.__dict__.get("_group_state_cache")
+        if key[0] is not None and cached is not None and cached[0] == key:
+            return cached[1]
 
         alpha = 1.0
         interactable = True
         blocks_raycast = True
-        current = self._try_get_game_object()
         while current is not None:
             for component in current.get_py_components():
                 if not isinstance(component, UIGroup) or not getattr(component, "enabled", True):
@@ -352,7 +369,9 @@ class InxUIScreenComponent(InxUIComponent):
                 interactable = interactable and bool(component.interactable)
                 blocks_raycast = blocks_raycast and bool(component.blocks_raycast)
             current = current.get_parent()
-        return alpha, interactable, blocks_raycast
+        result = alpha, interactable, blocks_raycast
+        self.__dict__["_group_state_cache"] = (key, result)
+        return result
 
     def is_effectively_interactable(self) -> bool:
         """Return whether this element may receive a pointer transaction."""
@@ -495,13 +514,16 @@ class InxUIScreenComponent(InxUIComponent):
                        reference_rect=None, size=None):
         cw = float(canvas_width)
         ch = float(canvas_height)
+        ref_width, ref_height, reference, _ = self._layout_reference()
         if reference_rect is None:
-            px, py, pw, ph = self._get_parent_world_rect(cw, ch)
+            px, py, pw, ph = (
+                reference if cw == ref_width and ch == ref_height
+                else self._get_parent_world_rect(cw, ch)
+            )
         else:
             px, py, pw, ph = reference_rect
         width, height = size if size is not None else self._layout_desired_size()
         anchor_x, anchor_y = self._anchor_origin(pw, ph)
-        _, _, reference, _ = self._layout_reference()
         offset_x, offset_y = self._layout_offset(reference[2], reference[3])
         return (px + anchor_x + offset_x, py + anchor_y + offset_y, width, height)
 
