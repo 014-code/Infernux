@@ -48,10 +48,26 @@ endif()
 # Desktop extensions are built before both wheel and precompiled Player staging.
 # Android/Web staging retains the same Python sources and excludes host binaries.
 if(NOT INFERNUX_USE_TARGET_PYTHON AND NOT EMSCRIPTEN)
-    add_executable(InfernuxEditorProgress cpp/apps/editor/EditorProgress.cpp)
-    target_link_libraries(InfernuxEditorProgress PRIVATE SDL3::SDL3)
+    add_executable(InfernuxEditorProgress
+        cpp/apps/editor/EditorProgress.cpp
+        cpp/infernux/function/editor/EditorThemeRegistry.cpp
+        external/imgui_for_infernux/backends/imgui_impl_sdlrenderer3.cpp
+    )
+    target_include_directories(InfernuxEditorProgress PRIVATE cpp/infernux)
+    target_link_libraries(InfernuxEditorProgress PRIVATE SDL3::SDL3 imgui)
+    if(MSVC)
+        target_compile_options(InfernuxEditorProgress PRIVATE /utf-8)
+    endif()
     set_target_properties(InfernuxEditorProgress PROPERTIES
         BUILD_RPATH "$ORIGIN" INSTALL_RPATH "$ORIGIN")
+    add_custom_command(TARGET InfernuxEditorProgress POST_BUILD
+        COMMAND ${CMAKE_COMMAND}
+            "-DSOURCE=$<TARGET_FILE:InfernuxEditorProgress>"
+            "-DDESTINATION=${PYTHON_TARGET_DIR}/$<TARGET_FILE_NAME:InfernuxEditorProgress>"
+            -P "${CMAKE_SOURCE_DIR}/cmake/stage_build_file.cmake"
+        COMMENT "Stage the Editor progress helper in the build tree"
+        VERBATIM
+    )
     install(TARGETS InfernuxEditorProgress RUNTIME DESTINATION python/infernux/lib
         COMPONENT ${INFERNUX_PYTHON_INSTALL_COMPONENT})
     add_dependencies(stage_python_package InfernuxEditorProgress)

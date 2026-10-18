@@ -13,14 +13,15 @@ import sys
 
 class BusyProgress:
     def __init__(self):
-        from infernux.lib import native_dir
+        from infernux.lib import get_editor_theme, native_dir
+        from infernux.resources import engine_font_path
 
         executable = Path(native_dir) / (
             "InfernuxEditorProgress.exe" if sys.platform == "win32"
             else "InfernuxEditorProgress"
         )
         self._process = subprocess.Popen(
-            [str(executable)],
+            [str(executable), engine_font_path, get_editor_theme()],
             stdin=subprocess.PIPE,
             text=True,
             encoding="utf-8",

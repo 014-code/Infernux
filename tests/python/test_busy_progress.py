@@ -47,3 +47,14 @@ def test_missing_executable_surfaces_as_oserror(monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", _missing)
     with pytest.raises(OSError):
         BusyProgress()
+
+
+def test_helper_uses_the_editor_font_and_active_theme(monkeypatch):
+    from infernux import lib, resources
+
+    commands = []
+    monkeypatch.setattr(lib, "get_editor_theme", lambda: "amber")
+    monkeypatch.setattr(subprocess, "Popen", lambda command, **kwargs: commands.append(command))
+    progress = BusyProgress()
+    assert commands[0][1:] == [resources.engine_font_path, "amber"]
+    progress.close()
