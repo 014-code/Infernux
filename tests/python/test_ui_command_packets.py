@@ -341,6 +341,12 @@ def test_unrelated_scene_edits_retain_screen_geometry(ui, monkeypatch):
     decoration.raycast_target = True
     ui.canvas.raycast(1, 1)
     assert decoration in ui.canvas._hit_elements
+    decoration.set_rect(30, 40, 20, 20, 1920, 1080)
+    ui.frame()
+    captures = ui.renderer.captures
+    decoration.set_rect(30, 40, 20, 20, 1920, 1080)
+    assert ui.frame()[0] is False
+    assert ui.renderer.captures == captures
 
     # Reparenting can preserve flattened element order while changing layout.
     label.game_object.set_parent(ui.root)

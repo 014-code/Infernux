@@ -181,9 +181,13 @@ class InxUIScreenComponent(InxUIComponent):
             raise RuntimeError("UI layout edits require an attached GameObject Transform")
         if self.is_world_space() and self._get_parent_ui_component() is None:
             raise RuntimeError("World UI position is authored through its GameObject Transform")
-        game_object.transform.local_position = self._local_position_for_rect_origin(
+        position = self._local_position_for_rect_origin(
             rect_x, rect_y, canvas_width, canvas_height
         )
+        current = game_object.transform.local_position
+        if position.x == current.x and position.y == current.y and position.z == current.z:
+            return
+        game_object.transform.local_position = position
         _invalidate_rect_cache(layout=False)
         mark_runtime_ui_dirty(self, subtree=True)
 
