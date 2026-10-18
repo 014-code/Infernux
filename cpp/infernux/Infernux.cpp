@@ -4424,28 +4424,22 @@ Infernux::InspectMaterialShaderDomain(const std::shared_ptr<InxMaterial> &materi
     if (!database || !material)
         throw std::runtime_error("Material shader classification requires a material and AssetDatabase");
 
-    InxShaderLoader parser(true, false, false, false, false, true, false, false, false, false);
-    unsigned int sourceCount = 0;
+    unsigned int stageCount = 0;
     const auto stageFlags = [&](const ShaderAssetReference &reference, const char *stage) {
-        std::string path;
+        std::shared_ptr<const InxResourceMeta> metadata;
         if (!reference.guid.empty())
-            path = database->GetPathFromGuid(reference.guid);
+            metadata = database->GetMetaByGuid(reference.guid);
         else if (reference.pathHint.empty() && !reference.shaderId.empty())
-            path = database->FindShaderPathById(reference.shaderId, stage);
-        if (path.empty()) {
+            metadata = database->GetMetaByPath(database->FindShaderPathById(reference.shaderId, stage));
+        if (!metadata) {
             if (!reference.guid.empty())
                 throw std::runtime_error("Material shader GUID cannot be resolved: " + reference.guid);
             return 0u;
         }
-        std::vector<char> bytes;
-        if (!database->ReadFile(path, bytes) || bytes.empty())
-            throw std::runtime_error("Material shader source cannot be read: " + path);
-        ++sourceCount;
-        if (bytes.back() == '\0')
-            bytes.pop_back();
-        const auto descriptor = parser.ParseShaderSource(std::string(bytes.begin(), bytes.end()), path);
+        ++stageCount;
+        const auto capabilities = json::parse(metadata->GetDataAs<std::string>("shader_capabilities"));
         unsigned int flags = 0;
-        for (std::string capability : descriptor.capabilities) {
+        for (std::string capability : capabilities.get<std::vector<std::string>>()) {
             std::transform(capability.begin(), capability.end(), capability.begin(),
                            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
             if (capability == "screenui")
@@ -4472,7 +4466,7 @@ Infernux::InspectMaterialShaderDomain(const std::shared_ptr<InxMaterial> &materi
         return ShaderProgramDomain::ParticleSprite;
     if (flags == 8u)
         return ShaderProgramDomain::Fullscreen;
-    if (sourceCount == 2)
+    if (stageCount == 2)
         return ShaderProgramDomain::Mesh;
     return std::nullopt;
 }

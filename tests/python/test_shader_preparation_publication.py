@@ -3,7 +3,7 @@ import json
 import pytest
 
 from infernux.core.assets import AssetManager
-from infernux.lib import ConsolePanel
+from infernux.lib import ConsolePanel, InxMaterial
 from tests.gpu.shader_preparation_case import ShaderPreparationCase
 from test_material_preview_retirement import pump_until
 from infernux.engine.runtime_scene_transaction import SceneDocumentTransaction
@@ -86,4 +86,17 @@ def test_same_source_concurrent_preparations_can_both_publish(engine, scene, tmp
         assert second.committed and case.old.committed
     finally:
         second.cancel()
+        case.close()
+
+
+def test_material_refresh_uses_imported_domain_until_source_publication(engine, tmp_path):
+    case = ShaderPreparationCase(engine, tmp_path / "imported-domain", "unchanged")
+    try:
+        pump_until(engine, lambda _: case.old.complete)
+        assert engine.try_commit_linked_shader_programs(case.old)
+        case.fragment.write_text("unfinished edit, not imported", encoding="utf-8")
+        material = InxMaterial.create_default_unlit()
+        material.frag_shader_reference = case.material.frag_shader_reference
+        assert engine.refresh_material_pipeline(material)
+    finally:
         case.close()
