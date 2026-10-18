@@ -315,6 +315,8 @@ class ComponentNativeMixin:
         cpp_component = getattr(self, '_cpp_component', None)
         if cpp_component is None:
             return None
+        if not self._tracks_scene_structure_binding():
+            return cpp_component
         handle = getattr(self, '_native_handle', None)
         scene = getattr(self, '_native_scene', None)
         if handle is not None and scene is not None:

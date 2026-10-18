@@ -27,6 +27,7 @@ _RUNTIME_SCHEDULER_PHASES = (
 )
 _MISSING = object()
 _runtime_phase_presence_fn = None
+_structure_change_domains = None
 
 
 def _runtime_phase_presence(component_type: type) -> tuple[bool, ...]:
@@ -539,12 +540,15 @@ class RuntimeExecutionScheduler:
 
         typed_barrier = RuntimeFrameBarrier(barrier)
         changes = self._change_journal.consume(self._change_cursor)
-        if changes.affects(
-            RuntimeChangeDomain.SCENE_TOPOLOGY,
-            RuntimeChangeDomain.COMPONENT_STRUCTURE,
-            RuntimeChangeDomain.COMPONENT_ENABLED,
-            RuntimeChangeDomain.SCRIPT_SCHEMA,
-        ):
+        global _structure_change_domains
+        if _structure_change_domains is None:
+            _structure_change_domains = frozenset((
+                RuntimeChangeDomain.SCENE_TOPOLOGY,
+                RuntimeChangeDomain.COMPONENT_STRUCTURE,
+                RuntimeChangeDomain.COMPONENT_ENABLED,
+                RuntimeChangeDomain.SCRIPT_SCHEMA,
+            ))
+        if not _structure_change_domains.isdisjoint(changes.changes):
             self._invalidate(revision=changes.revision)
         self._last_barrier_changes[typed_barrier] = changes
         if frame is not None:
