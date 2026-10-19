@@ -942,19 +942,33 @@ std::vector<glm::mat4> InxSkinnedMesh::EvaluatePoseStackGlobals(
     std::vector<glm::quat> addRot(N, glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
     std::vector<bool> hasAdd(N, false);
 
+    std::vector<std::vector<uint8_t>> masks(layers.size());
+    for (size_t index = 0; index < layers.size(); ++index) {
+        const auto &names = layers[index].boneMask;
+        if (names.empty())
+            continue;
+        auto &mask = masks[index];
+        mask.assign(N, 0);
+        for (const auto &name : names) {
+            const auto node = skeleton.nodeByName.find(name);
+            if (node != skeleton.nodeByName.end())
+                mask[static_cast<size_t>(node->second)] = 1;
+        }
+    }
+
     std::unordered_map<std::string, std::vector<float>> groupCoverage;
-    for (const auto &layer : layers) {
+    for (size_t index = 0; index < layers.size(); ++index) {
+        const auto &layer = layers[index];
         if (layer.blendGroup.empty() || layer.additive)
             continue;
         auto &coverage = groupCoverage.try_emplace(layer.blendGroup, N, 0.0f).first->second;
         const float weight = glm::clamp(layer.weight, 0.0f, 1.0f);
-        if (layer.boneMask.empty()) {
+        if (masks[index].empty()) {
             for (float &value : coverage)
                 value += weight;
         } else {
             for (size_t ni = 0; ni < N; ++ni)
-                if (std::find(layer.boneMask.begin(), layer.boneMask.end(), skeleton.nodes[ni].name) !=
-                    layer.boneMask.end())
+                if (masks[index][ni])
                     coverage[ni] += weight;
         }
     }
@@ -983,14 +997,10 @@ std::vector<glm::mat4> InxSkinnedMesh::EvaluatePoseStackGlobals(
 
         // Exact local-channel mask (empty = all nodes). Hierarchy propagation
         // still makes children inherit an animated parent's global transform.
-        const bool masked = !layer.boneMask.empty();
-        std::unordered_map<std::string, char> maskSet;
-        if (masked)
-            for (const std::string &b : layer.boneMask)
-                maskSet.emplace(b, 1);
+        const auto &mask = masks[layerIndex];
 
         for (size_t ni = 0; ni < N; ++ni) {
-            if (masked && maskSet.find(skeleton.nodes[ni].name) == maskSet.end())
+            if (!mask.empty() && !mask[ni])
                 continue;
             const float w = group == groupCoverage.end() ? weight : weight / std::max(group->second[ni], 1.0f);
             const SkinnedNodePose &pose = retargetedPoses[ni];

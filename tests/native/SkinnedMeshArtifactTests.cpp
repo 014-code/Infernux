@@ -133,6 +133,9 @@ void CheckSkeletonPoseQueries()
     upper.timeSeconds = 0;
     upper.boneMask = {"Socket"};
     check(model.EvaluatePoseStack({first, upper}), 6, 7);
+    first.boneMask = {"Root", "Root", "Missing"};
+    upper.boneMask = {"Missing", "Socket", "Socket"};
+    check(model.EvaluatePoseStack({first, upper}), 6, 7);
     PoseStackLayer third = upper;
     third.takeName = "A";
     third.timeSeconds = 1;
