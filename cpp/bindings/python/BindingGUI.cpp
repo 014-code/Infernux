@@ -1271,6 +1271,7 @@ void RegisterGUIBindings(py::module_ &m)
             py::arg("console"), py::keep_alive<1, 2>(), "Wire to ConsolePanel for click-to-select-latest")
         .def("set_engine_status", &StatusBarPanel::SetEngineStatus, py::arg("text"), py::arg("progress"),
              py::arg("kind") = "activity", "Update engine-status indicator")
+        .def_readwrite("sync_from_engine", &StatusBarPanel::syncFromEngine)
         .def_readwrite("execute_command", &StatusBarPanel::executeCommand);
 
     // ── ToolbarPanel ───────────────────────────────────────────────────

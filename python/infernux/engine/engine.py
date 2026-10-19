@@ -87,7 +87,6 @@ class Engine():
         self._headless_undo_manager = None
         self._headless_scene_file_manager = None
         self._before_exit_callback = None
-        self._editor_frame_sync_callback = None
         # The packaged Player entry point terminates the entire process
         # immediately after persistent writes and native cleanup complete.
         # The packaged Player's plugin threads and sockets are process-owned;
@@ -702,9 +701,6 @@ class Engine():
         )
         self._last_frame_time = current_time
 
-        if self._editor_frame_sync_callback is not None:
-            self._editor_frame_sync_callback()
-        
         # Process pending script reloads on the main thread, but throttle polling.
         pmm = self._play_mode_manager
         rm = self._resources_manager

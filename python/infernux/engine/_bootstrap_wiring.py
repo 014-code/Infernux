@@ -1388,9 +1388,7 @@ class BootstrapWiringMixin:
         sb = self.status_bar
         from infernux.engine.i18n import t as _t
 
-        # Fold status expiry/synchronization into the existing Python frame tick.
-        # A separate Python ImGui renderable would add another C++/Python virtual
-        # dispatch every frame even though status text changes rarely.
+        # Native GUI builds own presentation work; simulation frames do not.
         from infernux.engine.ui.engine_status import EngineStatus
 
         last_status = [None]
@@ -1415,7 +1413,7 @@ class BootstrapWiringMixin:
                 last_hierarchy_header[0] = header_state
                 self.hierarchy.set_scene_header_snapshot(*header_state)
 
-        self.engine._editor_frame_sync_callback = _sync_engine_status
+        sb.sync_from_engine = _sync_engine_status
         _sync_engine_status()
 
     def _wire_hierarchy_callbacks(self):

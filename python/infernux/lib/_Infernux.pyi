@@ -3051,6 +3051,7 @@ class ConsolePanel(EditorPanel):
 class StatusBarPanel(InxGUIRenderable):
     """Bottom status bar panel."""
 
+    sync_from_engine: Any
     execute_command: Any
 
     def __init__(self) -> None: ...
