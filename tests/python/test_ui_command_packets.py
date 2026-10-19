@@ -348,6 +348,27 @@ def test_unrelated_scene_edits_retain_screen_geometry(ui, monkeypatch):
     assert ui.frame()[0] is False
     assert ui.renderer.captures == captures
 
+    # Toggling one HUD branch must retain unrelated geometry and hit membership.
+    ui.canvas.raycast(1, 1)
+    hit_geometry = ui.canvas._hit_geometry
+    captures = ui.renderer.captures
+    decoration.game_object.active = False
+    ui.frame()
+    assert ui.renderer.captures == captures + 1
+    assert ui.extracted == []
+    ui.canvas.raycast(1, 1)
+    assert ui.canvas._hit_geometry is hit_geometry
+    assert all(item[0] is not decoration for item in ui.canvas._hit_candidates_cache)
+    decoration.game_object.active = True
+    ui.matches_fresh()
+    captures = ui.renderer.captures
+    bridge.active = False
+    ui.frame()
+    assert ui.renderer.captures == captures + 1
+    assert ui.extracted == []
+    bridge.active = True
+    ui.matches_fresh()
+
     # Reparenting can preserve flattened element order while changing layout.
     label.game_object.set_parent(ui.root)
     ui.matches_fresh()
@@ -359,6 +380,7 @@ def test_unrelated_scene_edits_retain_screen_geometry(ui, monkeypatch):
     bridge.remove_py_component(group)
     commands = ui.matches_fresh()
     assert all(args[9] == 1.0 for name, args, _ in commands if name == "add_text")
+
     outside = ui.scene.create_game_object("Canvas ancestor")
     ui.root.set_parent(outside)
     group = outside.add_component(UIGroup)
@@ -367,6 +389,10 @@ def test_unrelated_scene_edits_retain_screen_geometry(ui, monkeypatch):
     group.enabled = False
     commands = ui.matches_fresh()
     assert all(args[9] == 1.0 for name, args, _ in commands if name == "add_text")
+    outside.active = False
+    assert all(name != "add_text" for name, _, _ in ui.matches_fresh())
+    outside.active = True
+    ui.matches_fresh()
 
 
 def test_retained_submission_tracks_hierarchy_viewport_and_visibility_edits(ui):

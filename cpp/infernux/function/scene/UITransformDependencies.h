@@ -36,6 +36,20 @@ class UIHierarchyDependencies
             Append(parent);
         Visit(root);
         if (m_current != m_snapshot) {
+            m_policyChanges.clear();
+            bool topologyChanged = m_current.size() != m_snapshot.size();
+            for (size_t index = 0; !topologyChanged && index < m_current.size(); ++index) {
+                const auto &current = m_current[index];
+                const auto &previous = m_snapshot[index];
+                topologyChanged = current.identity != previous.identity || current.handle != previous.handle ||
+                                  current.parent != previous.parent;
+                if (current.enabled != previous.enabled)
+                    m_policyChanges.push_back(current.object);
+            }
+            if (topologyChanged) {
+                ++m_topologyRevision;
+                m_policyChanges.clear();
+            }
             m_snapshot.swap(m_current);
             ++m_revision;
         }
@@ -44,12 +58,22 @@ class UIHierarchyDependencies
         return m_revision;
     }
 
+    uint64_t GetTopologyRevision() const noexcept
+    {
+        return m_topologyRevision;
+    }
+    const std::vector<GameObject *> &GetPolicyChanges() const noexcept
+    {
+        return m_policyChanges;
+    }
+
   private:
     struct Entry
     {
         const void *identity;
         ObjectHandle handle;
         const GameObject *parent;
+        GameObject *object;
         bool enabled;
 
         bool operator==(const Entry &other) const
@@ -61,9 +85,9 @@ class UIHierarchyDependencies
 
     void Append(GameObject *object)
     {
-        m_current.push_back({object, object->GetHandle(), object->GetParent(), object->IsActive()});
+        m_current.push_back({object, object->GetHandle(), object->GetParent(), object, object->IsActive()});
         for (const auto &component : object->GetAllComponents())
-            m_current.push_back({component.get(), component->GetHandle(), object, component->IsEnabled()});
+            m_current.push_back({component.get(), component->GetHandle(), object, object, component->IsEnabled()});
     }
 
     void Visit(GameObject *object)
@@ -77,7 +101,9 @@ class UIHierarchyDependencies
     Scene *m_scene = nullptr;
     uint64_t m_sceneVersion = 0;
     uint64_t m_revision = 0;
+    uint64_t m_topologyRevision = 0;
     std::vector<Entry> m_current, m_snapshot;
+    std::vector<GameObject *> m_policyChanges;
 };
 
 /// Geometry dependencies of a recorded UI command list. Retain ECS lifetime

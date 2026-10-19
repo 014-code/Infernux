@@ -240,13 +240,29 @@ class UICanvas(InxUIComponent):
             self._elements_owner = go
             self._cached_elements = None
         version = self._element_dependencies.poll()
-        if self._cached_elements is None or version != self._cached_elements_version:
+        topology = self._element_dependencies.topology_revision
+        if self._cached_elements is None or topology != self.__dict__.get('_elements_topology'):
             self._cached_elements = tuple(self.iter_ui_elements())
-            self._cached_elements_version = version
+            self._elements_topology = topology
             self._cached_elements_revision += 1
             from .inx_ui_screen_component import _invalidate_rect_cache
 
             _invalidate_rect_cache()
+        elif version != self._cached_elements_version:
+            from .inx_ui_screen_component import _invalidate_rect_cache
+            from .ui_render_revision import _invalidate_ui_command_groups
+
+            # Visibility and enablement retain membership. Only an affected
+            # branch needs new commands.
+            _invalidate_rect_cache(layout=False)
+            mark_runtime_ui_dirty(self)
+            pending = list(dict.fromkeys(self._element_dependencies.policy_changes))
+            while pending:
+                owner = pending.pop()
+                for component in owner.get_py_components():
+                    _invalidate_ui_command_groups(component)
+                pending.extend(owner.get_children())
+        self._cached_elements_version = version
         return self._cached_elements
 
     # ------------------------------------------------------------------
@@ -354,7 +370,7 @@ class UICanvas(InxUIComponent):
             # its own local Transform signature.
             clear_rect_cache((id(self), pose))
             self._hit_pose = pose
-        key = (pose, policy, _get_layout_revision(), ref_w, ref_h)
+        key = (pose, policy, self._cached_elements_version, _get_layout_revision(), ref_w, ref_h)
         if self._hit_key != key:
             candidates = []
             for element in reversed(self._hit_elements):
