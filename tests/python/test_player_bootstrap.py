@@ -69,6 +69,9 @@ def test_plugin_preload_resolves_cooked_assets_before_scene_startup(monkeypatch,
     decoy = tmp_path / "Assets/Data/not-exported.txt"
     decoy.parent.mkdir(parents=True)
     decoy.write_text("not exported", encoding="utf-8")
+    runtime_decoy = tmp_path / "infernux/resources/shaders/builtin.vert"
+    runtime_decoy.parent.mkdir(parents=True)
+    runtime_decoy.write_text("not a Content payload", encoding="utf-8")
     manifest, _ = _runtime_contract(tmp_path)
     catalog = PlayerRuntimeAssetCatalog.from_documents(
         str(tmp_path),
@@ -76,8 +79,16 @@ def test_plugin_preload_resolves_cooked_assets_before_scene_startup(monkeypatch,
             "artifacts": [
                 {
                     "runtime_artifact_id": "content:preload-guid",
+                    "package": "Content.inxpkg",
                     "runtime_path": "Library/Artifacts/Blob/preload-guid.txt",
                     "asset_guid": "preload-guid",
+                    "dependencies": [],
+                },
+                {
+                    "runtime_artifact_id": "runtime:builtin",
+                    "package": "Runtime.inxrt",
+                    "runtime_path": "infernux/resources/shaders/builtin.vert",
+                    "asset_guid": "builtin-guid",
                     "dependencies": [],
                 }
             ]
@@ -89,6 +100,11 @@ def test_plugin_preload_resolves_cooked_assets_before_scene_startup(monkeypatch,
                     "runtime_path": "Assets/Data/preload.txt",
                     "primary_runtime_artifact_id": "content:preload-guid",
                     "runtime_artifact_ids": ["content:preload-guid"],
+                },
+                {
+                    "guid": "builtin-guid",
+                    "primary_runtime_artifact_id": "runtime:builtin",
+                    "runtime_artifact_ids": ["runtime:builtin"],
                 }
             ]
         },
@@ -104,11 +120,13 @@ def test_plugin_preload_resolves_cooked_assets_before_scene_startup(monkeypatch,
     assert catalog.query_asset_guids("assets/DATA/*.TXT") == ("preload-guid",)
 
     resolutions = []
-    resolve = player_service_graph.resolved_path
     with monkeypatch.context() as observe:
-        observe.setattr(player_service_graph, "resolved_path", lambda path: resolutions.append(path) or resolve(path))
+        observe.setattr(player_service_graph, "resolved_path", lambda path: resolutions.append(path))
+        observe.setattr(player_service_graph.os.path, "isfile", lambda path: resolutions.append(path))
         assert catalog.resolve_guid("preload-guid") == str(cooked.resolve())
-    assert len(resolutions) == 1
+        assert catalog.resolve_guid("builtin-guid") is None
+        assert catalog.resolve_guid("unknown-guid") is None
+    assert not resolutions
     session = PlayerRuntimeSession(
         asset_database=object(),
         scheduler=types.SimpleNamespace(),

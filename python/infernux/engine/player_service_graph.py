@@ -16,6 +16,7 @@ from typing import Any, Mapping, Optional
 
 from .path_utils import (
     is_lexical_path_within,
+    lexical_path,
     managed_asset_glob_match,
     portable_relative_path,
     relative_path,
@@ -547,9 +548,8 @@ class RuntimeProductManifest:
 class PlayerRuntimeAssetCatalog:
     """Immutable Player view of build-authored runtime asset identities.
 
-    The catalog never scans ``Assets`` or invents an identity from a source
-    path. A runtime scene is loadable only when it is present in the catalog
-    and its cooked document exists under the packaged project root.
+    Content paths come from the unpacked ``Content.inxpkg`` index. Identity
+    queries stay in memory; payload loaders report file availability.
     """
 
     project_root: str
@@ -578,6 +578,7 @@ class PlayerRuntimeAssetCatalog:
 
         artifacts_by_id: dict[str, Mapping[str, Any]] = {}
         artifact_ids_by_guid: dict[str, set[str]] = {}
+        content_artifact_paths: set[str] = set()
         scene_artifact_paths: set[str] = set()
         for artifact in artifacts:
             if not isinstance(artifact, Mapping):
@@ -601,6 +602,8 @@ class PlayerRuntimeAssetCatalog:
             package_name = Path(
                 str(artifact.get("package", "")).replace("\\", "/")
             ).name
+            if package_name == "Content.inxpkg":
+                content_artifact_paths.add(normalized_path)
             if (
                 artifact.get("logical_type") in {"scene", "scene_artifact"}
                 and package_name == "Content.inxpkg"
@@ -623,11 +626,9 @@ class PlayerRuntimeAssetCatalog:
             raise RuntimeError("Player runtime asset records have no entry list")
         seen_guids: set[str] = set()
         asset_paths: dict[str, str] = {
-            path.casefold(): path
-            for path in (
-                str(artifact["runtime_path"])
-                for artifact in artifacts_by_id.values()
-            )
+            artifact["runtime_path"].casefold(): artifact["runtime_path"]
+            for artifact in artifacts_by_id.values()
+            if artifact["runtime_path"] in content_artifact_paths
         }
         scene_paths_by_guid: dict[str, str] = {}
         asset_guids_by_path: dict[str, str] = {}
@@ -639,7 +640,7 @@ class PlayerRuntimeAssetCatalog:
         package_directories: dict[str, str] = {}
         for artifact in artifacts_by_id.values():
             path = str(artifact["runtime_path"])
-            if not artifact.get("asset_guid") or not path.startswith("Packages/"):
+            if path not in content_artifact_paths or not artifact.get("asset_guid") or not path.startswith("Packages/"):
                 continue
             parent = path.rpartition("/")[0]
             while parent.startswith("Packages/"):
@@ -696,7 +697,8 @@ class PlayerRuntimeAssetCatalog:
                     raise RuntimeError(
                         f"Player runtime asset path is ambiguous: {normalized_alias}"
                     )
-                asset_paths[alias_key] = primary_path
+                if primary_path in content_artifact_paths:
+                    asset_paths[alias_key] = primary_path
             if primary_path in scene_artifact_paths:
                 scene_paths_by_guid[guid] = primary_path
             seen_guids.add(guid)
@@ -795,19 +797,14 @@ class PlayerRuntimeAssetCatalog:
         return tuple(sorted(matches))
 
     def resolve_guid(self, guid: str) -> Optional[str]:
-        """Resolve one managed GUID to its cooked primary payload."""
+        """Resolve content identity; payload readers own file availability."""
         cooked_runtime_path = self._primary_paths_by_guid.get(str(guid))
         if cooked_runtime_path is None:
             return None
-        candidate = resolved_path(
-            os.path.join(self.project_root, *cooked_runtime_path.split("/"))
-        )
-        if (
-            not is_lexical_path_within(candidate, self.project_root, allow_root=False)
-            or not os.path.isfile(candidate)
-        ):
+        content_path = self._asset_paths.get(cooked_runtime_path.casefold())
+        if content_path is None:
             return None
-        return candidate
+        return os.path.join(self.project_root, *content_path.split("/"))
 
     def source_extension_for_guid(self, guid: str) -> str:
         """Return the frozen authored suffix without touching a payload file."""
@@ -829,7 +826,7 @@ class PlayerRuntimeAssetCatalog:
     ) -> Optional[str]:
         """Resolve one cataloged package file/directory to its physical payload."""
         raw = os.fspath(reference)
-        requested = resolved_path(
+        requested = lexical_path(
             raw if os.path.isabs(raw) else os.path.join(self.project_root, raw)
         )
         if not is_lexical_path_within(requested, self.project_root, allow_root=False):
@@ -844,29 +841,13 @@ class PlayerRuntimeAssetCatalog:
         )
         if cooked_runtime_path is None:
             return None
-        candidate = resolved_path(
-            os.path.join(self.project_root, *cooked_runtime_path.split("/"))
-        )
-        if (
-            not is_lexical_path_within(candidate, self.project_root, allow_root=False)
-            or not (os.path.isdir(candidate) if directory else os.path.isfile(candidate))
-        ):
-            return None
-        return candidate
+        return os.path.join(self.project_root, *cooked_runtime_path.split("/"))
 
     def resolve_scene(self, scene_guid: str) -> Optional[str]:
         cooked_runtime_path = self._scene_paths_by_guid.get(str(scene_guid))
         if cooked_runtime_path is None:
             return None
-        candidate = resolved_path(
-            os.path.join(self.project_root, cooked_runtime_path)
-        )
-        if (
-            not is_lexical_path_within(candidate, self.project_root, allow_root=False)
-            or not os.path.isfile(candidate)
-        ):
-            return None
-        return candidate
+        return os.path.join(self.project_root, *cooked_runtime_path.split("/"))
 
 
 def player_manifest_service_section(
