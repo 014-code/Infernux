@@ -5278,8 +5278,12 @@ void InxRenderer::SetPlayModeRendering(bool play)
     const bool changed = m_view && m_view->IsPlayMode() != play;
     if (m_view)
         m_view->SetPlayMode(play);
-    if (changed)
+    if (changed) {
         InvalidateGpuViewStateForSceneBoundary();
+        // Play can start inside this frame's GUI callback. Its loading work
+        // must not become simulation time on the following frame.
+        OverrideNextFrameDeltaTime(0.0f);
+    }
 }
 
 bool InxRenderer::IsPlayModeRendering() const

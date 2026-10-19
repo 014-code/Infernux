@@ -86,6 +86,8 @@ int main()
     observed.clear();
     manager.Play();
     assert(manager.GetRuntimeFrameCount() == 0);
+    assert(manager.ConsumeFrameDeltaTime(0.25f) == 0.0f);
+    assert(manager.ConsumeFrameDeltaTime(0.25f) == 0.25f);
     manager.Update(manager.GetFixedTimeStep());
     assert(manager.GetRuntimeFrameCount() == 1);
     manager.LateUpdate(manager.GetFixedTimeStep());

@@ -568,6 +568,7 @@ void SceneManager::Play()
     // Only reset accumulator on initial play, not on resume-from-pause
     if (!m_isPlaying) {
         ClearRuntimePersistentScene();
+        m_resetDeltaTimeOnNextFrame = true;
         m_fixedTimeAccumulator = 0.0f;
         m_fixedTime = 0.0;
         m_fixedUnscaledTime = 0.0;

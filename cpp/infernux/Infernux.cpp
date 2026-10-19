@@ -1111,6 +1111,7 @@ void Infernux::Run()
         }
     } runLoopGuard{m_runLoopActive};
 
+    m_renderer->OverrideNextFrameDeltaTime(0.0f);
     bool acceptancePauseApplied = false;
     while (!m_exitRequested.load(std::memory_order_acquire) && m_renderer->GetUserEvent()) {
         if (acceptanceClock.enabled) {
