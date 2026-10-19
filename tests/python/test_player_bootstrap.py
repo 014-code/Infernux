@@ -216,10 +216,13 @@ def test_player_runtime_session_does_not_construct_editor_managers(tmp_path):
     assert getattr(bootstrap, "scene_file_manager", None) is None
 
 
-def test_player_run_prewarms_before_revealing_a_no_splash_scene():
+def test_player_run_prewarms_before_revealing_a_no_splash_scene(monkeypatch, tmp_path):
     from infernux.engine.player_bootstrap import PlayerBootstrap
+    from infernux.engine import startup_warmup
 
     calls = []
+    compiler_preloads = []
+    monkeypatch.setattr(startup_warmup, "start_cpu_runtime_preload", lambda: compiler_preloads.append(True))
 
     class Engine:
         def prepare_startup_refresh(self):
@@ -271,6 +274,11 @@ def test_player_run_prewarms_before_revealing_a_no_splash_scene():
         "pump",
         "finish_warmup",
     ]
+    assert compiler_preloads == []
+    warmup = startup_warmup.PlayerStartupWarmup(str(tmp_path), (), scope="test")
+    assert warmup.pump() and compiler_preloads == []
+    startup_warmup.PlayerStartupWarmup(str(tmp_path), (), cpu_records=({"module": "CPU"},), scope="test")
+    assert compiler_preloads == [True]
 
 
 def test_player_first_frame_prewarm_builds_target_before_composition():

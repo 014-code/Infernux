@@ -107,6 +107,8 @@ class PlayerStartupWarmup:
         self._cpu_thread: threading.Thread | None = None
         self._cpu_done = threading.Event()
         self._cpu_error: BaseException | None = None
+        if self._cpu_records:
+            start_cpu_runtime_preload()
 
     def start_cpu(self) -> None:
         """Start already-resolved CPU hooks without delaying the owner thread."""

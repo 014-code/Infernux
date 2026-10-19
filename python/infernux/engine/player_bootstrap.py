@@ -90,9 +90,6 @@ class PlayerBootstrap:
             phase_started = now
 
         phase("force player mode", self._force_player_mode)
-        from infernux.engine.startup_warmup import start_cpu_runtime_preload
-
-        start_cpu_runtime_preload()
         phase("load runtime contract", self._load_runtime_contract)
         phase("initialize engine", self._init_engine)
         phase("prewarm builtin GPU pipelines", self._prewarm_builtin_pipelines)
