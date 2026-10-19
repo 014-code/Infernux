@@ -80,7 +80,8 @@ void main() {}
     assert compiled.stage == "frag"
     assert calls[0][1:4] == ("-V", "--target-env", "vulkan1.1")
     assert "-DINX_WEBGPU=1" in calls[0]
-    assert "--sampler-mapping" not in calls[1]
+    mapping = calls[1].index("--sampler-mapping")
+    assert calls[1][mapping + 1] == "0,3:0,503"
     assert len(calls) == 3
     assert "@binding(503u) var sourceTexture_sampler" in compiled.wgsl
 
