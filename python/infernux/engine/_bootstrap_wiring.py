@@ -1385,6 +1385,8 @@ class BootstrapWiringMixin:
 
     def _wire_status_bar_listener(self):
         """Wire the native status bar to the shared EngineStatus state."""
+        import weakref
+
         sb = self.status_bar
         from infernux.engine.i18n import t as _t
 
@@ -1393,15 +1395,19 @@ class BootstrapWiringMixin:
 
         last_status = [None]
         last_hierarchy_header = [None]
+        bootstrap_ref = weakref.ref(self)
 
         def _sync_engine_status():
+            bootstrap = bootstrap_ref()
+            if bootstrap is None:
+                return
             state = EngineStatus.get()
             if state != last_status[0]:
                 last_status[0] = state
                 text, progress, kind = state
-                sb.set_engine_status(text, progress, kind)
+                bootstrap.status_bar.set_engine_status(text, progress, kind)
 
-            sfm = self.scene_file_manager
+            sfm = bootstrap.scene_file_manager
             prefab_mode = bool(sfm and sfm.is_prefab_mode)
             scene_name = sfm.get_display_name() if sfm else ""
             prefab_name = (
@@ -1411,7 +1417,7 @@ class BootstrapWiringMixin:
             header_state = (scene_name, prefab_mode, prefab_name)
             if header_state != last_hierarchy_header[0]:
                 last_hierarchy_header[0] = header_state
-                self.hierarchy.set_scene_header_snapshot(*header_state)
+                bootstrap.hierarchy.set_scene_header_snapshot(*header_state)
 
         sb.sync_from_engine = _sync_engine_status
         _sync_engine_status()

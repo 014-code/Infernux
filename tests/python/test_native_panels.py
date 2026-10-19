@@ -39,6 +39,22 @@ def test_native_panels_share_window_lifecycle_and_command_bridge():
         assert not panel.can_execute_command("", "")
         assert calls == [("test.command", "api", "")]
 
+    import gc
+    import weakref
+    from infernux.engine.bootstrap import EditorBootstrap
+    from infernux.lib import StatusBarPanel
+
+    bootstrap = object.__new__(EditorBootstrap)
+    status = bootstrap.status_bar = StatusBarPanel()
+    bootstrap.scene_file_manager = None
+    bootstrap.hierarchy = HierarchyPanel()
+    bootstrap._wire_status_bar_listener()
+    owner = weakref.ref(bootstrap)
+    del bootstrap
+    gc.collect()
+    assert owner() is None, "A retained status panel must not keep its editor session alive"
+    status.sync_from_engine()
+
 
 def test_console_selection_intent_and_silent_projection_remain_distinct():
     panel = ConsolePanel()
