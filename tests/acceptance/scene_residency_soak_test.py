@@ -1,4 +1,4 @@
-"""Sixty-cycle scene load/unload residency stability gate."""
+"""Fifty measured scene cycles after bounded journal warmup."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "python"))
 
 from infernux import Engine
+from infernux.engine.runtime_change_journal import runtime_change_journal
 from infernux.lib import (
     InxMaterial,
     LogLevel,
@@ -24,8 +25,9 @@ from infernux.lib import (
 from _process_memory import process_memory_bytes as _process_memory_bytes
 
 
-CYCLES = 60
-WARMUP_CYCLES = 10
+# Fill the journal's retained history before comparing Python allocations.
+WARMUP_CYCLES = runtime_change_journal()._history.maxlen
+CYCLES = WARMUP_CYCLES + 50
 MIB = 1024 * 1024
 
 
@@ -315,10 +317,8 @@ def main() -> int:
             # are the leak gates; allow the measured allocator plateau here
             # instead of treating its arena growth as a scene leak.
             _assert_stable("Python allocated blocks", python_block_samples, 2048)
-            # CPython and pybind can alternate between a few equivalent GC
-            # bookkeeping objects after collection. The window-growth check
-            # still rejects a leak; this tolerance only permits that bounded
-            # steady-state oscillation.
+            # Journal capacity is warmed; only small GC bookkeeping oscillations
+            # are allowed in the measured window.
             _assert_stable("Python GC objects", python_object_samples, 8)
             _assert_stable("loaded scenes", scene_count_samples, 0)
             _assert_stable("device-local allocation", device_samples, 8 * MIB)
