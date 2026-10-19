@@ -378,13 +378,20 @@ def test_player_cleanup_preserves_runtime_closure_and_removes_authoring_state(tm
 def test_player_cook_uses_asset_index_snapshot_after_live_index_invalidation(tmp_path):
     builder = _make_builder(tmp_path, tmp_path / "build_output")
     project = Path(builder.project_path)
-    builder._asset_index_entries()
+    entries = builder._asset_index_entries()
+    expected = json.loads(json.dumps(entries))
+    builder.freeze_asset_index_entries(entries)
+    entries[0]["normalized_path"] = "Assets/Changed.scene"
+    snapshot = builder._asset_index_entries()
+    assert snapshot == expected
+    assert builder._asset_index_entries() is snapshot
     (project / "Library" / "AssetIndex.json").unlink()
     data_dir = tmp_path / "dist" / "Data"
 
     builder._copy_cooked_assets(str(data_dir))
 
     assert (data_dir / "Assets" / "Main.scene").is_file()
+    assert builder._asset_index_entries() == expected
 
 
 def test_player_stages_project_shader_as_packed_runtime_glsl(tmp_path):

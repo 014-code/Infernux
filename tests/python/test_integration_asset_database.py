@@ -200,6 +200,7 @@ def test_authored_mesh_cooked_artifact_validates_and_loads_without_source(engine
         builder._runtime_artifact_bindings = {}
         builder._runtime_artifact_source_paths = set()
         staged = tmp_path / "Staged"
+        builder._copy_cooked_assets(str(staged))
         builder._stage_library_runtime_artifacts(str(staged))
         assert (staged / entry["artifact_path"]).read_bytes() == artifact.read_bytes()
         assert f"assets/{authored.name}" in builder._runtime_artifact_source_paths

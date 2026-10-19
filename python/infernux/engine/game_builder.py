@@ -52,7 +52,9 @@ from infernux.engine.player_package_native import (
     write_pack_isolated,
 )
 from infernux.engine.path_utils import (
+    is_lexical_path_within,
     is_path_within,
+    lexical_path_key,
     path_key,
     path_fingerprint,
     portable_path,
@@ -945,15 +947,11 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
         self._full_build_validated = True
 
     def _asset_index_entries(self) -> list[dict]:
-        """Return this build transaction's immutable AssetIndex snapshot."""
+        """Share this build's owned snapshot; cook stages must not mutate it."""
 
         if self._asset_index_entries_snapshot is None:
-            self._asset_index_entries_snapshot = copy.deepcopy(
-                load_asset_index(self.project_path)
-            )
-        # Callers build lookup maps from these documents.  Keep the canonical
-        # snapshot isolated in case a future cook stage mutates an entry.
-        return copy.deepcopy(self._asset_index_entries_snapshot)
+            self._asset_index_entries_snapshot = load_asset_index(self.project_path)
+        return self._asset_index_entries_snapshot
 
     def freeze_asset_index_entries(self, entries: list[dict]) -> None:
         """Bind this one Player build to an editor-published AssetIndex.
@@ -1746,7 +1744,7 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
 
         def copy_source(source_path: str, *, entry: dict, reason: str) -> None:
             source = resolved_path(source_path)
-            if not is_path_within(source, assets_root, allow_root=False):
+            if not is_lexical_path_within(source, assets_root, allow_root=False):
                 raise RuntimeError(
                     f"Player asset cook source is outside Assets ({reason}): {source}"
                 )
@@ -1756,7 +1754,7 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
                 )
             if source.casefold().endswith(".meta"):
                 return
-            relative = relative_path(source, self.project_path).replace("\\", "/")
+            relative = relative_path(source, self.project_path, resolve=False)
             key = relative.casefold()
             if key in copied:
                 return
@@ -1771,26 +1769,26 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
         for guid in sorted(selected):
             entry = selected[guid]
             source = self._library_source_entry_path(entry)
-            package_source = is_path_within(source, packages_root, allow_root=False)
+            package_source = is_lexical_path_within(source, packages_root, allow_root=False)
             if package_source and guid.casefold() not in getattr(self, "_staged_player_plugin_guids", ()):
                 raise RuntimeError(
                     f"Player dependency is not exported by an enabled Runtime package: {guid}: {source}"
                 )
             builtin_relative = (
-                self._builtin_resource_relative_path(source)
+                self._builtin_resource_relative_path(source, roots=builtin_resources_roots)
                 if bool(entry.get("read_only", False))
                 else ""
             )
             validation_root = self.project_path
-            if not is_path_within(source, validation_root, allow_root=False):
+            if not is_lexical_path_within(source, validation_root, allow_root=False):
                 validation_root = (
-                    self._builtin_resource_source_root(source)
+                    self._builtin_resource_source_root(source, builtin_relative)
                     if builtin_relative
                     else next(
                         (
                             root
                             for root in builtin_resources_roots
-                            if is_path_within(source, root, allow_root=False)
+                            if is_lexical_path_within(source, root, allow_root=False)
                         ),
                         validation_root,
                     )
@@ -1817,14 +1815,14 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
                     f"Player asset cook refused raw {source_kind} source without a compiled artifact: "
                     f"guid={guid}, source={source}"
                 )
-            if is_path_within(source, assets_root, allow_root=False):
+            if is_lexical_path_within(source, assets_root, allow_root=False):
                 copy_source(source, entry=entry, reason=f"AssetIndex GUID {guid}")
                 continue
             if package_source:
                 # Enabled Runtime membership staged this exact source before
                 # dependency selection; it is consumed from Data/ below.
                 source_fingerprint(data_dir, {
-                    **entry, "normalized_path": relative_path(source, self.project_path),
+                    **entry, "normalized_path": relative_path(source, self.project_path, resolve=False),
                 })
                 continue
             if bool(entry.get("read_only", False)) and builtin_relative:
@@ -1946,18 +1944,21 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
             if not candidate:
                 continue
             root = resolved_path(candidate)
-            identity = path_key(root)
+            identity = lexical_path_key(root)
             if identity in seen:
                 continue
             seen.add(identity)
             roots.append(root)
         return tuple(roots)
 
-    def _builtin_resource_relative_path(self, source_path: str) -> str:
-        source = resolved_path(source_path)
-        for root in self._builtin_resource_roots():
-            if is_path_within(source, root, allow_root=False):
-                return relative_path(source, root).replace("\\", "/")
+    def _builtin_resource_relative_path(
+        self, source_path: str, *, roots: tuple[str, ...]
+    ) -> str:
+        """Classify an already resolved AssetIndex source against canonical roots."""
+        source = source_path
+        for root in roots:
+            if is_lexical_path_within(source, root, allow_root=False):
+                return relative_path(source, root, resolve=False)
         # A source checkout may run the Editor while an installed wheel in the
         # project's virtual environment performs the build. Both trees own
         # the same immutable built-ins, but their absolute roots differ. The
@@ -1971,17 +1972,13 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
                 return relative
         return ""
 
-    def _builtin_resource_source_root(self, source_path: str) -> str:
+    def _builtin_resource_source_root(self, source_path: str, relative: str) -> str:
         """Return the resource root represented by one canonical source path."""
 
-        source = resolved_path(source_path)
-        relative = self._builtin_resource_relative_path(source)
-        if not relative:
-            return ""
-        root = source
+        root = source_path
         for _part in Path(relative).parts:
             root = os.path.dirname(root)
-        return resolved_path(root)
+        return root
 
     def _collect_library_asset_entries(
         self, entries: list[dict], *, extra_roots: tuple[str, ...] = ()
@@ -2010,33 +2007,33 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
 
         by_guid = {str(item["guid"]): item for item in entries}
         assets_root = resolved_path(os.path.join(self.project_path, "Assets"))
+        # Resolve aliases once before comparing the published source identities.
+        source_paths = {
+            str(entry["guid"]): self._library_source_entry_path(entry)
+            for entry in entries
+        }
+        builtin_roots = self._builtin_resource_roots()
         editor_guids = {
-            str(entry["guid"]) for entry in entries
-            if is_path_within(self._library_source_entry_path(entry), self.project_path, allow_root=False)
-            and is_editor_asset_path(relative_path(
-                self._library_source_entry_path(entry), self.project_path))
+            guid for guid, source in source_paths.items()
+            if is_lexical_path_within(source, self.project_path, allow_root=False)
+            and is_editor_asset_path(relative_path(source, self.project_path, resolve=False))
         }
         indexed_source_paths = {
-            path_key(self._library_source_entry_path(entry))
-            for entry in entries
+            lexical_path_key(source) for source in source_paths.values()
         }
         for scene_guid in self._build_scene_guids():
             scene_path = self._resolve_build_scene_guid(scene_guid)
-            if is_editor_asset_path(relative_path(scene_path, self.project_path)):
+            if is_editor_asset_path(relative_path(scene_path, self.project_path, resolve=False)):
                 raise RuntimeError(f"BuildSettings scene is editor-only: {scene_guid}")
-            if path_key(scene_path) not in indexed_source_paths:
+            if lexical_path_key(scene_path) not in indexed_source_paths:
                 raise RuntimeError(
                     "BuildSettings scene is absent from the current AssetIndex: "
                     f"{scene_guid}"
                 )
         roots = {
-            str(entry["guid"])
-            for entry in entries
-            if str(entry["guid"]) not in editor_guids and is_path_within(
-                self._library_source_entry_path(entry),
-                assets_root,
-                allow_root=False,
-            )
+            guid for guid, source in source_paths.items()
+            if guid not in editor_guids
+            and is_lexical_path_within(source, assets_root, allow_root=False)
         }
         roots.update(
             str(entry["guid"])
@@ -2044,7 +2041,7 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
             if bool(entry.get("read_only", False))
             and logical_asset_type(entry) == "shader"
             and self._builtin_resource_relative_path(
-                self._library_source_entry_path(entry)
+                source_paths[str(entry["guid"])], roots=builtin_roots
             )
             .casefold()
             .startswith("shaders/")
@@ -2067,7 +2064,7 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
             if guid in editor_guids:
                 raise RuntimeError(
                     "Player asset dependency references editor-only content: "
-                    f"{self._library_source_entry_path(by_guid[guid])}"
+                    f"{source_paths[guid]}"
                 )
             entry = by_guid[guid]
             selected[guid] = entry
@@ -2134,15 +2131,8 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
     def _stage_library_runtime_artifacts(self, data_dir: str) -> None:
         """Stage current compiled artifacts and remember source replacements."""
 
-        try:
-            entries = self._asset_index_entries()
-            selected = self._collect_library_asset_entries(
-                entries, extra_roots=tuple(getattr(self, "_staged_player_plugin_guids", ()))
-            )
-        except RuntimeArtifactError as exc:
-            raise RuntimeError(f"Library artifact selection failed: {exc}") from exc
-
-        by_guid = {str(entry["guid"]): entry for entry in entries}
+        selected = self._cooked_asset_entries
+        by_guid = {str(entry["guid"]): entry for entry in self._asset_index_entries()}
         self._ensure_selected_particle_artifacts(selected)
         particle_index = self._particle_library_artifacts()
         copied: set[str] = set()
@@ -2183,7 +2173,7 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
                 if artifact_name not in copied:
                     shutil.copy2(artifact_path, destination)
                     copied.add(artifact_name)
-                source_relative = relative_path(source_path, self.project_path).replace("\\", "/")
+                source_relative = relative_path(source_path, self.project_path, resolve=False)
                 self._runtime_artifact_source_paths.add(source_relative.casefold())
                 binding = dict(binding)
                 binding["runtime_path"] = f"Library/Artifacts/{artifact_name.split('/', 2)[-1]}" if artifact_name.startswith("Library/Artifacts/") else artifact_name
@@ -2235,7 +2225,7 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
             if entry is None:
                 raise RuntimeError(f"Prefab source is outside the build catalog: {prefab_guid}")
             return os.path.join(data_dir, *relative_path(
-                self._library_source_entry_path(entry), self.project_path
+                self._library_source_entry_path(entry), self.project_path, resolve=False
             ).split("/"))
 
         for guid, entry in sorted(
@@ -2248,12 +2238,12 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
                 raise RuntimeError(f"Player asset GUID is not path-safe: {guid!r}")
 
             source_path = self._library_source_entry_path(entry)
-            is_project_asset = is_path_within(
+            is_project_asset = is_lexical_path_within(
                 source_path, assets_root, allow_root=False
             )
             is_package_asset = (
                 guid.casefold() in staged_plugin_guids
-                and is_path_within(source_path, packages_root, allow_root=False)
+                and is_lexical_path_within(source_path, packages_root, allow_root=False)
             )
             if not is_project_asset and not is_package_asset:
                 continue
@@ -2266,8 +2256,8 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
                 continue
 
             source_relative = relative_path(
-                source_path, self.project_path
-            ).replace("\\", "/")
+                source_path, self.project_path, resolve=False
+            )
             staged_source = os.path.join(data_dir, *source_relative.split("/"))
             logical_type = logical_type_for_path("imported" + suffix if imported_document is not None else source_relative)
             payload_kind = payload_kind_for(logical_type)
@@ -3131,6 +3121,7 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
         data_dir = os.path.join(final_dir, "Data")
         assets_root = resolved_path(os.path.join(self.project_path, "Assets"))
         packages_root = resolved_path(os.path.join(self.project_path, "Packages"))
+        builtin_roots = self._builtin_resource_roots()
         staged_plugin_guids = {
             str(guid).casefold()
             for guid in getattr(self, "_staged_player_plugin_guids", set())
@@ -3166,15 +3157,15 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
         primary_artifact_by_guid: dict[str, str] = {}
         for guid, entry in sorted(cooked_entries.items()):
             source_path = self._library_source_entry_path(entry)
-            is_project_asset = is_path_within(
+            is_project_asset = is_lexical_path_within(
                 source_path, assets_root, allow_root=False
             )
             is_package_asset = (
                 str(guid).casefold() in staged_plugin_guids
-                and is_path_within(source_path, packages_root, allow_root=False)
+                and is_lexical_path_within(source_path, packages_root, allow_root=False)
             )
             builtin_relative = (
-                self._builtin_resource_relative_path(source_path)
+                self._builtin_resource_relative_path(source_path, roots=builtin_roots)
                 if bool(entry.get("read_only", False))
                 else ""
             )
@@ -3182,7 +3173,7 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
             if not is_project_asset and not is_package_asset and not is_builtin_resource:
                 continue
             runtime_path = (
-                relative_path(source_path, self.project_path).replace("\\", "/")
+                relative_path(source_path, self.project_path, resolve=False)
                 if is_project_asset or is_package_asset
                 else f"Library/Resources/{builtin_relative}"
             )
