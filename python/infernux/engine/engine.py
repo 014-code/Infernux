@@ -179,8 +179,6 @@ class Engine():
                 project_path=project_path, engine=self._engine
             )
         
-        # Load project materials (default material from project's .mat file)
-        self._load_project_materials(project_path)
         if _PLAYER_MODE:
             self.pump_events()
         
@@ -472,46 +470,6 @@ class Engine():
         elif not tag_layers.deserialize(TagLayerManager.serialize_defaults()):
             raise RuntimeError("The runtime rejected its tag/layer defaults")
     
-    def _load_project_materials(self, project_path):
-        """Load all .mat files from the project via AssetRegistry.
-
-        Scans the project's ``materials/`` directory for ``.mat`` files.
-        The first file named ``default_lit.mat`` is promoted to the
-        engine-wide default material; every other ``.mat`` file is
-        loaded via AssetRegistry so that scene deserialization can find it.
-        """
-        from infernux.lib import AssetRegistry
-
-        registry = AssetRegistry.instance()
-
-        # Collect candidate directories
-        search_dirs = []
-        materials_dir = os.path.join(project_path, "materials")
-        if os.path.isdir(materials_dir):
-            search_dirs.append(materials_dir)
-
-        # Also scan Library/Resources/materials for built-in materials
-        library_mat_dir = os.path.join(project_path, "Library", "Resources", "materials")
-        if os.path.isdir(library_mat_dir):
-            search_dirs.append(library_mat_dir)
-
-        default_loaded = False
-        for mat_dir in search_dirs:
-            for fname in os.listdir(mat_dir):
-                if not fname.endswith(".mat"):
-                    continue
-                mat_path = os.path.join(mat_dir, fname)
-
-                # Load the default material via AssetRegistry (replaces builtin DefaultLit)
-                if fname == "default_lit.mat" and not default_loaded:
-                    if registry.load_builtin_material_from_file("DefaultLit", mat_path):
-                        default_loaded = True
-                    else:
-                        Debug.log_warning(f"Failed to load default material from: {mat_path}")
-                else:
-                    # Load via AssetRegistry (unified cache)
-                    registry.load_material(mat_path)
-
     def run(self):
         if self._mode == RuntimeMode.Headless:
             self._run_native_loop()
