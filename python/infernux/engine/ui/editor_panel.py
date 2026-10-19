@@ -76,10 +76,16 @@ class EditorPanel(ClosablePanel):
     def __init__(self, title: str, window_id: Optional[str] = None):
         super().__init__(title, window_id)
         self._enable_called = False
+        self._initial_size_pending = True
         self._content_was_visible: Optional[bool] = None
         self._content_visible_previous_frame = False
         self._content_hovered = False
         self._persisted_view_state_loaded = False
+
+    def set_window_manager(self, window_manager):
+        super().set_window_manager(window_manager)
+        # Layout resets rebind existing panels without enabling them again.
+        self._initial_size_pending = True
 
     def is_content_visible(self) -> bool:
         """Return whether this panel's current dock tab is presenting content."""
@@ -432,16 +438,16 @@ class EditorPanel(ClosablePanel):
             self._enable_called = True
             self._dirty_registry_snapshot = None
             self.on_enable()
+            self._initial_size_pending = True
 
-        # Apply the initial size on first use if provided.
-        init_size = self._scaled_initial_size(ctx)
-        if init_size is not None:
-            from .theme import Theme
-            ctx.set_next_window_size(
-                init_size[0],
-                init_size[1],
-                Theme.COND_FIRST_USE_EVER,
-            )
+        if self._initial_size_pending:
+            init_size = self._scaled_initial_size(ctx)
+            if init_size is not None:
+                from .theme import Theme
+                ctx.set_next_window_size(
+                    init_size[0], init_size[1], Theme.COND_FIRST_USE_EVER,
+                )
+            self._initial_size_pending = False
 
         # Run pre-frame logic before the window begins.
         self._pre_render(ctx)

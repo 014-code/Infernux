@@ -16,6 +16,7 @@ def test_registered_panel_updates_every_frame_with_automatic_read_reuse(engine, 
     registry.save(document)
     peer = PluginRegistry(str(tmp_path))
     observations = []
+    widths = []
     loads = []
     load = registry._load
 
@@ -29,10 +30,13 @@ def test_registered_panel_updates_every_frame_with_automatic_read_reuse(engine, 
         def __init__(self):
             super().__init__("Live counter", "test.live_counter")
             self.counter = 0
+            self.initial_width = 32.
+
+        def _initial_size(self):
+            return self.initial_width, 64.
 
         def _pre_render(self, ctx):
             ctx.set_next_window_pos(0., 0., 0, 0., 0.)
-            ctx.set_next_window_size(64., 64., 0)
 
         def on_render_content(self, ctx):
             # No cache scopes, dirty flags or memoization in user panel code.
@@ -41,6 +45,7 @@ def test_registered_panel_updates_every_frame_with_automatic_read_reuse(engine, 
             ctx.label(f"Frame {self.counter}: {rows[0]['reference']}")
             ctx.button("Live button")
             observations.append((self.counter, rows[0]["reference"]))
+            widths.append(round(ctx.get_window_width() / ctx.get_dpi_scale()))
             assert registry.find(rows[0]["reference"]) is not None
 
     class EmptyPanel(EditorPanel):
@@ -68,6 +73,9 @@ def test_registered_panel_updates_every_frame_with_automatic_read_reuse(engine, 
             revised = peer.load()
             revised["packages"] = [{"reference": "team/second"}]
             peer.save(revised)
+            panel.initial_width = 48.
+            engine.reset_imgui_layout()
+            panel.set_window_manager(None)
             revised_registry = True
         if len(observations) >= 75 or time.monotonic() >= deadline:
             engine.exit()
@@ -98,5 +106,6 @@ def test_registered_panel_updates_every_frame_with_automatic_read_reuse(engine, 
     assert [count for count, _ in observations] == list(range(1, len(observations) + 1))
     assert observations[0][1] == "team/first"
     assert observations[-1][1] == "team/second"
+    assert widths[0] == 32 and widths[-1] == 48
     assert len(loads) == 2
     assert profile["panel_times"]["test.live_counter"]["sample_count"] >= 75
