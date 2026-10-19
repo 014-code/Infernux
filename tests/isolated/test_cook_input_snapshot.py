@@ -13,7 +13,7 @@ if __name__ != "__main__":
 @pytest.mark.parametrize("case", ["assets", "package", "package-unreferenced", "package-disabled",
                                   "package-editor", "snapshot-unchanged", "snapshot-saved",
                                   "snapshot-removed", "package-snapshot-saved",
-                                  "snapshot-save-during-copy", "package-save-during-copy"])
+                                  "snapshot-save-during-copy", "package-save-during-copy", "builtin-roots"])
 def test_native_cook_inputs(tmp_path, case):
 
     result = subprocess.run(
@@ -43,6 +43,28 @@ def exercise(project, case):
     (package / "inx_package.json").write_text(
         json.dumps({"reference": "test/closure", "name": "Closure", "version": "1.0.0"}), encoding="utf-8")
     PreferencesStore()._path = str(project / "preferences.json")
+    if case == "builtin-roots":
+        from infernux.engine.player_build_preflight import publish_player_asset_catalog_for_host
+        from infernux.engine.path_utils import is_path_within
+        from infernux.resources import activate_library
+
+        catalog = publish_player_asset_catalog_for_host(str(project))
+        resources = project / "Library/Resources"
+        builtins = [entry for entry in catalog["entries"] if entry["read_only"]]
+        assert builtins
+        assert all(is_path_within(entry["normalized_path"], resources) for entry in builtins)
+        activate_library(str(project))
+        editor = Engine(LogLevel.Warn, RuntimeMode.Headless)
+        try:
+            editor.init_headless(str(project))
+            database = editor.get_asset_database()
+            if database.refresh_pending:
+                database.complete_pending_refresh()
+            assert database.last_refresh_imported_count == 0
+            assert database.last_refresh_reused_count > 0
+        finally:
+            editor.exit()
+        return
     engine = Engine(LogLevel.Warn, RuntimeMode.Headless)
     try:
         engine.init_headless(str(project))
