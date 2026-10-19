@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <filesystem>
-#include <fstream>
 #include <platform/filesystem/DocumentStore.h>
 #include <platform/filesystem/InxPath.h>
 #include <stdexcept>
@@ -67,10 +66,13 @@ bool AssetIndex::Load(const std::string &path, const std::string &normalizedProj
         return false;
     }
 
-    std::ifstream stream(ToFsPath(path));
-    if (!stream.is_open())
-        throw std::runtime_error("Cannot open AssetIndex: " + path);
-    const nlohmann::json document = nlohmann::json::parse(stream);
+    nlohmann::json document;
+    {
+        std::vector<unsigned char> bytes;
+        if (!ReadFileBytes(path, bytes))
+            throw std::runtime_error("Cannot read AssetIndex: " + path);
+        document = nlohmann::json::parse(bytes);
+    }
     if (!document.is_object() || !document.contains("project_root") || !document["project_root"].is_string())
         throw std::invalid_argument("AssetIndex has no valid project_root");
     if (document["project_root"].get<std::string>() != normalizedProjectRoot) {
