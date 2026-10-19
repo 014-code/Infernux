@@ -594,7 +594,10 @@ def run_project_script_warmups(*, project_path: str | None, scope: str) -> int:
         )
         for path in source_paths:
             try:
-                tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+                source = path.read_text(encoding="utf-8")
+                if "_infernux_startup_warmup" not in source:
+                    continue
+                tree = ast.parse(source, filename=str(path))
             except (OSError, UnicodeError, SyntaxError) as exc:
                 raise RuntimeError(f"Cannot inspect startup warmup script: {path}") from exc
             if any(

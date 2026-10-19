@@ -252,15 +252,10 @@ class AnimStateMachineRef(AssetRefBase):
     """Reference to an AnimStateMachine (.animfsm) asset. GUID is the only identity."""
 
     def _do_resolve(self):
-        db = _get_asset_database()
-        if db is None:
-            return None
-        from infernux.core.animation_clip3d import resolve_disk_path_for_guid_string
-        path = resolve_disk_path_for_guid_string(db, self._guid) or db.get_path_from_guid(self._guid)
-        if not path:
-            return None
+        from infernux.core.assets import AssetManager
         from infernux.core.anim_state_machine import AnimStateMachine
-        return AnimStateMachine.load(path)
+
+        return AssetManager.load_by_guid(self._guid, AnimStateMachine)
 
 
 class ParticleGraphRef(AssetRefBase):
@@ -341,15 +336,10 @@ class TimelineFSMRef(AssetRefBase):
     """
 
     def _do_resolve(self):
-        db = _get_asset_database()
-        if db is None:
-            return None
-        from infernux.core.animation_clip3d import resolve_disk_path_for_guid_string
-        path = resolve_disk_path_for_guid_string(db, self._guid) or db.get_path_from_guid(self._guid)
-        if not path:
-            return None
+        from infernux.core.assets import AssetManager
         from infernux.core.anim_state_machine import AnimStateMachine
-        return AnimStateMachine.load(path)
+
+        return AssetManager.load_by_guid(self._guid, AnimStateMachine)
 
 
 class AnimationClipRef(AssetRefBase):
