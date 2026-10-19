@@ -45,6 +45,13 @@ def test_untyped_enumeration_reuses_script_instances_and_builtin_wrappers(scene)
     assert len(components) == 3
     assert scene._resolve_native_component(script._native_handle, collider) is None
     assert script._get_bound_native_component() is script._cpp_component
+    assert script.game_object is owner
+    scene.create_game_object('UnrelatedStructureChange')
+    assert script.game_object is owner
+    assert owner.remove_component(script)
+    with pytest.raises(RuntimeError, match='not bound to a live GameObject'):
+        _ = script.game_object
+    assert collider.game_object is owner
 
 
 @pytest.mark.parametrize('direction', ['children', 'parent'])

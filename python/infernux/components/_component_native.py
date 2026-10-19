@@ -65,8 +65,11 @@ class ComponentNativeMixin:
             scene = getattr(self, "_native_scene", None)
             if version is not None and scene is not None:
                 try:
-                    current = int(getattr(scene, "structure_version"))
                     valid = bool(getattr(cached, "is_valid", True))
+                    # Script lifecycles invalidate their owner binding directly.
+                    if valid and not self._tracks_scene_structure_binding():
+                        return cached
+                    current = int(getattr(scene, "structure_version"))
                 except (RuntimeError, TypeError, ValueError):
                     current, valid = None, False
                 if valid and current == version:
