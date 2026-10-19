@@ -692,8 +692,7 @@ class GameViewPanel(EditorPanel):
                     _GAME_VIEW_FPS_SEMANTIC_ID,
                 )
 
-    def _route_game_input(self, ctx, target_w, target_h,
-                          viewport_hovered, viewport_clicked, canvases):
+    def _route_game_input(self, ctx, target_w, target_h, viewport_clicked):
         """Handle focus, cursor lock, and UI event routing after viewport render."""
         is_playing = self._is_playing()
         can_capture = is_playing and not self._is_paused()
@@ -746,15 +745,10 @@ class GameViewPanel(EditorPanel):
             self._last_game_width = target_w
             self._last_game_height = target_h
 
-        # Pre-fetch scene + canvases once (used by both render and events).
-        # Canvas membership has its own revision and is unrelated to ordinary
-        # 3D scene topology changes.
-        _scene, _canvases = self._get_scene_and_canvases()
         # Native camera discovery is retained by scene revisions; it also owns
         # target readiness and descriptor replacement after resize.
         game_texture_id = self._engine.get_game_texture_id()
 
-        viewport_hovered = False
         viewport_clicked = False
 
         if ctx.begin_child("##GameViewportRegion", 0, 0, False):
@@ -792,7 +786,6 @@ class GameViewPanel(EditorPanel):
                 ctx.record_semantic_item(
                     "viewport", "Game Viewport", True, _GAME_VIEWPORT_SEMANTIC_ID
                 )
-                viewport_hovered = ctx.is_item_hovered()
                 viewport_clicked = any(ctx.is_item_clicked(button) for button in range(5))
                 Input.set_game_viewport_origin(vp.image_min_x, vp.image_min_y)
                 Input.set_game_viewport_size(float(draw_w), float(draw_h))
@@ -802,11 +795,7 @@ class GameViewPanel(EditorPanel):
                 )
 
                 self._render_screen_ui(ctx, vp.image_min_x, vp.image_min_y,
-                                       float(draw_w), float(draw_h),
-                                       vp.image_min_x, vp.image_min_y,
-                                       vp.image_min_x + float(draw_w),
-                                       vp.image_min_y + float(draw_h),
-                                       scene=_scene, canvases=_canvases)
+                                       float(draw_w), float(draw_h))
 
             else:
                 Input.set_game_viewport_origin(0.0, 0.0)
@@ -820,25 +809,30 @@ class GameViewPanel(EditorPanel):
                 ctx.label("  " + t("game_view.create_camera_hint_2"))
         ctx.end_child()
 
-        self._route_game_input(ctx, target_w, target_h,
-                               viewport_hovered, viewport_clicked, _canvases)
+        self._route_game_input(ctx, target_w, target_h, viewport_clicked)
 
     # ------------------------------------------------------------------
     # Screen-space UI overlay
     # ------------------------------------------------------------------
 
     def _render_screen_ui(self, ctx: InxGUIContext, vp_x: float, vp_y: float,
-                          vp_w: float, vp_h: float,
-                          clip_min_x: float = 0.0, clip_min_y: float = 0.0,
-                          clip_max_x: float = 1e9, clip_max_y: float = 1e9,
-                          scene=None, canvases=None):
+                          vp_w: float, vp_h: float):
         """Present UI semantics and the disabled-renderer fallback.
 
         GPU ScreenUI command submission is owned by
         :class:`RuntimeScreenUISubmission` at camera render submission.
         This panel only maps the resulting game image to editor interaction.
         """
-        if not self._engine or scene is None:
+        if not self._engine:
+            return
+
+        renderer = self._engine.get_screen_ui_renderer()
+        use_overlay = renderer is not None and not renderer.is_enabled()
+        if not use_overlay and not ctx.semantic_capture_enabled:
+            return
+
+        scene, canvases = self._get_scene_and_canvases()
+        if scene is None:
             return
 
         game_w = self._last_game_width
@@ -846,18 +840,9 @@ class GameViewPanel(EditorPanel):
         if game_w < 1 or game_h < 1:
             return
 
-        if canvases is None:
-            scene_manager = _SM.instance()
-            canvases = collect_sorted_runtime_canvas_snapshot(
-                *runtime_ui_scenes(scene_manager),
-            )
         if not canvases:
             return
 
-        renderer = self._engine.get_screen_ui_renderer()
-        use_overlay = renderer is not None and not renderer.is_enabled()
-        if not use_overlay and not ctx.semantic_capture_enabled:
-            return
         get_texture_id = None
         if use_overlay:
             get_texture_id = _get_tex_cache().get_bound(self._engine)

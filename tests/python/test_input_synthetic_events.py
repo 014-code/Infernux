@@ -162,8 +162,8 @@ def test_game_capture_is_resolved_before_component_update(engine, scene, button,
                 manager.set_editor_game_viewport(rect, rect)
                 self.point = (rect[0] + rect[2] * 0.5, rect[1] + rect[3] * 0.5)
                 self._route_game_input(
-                    ctx, 64, 64, ctx.is_item_hovered(),
-                    any(ctx.is_item_clicked(index) for index in range(5)), (),
+                    ctx, 64, 64,
+                    any(ctx.is_item_clicked(index) for index in range(5)),
                 )
             ctx.end_window()
             if occluded:

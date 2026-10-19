@@ -168,20 +168,28 @@ def test_host_input_hits_nonactive_canvas_and_observes_sort_order(scene, monkeyp
                 return super().__iter__()
 
         canvases = CanvasSnapshot((first, second))
+        lookups = []
+
+        def canvas_snapshot():
+            lookups.append(scene)
+            return scene, canvases
+
+        monkeypatch.setattr(panel, "_get_scene_and_canvases", canvas_snapshot)
         context = SimpleNamespace(
             semantic_capture_enabled=False,
             record_semantic_rect=lambda *args: semantics.append(args),
         )
-        panel._render_screen_ui(context, 0, 0, 1920, 1080, scene=scene, canvases=canvases)
-        assert visits == [] and semantics == []
+        panel._render_screen_ui(context, 0, 0, 1920, 1080)
+        assert lookups == [] and visits == [] and semantics == []
         context.semantic_capture_enabled = True
-        panel._render_screen_ui(context, 0, 0, 1920, 1080, scene=scene, canvases=canvases)
-        assert visits == ["canvas iteration"] and len(semantics) == 2
+        panel._render_screen_ui(context, 0, 0, 1920, 1080)
+        assert lookups == [scene] and visits == ["canvas iteration"] and len(semantics) == 2
         context.semantic_capture_enabled = False
         native_enabled[0] = False
         monkeypatch.setattr(game_view, "_get_tex_cache", lambda: SimpleNamespace(get_bound=lambda _engine: None))
         monkeypatch.setattr(game_view, "_ui_dispatch", lambda element, *_args, **_kwargs: overlays.append(element))
-        panel._render_screen_ui(context, 0, 0, 1920, 1080, scene=scene, canvases=canvases)
+        panel._render_screen_ui(context, 0, 0, 1920, 1080)
+        assert lookups == [scene, scene]
         assert visits == ["canvas iteration"] * 2 and overlays == [first_button, second_button]
     key = (PointerType.Mouse, -1)
     clear()
