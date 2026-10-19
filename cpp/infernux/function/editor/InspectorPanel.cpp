@@ -323,16 +323,17 @@ void InspectorPanel::OnRenderContent(InxGUIContext *ctx)
     }
     if (!getRevisionSnapshot)
         throw std::runtime_error("Inspector revision snapshot callback is required");
-    try {
-        m_frameRevisions = getRevisionSnapshot();
-        m_revisionSnapshotErrorReported = false;
-    } catch (const std::exception &error) {
-        // Keep the preceding immutable packet.  A transient Python retirement
-        // race must not abort DrawFrame or force lifecycle getters on stale
-        // components; the next visible frame retries the journal projection.
-        if (!m_revisionSnapshotErrorReported) {
-            INXLOG_ERROR("Inspector revision snapshot failed; retaining the previous packet: ", error.what());
-            m_revisionSnapshotErrorReported = true;
+    if (m_selectedObjectId != 0 || !m_selectedFile.empty()) {
+        try {
+            m_frameRevisions = getRevisionSnapshot();
+            m_revisionSnapshotErrorReported = false;
+        } catch (const std::exception &error) {
+            // Keep the preceding immutable packet. A transient Python retirement
+            // race must not abort DrawFrame or read stale component lifetimes.
+            if (!m_revisionSnapshotErrorReported) {
+                INXLOG_ERROR("Inspector revision snapshot failed; retaining the previous packet: ", error.what());
+                m_revisionSnapshotErrorReported = true;
+            }
         }
     }
 
