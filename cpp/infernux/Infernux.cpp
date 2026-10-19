@@ -1165,6 +1165,10 @@ void Infernux::Tick(float deltaTime)
         throw std::invalid_argument("delta_time must be finite and non-negative");
     }
 
+    // Explicit stepping supplies simulation time, not elapsed loading time.
+    // A scene replacement inside this frame can still reset its own clock.
+    (void)SceneManager::Instance().ConsumeFrameDeltaTime(0.0f);
+
     if (m_runtimeMode == RuntimeMode::Graphical) {
         // Headless-style manual stepping must stay usable with a window open:
         // one Tick = one fully simulated AND rendered frame with an exact
