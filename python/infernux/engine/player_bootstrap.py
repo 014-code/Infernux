@@ -117,12 +117,14 @@ class PlayerBootstrap:
         # non-playing scene (notably GPU compute/soft-body components).
         # Splash-backed products intentionally keep their deferred activation
         # contract and are started by PlayerGUI after the splash completes.
-        if getattr(self, "runtime_session", None) is not None and not getattr(self, "splash_items", ()):
+        start_before_reveal = not self.splash_items
+        if start_before_reveal:
             phase("activate runtime scene", self._enter_play_mode)
             self._pump_startup_events()
+        phase("finish project CPU and GPU declarations", self._finish_project_warmup)
+        if start_before_reveal:
             phase("prewarm first GPU frame", self._prewarm_first_frame)
             self._pump_startup_events()
-        phase("finish project CPU and GPU declarations", self._finish_project_warmup)
         _plog(
             f"[Startup] bootstrap ready: "
             f"{(time.perf_counter() - startup_started) * 1000.0:.1f} ms"
@@ -150,16 +152,18 @@ class PlayerBootstrap:
         )
 
     def _prewarm_first_frame(self) -> None:
-        """Build the Player target and submit its initial resource requests."""
+        """Prepare the Player target and finish its initial resource uploads."""
         if self.engine is None:
             raise RuntimeError("Player first-frame GPU prewarm requires an Engine")
         started = time.perf_counter()
-        # PlayerGUI learns the exact native viewport and creates the Game
-        # render target during its first hidden GUI pass. The render graph can
-        # consume that target only on the following frame, so both stages are
-        # an explicit startup contract rather than a timing loop.
+        # The first hidden GUI pass creates the target; the following render
+        # pass submits the scene's resource requests.
         self.engine.tick(0.0)
         self.engine.tick(0.0)
+        native = self.engine.get_native_engine()
+        while not native.game_presentation_ready:
+            self._pump_startup_events()
+            self.engine.tick(0.0)
         _plog(
             "[Startup] initial GPU frame preparation: "
             f"{(time.perf_counter() - started) * 1000.0:.1f} ms"

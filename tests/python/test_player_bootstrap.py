@@ -270,9 +270,9 @@ def test_player_run_prewarms_before_revealing_a_no_splash_scene(monkeypatch, tmp
         "pump",
         "play",
         "pump",
+        "finish_warmup",
         "first_gpu_frame",
         "pump",
-        "finish_warmup",
     ]
     assert compiler_preloads == []
     warmup = startup_warmup.PlayerStartupWarmup(str(tmp_path), (), scope="test")
@@ -285,16 +285,35 @@ def test_player_first_frame_prewarm_builds_target_before_composition():
     from infernux.engine.player_bootstrap import PlayerBootstrap
 
     deltas = []
+    pumps = []
+
+    class Native:
+        @property
+        def game_presentation_ready(self):
+            return len(deltas) >= 4
 
     class Engine:
         def tick(self, delta):
             deltas.append(delta)
 
+        def get_native_engine(self):
+            return Native()
+
     bootstrap = PlayerBootstrap.__new__(PlayerBootstrap)
     bootstrap.engine = Engine()
+    bootstrap._pump_startup_events = lambda: pumps.append(True)
 
     bootstrap._prewarm_first_frame()
 
+    assert deltas == [0.0, 0.0, 0.0, 0.0]
+    assert pumps == [True, True]
+
+    deltas.clear()
+    def cancel():
+        raise RuntimeError("Player startup cancelled")
+    bootstrap._pump_startup_events = cancel
+    with pytest.raises(RuntimeError, match="startup cancelled"):
+        bootstrap._prewarm_first_frame()
     assert deltas == [0.0, 0.0]
 
 

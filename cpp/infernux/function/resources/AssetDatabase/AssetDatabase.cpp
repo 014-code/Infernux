@@ -1370,7 +1370,7 @@ void AssetDatabase::InstallRuntimeAssetCatalog(const std::string &catalogPath, b
         const auto oldGuidPath = m_guidToPath.find(guid);
         if (oldGuidPath != m_guidToPath.end())
             m_pathToGuid.erase(trustedPackage ? LexicalFilesystemPathKey(oldGuidPath->second)
-                                             : FilesystemPathKey(oldGuidPath->second));
+                                              : FilesystemPathKey(oldGuidPath->second));
 
         m_guidToPath[guid] = path;
         m_pathToGuid[normalizedPath] = guid;
