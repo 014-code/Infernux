@@ -160,6 +160,13 @@ def test_host_input_hits_nonactive_canvas_and_observes_sort_order(scene, monkeyp
         panel._engine = SimpleNamespace(get_screen_ui_renderer=lambda: SimpleNamespace(
             is_enabled=lambda: native_enabled[0],
         ))
+        from infernux.ui import UIText
+
+        decoration_owner = peer.create_game_object("Noninteractive HUD text")
+        decoration_owner.set_parent(second.game_object)
+        decoration = UIText()
+        decoration_owner.add_py_component(decoration)
+        decoration.raycast_target = False
         visits, semantics, overlays = [], [], []
 
         class CanvasSnapshot(tuple):
@@ -182,7 +189,13 @@ def test_host_input_hits_nonactive_canvas_and_observes_sort_order(scene, monkeyp
         panel._render_screen_ui(context, 0, 0, 1920, 1080)
         assert lookups == [] and visits == [] and semantics == []
         context.semantic_capture_enabled = True
-        panel._render_screen_ui(context, 0, 0, 1920, 1080)
+
+        def unexpected_layout(*_args):
+            pytest.fail("Button semantics must not lay out noninteractive HUD elements")
+
+        with monkeypatch.context() as capture_patch:
+            capture_patch.setattr(decoration, "get_rect", unexpected_layout)
+            panel._render_screen_ui(context, 0, 0, 1920, 1080)
         assert lookups == [scene] and visits == ["canvas iteration"] and len(semantics) == 2
         context.semantic_capture_enabled = False
         native_enabled[0] = False
@@ -190,7 +203,8 @@ def test_host_input_hits_nonactive_canvas_and_observes_sort_order(scene, monkeyp
         monkeypatch.setattr(game_view, "_ui_dispatch", lambda element, *_args, **_kwargs: overlays.append(element))
         panel._render_screen_ui(context, 0, 0, 1920, 1080)
         assert lookups == [scene, scene]
-        assert visits == ["canvas iteration"] * 2 and overlays == [first_button, second_button]
+        assert visits == ["canvas iteration"] * 2
+        assert overlays == [first_button, second_button, decoration]
     key = (PointerType.Mouse, -1)
     clear()
     try:

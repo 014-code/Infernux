@@ -879,6 +879,8 @@ class GameViewPanel(EditorPanel):
         semantic_capture_enabled = bool(getattr(ctx, "semantic_capture_enabled", False))
 
         for elem in canvas._get_elements():
+            if not use_overlay and not isinstance(elem, UIButton):
+                continue
             elem_go = elem.game_object
             if elem_go is not None and not elem_go.active_in_hierarchy:
                 continue
