@@ -17,10 +17,6 @@ from infernux.engine.interaction import (
 )
 from infernux.input import Input
 from infernux.engine.play_mode import PlayModeManager
-from infernux.engine.runtime_change_journal import (
-    RuntimeChangeDomain,
-    runtime_change_journal,
-)
 from infernux.engine.project_context import get_project_root
 from infernux.engine.project_view_settings import (
     load_project_view_settings,
@@ -101,12 +97,6 @@ class GameViewPanel(EditorPanel):
         self._last_game_width = 0
         self._last_game_height = 0
         self._game_camera_was_enabled = False
-        self._cached_game_texture_id = 0
-        self._cached_game_texture_scene = None
-        self._cached_game_camera_signature = None
-        self._cached_game_texture_render_revision = None
-        self._cached_game_texture_target_generation = -1
-        self._game_texture_refresh_required = True
 
         # Retain the active scene's screen-space canvases across GUI builds.
         # The shared collector already caches its DFS, but asking it on every
@@ -175,7 +165,6 @@ class GameViewPanel(EditorPanel):
     
     def set_engine(self, engine):
         self._engine = engine
-        self._invalidate_game_texture_cache()
         if self._engine:
             self._play_mode_manager = self._engine.get_play_mode_manager()
     
@@ -346,7 +335,6 @@ class GameViewPanel(EditorPanel):
         width, height = self._current_target_resolution()
         self._engine.resize_game_render_target(width, height)
         self._last_game_width, self._last_game_height = width, height
-        self._game_texture_refresh_required = True
 
     def _fit_scale(self):
         """Toggle Fit mode on."""
@@ -384,7 +372,6 @@ class GameViewPanel(EditorPanel):
         self._last_game_width = 0
         self._last_game_height = 0
         self._game_camera_was_enabled = False
-        self._invalidate_game_texture_cache()
         self._invalidate_ui_scene_cache()
 
     def on_disable(self):
@@ -447,95 +434,6 @@ class GameViewPanel(EditorPanel):
         self._cached_ui_snapshot_token = None
         self._cached_ui_canvases = ()
         self._cached_ui_sort_signature = ()
-
-    def _invalidate_game_texture_cache(self) -> None:
-        """Refresh the editor texture handle at the next visible frame."""
-        self._cached_game_texture_id = 0
-        self._cached_game_texture_scene = None
-        self._cached_game_camera_signature = None
-        self._cached_game_texture_render_revision = None
-        self._cached_game_texture_target_generation = -1
-        self._game_texture_refresh_required = True
-
-    @staticmethod
-    def _game_camera_signature(scene):
-        if scene is None:
-            return None
-        try:
-            camera = scene.main_camera
-        except (AttributeError, RuntimeError):
-            camera = None
-        if camera is None:
-            # Scene.main_camera is the authored preference, while native game
-            # rendering also accepts the first active Camera as a fallback.
-            # Retain the structure revision in the no-preference state so a
-            # newly attached Camera invalidates a cached "no camera" result.
-            return (
-                "scene_structure",
-                int(getattr(scene, "structure_version", 0) or 0),
-            )
-        try:
-            owner = camera.game_object
-        except (AttributeError, RuntimeError):
-            owner = None
-        return (
-            int(getattr(camera, "component_id", 0) or id(camera)),
-            bool(getattr(camera, "enabled", True)),
-            int(getattr(owner, "id", 0) or 0),
-            bool(getattr(owner, "active_in_hierarchy", True)),
-        )
-
-    @staticmethod
-    def _game_texture_render_revision() -> tuple[int, int]:
-        journal = runtime_change_journal()
-        return (
-            journal.domain_revision(RuntimeChangeDomain.RENDER_STACK),
-            journal.domain_revision(RuntimeChangeDomain.RENDER_STATE),
-        )
-
-    def _get_game_texture_id(self, scene) -> int:
-        """Return the retained ImGui handle for the current Game target.
-
-        The native getter resolves the active camera stack. Native camera
-        discovery is deliberately frame-local, so calling it from the editor
-        panel every UI frame turns a large scene into an O(object-count) panel
-        cost. The render target handle itself is stable until resize or render
-        configuration replacement, and camera availability has a cheap stable
-        signature exposed by Scene.main_camera.
-        """
-        camera_signature = self._game_camera_signature(scene)
-        render_revision = self._game_texture_render_revision()
-        generation_getter = getattr(
-            self._engine,
-            "get_game_render_target_generation",
-            None,
-        )
-        target_generation = (
-            int(generation_getter() or 0) if callable(generation_getter) else 0
-        )
-        refresh = (
-            self._game_texture_refresh_required
-            or scene is not self._cached_game_texture_scene
-            or camera_signature != self._cached_game_camera_signature
-            or render_revision != self._cached_game_texture_render_revision
-            or target_generation != self._cached_game_texture_target_generation
-        )
-        if refresh:
-            self._cached_game_texture_id = int(
-                self._engine.get_game_texture_id() or 0
-            )
-            self._cached_game_texture_scene = scene
-            self._cached_game_camera_signature = camera_signature
-            self._cached_game_texture_render_revision = render_revision
-            self._cached_game_texture_target_generation = target_generation
-            # A configured camera can precede lazy render-target readiness by
-            # one frame. Retry only that bounded startup case.
-            self._game_texture_refresh_required = (
-                self._cached_game_texture_id == 0
-                and camera_signature is not None
-                and camera_signature[0] != "scene_structure"
-            )
-        return self._cached_game_texture_id
 
     def _get_scene_and_canvases(self):
         """Return the camera scene and all resident screen-space canvases.
@@ -844,7 +742,6 @@ class GameViewPanel(EditorPanel):
         draw_h = float(target_h) * self._display_scale
 
         if target_w != self._last_game_width or target_h != self._last_game_height:
-            self._game_texture_refresh_required = True
             self._engine.resize_game_render_target(target_w, target_h)
             self._last_game_width = target_w
             self._last_game_height = target_h
@@ -853,7 +750,9 @@ class GameViewPanel(EditorPanel):
         # Canvas membership has its own revision and is unrelated to ordinary
         # 3D scene topology changes.
         _scene, _canvases = self._get_scene_and_canvases()
-        game_texture_id = self._get_game_texture_id(_scene)
+        # Native camera discovery is retained by scene revisions; it also owns
+        # target readiness and descriptor replacement after resize.
+        game_texture_id = self._engine.get_game_texture_id()
 
         viewport_hovered = False
         viewport_clicked = False

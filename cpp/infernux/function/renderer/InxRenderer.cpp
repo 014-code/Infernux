@@ -1174,10 +1174,6 @@ void InxRenderer::DrawFrame()
     m_frameDetailTiming = {};
 #endif
 
-    // Invalidate per-frame game camera cache
-    m_gameCameraCacheValid = false;
-    m_cachedGameCamera = nullptr;
-    m_cachedGameCameras.clear();
     // NOTE: do NOT reset m_lastGameRenderMs here — Python panels read it
     // during BuildFrame() which runs BEFORE the game camera render pass.
     // The value from the previous frame is the correct one for display.
