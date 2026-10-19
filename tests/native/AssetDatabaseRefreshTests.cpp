@@ -682,6 +682,7 @@ void TestRuntimeAssetCatalogInstallsStableIdentityWithoutSidecar()
           "content_hash": {"type": "string", "value": "runtime-hash"},
           "file_path": {"type": "string", "value": "Assets/Materials/Runtime.mat"},
           "guid": {"type": "string", "value": "runtime-material-guid"},
+          "last_modified": {"type": "string", "value": "build-time"},
           "resource_type": {"type": "enum infernux::ResourceType", "value": "Material"}
         }
       }
@@ -704,6 +705,17 @@ void TestRuntimeAssetCatalogInstallsStableIdentityWithoutSidecar()
             "runtime asset catalog changed the resource type");
     Require(metadata->HasKey("read_only") && metadata->GetDataAs<bool>("read_only"),
             "runtime asset catalog identity is not read-only");
+
+    infernux::AssetDatabase player;
+    player.InitializeRuntime(infernux::FromFsPath(root));
+    player.InstallRuntimeAssetCatalog(infernux::FromFsPath(catalog), true);
+    Require(player.GetGuidFromPath(materialPath) == "runtime-material-guid",
+            "trusted catalog changed the asset path identity");
+    Require(player.GetPathFromGuid("runtime-material-guid") == infernux::ResolveFilesystemPath(materialPath),
+            "trusted catalog changed the resolved asset path");
+    const auto playerMetadata = player.GetMetaByGuid("runtime-material-guid");
+    Require(playerMetadata->GetDataAs<std::string>("last_modified") == "build-time",
+            "trusted catalog replaced build metadata with a local file timestamp");
     std::filesystem::remove_all(root);
 }
 

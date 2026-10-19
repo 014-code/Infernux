@@ -1347,13 +1347,18 @@ void AssetDatabase::InstallRuntimeAssetCatalog(const std::string &catalogPath, b
                 throw std::runtime_error("runtime asset catalog primary artifact is unavailable: " + primaryArtifactId);
         }
 
-        const std::string path = FromFsPath(resolvedAssetPath);
-        const std::string normalizedPath = FilesystemPathKey(path);
+        const std::string path = FromFsPath(resolvedAssetPath.lexically_normal());
+        // Cooked files are regular entries below already-resolved package
+        // roots. Installing their identities requires no per-file disk probe.
+        const std::string normalizedPath = trustedPackage ? LexicalFilesystemPathKey(path) : FilesystemPathKey(path);
         InxResourceMeta metadata;
         metadata.DeserializeDocument(*metadataDocument);
         if (metadata.GetGuid() != guid)
             throw std::runtime_error("runtime asset catalog metadata GUID mismatch: " + guid);
-        metadata.UpdateFilePath(path);
+        if (trustedPackage)
+            metadata.AddMetadata("file_path", path);
+        else
+            metadata.UpdateFilePath(path);
         metadata.AddMetadata("read_only", true);
 
         const auto oldPathGuid = m_pathToGuid.find(normalizedPath);
@@ -1364,7 +1369,8 @@ void AssetDatabase::InstallRuntimeAssetCatalog(const std::string &catalogPath, b
         }
         const auto oldGuidPath = m_guidToPath.find(guid);
         if (oldGuidPath != m_guidToPath.end())
-            m_pathToGuid.erase(FilesystemPathKey(oldGuidPath->second));
+            m_pathToGuid.erase(trustedPackage ? LexicalFilesystemPathKey(oldGuidPath->second)
+                                             : FilesystemPathKey(oldGuidPath->second));
 
         m_guidToPath[guid] = path;
         m_pathToGuid[normalizedPath] = guid;
