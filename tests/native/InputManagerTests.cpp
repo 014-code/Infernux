@@ -149,6 +149,8 @@ int main()
     assert(input.IsCursorLocked());
     input.ProcessKeyEvent(SDL_SCANCODE_ESCAPE, true);
     assert(input.IsCursorLocked() && input.GetKeyDown(SDL_SCANCODE_ESCAPE));
+    input.ProcessFocusEvent(true);
+    assert(input.IsCursorLocked()); // Player activation retains the game's request.
     input.ResetAll();
     input.SetCursorLocked(false);
     input.SetCursorConfined(false);
@@ -187,6 +189,17 @@ int main()
     assert(!input.IsCursorLocked());
     input.SetEditorCursorCaptureAllowed(true);
     assert(input.IsCursorLocked());
+    input.SetEditorMouseCapture(true);
+    SDL_Event activation{};
+    activation.type = SDL_EVENT_WINDOW_FOCUS_GAINED;
+    input.ProcessSDLEvent(activation);
+    assert(!input.IsCursorLocked() && !input.IsEditorMouseCaptureActive());
+    input.ProcessPointerMotionEvent(20, 20, 0, 0);
+    input.ProcessPointerButtonEvent(0, true);
+    assert(input.GetGameMouseButtonDown(0));
+    input.SetEditorCursorCaptureAllowed(true);
+    assert(input.IsCursorLocked()); // The first viewport click works without Escape.
+    input.ProcessPointerButtonEvent(0, false);
     input.ProcessFocusEvent(false);
     input.ProcessFocusEvent(true);
     assert(!input.IsCursorLocked());

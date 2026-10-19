@@ -393,6 +393,11 @@ void InputManager::ProcessTouchEvent(uint64_t touchId, uint64_t fingerId, uint64
 
 void InputManager::ProcessFocusEvent(bool focused)
 {
+    // OS activation starts a new editor interaction; only a viewport click
+    // may acquire capture again, even if no loss event preceded activation.
+    m_editorMouseCaptured = false;
+    if (m_editorCursorCaptureManaged)
+        SetEditorCursorCaptureAllowed(false);
     if (focused) {
         if (!m_screenState.focused) {
             m_screenState.focused = true;
@@ -404,9 +409,6 @@ void InputManager::ProcessFocusEvent(bool focused)
         return;
     }
     StopTextInput();
-    m_editorMouseCaptured = false;
-    if (m_editorCursorCaptureManaged)
-        SetEditorCursorCaptureAllowed(false);
     ResetPhysicalInputForFocusLoss();
     if (m_screenState.focused) {
         m_screenState.focused = false;
