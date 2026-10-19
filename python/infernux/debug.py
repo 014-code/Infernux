@@ -531,12 +531,22 @@ class Debug:
         )
         source_file = ""
         source_line = 0
+        project_root = DebugConsole.instance()._project_root
+        if project_root:
+            project_root = os.path.normcase(os.path.abspath(project_root)).rstrip(os.sep) + os.sep
         tb = exception.__traceback__
-        while tb and tb.tb_next:
+        last_frame = project_frame = None
+        while tb:
+            last_frame = tb
+            filename = tb.tb_frame.f_code.co_filename
+            if project_root and not filename.startswith("<"):
+                if os.path.normcase(os.path.abspath(filename)).startswith(project_root):
+                    project_frame = tb
             tb = tb.tb_next
-        if tb:
-            source_file = _sanitize_text(tb.tb_frame.f_code.co_filename)
-            source_line = tb.tb_lineno
+        location = project_frame or last_frame
+        if location:
+            source_file = _sanitize_text(location.tb_frame.f_code.co_filename)
+            source_line = location.tb_lineno
         return LogEntry(
             message=message,
             log_type=log_type,

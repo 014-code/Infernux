@@ -23,7 +23,7 @@ def _caught(message: str = "boom") -> ValueError:
         return exc
 
 
-def test_script_error_keeps_the_first_traceback(console):
+def test_script_error_keeps_the_first_traceback(console, tmp_path):
     Debug.report_script_error(_caught(), "Probe.update")
 
     entries = console.get_entries()
@@ -32,6 +32,22 @@ def test_script_error_keeps_the_first_traceback(console):
     assert "[Script @ Probe.update]" in entries[0].message
     assert "ValueError: boom" in entries[0].message
     assert "ValueError: boom" in entries[0].stack_trace
+    assert entries[0].source_file == __file__
+
+    console._project_root = str(tmp_path)
+    script = str(tmp_path / "Assets" / "Scripts" / "Combat.py")
+    namespace = {}
+    source = "import random\ndef update():\n    fire()\ndef fire():\n    random.choice(())\n"
+    exec(compile(source, script, "exec"), namespace)
+    try:
+        namespace["update"]()
+    except IndexError as exc:
+        Debug.report_script_error(exc, "Combat.update")
+
+    entry = console.get_entries()[-1]
+    assert entry.source_file == script and entry.source_line == 5
+    assert "random.py" in entry.stack_trace
+    assert "IndexError: Cannot choose from an empty sequence" in entry.message
 
 
 def test_script_error_counts_repeats_and_reports_at_ten(console):
