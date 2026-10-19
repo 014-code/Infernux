@@ -275,10 +275,11 @@ class SpriteRenderer(BuiltinComponent):
             raise ValueError("sprite texture is missing from the Asset Database")
         from infernux.core.asset_types import (
             TextureType,
-            read_texture_import_settings,
+            TextureImportSettings,
+            read_asset_metadata,
         )
 
-        settings = read_texture_import_settings(asset_path)
+        settings = TextureImportSettings.from_dict(read_asset_metadata(asset_path, guid=guid))
         if settings.texture_type is not TextureType.SPRITE:
             raise ValueError("SpriteRenderer requires a texture imported as Sprite")
         if not settings.sprite_frames:

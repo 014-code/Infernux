@@ -56,21 +56,29 @@ def _sprite(scene, name, material):
     return renderer
 
 
-def test_sprite_instances_keep_shared_document_and_parameters_independent(scene, sprite_assets):
+def test_sprite_instances_keep_shared_document_and_parameters_independent(scene, sprite_assets, monkeypatch):
     material, path, textures, frames = sprite_assets
     before = path.read_bytes()
     authored = copy.deepcopy(material.serialize_document())
     left = _sprite(scene, "Left", material)
     right = _sprite(scene, "Right", material)
-    for renderer, texture, frame, color, flip in (
-        (left, textures[0], frames[0], (1., 0., 0., 1.), False),
-        (right, textures[1], frames[1], (0., 0., 1., 1.), True),
-    ):
-        renderer.sprite = texture
-        renderer.frame_id = frame.stable_id
-        renderer.sprite_color = color
-        renderer.flip_x = flip
-        renderer.sync_visual()
+    def unexpected_sidecar(*_args, **_kwargs):
+        pytest.fail("Published sprite GUIDs must not query authoring sidecars")
+
+    with monkeypatch.context() as runtime:
+        runtime.setattr("infernux.core.asset_types.read_meta_file", unexpected_sidecar)
+        from infernux.core.asset_types import read_asset_metadata
+
+        assert read_asset_metadata(str(path), guid="0" * 32) is None
+        for renderer, texture, frame, color, flip in (
+            (left, textures[0], frames[0], (1., 0., 0., 1.), False),
+            (right, textures[1], frames[1], (0., 0., 1., 1.), True),
+        ):
+            renderer.sprite = texture
+            renderer.frame_id = frame.stable_id
+            renderer.sprite_color = color
+            renderer.flip_x = flip
+            renderer.sync_visual()
     Material.flush_all_pending()
     assert path.read_bytes() == before
     assert material.serialize_document() == authored
