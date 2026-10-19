@@ -50,6 +50,23 @@ def test_batch_fields_coalesce_inside_one_transaction():
         {1, 2, 3}
     )
 
+    lagging = journal.create_cursor("lagging", domains=("script_value",))
+    for start in range(0, 42, 7):
+        for component_id in range(start, start + 7):
+            journal.publish_component_field_value("Probe", component_id, "speed")
+            journal.flush()
+        changes = journal.consume(cursor)
+        assert changes.for_domain(RuntimeChangeDomain.COMPONENT_FIELD).fields == frozenset(
+            RuntimeFieldKey("Probe", component_id, "speed")
+            for component_id in range(start, start + 7)
+        )
+        assert changes.for_domain(RuntimeChangeDomain.SCRIPT_VALUE).stable_ids == frozenset(
+            range(start, start + 7)
+        )
+    changes = journal.consume(lagging)
+    assert changes.full_resync
+    assert changes.for_domain(RuntimeChangeDomain.SCRIPT_VALUE).broad
+
 
 def test_scheduler_cursor_reports_structural_domains_only():
     from infernux.components._component_lifecycle import RuntimeExecutionScheduler

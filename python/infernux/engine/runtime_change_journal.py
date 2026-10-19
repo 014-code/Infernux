@@ -486,9 +486,9 @@ class RuntimeChangeJournal:
                     if self._domain_revisions[domain] > start_revision:
                         merged[domain] = _MutableDomainChanges(broad=True)
             else:
-                for batch in self._history:
+                for batch in reversed(self._history):
                     if batch.revision <= start_revision:
-                        continue
+                        break
                     for domain, delta in batch.changes.items():
                         if domain not in cursor.domains:
                             continue
