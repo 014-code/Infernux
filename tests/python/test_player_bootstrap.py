@@ -281,11 +281,21 @@ def test_player_run_prewarms_before_revealing_a_no_splash_scene(monkeypatch, tmp
     assert compiler_preloads == [True]
 
 
-def test_player_first_frame_prewarm_builds_target_before_composition():
+def test_player_first_frame_prewarm_builds_target_before_composition(monkeypatch):
     from infernux.engine.player_bootstrap import PlayerBootstrap
 
     deltas = []
     pumps = []
+    simulated_frames = []
+
+    class SceneManager:
+        is_paused = False
+
+        def pause(self):
+            self.is_paused = not self.is_paused
+
+    scene_manager = SceneManager()
+    monkeypatch.setattr("infernux.lib.SceneManager", types.SimpleNamespace(instance=lambda: scene_manager))
 
     class Native:
         @property
@@ -295,6 +305,8 @@ def test_player_first_frame_prewarm_builds_target_before_composition():
     class Engine:
         def tick(self, delta):
             deltas.append(delta)
+            if not scene_manager.is_paused:
+                simulated_frames.append(True)
 
         def get_native_engine(self):
             return Native()
@@ -307,14 +319,22 @@ def test_player_first_frame_prewarm_builds_target_before_composition():
 
     assert deltas == [0.0, 0.0, 0.0, 0.0]
     assert pumps == [True, True]
+    assert len(simulated_frames) == 2 and not scene_manager.is_paused
 
     deltas.clear()
+    scene_manager.is_paused = True
+    bootstrap._prewarm_first_frame()
+    assert scene_manager.is_paused and len(simulated_frames) == 2
+
+    deltas.clear()
+    scene_manager.is_paused = False
     def cancel():
         raise RuntimeError("Player startup cancelled")
     bootstrap._pump_startup_events = cancel
     with pytest.raises(RuntimeError, match="startup cancelled"):
         bootstrap._prewarm_first_frame()
     assert deltas == [0.0, 0.0]
+    assert not scene_manager.is_paused
 
 
 def test_player_release_policy_rejects_debug_control_environment(monkeypatch, tmp_path):

@@ -161,9 +161,20 @@ class PlayerBootstrap:
         self.engine.tick(0.0)
         self.engine.tick(0.0)
         native = self.engine.get_native_engine()
-        while not native.game_presentation_ready:
-            self._pump_startup_events()
-            self.engine.tick(0.0)
+        if not native.game_presentation_ready:
+            # Extra upload frames must not advance gameplay or frame counters.
+            from infernux.lib import SceneManager
+            scene_manager = SceneManager.instance()
+            pause_for_uploads = not scene_manager.is_paused
+            if pause_for_uploads:
+                scene_manager.pause()
+            try:
+                while not native.game_presentation_ready:
+                    self._pump_startup_events()
+                    self.engine.tick(0.0)
+            finally:
+                if pause_for_uploads:
+                    scene_manager.pause()
         _plog(
             "[Startup] initial GPU frame preparation: "
             f"{(time.perf_counter() - started) * 1000.0:.1f} ms"

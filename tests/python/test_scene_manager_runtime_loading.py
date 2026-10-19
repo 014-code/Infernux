@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 
@@ -272,11 +274,21 @@ def test_player_runtime_tick_advances_pending_scene_load_before_time(monkeypatch
 
     monkeypatch.setattr("infernux.timing.Time._tick", lambda value: calls.append("time"))
 
+    native = SimpleNamespace(is_paused=False)
+    monkeypatch.setattr("infernux.lib.SceneManager", SimpleNamespace(instance=lambda: native))
+
     session = PlayerRuntimeSession(scene_service=RuntimeSceneService())
     session._state = "playing"
     session.tick(1.0 / 60.0)
 
     assert calls == ["process", "time"]
+    native.is_paused = True
+    assert session.is_paused
+    assert session.tick(1.0) == 0.0
+    assert calls == ["process", "time", "process"]
+    native.is_paused = False
+    session.tick(1.0 / 60.0)
+    assert calls == ["process", "time", "process", "process", "time"]
 
 
 def test_pending_scene_transaction_starts_the_new_scene_once(monkeypatch):

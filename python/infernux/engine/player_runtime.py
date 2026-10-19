@@ -86,7 +86,8 @@ class PlayerRuntimeSession:
 
     @property
     def is_paused(self) -> bool:
-        return self._state == "paused"
+        from infernux.lib import SceneManager
+        return self.is_playing and SceneManager.instance().is_paused
 
     @property
     def state(self) -> str:
@@ -295,6 +296,8 @@ class PlayerRuntimeSession:
             else float(external_delta_time)
         )
         self._last_frame_time = current_time
+        if self.is_paused:
+            return 0.0
         Time._tick(delta_time)
         if self._native_engine is not None:
             try:
