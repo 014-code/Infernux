@@ -11,7 +11,7 @@ from .inx_ui_screen_component import _get_layout_revision
 
 
 class _CommandGroup:
-    def __init__(self, elements):
+    def __init__(self, elements, texture_cache):
         self.elements = tuple(elements)
         self.indices = {element: index for index, element in enumerate(self.elements)}
         self.geometry = [None] * len(self.elements)
@@ -19,6 +19,8 @@ class _CommandGroup:
                        if not _can_retain_runtime_commands(element)}
         self.dirty = set(range(len(self.elements)))
         self.layout_revision = None
+        self.texture_cache = texture_cache
+        self.textures = {}
         for element in self.elements:
             state = element.__dict__
             if '_ui_command_groups' not in state:
@@ -33,20 +35,30 @@ class _CommandGroup:
         # still reach the next publication, not be erased on its return.
         self.dirty.discard(index)
         renderer.begin_command_packet()
+        self.texture_cache.begin_command_packet()
         try:
             draw(self.elements[index], renderer, *args)
             self.geometry[index] = renderer.end_command_packet()
         except BaseException:
             renderer.abort_command_packet()
             raise
+        finally:
+            bindings = self.texture_cache.end_command_packet()
+            if bindings:
+                self.textures[index] = bindings
+            else:
+                self.textures.pop(index, None)
 
 
 class UICommandPackets:
-    def __init__(self):
+    def __init__(self, texture_cache):
         self.epoch = None
         self.groups = {}
         self.pending = []
         self.font_epoch = None
+        self.texture_cache = texture_cache
+        self.texture_generation = None
+        self.has_pending_textures = False
 
     def prepare(self, epoch, *, font_epoch=None):
         self.pending.clear()
@@ -55,6 +67,16 @@ class UICommandPackets:
         if epoch != self.epoch:
             self.groups.clear()
             self.epoch = epoch
+        cache = self.texture_cache
+        if cache.has_pending or cache.generation != self.texture_generation:
+            self.has_pending_textures = False
+            for group in self.groups.values():
+                for index, bindings in group.textures.items():
+                    self.has_pending_textures |= any(state[1] for state in bindings.values())
+                    if any(state[1] or cache.binding_state(guid) != state
+                           for guid, state in bindings.items()):
+                        group.dirty.add(index)
+            self.texture_generation = cache.generation
 
     def measure(self, element, renderer, scale):
         """Measure changed text before any sibling layout is consumed."""
@@ -68,7 +90,7 @@ class UICommandPackets:
         # Membership, canvas settings and target dimensions belong to epoch.
         group = self.groups.get(scope)
         if group is None:
-            group = self.groups[scope] = _CommandGroup(elements)
+            group = self.groups[scope] = _CommandGroup(elements, self.texture_cache)
         try:
             for index in sorted(group.dirty | group.custom):
                 self.measure(group.elements[index], renderer, scale)

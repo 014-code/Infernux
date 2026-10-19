@@ -4,6 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from infernux.ui.ui_texture_cache import UITextureCache
+
 
 class Renderer:
     def __init__(self):
@@ -97,6 +99,7 @@ class Renderer:
 
 def test_ui_material_generation_rebuilds_screen_and_world_packets(ui):
     from infernux.core.material import Material
+    from infernux.ui import UIImage
 
     element = ui.add()
     revision = [3]
@@ -107,7 +110,8 @@ def test_ui_material_generation_rebuilds_screen_and_world_packets(ui):
         _texture_assets_pending=False,
         get_version=lambda: revision[0],
         _get_render_texture=lambda _name: None,
-        has_property=lambda _name: False,
+        has_property=lambda name: name == "texSampler",
+        get_texture=lambda _name: "material-texture",
         shader_name="Authored UI",
         vert_shader_name="ui-vertex-guid",
         frag_shader_name="ui-fragment-guid",
@@ -115,6 +119,8 @@ def test_ui_material_generation_rebuilds_screen_and_world_packets(ui):
     )
     material = Material(native)
     element.material = material
+    image = ui.add(UIImage)
+    image.material = material
     assert element.material is material
 
     def set_binding(*args):
@@ -133,6 +139,12 @@ def test_ui_material_generation_rebuilds_screen_and_world_packets(ui):
     assert any(
         command[0] == "set_material_binding" and command[1][1:3] == ("ui-authored-guid", 4) for command in commands
     )
+    ui.published_textures["material-texture"] = 89
+    ui.textures.invalidate("material-texture")
+    commands = ui.frame()[1]
+    assert ui.extracted == [image]
+    assert next(args[1] for name, args, _ in commands if name == "add_image") == 89
+    _assert_current_commands_match_fresh(ui, commands)
 
 
 @pytest.fixture(params=[False, True], ids=["screen", "world"])
@@ -162,8 +174,12 @@ def ui(scene, monkeypatch, request):
         get_scene_at=lambda index: scene if index == 0 else None,
     )
     monkeypatch.setattr(lib, "SceneManager", SimpleNamespace(instance=lambda: manager))
-    texture_cache = SimpleNamespace(has_pending=False, generation=0, texture_id=71)
-    texture_cache.get_bound = lambda _: lambda source: texture_cache.texture_id + getattr(source, "revision", 0)
+    texture_cache = UITextureCache()
+    published_textures = {}
+    native = SimpleNamespace(
+        _get_imported_texture_ui_texture_id=lambda _key, guid: published_textures.get(guid, 71),
+    )
+    engine.get_native_engine = lambda: native
     monkeypatch.setattr(module, "_get_tex_cache", lambda: texture_cache)
     submission = module.RuntimeScreenUISubmission(engine)
     extracted = []
@@ -194,7 +210,7 @@ def ui(scene, monkeypatch, request):
 
         rebuilt, actual = frame()
         assert rebuilt
-        submission._command_packets = UICommandPackets()
+        submission._command_packets = UICommandPackets(texture_cache)
         renderer.key = None
         _, expected = frame()
         assert actual == expected
@@ -212,6 +228,7 @@ def ui(scene, monkeypatch, request):
         extracted=extracted,
         submission=submission,
         textures=texture_cache,
+        published_textures=published_textures,
     )
 
 
@@ -266,7 +283,7 @@ def test_text_edit_and_font_epoch_preserve_packet_locality(ui, monkeypatch):
     assert set(ui.extracted) == set(labels)
 
 
-def test_atlas_region_changes_only_image_packet(ui):
+def test_image_packets_track_atlas_region_and_async_texture_publication(ui):
     from infernux.core.asset_ref import TextureRef
     from infernux.ui import UIImage
     from infernux.ui.ui_render_dispatch import _editor_render_image
@@ -295,6 +312,29 @@ def test_atlas_region_changes_only_image_packet(ui):
     _editor_render_image(image, SimpleNamespace(draw_image_rect=lambda *args: editor.append(args)),
                          10, 20, 100, 50, 1.0, lambda _source: 71)
     assert editor[0][5:9] == draw[6:10]
+
+    ui.add()
+    alias = ui.add(UIImage)
+    alias.texture = TextureRef(guid="atlas-texture")
+    unrelated = ui.add(UIImage)
+    unrelated.texture = TextureRef(guid="other-texture")
+    ui.frame()
+    ui.published_textures["atlas-texture"] = 0
+    ui.textures.invalidate("atlas-texture")
+    for _ in range(2):
+        commands = ui.frame()[1]
+        assert set(ui.extracted) == {image, alias}
+        assert sum(name == "add_image" for name, _, _ in commands) == 1
+    ui.published_textures["atlas-texture"] = 83
+    commands = ui.frame()[1]
+    assert set(ui.extracted) == {image, alias}
+    assert [args[1] for name, args, _ in commands if name == "add_image"] == [83, 83, 71]
+    _assert_current_commands_match_fresh(ui, commands)
+    assert ui.frame() == (False, [])
+    ui.published_textures["unrelated-preview"] = 0
+    ui.textures.get(ui.submission._engine_ref(), TextureRef(guid="unrelated-preview"))
+    assert ui.textures.has_pending
+    assert ui.frame() == (False, [])
 
 
 @pytest.mark.parametrize("ui", [False], indirect=True, ids=["screen"])
@@ -668,7 +708,7 @@ def test_custom_draw_remeasures_successive_text_and_size_edits(ui, position):
 def _assert_current_commands_match_fresh(ui, actual):
     from infernux.ui.ui_command_packets import UICommandPackets
 
-    ui.submission._command_packets = UICommandPackets()
+    ui.submission._command_packets = UICommandPackets(ui.textures)
     ui.renderer.key = None
     assert ui.frame()[1] == actual
 

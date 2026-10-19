@@ -705,7 +705,7 @@ class RuntimeScreenUISubmission:
         self._canvas_snapshot_token = None
         self._canvas_snapshot = ()
         self._last_submission_frame = -1
-        self._command_packets = UICommandPackets()
+        self._command_packets = UICommandPackets(_get_tex_cache())
 
     @property
     def target_size(self) -> tuple[int, int]:
@@ -748,18 +748,16 @@ class RuntimeScreenUISubmission:
         canvases = self._canvas_snapshot
         world_elements = _collect_world_ui_elements(*scenes)
 
-        texture_cache = _get_tex_cache()
+        packets = self._command_packets
+        texture_cache = packets.texture_cache
         revision = _runtime_ui_revision(
             None, canvases, width, height, texture_cache.generation,
             world_elements, None, scenes,
         )
-        packets = self._command_packets
-        if texture_cache.has_pending:
-            packets.prepare(None)
         font_epoch = renderer.command_packet_epoch()
-        packets.prepare((renderer, width, height, texture_cache.generation,
-                         font_epoch, _runtime_command_epoch()), font_epoch=font_epoch)
-        if texture_cache.has_pending:
+        packets.prepare((renderer, width, height, font_epoch,
+                         _runtime_command_epoch()), font_epoch=font_epoch)
+        if packets.has_pending_textures:
             renderer.begin_frame(width, height)
         else:
             if renderer.begin_frame_cached(width, height, revision):

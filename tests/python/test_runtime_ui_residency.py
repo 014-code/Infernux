@@ -5,6 +5,7 @@ import pytest
 
 from infernux.lib import SceneManager
 from infernux.ui import UICanvas, UIButton
+from infernux.ui.ui_texture_cache import UITextureCache
 from infernux.engine.runtime_screen_ui import RuntimeScreenUISubmission
 from test_runtime_screen_ui_submission import _Engine, _Renderer
 
@@ -28,9 +29,9 @@ def submission(monkeypatch):
     renderer = _Renderer()
     engine = _Engine(renderer)
     submitted = []
-    monkeypatch.setattr(module, "_get_tex_cache", lambda: SimpleNamespace(
-        has_pending=False, generation=0, get_bound=lambda _engine: lambda _path: 0,
-    ))
+    texture_cache = UITextureCache()
+    texture_cache.get_bound = lambda _engine: lambda _path: 0
+    monkeypatch.setattr(module, "_get_tex_cache", lambda: texture_cache)
     monkeypatch.setattr(module, "_ui_dispatch", lambda element, *_a, **_kw: submitted.append(element))
     return engine, RuntimeScreenUISubmission(engine), submitted
 

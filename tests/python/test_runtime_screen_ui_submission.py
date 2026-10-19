@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 from infernux.ui import UICanvas
+from infernux.ui.ui_texture_cache import UITextureCache
 
 
 class _CanvasStub(SimpleNamespace):
@@ -173,11 +174,8 @@ def test_runtime_submission_publishes_latest_hud_without_a_game_panel(monkeypatc
         compute_logical_size=lambda *_args: (100.0, 50.0),
         _get_elements=lambda: (element,),
     )
-    texture_cache = SimpleNamespace(
-        has_pending=False,
-        generation=3,
-        get_bound=lambda _engine: lambda _path: 71,
-    )
+    texture_cache = UITextureCache()
+    texture_cache.get_bound = lambda _engine: lambda _path: 71
     dispatches = []
 
     _install_scene_manager(monkeypatch, scene)
@@ -245,11 +243,8 @@ def test_runtime_submission_anchors_against_live_logical_canvas(monkeypatch, sce
         compute_logical_size=lambda *_args: (3200.0 / 1.5, 1440.0 / 1.5),
         _get_elements=lambda: (element,),
     )
-    texture_cache = SimpleNamespace(
-        has_pending=False,
-        generation=1,
-        get_bound=lambda _engine: lambda _path: 0,
-    )
+    texture_cache = UITextureCache()
+    texture_cache.get_bound = lambda _engine: lambda _path: 0
     dispatches = []
     _install_scene_manager(monkeypatch, scene)
     monkeypatch.setattr(
@@ -331,11 +326,8 @@ def test_runtime_submission_resolves_text_before_geometry_and_keeps_authored_siz
         compute_logical_size=lambda *_args: (100.0, 50.0),
         _get_elements=lambda: (element,),
     )
-    texture_cache = SimpleNamespace(
-        has_pending=False,
-        generation=1,
-        get_bound=lambda _engine: lambda _path: 0,
-    )
+    texture_cache = UITextureCache()
+    texture_cache.get_bound = lambda _engine: lambda _path: 0
     dispatches = []
     _install_scene_manager(monkeypatch, runtime_scene)
     monkeypatch.setattr(module, "collect_sorted_runtime_canvas_snapshot", lambda *_args: [canvas])
@@ -413,11 +405,8 @@ def test_canvas_free_ui_submits_each_element_as_transform_owned_world_geometry(m
     renderer = _Renderer()
     engine = _Engine(renderer)
     engine._render_submission_frame = 1
-    texture_cache = SimpleNamespace(
-        has_pending=False,
-        generation=1,
-        get_bound=lambda _engine: lambda _path: 0,
-    )
+    texture_cache = UITextureCache()
+    texture_cache.get_bound = lambda _engine: lambda _path: 0
     dispatches = []
     _install_scene_manager(monkeypatch, scene)
     monkeypatch.setattr(
