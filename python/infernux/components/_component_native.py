@@ -336,19 +336,19 @@ class ComponentNativeMixin:
         cleanup_binding = self.__dict__.get("_native_cleanup_binding")
         if cleanup_binding is not None and not self._is_destroyed:
             return cleanup_binding[0]
-        cpp_component = getattr(self, '_cpp_component', None)
+        cpp_component = self._cpp_component
         if cpp_component is None:
             return None
         if not self._tracks_scene_structure_binding():
             return cpp_component
-        if bool(getattr(self, "_is_destroyed", False)):
+        if self._is_destroyed:
             self._invalidate_native_binding()
             return None
-        bound = getattr(self, "_bound_structure_version", None)
+        bound = self._bound_structure_version
         if bound is not None and self._native_binding_scene_revision() == bound:
             return cpp_component
-        handle = getattr(self, '_native_handle', None)
-        scene = getattr(self, '_native_scene', None)
+        handle = self._native_handle
+        scene = self._native_scene
         if handle is not None and scene is not None:
             try:
                 resolved = scene._resolve_native_component(handle, self)
