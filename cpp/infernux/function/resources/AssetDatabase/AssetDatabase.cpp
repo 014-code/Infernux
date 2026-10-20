@@ -40,6 +40,13 @@ namespace
 constexpr size_t kOwnerMergeEntryBudget = 256;
 constexpr auto kOwnerMergeTimeBudget = std::chrono::milliseconds(2);
 
+std::string Utf8Diagnostic(const char *message)
+{
+    // Parser errors can quote binary source bytes; diagnostics must remain valid JSON and Python text.
+    const auto encoded = nlohmann::json(message).dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
+    return nlohmann::json::parse(encoded).get<std::string>();
+}
+
 void ApplyDocumentationTextureMovePolicy(AssetDatabase &database, AssetMutationResult &result)
 {
     if (result.resourceType != ResourceType::Texture)
@@ -1773,7 +1780,7 @@ void AssetDatabase::PrepareMetadata(WorkerMetadataPrepare &item)
         RequireUnchangedFingerprint(item.file.path, item.file.source);
         item.metadata = std::move(metadata);
     } catch (const std::exception &exception) {
-        item.error = exception.what();
+        item.error = Utf8Diagnostic(exception.what());
     } catch (...) {
         item.error = "metadata preparation raised a non-standard exception";
     }
@@ -2128,7 +2135,7 @@ bool AssetDatabase::ContinuePendingMetadataMerge(const std::shared_ptr<PendingRe
                 };
             }
         } catch (const std::exception &exception) {
-            item.error = exception.what();
+            item.error = Utf8Diagnostic(exception.what());
         }
     }
 
@@ -2195,7 +2202,7 @@ bool AssetDatabase::BeginNextImportWave(const std::shared_ptr<PendingRefreshComm
                                 item.request.guid, SkeletonSourceHash(&item.artifact->metadata), skinned->bytes});
                     }
                 } catch (const std::exception &exception) {
-                    item.error = exception.what();
+                    item.error = Utf8Diagnostic(exception.what());
                 } catch (...) {
                     item.error = "Importer raised a non-standard exception";
                 }
@@ -2242,8 +2249,9 @@ bool AssetDatabase::ContinuePendingImportMerge(const std::shared_ptr<PendingRefr
             for (auto &runtimeArtifactWrite : runtimeArtifactWrites)
                 state->metadataWrites.push_back(std::move(runtimeArtifactWrite));
         } catch (const std::exception &exception) {
-            workingSet.importResults[asset.guid] = {false, exception.what()};
-            INXLOG_ERROR("Asset import failed for '", asset.path, "': ", exception.what());
+            const auto error = Utf8Diagnostic(exception.what());
+            workingSet.importResults[asset.guid] = {false, error};
+            INXLOG_ERROR("Asset import failed for '", asset.path, "': ", error);
         }
         ++processed;
     }
@@ -2918,7 +2926,7 @@ void AssetDatabase::BeginModelReimport(const std::string &path, const nlohmann::
             pending->workerMilliseconds =
                 std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - importStarted).count();
         } catch (const std::exception &exception) {
-            worker.error = exception.what();
+            worker.error = Utf8Diagnostic(exception.what());
         } catch (...) {
             worker.error = "Importer raised a non-standard exception";
         }
@@ -2965,7 +2973,7 @@ std::optional<AssetMutationResult> AssetDatabase::TryCommitModelReimport()
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - livePublicationStart).count();
     } catch (const std::exception &exception) {
         result.errorCode = AssetMutationErrorCode::ImportFailed;
-        result.error = exception.what();
+        result.error = Utf8Diagnostic(exception.what());
         INXLOG_ERROR("Model Apply failed for '", result.path, "': ", result.error);
     }
     return result;
@@ -3537,7 +3545,7 @@ bool AssetDatabase::RunImporter(const std::string &guid, const std::string &path
         PublishImportArtifact(request, std::move(artifact), persistMetadata, expectedMetadata);
         return true;
     } catch (const std::exception &exception) {
-        error = exception.what();
+        error = Utf8Diagnostic(exception.what());
     } catch (...) {
         error = "Importer raised a non-standard exception";
     }

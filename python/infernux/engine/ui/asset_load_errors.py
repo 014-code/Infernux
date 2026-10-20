@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from infernux.debug import Debug
-from infernux.engine.path_utils import is_path_within, path_key, relative_path
+from infernux.engine.path_utils import is_path_within, lexical_path_key, relative_path
 from .project_delete_confirmation import ProjectDeleteConfirmationCoordinator
 
 
@@ -28,18 +28,19 @@ class AssetLoadErrors:
         if not guid:
             return
         self.database.report_asset_load_failure(guid, error)
-        key = path_key(path)
+        key = lexical_path_key(path)
         entry = dict(self.errors.get(key, {}))
         entry.update(guid=guid, path=path, error=error)
         self.errors[key] = self._pending[guid] = entry
         Debug.log_error(f"Asset load failed for '{path}': {error}")
 
     def error(self, path: str) -> str:
-        entry = self.errors.get(path_key(path))
+        # Catalog paths are canonical; Inspector lookups must not resolve them on disk again.
+        entry = self.errors.get(lexical_path_key(path))
         return entry["error"] if entry is not None else ""
 
     def show(self, path: str) -> None:
-        entry = self.errors.get(path_key(path))
+        entry = self.errors.get(lexical_path_key(path))
         if entry is not None:
             self._pending[entry["guid"]] = entry
 
@@ -48,7 +49,7 @@ class AssetLoadErrors:
         if generation != self.generation:
             self.generation = generation
             entries = self.database.get_import_failures()
-            self.errors = {path_key(entry["path"]): entry for entry in entries}
+            self.errors = {lexical_path_key(entry["path"]): entry for entry in entries}
             current = {entry["guid"] for entry in entries}
             self._pending = {guid: entry for guid, entry in self._pending.items() if guid in current}
             self._seen = {guid: stamp for guid, stamp in self._seen.items() if guid in current}

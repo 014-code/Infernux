@@ -30,8 +30,12 @@ def _enable_mesh_read_write(database, source: Path) -> None:
     assert result, result.error
 
 
-@pytest.mark.parametrize("suffix", [".mat", ".scene", ".ppm"])
-def test_failed_asset_load_is_visible_without_rewriting_source(engine, scene, tmp_path, monkeypatch, suffix):
+@pytest.mark.parametrize("suffix,damaged", [
+    (".mat", b"{ damaged document"), (".scene", b"{ damaged document"),
+    (".ppm", b"P3\ninvalid image"), (".mat", b"\x89PNG\r\n\x1a\n\xff\x00\x80"),
+    (".scene", b"\x89PNG\r\n\x1a\n\xff\x00\x80"),
+])
+def test_failed_asset_load_is_visible_without_rewriting_source(engine, scene, tmp_path, monkeypatch, suffix, damaged):
     from infernux.engine.scene_authoring import encode_scene_document
 
     database = engine.get_asset_database()
@@ -46,7 +50,6 @@ def test_failed_asset_load_is_visible_without_rewriting_source(engine, scene, tm
     assert imported, imported.error
     guid = imported.guid
     metadata = Path(str(path) + ".meta").read_bytes()
-    damaged = b"P3\ninvalid image" if suffix == ".ppm" else b"{ damaged document"
     try:
         path.write_bytes(damaged)
         if suffix == ".scene":
@@ -85,7 +88,7 @@ def test_refresh_retains_new_invalid_assets_as_failed_catalog_entries(engine, tm
     database = engine.get_asset_database()
     assets = Path(database.project_root) / "Assets" / tmp_path.name
     assets.mkdir(parents=True)
-    damaged = {"Broken.mat": b"{ invalid material", "Broken.ppm": b"P3\ninvalid image"}
+    damaged = {"Broken.mat": b"\x89PNG\r\n\x1a\n\xff\x00\x80", "Broken.ppm": b"P3\ninvalid image"}
     for name, content in damaged.items():
         (assets / name).write_bytes(content)
     try:

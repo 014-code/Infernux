@@ -140,7 +140,7 @@ def test_project_delete_confirmation_rejects_reentrant_double_submit(tmp_path):
 def test_asset_error_cancel_does_not_repeat_until_user_reopens(monkeypatch, tmp_path):
     from types import SimpleNamespace
     from infernux.engine.ui.asset_load_errors import AssetLoadErrors
-    from infernux.engine.path_utils import path_key
+    from infernux.engine.path_utils import lexical_path_key
 
     asset = tmp_path / "Damaged.mat"
     damaged = b"{ invalid material"
@@ -166,7 +166,10 @@ def test_asset_error_cancel_does_not_repeat_until_user_reopens(monkeypatch, tmp_
     assert not coordinator.is_active
     assert asset.read_bytes() == damaged
     assert deleted == []
-    assert errors.errors[path_key(str(asset))]["error"] == failure["error"]
+    with monkeypatch.context() as lookup:
+        lookup.setattr(__import__("os").path, "realpath", lambda *_: pytest.fail("Inspector lookup touched disk"))
+        assert errors.error(str(asset)) == failure["error"]
+    assert errors.errors[lexical_path_key(str(asset))]["error"] == failure["error"]
 
     errors.report(str(asset), failure["error"])
     errors.poll()

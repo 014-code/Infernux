@@ -32,13 +32,13 @@ from infernux.renderstack.render_effect_compiler import RenderEffectArtifactRegi
 @pytest.mark.parametrize("same_asset", [False, True])
 def test_failed_inspector_load_never_autosaves_over_damaged_source(monkeypatch, tmp_path, same_asset):
     from infernux.engine.ui.asset_load_errors import AssetLoadErrors
-    from infernux.engine.path_utils import path_key
+    from infernux.engine.path_utils import lexical_path_key
 
     path = tmp_path / "Damaged.mat"
     path.write_bytes(b"{ invalid material")
     monkeypatch.setattr(AssetLoadErrors, "_instance", None)
     errors = AssetLoadErrors(None, None)
-    errors.errors[path_key(str(path))] = {"guid": "damaged", "path": str(path), "error": "invalid material"}
+    errors.errors[lexical_path_key(str(path))] = {"guid": "damaged", "path": str(path), "error": "invalid material"}
     state = ui._State()
     state.file_path = str(path if same_asset else tmp_path / "Previous.mat")
     flushed = []

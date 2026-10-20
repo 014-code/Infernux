@@ -51,7 +51,7 @@
     {
       "reference": "infernux/platform-windows",
       "name": "Infernux Windows Platform",
-      "version": "0.2.10",
+      "version": "0.2.11",
       "intro": "Build Infernux games for Windows with Vulkan.",
       "intros": {
         "zh-CN": "使用 Vulkan 将 Infernux 游戏构建到 Windows。"
@@ -62,7 +62,7 @@
       "repository": "https://github.com/InfernuxEngine/infernux_windows",
       "source": {
         "type": "url",
-        "location": "https://downloads.infernux-engine.com/plugins/infernux.platform-windows/0.2.10/infernux.platform-windows.inxpkg"
+        "location": "https://downloads.infernux-engine.com/plugins/infernux.platform-windows/0.2.11/infernux.platform-windows.inxpkg"
       },
       "category": "platform_build",
       "targets": [
@@ -87,7 +87,7 @@
     {
       "reference": "infernux/platform-linux",
       "name": "Infernux Linux Platform",
-      "version": "0.2.9",
+      "version": "0.2.10",
       "intro": "Build Infernux games for Linux with Vulkan.",
       "intros": {
         "zh-CN": "使用 Vulkan 将 Infernux 游戏构建到 Linux。"
@@ -98,7 +98,7 @@
       "repository": "https://github.com/InfernuxEngine/infernux_linux",
       "source": {
         "type": "url",
-        "location": "https://downloads.infernux-engine.com/plugins/infernux.platform-linux/0.2.9/infernux.platform-linux.inxpkg"
+        "location": "https://downloads.infernux-engine.com/plugins/infernux.platform-linux/0.2.10/infernux.platform-linux.inxpkg"
       },
       "category": "platform_build",
       "targets": [
