@@ -261,14 +261,17 @@ template <typename Resolve> void ValidateModelMaterialTargets(const ImportArtifa
     }
 }
 
-InxResourceMeta LoadMetadataDocument(const std::string &path, AtomicFileState *consumedState = nullptr)
+InxResourceMeta LoadMetadataDocument(const std::string &path, AtomicFileState *consumedState = nullptr,
+                                     std::string *consumedContent = nullptr)
 {
-    const auto snapshot = ReadTextFileSnapshot(path);
+    auto snapshot = ReadTextFileSnapshot(path);
     const nlohmann::json document = nlohmann::json::parse(snapshot.content);
     InxResourceMeta metadata;
     metadata.DeserializeDocument(document);
     if (consumedState)
         *consumedState = snapshot.state;
+    if (consumedContent)
+        *consumedContent = std::move(snapshot.content);
     return metadata;
 }
 
@@ -1720,7 +1723,8 @@ void AssetDatabase::PrepareMetadata(WorkerMetadataPrepare &item)
         // Read-only package roots never consume sidecars. They are derived
         // project state and may have been produced by a different engine.
         if (sidecarExists && !item.file.readOnly) {
-            InxResourceMeta loadedMetadata = LoadMetadataDocument(metaPath, &*item.expectedMetadata);
+            InxResourceMeta loadedMetadata =
+                LoadMetadataDocument(metaPath, &*item.expectedMetadata, &item.metadataSource);
             if (item.mode == WorkerMetadataPrepare::Mode::LoadExisting ||
                 item.mode == WorkerMetadataPrepare::Mode::CreateOrLoad) {
                 // The current source fingerprint is authoritative. Rebuild
@@ -2022,8 +2026,8 @@ bool AssetDatabase::ContinuePendingMetadataMerge(const std::shared_ptr<PendingRe
         workingSet.guidToPath[guid] = item.file.path;
         workingSet.pathToGuid[item.file.normalizedPath] = guid;
         state->pendingImports.push_back({guid, item.file.path, item.file.normalizedPath, item.file.source,
-                                         item.file.meta, item.file.readOnly, !item.file.readOnly,
-                                         item.expectedMetadata});
+                                         item.file.meta, item.file.readOnly, !item.file.readOnly, item.expectedMetadata,
+                                         std::move(item.metadataSource)});
         ++processed;
     }
 
@@ -2239,7 +2243,7 @@ bool AssetDatabase::ContinuePendingImportMerge(const std::shared_ptr<PendingRefr
     while (state->importResultMergeCursor == state->workerImports.size() &&
            state->metadataWritePrepareCursor < state->pendingImports.size() &&
            HasOwnerMergeBudget(ownerStarted, processed)) {
-        const auto &asset = state->pendingImports[state->metadataWritePrepareCursor++];
+        auto &asset = state->pendingImports[state->metadataWritePrepareCursor++];
         state->committedDependencies.try_emplace(asset.guid, std::vector<std::string>{});
         if (asset.persistMetadata) {
             const auto metadata = workingSet.metas.find(asset.guid);
@@ -2247,9 +2251,14 @@ bool AssetDatabase::ContinuePendingImportMerge(const std::shared_ptr<PendingRefr
                 workingSet.importResults[asset.guid] = {false, "Pending import has no metadata to persist"};
             } else {
                 const std::string metaPath = InxResourceMeta::GetMetaFilePath(asset.path);
-                state->metadataWrites.push_back(
-                    {metaPath, metadata->second->SerializeDocumentPortable(m_projectRoot).dump(4) + "\n",
-                     asset.expectedMetadata});
+                std::string content = metadata->second->SerializeDocumentPortable(m_projectRoot).dump(4) + "\n";
+                asset.persistMetadata = content != asset.metadataSource;
+                if (asset.persistMetadata) {
+                    state->metadataWrites.push_back({metaPath, std::move(content), asset.expectedMetadata});
+                } else {
+                    const auto &consumed = asset.expectedMetadata.value();
+                    asset.meta = {consumed.size, consumed.modifiedNs};
+                }
             }
         }
         ++processed;
@@ -2322,7 +2331,7 @@ bool AssetDatabase::ContinuePendingFileStateMerge(const std::shared_ptr<PendingR
     while (state->fileStateMergeCursor < state->pendingImports.size() && HasOwnerMergeBudget(ownerStarted, processed)) {
         const auto &asset = state->pendingImports[state->fileStateMergeCursor++];
         AssetFileFingerprint meta = asset.meta;
-        if (!asset.readOnly) {
+        if (asset.persistMetadata) {
             const auto committed = state->committedMetadataFingerprints.find(asset.normalizedPath);
             if (committed == state->committedMetadataFingerprints.end())
                 throw std::logic_error("metadata transaction did not return a committed fingerprint");

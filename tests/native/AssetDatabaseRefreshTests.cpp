@@ -142,6 +142,19 @@ void TestNonGuidRenderEffectFieldsDoNotCreateDependenciesOnInitialRefresh()
             Require(entry != nullptr, "effect group is absent from the initial asset index");
             Require(entry->importSucceeded, "non-GUID render effect fields should not invalidate the asset");
             Require(entry->dependencies.empty(), "path-only render effect field published a dependency");
+
+            const auto groupMeta = infernux::ToFsPath(infernux::FromFsPath(group) + ".meta");
+            const auto metadataTime = std::filesystem::file_time_type::clock::now() - std::chrono::hours(24);
+            std::filesystem::last_write_time(groupMeta, metadataTime);
+            {
+                std::ofstream output(group, std::ios::app);
+                output << '\n';
+            }
+            assetDatabase->Refresh();
+            Require(assetDatabase->GetGuidFromPath(infernux::FromFsPath(group)) == groupGuid,
+                    "text document refresh changed the asset identity");
+            Require(std::filesystem::last_write_time(groupMeta) == metadataTime,
+                    "source-only refresh rewrote an unchanged metadata document");
             registry.Shutdown();
         }
         infernux::JobSystem::Shutdown();

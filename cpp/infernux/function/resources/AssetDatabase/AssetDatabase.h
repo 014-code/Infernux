@@ -529,6 +529,7 @@ class AssetDatabase : public NativeLifetimeOwner
         bool readOnly = false;
         bool persistMetadata = true;
         std::optional<AtomicFileState> expectedMetadata;
+        std::string metadataSource;
     };
 
     struct WorkerImport
@@ -565,6 +566,7 @@ class AssetDatabase : public NativeLifetimeOwner
         bool inheritedGuid = false;
         std::optional<InxResourceMeta> metadata;
         std::optional<AtomicFileState> expectedMetadata;
+        std::string metadataSource;
         std::string error;
         std::thread::id producerThread;
         Mode mode = Mode::CreateOrLoad;
