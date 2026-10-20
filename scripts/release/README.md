@@ -20,7 +20,9 @@ and catalogs change only after the actual artifacts have been published.
 
 ## Release sequence
 
-1. Build and test the versioned engine using the desktop and Player workflows.
+1. Update the source release identities, both README badges/citations and the
+   bilingual changelogs before building; the README is embedded in wheel metadata.
+   Build and test the versioned engine using the desktop and Player workflows.
 2. Publish each platform plugin's matching precompiled payload from its own
    repository. A workflow-only repair can recover publication of an existing
    tagged payload without changing that tag.

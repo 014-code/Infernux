@@ -47,7 +47,7 @@ class Spin(inx.InxComponent):
 <sub>An ordinary Python class. `speed` appears in the Inspector and can be tuned while the game runs.</sub>
 
 > [!WARNING]
-> Infernux is **alpha software** under active development; the current release is **0.4.2**. APIs still change between releases, and the neural-network features below are roadmap items rather than shipped features. It is ready for experiments, tools and small games, not yet for a production schedule.
+> Infernux is **alpha software** under active development. APIs still change between releases, and the neural-network features below are roadmap items rather than shipped features. It is ready for experiments, tools and small games, not yet for a production schedule.
 
 ## Highlights
 
@@ -125,7 +125,7 @@ Infernux is released under the [MIT license](LICENSE): free to use, no royalties
   author  = {Chen, Lizhe},
   title   = {Infernux},
   year    = {2026},
-  version = {0.4.2},
+  version = {0.4.3},
   url     = {https://github.com/ChenlizheMe/Infernux}
 }
 ```
