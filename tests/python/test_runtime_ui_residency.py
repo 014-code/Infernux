@@ -5,6 +5,7 @@ import pytest
 
 from infernux.lib import SceneManager
 from infernux.ui import UICanvas, UIButton
+from infernux.ui.ui_texture_cache import UITextureCache
 from infernux.engine.runtime_screen_ui import RuntimeScreenUISubmission
 from test_runtime_screen_ui_submission import _Engine, _Renderer
 
@@ -28,9 +29,9 @@ def submission(monkeypatch):
     renderer = _Renderer()
     engine = _Engine(renderer)
     submitted = []
-    monkeypatch.setattr(module, "_get_tex_cache", lambda: SimpleNamespace(
-        has_pending=False, generation=0, get_bound=lambda _engine: lambda _path: 0,
-    ))
+    texture_cache = UITextureCache()
+    texture_cache.get_bound = lambda _engine: lambda _path: 0
+    monkeypatch.setattr(module, "_get_tex_cache", lambda: texture_cache)
     monkeypatch.setattr(module, "_ui_dispatch", lambda element, *_a, **_kw: submitted.append(element))
     return engine, RuntimeScreenUISubmission(engine), submitted
 
@@ -149,10 +150,61 @@ def test_host_input_hits_nonactive_canvas_and_observes_sort_order(scene, monkeyp
         from infernux.engine.player_gui import PlayerGUI
         panel = PlayerGUI(object())
     else:
+        import infernux.engine.ui.game_view_panel as game_view
         from infernux.engine.ui.game_view_panel import GameViewPanel
         panel = GameViewPanel(engine=None)
         panel._display_scale = 1.0
         panel._is_playing = lambda: False
+        panel._last_game_width, panel._last_game_height = 1920, 1080
+        native_enabled = [True]
+        panel._engine = SimpleNamespace(get_screen_ui_renderer=lambda: SimpleNamespace(
+            is_enabled=lambda: native_enabled[0],
+        ))
+        from infernux.ui import UIText
+
+        decoration_owner = peer.create_game_object("Noninteractive HUD text")
+        decoration_owner.set_parent(second.game_object)
+        decoration = UIText()
+        decoration_owner.add_py_component(decoration)
+        decoration.raycast_target = False
+        visits, semantics, overlays = [], [], []
+
+        class CanvasSnapshot(tuple):
+            def __iter__(self):
+                visits.append("canvas iteration")
+                return super().__iter__()
+
+        canvases = CanvasSnapshot((first, second))
+        lookups = []
+
+        def canvas_snapshot():
+            lookups.append(scene)
+            return scene, canvases
+
+        monkeypatch.setattr(panel, "_get_scene_and_canvases", canvas_snapshot)
+        context = SimpleNamespace(
+            semantic_capture_enabled=False,
+            record_semantic_rect=lambda *args: semantics.append(args),
+        )
+        panel._render_screen_ui(context, 0, 0, 1920, 1080)
+        assert lookups == [] and visits == [] and semantics == []
+        context.semantic_capture_enabled = True
+
+        def unexpected_layout(*_args):
+            pytest.fail("Button semantics must not lay out noninteractive HUD elements")
+
+        with monkeypatch.context() as capture_patch:
+            capture_patch.setattr(decoration, "get_rect", unexpected_layout)
+            panel._render_screen_ui(context, 0, 0, 1920, 1080)
+        assert lookups == [scene] and visits == ["canvas iteration"] and len(semantics) == 2
+        context.semantic_capture_enabled = False
+        native_enabled[0] = False
+        monkeypatch.setattr(game_view, "_get_tex_cache", lambda: SimpleNamespace(get_bound=lambda _engine: None))
+        monkeypatch.setattr(game_view, "_ui_dispatch", lambda element, *_args, **_kwargs: overlays.append(element))
+        panel._render_screen_ui(context, 0, 0, 1920, 1080)
+        assert lookups == [scene, scene]
+        assert visits == ["canvas iteration"] * 2
+        assert overlays == [first_button, second_button, decoration]
     key = (PointerType.Mouse, -1)
     clear()
     try:

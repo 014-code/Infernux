@@ -104,22 +104,20 @@ void DestroyVmaAllocator(VmaAllocator allocator)
 
 VmaRuntimeStatistics QueryVmaRuntimeStatistics(VmaAllocator allocator, VkPhysicalDevice physicalDevice)
 {
-    VmaTotalStatistics statistics{};
-    vmaCalculateStatistics(allocator, &statistics);
-
     VmaRuntimeStatistics result;
-    result.allocationBytes = statistics.total.statistics.allocationBytes;
-    result.blockBytes = statistics.total.statistics.blockBytes;
-    result.allocationCount = statistics.total.statistics.allocationCount;
 
     VkPhysicalDeviceMemoryProperties properties{};
     vkGetPhysicalDeviceMemoryProperties(physicalDevice, &properties);
     VmaBudget budgets[VK_MAX_MEMORY_HEAPS]{};
     vmaGetHeapBudgets(allocator, budgets);
     for (uint32_t index = 0; index < properties.memoryHeapCount; ++index) {
+        const auto &statistics = budgets[index].statistics;
+        result.allocationBytes += statistics.allocationBytes;
+        result.blockBytes += statistics.blockBytes;
+        result.allocationCount += statistics.allocationCount;
         if ((properties.memoryHeaps[index].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) == 0)
             continue;
-        result.deviceLocalAllocationBytes += statistics.memoryHeap[index].statistics.allocationBytes;
+        result.deviceLocalAllocationBytes += statistics.allocationBytes;
         result.deviceLocalUsageBytes += budgets[index].usage;
         result.deviceLocalBudgetBytes += budgets[index].budget;
     }

@@ -1,32 +1,14 @@
 """ComponentNativeMixin — extracted from InxComponent."""
 from __future__ import annotations
 
-"""
-InxComponent - Base class for all Python-defined components.
 
-Provides Unity-style lifecycle methods and property injection.
-Users inherit from this class to create custom game logic.
-
-Example:
-    from infernux.components import InxComponent, serialized_field
-    
-    class PlayerController(InxComponent):
-        speed: float = serialized_field(default=5.0)
-        
-        def start(self):
-            print("Player started!")
-        
-        def update(self, delta_time: float):
-            pos = self.transform.position
-            self.transform.position = Vector3(pos.x + self.speed * delta_time, pos.y, pos.z)
-"""
-
-from typing import Optional, Dict, Any, Type, TYPE_CHECKING, List
-import copy
-import threading
+from typing import Optional, Any, TYPE_CHECKING
 import weakref
 
 from infernux.lib import GameObject
+
+if TYPE_CHECKING:
+    from infernux.lib import Transform
 
 
 class ComponentNativeMixin:
@@ -77,6 +59,21 @@ class ComponentNativeMixin:
             return cleanup_binding[1]
         if self._is_destroyed:
             return None
+        cached = self.__dict__.get("_game_object")
+        if cached is not None:
+            version = self.__dict__.get("_game_object_bound_version")
+            scene = getattr(self, "_native_scene", None)
+            if version is not None and scene is not None:
+                try:
+                    valid = bool(getattr(cached, "is_valid", True))
+                    # Script lifecycles invalidate their owner binding directly.
+                    if valid and not self._tracks_scene_structure_binding():
+                        return cached
+                    current = int(getattr(scene, "structure_version"))
+                except (RuntimeError, TypeError, ValueError):
+                    current, valid = None, False
+                if valid and current == version:
+                    return cached
         cpp_component = self._get_bound_native_component()
         if cpp_component is not None:
             try:
@@ -87,11 +84,16 @@ class ComponentNativeMixin:
             if go is None:
                 self._invalidate_native_binding()
                 return None
-            if not self._is_native_game_object_alive(go):
-                self._invalidate_native_binding()
-                return None
-            self._game_object = go
-            self._game_object_ref = weakref.ref(go)
+            if self._game_object is not go:
+                self._game_object = go
+                self._game_object_ref = weakref.ref(go)
+            scene = getattr(self, "_native_scene", None)
+            try:
+                self._game_object_bound_version = (
+                    int(getattr(scene, "structure_version")) if scene is not None else None
+                )
+            except (RuntimeError, TypeError, ValueError):
+                self._game_object_bound_version = None
             return go
         # Use weak reference if available for safety
         if self._game_object_ref is not None:
@@ -110,22 +112,49 @@ class ComponentNativeMixin:
         return self._game_object
 
     def _try_get_transform(self) -> Optional['Transform']:
-        """Return the attached Transform, or None when the component is invalid."""
-        go = self._try_get_game_object()
-        if go is None:
+        """Return the attached Transform, or None when the component is invalid.
+
+        The native Transform identity is stable for as long as the component is
+        bound to the same GameObject, so the wrapper is cached on the instance.
+        Rebinding or invalidation drops the cache; a retired native wrapper is
+        still protected by the global lifetime guard on first use.
+        """
+        cleanup_binding = self.__dict__.get("_native_cleanup_binding")
+        if cleanup_binding is not None:
+            return cleanup_binding[1].get_transform()
+        if self._is_destroyed:
             return None
-        try:
-            return go.get_transform()
-        except RuntimeError:
-            self._invalidate_native_binding()
-            return None
+        cached = self.__dict__.get("_transform_cache")
+        if cached is not None:
+            return cached
+        cpp_component = self._get_bound_native_component()
+        if cpp_component is not None:
+            try:
+                transform = cpp_component.get_transform()
+            except RuntimeError:
+                self._invalidate_native_binding()
+                return None
+        else:
+            go = self._try_get_game_object()
+            if go is None:
+                return None
+            try:
+                transform = go.get_transform()
+            except RuntimeError:
+                self._invalidate_native_binding()
+                return None
+        self.__dict__["_transform_cache"] = transform
+        return transform
 
     def _set_game_object(self, game_object: Optional['GameObject']):
         """Internal: Set the owning GameObject. Called by the engine."""
+        # A different owner means a different native Transform.
+        self.__dict__.pop("_transform_cache", None)
         # ---- Update active-instances registry ----
         self._remove_from_active_registry()
 
         self._game_object = game_object
+        self.__dict__.pop("_game_object_bound_version", None)
         # Also store weak reference for safe access
         if game_object is not None:
             self._game_object_ref = weakref.ref(game_object)
@@ -135,7 +164,7 @@ class ComponentNativeMixin:
                 lst = _registry.get(go_id)
                 if lst is None:
                     _registry[go_id] = [self]
-                elif self not in lst:
+                elif all(item is not self for item in lst):
                     lst.append(self)
                 self._registered_go_id = go_id
                 from ._component_lifecycle import notify_runtime_component_added
@@ -152,8 +181,10 @@ class ComponentNativeMixin:
         _registry = type(self)._active_instances
         lst = _registry.get(old_id)
         if lst is not None:
-            if self in lst:
-                lst.remove(self)
+            for index, item in enumerate(lst):
+                if item is self:
+                    del lst[index]
+                    break
             if not lst:
                 _registry.pop(old_id, None)
         self._registered_go_id = None
@@ -208,6 +239,7 @@ class ComponentNativeMixin:
 
     def _invalidate_native_binding(self, *, release_fields: bool = True):
         """Invalidate native references after scene rebuild/destruction."""
+        self.__dict__.pop("_transform_cache", None)
         if release_fields:
             self._release_component_data_slot()
         self._cpp_component = None
@@ -222,6 +254,7 @@ class ComponentNativeMixin:
         self._remove_from_active_registry()
         self._game_object = None
         self._game_object_ref = None
+        self.__dict__.pop("_game_object_bound_version", None)
 
     def _detach_native_binding_for_replacement(self):
         """Detach for script reload without invoking the user's on_destroy hook."""
@@ -303,30 +336,25 @@ class ComponentNativeMixin:
         cleanup_binding = self.__dict__.get("_native_cleanup_binding")
         if cleanup_binding is not None and not self._is_destroyed:
             return cleanup_binding[0]
-        cpp_component = getattr(self, '_cpp_component', None)
+        cpp_component = self._cpp_component
         if cpp_component is None:
             return None
-        handle = getattr(self, '_native_handle', None)
-        scene = getattr(self, '_native_scene', None)
+        if not self._tracks_scene_structure_binding():
+            return cpp_component
+        if self._is_destroyed:
+            self._invalidate_native_binding()
+            return None
+        bound = self._bound_structure_version
+        if bound is not None and self._native_binding_scene_revision() == bound:
+            return cpp_component
+        handle = self._native_handle
+        scene = self._native_scene
         if handle is not None and scene is not None:
             try:
-                resolved = scene.resolve_component(handle)
-            except (RuntimeError, AttributeError):
+                resolved = scene._resolve_native_component(handle, self)
+            except RuntimeError:
                 resolved = None
             if resolved is None:
-                self._invalidate_native_binding()
-                return None
-            # Native scene resolution normally returns the private proxy. Some
-            # public/facade resolution paths may already unwrap that proxy to
-            # this Python component; that still proves the handle is live, but
-            # must not make _cpp_component self-referential.
-            if resolved is self:
-                if self._tracks_scene_structure_binding():
-                    self._capture_bound_structure_version()
-                return cpp_component
-            # A different public Python object at the same handle means this
-            # wrapper belongs to the scene generation that was replaced.
-            if getattr(resolved, "_get_bound_native_component", None) is not None:
                 self._invalidate_native_binding()
                 return None
             self._cpp_component = resolved

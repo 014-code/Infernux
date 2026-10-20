@@ -550,35 +550,30 @@ def read_meta_file(asset_path: str) -> Optional[Dict[str, Any]]:
 
 def _published_asset_database():
     """Return the process AssetDatabase without importing Editor services."""
-    try:
-        from infernux.lib import AssetRegistry
-        return AssetRegistry.instance().get_asset_database()
-    except Exception:
-        return None
+    from infernux.lib import AssetRegistry
+
+    return AssetRegistry.instance().get_asset_database()
 
 
 def read_asset_metadata(asset_path: str, *, guid: str = "") -> Optional[Dict[str, Any]]:
     """Read an asset's authoring metadata in Editor and Player builds.
 
-    Editor projects keep the document in a ``.meta`` sidecar. Player packages
-    intentionally omit those authoring files, but preserve their complete
-    contents in ``RuntimeAssetRecords.json`` and install them into the native
-    AssetDatabase. Consumers use this function so packaging changes storage,
-    not metadata semantics.
+    GUID consumers use the published AssetDatabase snapshot in both hosts.
+    Path-only authoring queries can inspect a pending ``.meta`` edit before
+    import. Player packages publish the same metadata from RuntimeAssetRecords.
     """
-    sidecar = read_meta_file(asset_path)
-    if sidecar is not None:
-        return sidecar
+    if not guid:
+        sidecar = read_meta_file(asset_path)
+        if sidecar is not None:
+            return sidecar
 
     database = _published_asset_database()
     if database is None:
         return None
     try:
-        native_meta = None
-        if guid:
-            native_meta = database.get_meta_by_guid(guid)
-        if native_meta is None and asset_path:
-            native_meta = database.get_meta_by_path(asset_path)
+        native_meta = (
+            database.get_meta_by_guid(guid) if guid else database.get_meta_by_path(asset_path)
+        )
         if native_meta is None:
             return None
         document = native_meta.serialize_document()

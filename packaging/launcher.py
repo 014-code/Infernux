@@ -24,9 +24,8 @@ if __name__ == "__main__":
     configure_logging()
 
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QDialog,
-    QHBoxLayout, QVBoxLayout, QSizePolicy, QStackedWidget,
-    QGraphicsOpacityEffect, QSystemTrayIcon, QMenu, QTabWidget, QLabel,
+    QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QSizePolicy, QStackedWidget,
+    QGraphicsOpacityEffect, QSystemTrayIcon, QMenu, QTabWidget,
 )
 from PySide6.QtCore import QByteArray, QObject, QRect, QThread, Qt, QTimer, QPropertyAnimation, QEasingCurve, Slot
 from PySide6.QtGui import QIcon, QFontDatabase, QKeySequence, QShortcut
@@ -35,7 +34,7 @@ from ui_project_list import ProjectListPane
 from database import ProjectDatabase
 from style import StyleManager
 from hub_resources import ICON_PATH, FONT_PATHS
-from hub_utils import HubLaunchContext, get_app_dir, is_frozen
+from hub_utils import HubLaunchContext, get_app_dir, is_frozen, merge_child_env_utf8
 from python_runtime import PythonRuntimeManager
 from android_support import AndroidSupportManager
 from blender_support import BlenderSupportManager
@@ -745,7 +744,7 @@ def _handle_uninstall() -> int:
         pass
 
     # Ask user if they want to remove install files
-    app = _standalone_application()
+    _app = _standalone_application()
     answer = dialogs.question(
         None,
         tr("Uninstall Infernux Hub"),
@@ -776,7 +775,7 @@ def _handle_uninstall_macos() -> int:
     """Remove Infernux Hub from macOS."""
     import shutil as _shutil
 
-    app = _standalone_application()
+    _app = _standalone_application()
 
     # Typical macOS install / config locations
     config_dir = os.path.expanduser("~/.config/Infernux")
@@ -800,7 +799,7 @@ def _handle_uninstall_macos() -> int:
 
 def _handle_uninstall_linux() -> int:
     """Remove the Linux application while preserving Hub user data."""
-    app = _standalone_application()
+    _app = _standalone_application()
 
     desktop_entry = os.path.expanduser("~/.local/share/applications/infernux-hub.desktop")
     install_dir = get_app_dir()
@@ -833,14 +832,16 @@ def _handle_uninstall_linux() -> int:
 
 def run_hub() -> int:
     from hub_instance import HubInstance
-    from hub_utils import get_hub_user_data_dir
+    from hub_utils import get_hub_user_data_dir, publish_hub_shared_data_root
 
+    os.environ.update(merge_child_env_utf8())
     app = QApplication.instance() or QApplication(sys.argv)
     instance = None
     try:
         instance = HubInstance(get_hub_user_data_dir())
         if not instance.acquire_or_activate():
             return 0
+        publish_hub_shared_data_root()
         if is_frozen() and sys.platform == "win32":
             from installer.install_python_runtime import repair_legacy_windows_permissions
             repair_legacy_windows_permissions(get_app_dir())

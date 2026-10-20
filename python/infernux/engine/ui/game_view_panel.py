@@ -5,24 +5,18 @@ The Game View uses a separate render target from the Scene View.
 It displays what the player would see through the scene's main Camera component.
 """
 
-import os
 import configparser
 from time import perf_counter as _pc
 from typing import Optional
-from infernux.lib import InxGUIContext, SceneManager as _SM
+from infernux.lib import InxGUIContext, InputManager as _NativeInputManager, SceneManager as _SM
 from infernux.engine.i18n import t
 from infernux.engine.interaction import (
     ContinuousEditService,
     PanelInteractionDescriptor,
     ViewCommandService,
 )
-from infernux.input import Input, KeyCode
-from infernux.timing import Time
+from infernux.input import Input
 from infernux.engine.play_mode import PlayModeManager
-from infernux.engine.runtime_change_journal import (
-    RuntimeChangeDomain,
-    runtime_change_journal,
-)
 from infernux.engine.project_context import get_project_root
 from infernux.engine.project_view_settings import (
     load_project_view_settings,
@@ -96,17 +90,13 @@ class GameViewPanel(EditorPanel):
         if self._engine and self._play_mode_manager is None:
             self._play_mode_manager = self._engine.get_play_mode_manager()
         self.__is_playing = False
+        Input.set_game_focused(False)
+        _NativeInputManager.instance().set_editor_cursor_capture_allowed(False)
         
         # Game render target size tracking
         self._last_game_width = 0
         self._last_game_height = 0
         self._game_camera_was_enabled = False
-        self._cached_game_texture_id = 0
-        self._cached_game_texture_scene = None
-        self._cached_game_camera_signature = None
-        self._cached_game_texture_render_revision = None
-        self._cached_game_texture_target_generation = -1
-        self._game_texture_refresh_required = True
 
         # Retain the active scene's screen-space canvases across GUI builds.
         # The shared collector already caches its DFS, but asking it on every
@@ -159,7 +149,7 @@ class GameViewPanel(EditorPanel):
         active = bool(active)
         if not active:
             Input.set_game_focused(False)
-            Input.set_cursor_locked(False)
+            _NativeInputManager.instance().set_editor_cursor_capture_allowed(False)
 
         if not self._engine:
             if not active:
@@ -175,7 +165,6 @@ class GameViewPanel(EditorPanel):
     
     def set_engine(self, engine):
         self._engine = engine
-        self._invalidate_game_texture_cache()
         if self._engine:
             self._play_mode_manager = self._engine.get_play_mode_manager()
     
@@ -335,13 +324,17 @@ class GameViewPanel(EditorPanel):
             return max(64, int(self._custom_width)), max(64, int(self._custom_height))
         return int(w), int(h)
 
+    @property
+    def render_target_size(self) -> tuple[int, int]:
+        """Published Game render pixels, independent of editor display zoom."""
+        return self._last_game_width, self._last_game_height
+
     def prepare_render_target(self):
         """Publish Game pixels before scene lifecycle, even when this tab is hidden."""
         self._load_resolution_settings()
         width, height = self._current_target_resolution()
         self._engine.resize_game_render_target(width, height)
         self._last_game_width, self._last_game_height = width, height
-        self._game_texture_refresh_required = True
 
     def _fit_scale(self):
         """Toggle Fit mode on."""
@@ -379,7 +372,6 @@ class GameViewPanel(EditorPanel):
         self._last_game_width = 0
         self._last_game_height = 0
         self._game_camera_was_enabled = False
-        self._invalidate_game_texture_cache()
         self._invalidate_ui_scene_cache()
 
     def on_disable(self):
@@ -442,95 +434,6 @@ class GameViewPanel(EditorPanel):
         self._cached_ui_snapshot_token = None
         self._cached_ui_canvases = ()
         self._cached_ui_sort_signature = ()
-
-    def _invalidate_game_texture_cache(self) -> None:
-        """Refresh the editor texture handle at the next visible frame."""
-        self._cached_game_texture_id = 0
-        self._cached_game_texture_scene = None
-        self._cached_game_camera_signature = None
-        self._cached_game_texture_render_revision = None
-        self._cached_game_texture_target_generation = -1
-        self._game_texture_refresh_required = True
-
-    @staticmethod
-    def _game_camera_signature(scene):
-        if scene is None:
-            return None
-        try:
-            camera = scene.main_camera
-        except (AttributeError, RuntimeError):
-            camera = None
-        if camera is None:
-            # Scene.main_camera is the authored preference, while native game
-            # rendering also accepts the first active Camera as a fallback.
-            # Retain the structure revision in the no-preference state so a
-            # newly attached Camera invalidates a cached "no camera" result.
-            return (
-                "scene_structure",
-                int(getattr(scene, "structure_version", 0) or 0),
-            )
-        try:
-            owner = camera.game_object
-        except (AttributeError, RuntimeError):
-            owner = None
-        return (
-            int(getattr(camera, "component_id", 0) or id(camera)),
-            bool(getattr(camera, "enabled", True)),
-            int(getattr(owner, "id", 0) or 0),
-            bool(getattr(owner, "active_in_hierarchy", True)),
-        )
-
-    @staticmethod
-    def _game_texture_render_revision() -> tuple[int, int]:
-        journal = runtime_change_journal()
-        return (
-            journal.domain_revision(RuntimeChangeDomain.RENDER_STACK),
-            journal.domain_revision(RuntimeChangeDomain.RENDER_STATE),
-        )
-
-    def _get_game_texture_id(self, scene) -> int:
-        """Return the retained ImGui handle for the current Game target.
-
-        The native getter resolves the active camera stack. Native camera
-        discovery is deliberately frame-local, so calling it from the editor
-        panel every UI frame turns a large scene into an O(object-count) panel
-        cost. The render target handle itself is stable until resize or render
-        configuration replacement, and camera availability has a cheap stable
-        signature exposed by Scene.main_camera.
-        """
-        camera_signature = self._game_camera_signature(scene)
-        render_revision = self._game_texture_render_revision()
-        generation_getter = getattr(
-            self._engine,
-            "get_game_render_target_generation",
-            None,
-        )
-        target_generation = (
-            int(generation_getter() or 0) if callable(generation_getter) else 0
-        )
-        refresh = (
-            self._game_texture_refresh_required
-            or scene is not self._cached_game_texture_scene
-            or camera_signature != self._cached_game_camera_signature
-            or render_revision != self._cached_game_texture_render_revision
-            or target_generation != self._cached_game_texture_target_generation
-        )
-        if refresh:
-            self._cached_game_texture_id = int(
-                self._engine.get_game_texture_id() or 0
-            )
-            self._cached_game_texture_scene = scene
-            self._cached_game_camera_signature = camera_signature
-            self._cached_game_texture_render_revision = render_revision
-            self._cached_game_texture_target_generation = target_generation
-            # A configured camera can precede lazy render-target readiness by
-            # one frame. Retry only that bounded startup case.
-            self._game_texture_refresh_required = (
-                self._cached_game_texture_id == 0
-                and camera_signature is not None
-                and camera_signature[0] != "scene_structure"
-            )
-        return self._cached_game_texture_id
 
     def _get_scene_and_canvases(self):
         """Return the camera scene and all resident screen-space canvases.
@@ -789,23 +692,22 @@ class GameViewPanel(EditorPanel):
                     _GAME_VIEW_FPS_SEMANTIC_ID,
                 )
 
-    def _route_game_input(self, ctx, target_w, target_h,
-                          viewport_hovered, viewport_clicked, canvases):
+    def _route_game_input(self, ctx, target_w, target_h, viewport_clicked):
         """Handle focus, cursor lock, and UI event routing after viewport render."""
+        is_playing = self._is_playing()
+        can_capture = is_playing and not self._is_paused()
+        native_input = _NativeInputManager.instance()
         if viewport_clicked:
             self._activate_panel(ctx, focus_window=True)
-
-        is_playing = self._is_playing()
+            if can_capture:
+                native_input.set_editor_cursor_capture_allowed(True)
         panel_focused = ClosablePanel.get_active_view_id() == self.window_id
-
+        if not can_capture or not panel_focused:
+            native_input.set_editor_cursor_capture_allowed(False)
         cursor_locked = Input.is_cursor_locked()
-        if cursor_locked:
-            if Input.get_key_down(KeyCode.ESCAPE):
-                Input.set_cursor_locked(False)
-                cursor_locked = False
 
         game_input_active = should_route_game_input(
-            is_playing=is_playing,
+            is_playing=can_capture,
             panel_focused=panel_focused,
             cursor_locked=cursor_locked,
         )
@@ -814,11 +716,11 @@ class GameViewPanel(EditorPanel):
         # gated away while the invisible viewport overlay owns the ImGui item.
         Input.set_game_focused(game_input_active)
 
-        if not is_playing and cursor_locked:
+        if not is_playing:
             Input.set_cursor_locked(False)
 
         if should_process_game_ui_events(
-            is_playing=is_playing,
+            is_playing=can_capture,
             panel_focused=panel_focused,
             cursor_locked=cursor_locked,
         ):
@@ -839,18 +741,14 @@ class GameViewPanel(EditorPanel):
         draw_h = float(target_h) * self._display_scale
 
         if target_w != self._last_game_width or target_h != self._last_game_height:
-            self._game_texture_refresh_required = True
             self._engine.resize_game_render_target(target_w, target_h)
             self._last_game_width = target_w
             self._last_game_height = target_h
 
-        # Pre-fetch scene + canvases once (used by both render and events).
-        # Canvas membership has its own revision and is unrelated to ordinary
-        # 3D scene topology changes.
-        _scene, _canvases = self._get_scene_and_canvases()
-        game_texture_id = self._get_game_texture_id(_scene)
+        # Native camera discovery is retained by scene revisions; it also owns
+        # target readiness and descriptor replacement after resize.
+        game_texture_id = self._engine.get_game_texture_id()
 
-        viewport_hovered = False
         viewport_clicked = False
 
         if ctx.begin_child("##GameViewportRegion", 0, 0, False):
@@ -879,7 +777,7 @@ class GameViewPanel(EditorPanel):
                 # synthetic input, activate the Game View's interaction item.
                 ctx.set_cursor_pos_x(cursor_start_x + pad_x)
                 ctx.set_cursor_pos_y(cursor_start_y + pad_y)
-                viewport_clicked = ctx.invisible_button(
+                ctx.invisible_button(
                     "##GameViewportInput", float(draw_w), float(draw_h)
                 )
                 vp = capture_viewport_info(ctx)
@@ -888,28 +786,21 @@ class GameViewPanel(EditorPanel):
                 ctx.record_semantic_item(
                     "viewport", "Game Viewport", True, _GAME_VIEWPORT_SEMANTIC_ID
                 )
-                # The overlay has a stable item id. The child-window check
-                # still prevents input from reaching this panel through a
-                # floating Editor window.
-                viewport_hovered = ctx.is_item_hovered() and ctx.is_window_hovered()
-                # ImGui buttons normally report activation on release. Screen
-                # UI needs the matching press frame too, so focus the Game View
-                # as soon as the pointer is pressed over its real viewport.
-                viewport_pressed = bool(ctx.is_mouse_button_clicked(0))
-                viewport_clicked = viewport_hovered and (viewport_clicked or viewport_pressed)
+                viewport_clicked = any(ctx.is_item_clicked(button) for button in range(5))
                 Input.set_game_viewport_origin(vp.image_min_x, vp.image_min_y)
                 Input.set_game_viewport_size(float(draw_w), float(draw_h))
+                _NativeInputManager.instance().set_editor_game_viewport(
+                    (vp.image_min_x, vp.image_min_y, float(draw_w), float(draw_h)),
+                    ctx.get_item_visible_rect(),
+                )
 
                 self._render_screen_ui(ctx, vp.image_min_x, vp.image_min_y,
-                                       float(draw_w), float(draw_h),
-                                       vp.image_min_x, vp.image_min_y,
-                                       vp.image_min_x + float(draw_w),
-                                       vp.image_min_y + float(draw_h),
-                                       scene=_scene, canvases=_canvases)
+                                       float(draw_w), float(draw_h))
 
             else:
                 Input.set_game_viewport_origin(0.0, 0.0)
                 Input.set_game_viewport_size(0.0, 0.0)
+                _NativeInputManager.instance().set_editor_game_viewport((0, 0, 0, 0), (0, 0, 0, 0))
                 ctx.label("")
                 ctx.label("  " + t("game_view.no_camera"))
                 ctx.label("  " + t("game_view.no_camera_detail"))
@@ -918,25 +809,30 @@ class GameViewPanel(EditorPanel):
                 ctx.label("  " + t("game_view.create_camera_hint_2"))
         ctx.end_child()
 
-        self._route_game_input(ctx, target_w, target_h,
-                               viewport_hovered, viewport_clicked, _canvases)
+        self._route_game_input(ctx, target_w, target_h, viewport_clicked)
 
     # ------------------------------------------------------------------
     # Screen-space UI overlay
     # ------------------------------------------------------------------
 
     def _render_screen_ui(self, ctx: InxGUIContext, vp_x: float, vp_y: float,
-                          vp_w: float, vp_h: float,
-                          clip_min_x: float = 0.0, clip_min_y: float = 0.0,
-                          clip_max_x: float = 1e9, clip_max_y: float = 1e9,
-                          scene=None, canvases=None):
+                          vp_w: float, vp_h: float):
         """Present UI semantics and the disabled-renderer fallback.
 
         GPU ScreenUI command submission is owned by
         :class:`RuntimeScreenUISubmission` at camera render submission.
         This panel only maps the resulting game image to editor interaction.
         """
-        if not self._engine or scene is None:
+        if not self._engine:
+            return
+
+        renderer = self._engine.get_screen_ui_renderer()
+        use_overlay = renderer is not None and not renderer.is_enabled()
+        if not use_overlay and not ctx.semantic_capture_enabled:
+            return
+
+        scene, canvases = self._get_scene_and_canvases()
+        if scene is None:
             return
 
         game_w = self._last_game_width
@@ -944,16 +840,9 @@ class GameViewPanel(EditorPanel):
         if game_w < 1 or game_h < 1:
             return
 
-        if canvases is None:
-            scene_manager = _SM.instance()
-            canvases = collect_sorted_runtime_canvas_snapshot(
-                *runtime_ui_scenes(scene_manager),
-            )
         if not canvases:
             return
 
-        renderer = self._engine.get_screen_ui_renderer()
-        use_overlay = renderer is not None and not renderer.is_enabled()
         get_texture_id = None
         if use_overlay:
             get_texture_id = _get_tex_cache().get_bound(self._engine)
@@ -990,22 +879,27 @@ class GameViewPanel(EditorPanel):
         semantic_capture_enabled = bool(getattr(ctx, "semantic_capture_enabled", False))
 
         for elem in canvas._get_elements():
+            if not use_overlay and not isinstance(elem, UIButton):
+                continue
             elem_go = elem.game_object
             if elem_go is not None and not elem_go.active_in_hierarchy:
                 continue
             if not getattr(elem, 'enabled', True):
                 continue
 
-            ex, ey, ew, eh = elem.get_rect(logical_w, logical_h)
+            if semantic_capture_enabled or use_overlay:
+                ex, ey, ew, eh = canvas.pixel_adjust_rect(
+                    elem.get_rect(logical_w, logical_h), scale_x, scale_y,
+                )
             if semantic_capture_enabled:
-                vx, vy, vw, vh = elem.get_visual_rect(logical_w, logical_h)
+                vw, vh = elem.calc_visual_size(ew, eh)
                 self._record_game_ui_button_semantic(
                     ctx,
                     elem,
-                    vp_x + vx * scale_x * (vp_w / float(game_w)),
-                    vp_y + vy * scale_y * (vp_h / float(game_h)),
-                    vw * scale_x * (vp_w / float(game_w)),
-                    vh * scale_y * (vp_h / float(game_h)),
+                    vp_x + (ex + (ew - vw) * 0.5) * vp_w / game_w,
+                    vp_y + (ey + (eh - vh) * 0.5) * vp_h / game_h,
+                    vw * vp_w / game_w,
+                    vh * vp_h / game_h,
                 )
 
             if use_overlay:
@@ -1014,10 +908,10 @@ class GameViewPanel(EditorPanel):
                 _ui_dispatch(
                     elem, "editor",
                     ctx=ctx,
-                    base_sx=vp_x + ex * ovl_scale_x,
-                    base_sy=vp_y + ey * ovl_scale_y,
-                    base_sw=ew * ovl_scale_x,
-                    base_sh=eh * ovl_scale_y,
+                    base_sx=vp_x + ex * vp_w / game_w,
+                    base_sy=vp_y + ey * vp_h / game_h,
+                    base_sw=ew * vp_w / game_w,
+                    base_sh=eh * vp_h / game_h,
                     zoom=min(ovl_scale_x, ovl_scale_y),
                     get_tex_id=get_texture_id,
                 )

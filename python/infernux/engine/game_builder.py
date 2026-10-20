@@ -25,12 +25,10 @@ import ctypes
 import filecmp
 import importlib.machinery
 import json
-import hashlib
 import os
 import py_compile
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 import threading
@@ -44,7 +42,6 @@ from infernux.core.asset_types import MESH_EXTENSIONS
 from infernux.debug import Debug
 from infernux.engine.build_cancellation import BuildCancelled
 from infernux.engine.i18n import t
-from infernux.engine.nuitka_builder import NuitkaBuilder
 from infernux.engine.player_package_native import (
     ASSET_CATALOG_ARCHIVE_FILENAME,
     ASSET_CATALOG_ENTRY_PATH,
@@ -55,7 +52,9 @@ from infernux.engine.player_package_native import (
     write_pack_isolated,
 )
 from infernux.engine.path_utils import (
+    is_lexical_path_within,
     is_path_within,
+    lexical_path_key,
     path_key,
     path_fingerprint,
     portable_path,
@@ -948,15 +947,11 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
         self._full_build_validated = True
 
     def _asset_index_entries(self) -> list[dict]:
-        """Return this build transaction's immutable AssetIndex snapshot."""
+        """Share this build's owned snapshot; cook stages must not mutate it."""
 
         if self._asset_index_entries_snapshot is None:
-            self._asset_index_entries_snapshot = copy.deepcopy(
-                load_asset_index(self.project_path)
-            )
-        # Callers build lookup maps from these documents.  Keep the canonical
-        # snapshot isolated in case a future cook stage mutates an entry.
-        return copy.deepcopy(self._asset_index_entries_snapshot)
+            self._asset_index_entries_snapshot = load_asset_index(self.project_path)
+        return self._asset_index_entries_snapshot
 
     def freeze_asset_index_entries(self, entries: list[dict]) -> None:
         """Bind this one Player build to an editor-published AssetIndex.
@@ -1116,219 +1111,10 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
     def _generate_boot_script(self) -> str:
         """Generate the native-bridge entry script consumed by Nuitka."""
 
-        boot_src = '''\
-"""Infernux Game — compiled entry point."""
-import os
-import sys
-import time
-
-_BOOT_STARTED = time.perf_counter()
-_BOOT_PHASES = []
-
-def _mark_boot_phase(_name):
-    _BOOT_PHASES.append((_name, time.perf_counter() - _BOOT_STARTED))
-
-# Activate Player mode before importing the engine package.
-os.environ["_INFERNUX_PLAYER_MODE"] = "1"
-os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
-sys.dont_write_bytecode = True
-
-_PLAYER_ROOT = os.path.dirname(sys.executable)
-_EXE_STEM = os.path.splitext(os.path.basename(sys.argv[0]))[0]
-_DATA_ROOT = os.environ.get("_INFERNUX_PLAYER_DATA_ROOT", "").strip()
-if not _DATA_ROOT:
-    raise RuntimeError("The PlayerHost did not provide the Player Data directory.")
-os.environ["_INFERNUX_PLAYER_DATA_ROOT"] = _DATA_ROOT
-_RUNTIME_ROOT = os.environ.get("_INFERNUX_PLAYER_RUNTIME_ROOT", "").strip()
-if not _RUNTIME_ROOT:
-    raise RuntimeError("The PlayerHost did not provide the Player Runtime directory.")
-if _PLAYER_ROOT not in sys.path:
-    sys.path.insert(0, _PLAYER_ROOT)
-
-_GAME_NAME = _EXE_STEM or "InfernuxPlayer"
-_SAFE_GAME_NAME = "".join(
-    _ch if _ch not in '<>:"/\\\\|?*' else '_' for _ch in _GAME_NAME
-)
-
-try:
-    import _InfernuxBootstrap as _NATIVE_PACK
-except ImportError as _bootstrap_error:
-    raise RuntimeError(
-        "The native Player bootstrap API is unavailable."
-    ) from _bootstrap_error
-
-_mark_boot_phase("native_bootstrap")
-
-for _bootstrap_api in ("_inxplayer_show_error",):
-    if not hasattr(_NATIVE_PACK, _bootstrap_api):
-        raise RuntimeError("The Player bootstrap is missing API: " + _bootstrap_api)
-
-_CORE_RUNTIME_DIR = _RUNTIME_ROOT
-if not os.path.isdir(_CORE_RUNTIME_DIR):
-    raise RuntimeError("The direct Player Runtime directory is missing: " + _CORE_RUNTIME_DIR)
-_mark_boot_phase("runtime_ready")
-_STDLIB_RUNTIME_DIR = os.path.join(_CORE_RUNTIME_DIR, "stdlib")
-_INFERNUX_LIB_DIR = os.path.join(_CORE_RUNTIME_DIR, "infernux", "lib")
-os.environ["INFERNUX_NATIVE_MODULE_DIR"] = _INFERNUX_LIB_DIR
-for _runtime_import_dir in (
-    _CORE_RUNTIME_DIR,
-    _STDLIB_RUNTIME_DIR,
-    _INFERNUX_LIB_DIR,
-):
-    if os.path.isdir(_runtime_import_dir) and _runtime_import_dir not in sys.path:
-        sys.path.append(_runtime_import_dir)
-_RUNTIME_ROOT = _CORE_RUNTIME_DIR
-os.environ["_INFERNUX_PLAYER_RUNTIME_ROOT"] = _RUNTIME_ROOT
-os.environ["_INFERNUX_PACKAGED_RESOURCE_ROOT"] = os.path.join(
-    _CORE_RUNTIME_DIR, "infernux", "resources"
-)
-
-_STATE_HOME = (
-    os.environ.get("LOCALAPPDATA", "").strip()
-    or os.environ.get("XDG_STATE_HOME", "").strip()
-    or os.path.join(os.path.expanduser("~"), ".local", "state")
-)
-_PLAYER_STATE_ROOT = os.path.join(
-    _STATE_HOME, "Infernux", "Players", _SAFE_GAME_NAME
-)
-_PLAYER_PERSISTENT_DATA_ROOT = os.path.join(_PLAYER_STATE_ROOT, "Data")
-os.makedirs(_PLAYER_PERSISTENT_DATA_ROOT, exist_ok=True)
-os.environ["_INFERNUX_PLAYER_PERSISTENT_DATA_ROOT"] = _PLAYER_PERSISTENT_DATA_ROOT
-from infernux.engine.platform_player_bootstrap import prepare_platform_player
-_DATA_DIR = prepare_platform_player(
-    _DATA_ROOT,
-    os.path.join(_PLAYER_STATE_ROOT, "Cache"),
-)
-_mark_boot_phase("content_ready")
-_DEBUG_MODE = os.environ["_INFERNUX_PLAYER_DEBUG_BUILD"] == "1"
-_BUILD_MANIFEST_PATH = os.path.join(_DATA_DIR, "BuildManifest.json")
-if not os.path.isfile(_BUILD_MANIFEST_PATH):
-    raise RuntimeError(
-        "Player package has no BuildManifest.json: " + _BUILD_MANIFEST_PATH
-    )
-_RUNTIME_MODULE_DIR = os.path.join(_DATA_ROOT, "Modules", "Parallel")
-_DLL_DIR_HANDLES = []
-
-# Optional CPU/JIT support is shipped as one compressed archive.  Materialize
-# it only on first use into the Player-owned cache; keeping the delivery tree
-# sealed avoids duplicating the archive's expanded payload in every build.
-_PARALLEL_ARCHIVE = os.path.join(_DATA_ROOT, "Modules", "Parallel.inxmod")
-if os.path.isfile(_PARALLEL_ARCHIVE) and not os.path.isdir(_RUNTIME_MODULE_DIR):
-    from infernux.engine.platform_player_bootstrap import _parallel_module_cache
-    _RUNTIME_MODULE_DIR = _parallel_module_cache(
-        _DATA_ROOT,
-        os.path.join(_PLAYER_STATE_ROOT, "Cache"),
-    )
-
-def _register_player_dll_directory(_dll_dir):
-    if sys.platform != "win32" or not os.path.isdir(_dll_dir):
-        return
-    try:
-        _DLL_DIR_HANDLES.append(os.add_dll_directory(_dll_dir))
-    except OSError:
-        pass
-
-if os.path.isdir(_RUNTIME_MODULE_DIR):
-    if _RUNTIME_MODULE_DIR not in sys.path:
-        sys.path.insert(0, _RUNTIME_MODULE_DIR)
-    for _parallel_dll_dir in (
-        _RUNTIME_MODULE_DIR,
-        os.path.join(_RUNTIME_MODULE_DIR, "llvmlite", "binding"),
-        os.path.join(_RUNTIME_MODULE_DIR, "llvmlite.libs"),
-    ):
-        _register_player_dll_directory(_parallel_dll_dir)
-    _mark_boot_phase("parallel_ready")
-
-if sys.platform == "win32":
-    for _dll_dir in (
-        _PLAYER_ROOT,
-        _CORE_RUNTIME_DIR,
-        _STDLIB_RUNTIME_DIR,
-        _INFERNUX_LIB_DIR,
-        os.path.join(_CORE_RUNTIME_DIR, "numpy.libs"),
-    ):
-        _register_player_dll_directory(_dll_dir)
-
-_LOGS_DIR = os.path.join(_PLAYER_STATE_ROOT, "Logs")
-_LOG = os.path.join(_LOGS_DIR, "player.log")
-_CRASH_LOG = os.path.join(_LOGS_DIR, "crash.log")
-os.environ["_INFERNUX_PLAYER_LOG"] = _LOG
-os.makedirs(_LOGS_DIR, exist_ok=True)
-if os.path.isfile(_CRASH_LOG):
-    os.remove(_CRASH_LOG)
-
-if _DEBUG_MODE:
-    _DEBUG_LOG = os.path.join(_LOGS_DIR, _SAFE_GAME_NAME + "_debug.log")
-    _debug_fh = open(_DEBUG_LOG, "w", encoding="utf-8")
-    sys.stdout = _debug_fh
-    sys.stderr = _debug_fh
-
-def _log(_message):
-    try:
-        with open(_LOG, "a", encoding="utf-8") as _stream:
-            _stream.write(str(_message) + "\\n")
-    except OSError:
-        pass
-    if _DEBUG_MODE:
-        print(_message, flush=True)
-
-def _crash_report(_exc):
-    try:
-        _traceback = __import__("traceback").format_exc()
-    except Exception:
-        _traceback = type(_exc).__name__ + ": " + repr(_exc)
-    _log("CRASH: " + _traceback)
-    try:
-        with open(_CRASH_LOG, "w", encoding="utf-8") as _stream:
-            _stream.write(_traceback)
-    except OSError:
-        pass
-    if os.environ.get("_INFERNUX_PLAYER_CONTROL_FILE"):
-        return
-    try:
-        _NATIVE_PACK._inxplayer_show_error(
-            "Infernux Error",
-            "Failed to start. Details in crash.log\\n\\n" + _traceback[-800:],
-        )
-    except Exception:
-        pass
-
-_exit_code = 0
-try:
-    _log(
-        "boot phases: "
-        + ", ".join(_name + "=" + format(_elapsed, ".3f") + "s" for _name, _elapsed in _BOOT_PHASES)
-    )
-    _log("boot: importing run_player")
-    import infernux as _public_api
-    sys.modules["infernux"] = _public_api
-    from infernux.engine import run_player
-    from infernux.lib import LogLevel
-    _log("boot: imports ready at " + format(time.perf_counter() - _BOOT_STARTED, ".3f") + "s")
-    _log("boot: calling run_player")
-    run_player(
-        project_path=_DATA_DIR,
-        engine_log_level=LogLevel.Debug if _DEBUG_MODE else LogLevel.Info,
-    )
-    _log("boot: run_player returned")
-except Exception as _exc:
-    _crash_report(_exc)
-    _exit_code = 1
-finally:
-    if _DEBUG_MODE:
-        try:
-            _debug_fh.close()
-        except Exception:
-            pass
-# The Player owns this process, including failed startup. Returning through
-# SystemExit would finalize CPython while native runtime objects remain live.
-os._exit(_exit_code)
-'''
         boot_dir = os.path.join(self.output_dir, self._BUILD_TEMP_DIR_NAME)
         os.makedirs(boot_dir, exist_ok=True)
         boot_path = os.path.join(boot_dir, "boot.py")
-        with open(boot_path, "w", encoding="utf-8") as f:
-            f.write(boot_src)
+        shutil.copyfile(Path(__file__).with_name("_player_boot_template.py"), boot_path)
         return boot_path
 
     # ------------------------------------------------------------------
@@ -1958,7 +1744,7 @@ os._exit(_exit_code)
 
         def copy_source(source_path: str, *, entry: dict, reason: str) -> None:
             source = resolved_path(source_path)
-            if not is_path_within(source, assets_root, allow_root=False):
+            if not is_lexical_path_within(source, assets_root, allow_root=False):
                 raise RuntimeError(
                     f"Player asset cook source is outside Assets ({reason}): {source}"
                 )
@@ -1968,7 +1754,7 @@ os._exit(_exit_code)
                 )
             if source.casefold().endswith(".meta"):
                 return
-            relative = relative_path(source, self.project_path).replace("\\", "/")
+            relative = relative_path(source, self.project_path, resolve=False)
             key = relative.casefold()
             if key in copied:
                 return
@@ -1983,26 +1769,26 @@ os._exit(_exit_code)
         for guid in sorted(selected):
             entry = selected[guid]
             source = self._library_source_entry_path(entry)
-            package_source = is_path_within(source, packages_root, allow_root=False)
+            package_source = is_lexical_path_within(source, packages_root, allow_root=False)
             if package_source and guid.casefold() not in getattr(self, "_staged_player_plugin_guids", ()):
                 raise RuntimeError(
                     f"Player dependency is not exported by an enabled Runtime package: {guid}: {source}"
                 )
             builtin_relative = (
-                self._builtin_resource_relative_path(source)
+                self._builtin_resource_relative_path(source, roots=builtin_resources_roots)
                 if bool(entry.get("read_only", False))
                 else ""
             )
             validation_root = self.project_path
-            if not is_path_within(source, validation_root, allow_root=False):
+            if not is_lexical_path_within(source, validation_root, allow_root=False):
                 validation_root = (
-                    self._builtin_resource_source_root(source)
+                    self._builtin_resource_source_root(source, builtin_relative)
                     if builtin_relative
                     else next(
                         (
                             root
                             for root in builtin_resources_roots
-                            if is_path_within(source, root, allow_root=False)
+                            if is_lexical_path_within(source, root, allow_root=False)
                         ),
                         validation_root,
                     )
@@ -2029,14 +1815,14 @@ os._exit(_exit_code)
                     f"Player asset cook refused raw {source_kind} source without a compiled artifact: "
                     f"guid={guid}, source={source}"
                 )
-            if is_path_within(source, assets_root, allow_root=False):
+            if is_lexical_path_within(source, assets_root, allow_root=False):
                 copy_source(source, entry=entry, reason=f"AssetIndex GUID {guid}")
                 continue
             if package_source:
                 # Enabled Runtime membership staged this exact source before
                 # dependency selection; it is consumed from Data/ below.
                 source_fingerprint(data_dir, {
-                    **entry, "normalized_path": relative_path(source, self.project_path),
+                    **entry, "normalized_path": relative_path(source, self.project_path, resolve=False),
                 })
                 continue
             if bool(entry.get("read_only", False)) and builtin_relative:
@@ -2158,18 +1944,21 @@ os._exit(_exit_code)
             if not candidate:
                 continue
             root = resolved_path(candidate)
-            identity = path_key(root)
+            identity = lexical_path_key(root)
             if identity in seen:
                 continue
             seen.add(identity)
             roots.append(root)
         return tuple(roots)
 
-    def _builtin_resource_relative_path(self, source_path: str) -> str:
-        source = resolved_path(source_path)
-        for root in self._builtin_resource_roots():
-            if is_path_within(source, root, allow_root=False):
-                return relative_path(source, root).replace("\\", "/")
+    def _builtin_resource_relative_path(
+        self, source_path: str, *, roots: tuple[str, ...]
+    ) -> str:
+        """Classify an already resolved AssetIndex source against canonical roots."""
+        source = source_path
+        for root in roots:
+            if is_lexical_path_within(source, root, allow_root=False):
+                return relative_path(source, root, resolve=False)
         # A source checkout may run the Editor while an installed wheel in the
         # project's virtual environment performs the build. Both trees own
         # the same immutable built-ins, but their absolute roots differ. The
@@ -2183,17 +1972,13 @@ os._exit(_exit_code)
                 return relative
         return ""
 
-    def _builtin_resource_source_root(self, source_path: str) -> str:
+    def _builtin_resource_source_root(self, source_path: str, relative: str) -> str:
         """Return the resource root represented by one canonical source path."""
 
-        source = resolved_path(source_path)
-        relative = self._builtin_resource_relative_path(source)
-        if not relative:
-            return ""
-        root = source
+        root = source_path
         for _part in Path(relative).parts:
             root = os.path.dirname(root)
-        return resolved_path(root)
+        return root
 
     def _collect_library_asset_entries(
         self, entries: list[dict], *, extra_roots: tuple[str, ...] = ()
@@ -2222,33 +2007,33 @@ os._exit(_exit_code)
 
         by_guid = {str(item["guid"]): item for item in entries}
         assets_root = resolved_path(os.path.join(self.project_path, "Assets"))
+        # Resolve aliases once before comparing the published source identities.
+        source_paths = {
+            str(entry["guid"]): self._library_source_entry_path(entry)
+            for entry in entries
+        }
+        builtin_roots = self._builtin_resource_roots()
         editor_guids = {
-            str(entry["guid"]) for entry in entries
-            if is_path_within(self._library_source_entry_path(entry), self.project_path, allow_root=False)
-            and is_editor_asset_path(relative_path(
-                self._library_source_entry_path(entry), self.project_path))
+            guid for guid, source in source_paths.items()
+            if is_lexical_path_within(source, self.project_path, allow_root=False)
+            and is_editor_asset_path(relative_path(source, self.project_path, resolve=False))
         }
         indexed_source_paths = {
-            path_key(self._library_source_entry_path(entry))
-            for entry in entries
+            lexical_path_key(source) for source in source_paths.values()
         }
         for scene_guid in self._build_scene_guids():
             scene_path = self._resolve_build_scene_guid(scene_guid)
-            if is_editor_asset_path(relative_path(scene_path, self.project_path)):
+            if is_editor_asset_path(relative_path(scene_path, self.project_path, resolve=False)):
                 raise RuntimeError(f"BuildSettings scene is editor-only: {scene_guid}")
-            if path_key(scene_path) not in indexed_source_paths:
+            if lexical_path_key(scene_path) not in indexed_source_paths:
                 raise RuntimeError(
                     "BuildSettings scene is absent from the current AssetIndex: "
                     f"{scene_guid}"
                 )
         roots = {
-            str(entry["guid"])
-            for entry in entries
-            if str(entry["guid"]) not in editor_guids and is_path_within(
-                self._library_source_entry_path(entry),
-                assets_root,
-                allow_root=False,
-            )
+            guid for guid, source in source_paths.items()
+            if guid not in editor_guids
+            and is_lexical_path_within(source, assets_root, allow_root=False)
         }
         roots.update(
             str(entry["guid"])
@@ -2256,7 +2041,7 @@ os._exit(_exit_code)
             if bool(entry.get("read_only", False))
             and logical_asset_type(entry) == "shader"
             and self._builtin_resource_relative_path(
-                self._library_source_entry_path(entry)
+                source_paths[str(entry["guid"])], roots=builtin_roots
             )
             .casefold()
             .startswith("shaders/")
@@ -2279,7 +2064,7 @@ os._exit(_exit_code)
             if guid in editor_guids:
                 raise RuntimeError(
                     "Player asset dependency references editor-only content: "
-                    f"{self._library_source_entry_path(by_guid[guid])}"
+                    f"{source_paths[guid]}"
                 )
             entry = by_guid[guid]
             selected[guid] = entry
@@ -2346,15 +2131,8 @@ os._exit(_exit_code)
     def _stage_library_runtime_artifacts(self, data_dir: str) -> None:
         """Stage current compiled artifacts and remember source replacements."""
 
-        try:
-            entries = self._asset_index_entries()
-            selected = self._collect_library_asset_entries(
-                entries, extra_roots=tuple(getattr(self, "_staged_player_plugin_guids", ()))
-            )
-        except RuntimeArtifactError as exc:
-            raise RuntimeError(f"Library artifact selection failed: {exc}") from exc
-
-        by_guid = {str(entry["guid"]): entry for entry in entries}
+        selected = self._cooked_asset_entries
+        by_guid = {str(entry["guid"]): entry for entry in self._asset_index_entries()}
         self._ensure_selected_particle_artifacts(selected)
         particle_index = self._particle_library_artifacts()
         copied: set[str] = set()
@@ -2395,7 +2173,7 @@ os._exit(_exit_code)
                 if artifact_name not in copied:
                     shutil.copy2(artifact_path, destination)
                     copied.add(artifact_name)
-                source_relative = relative_path(source_path, self.project_path).replace("\\", "/")
+                source_relative = relative_path(source_path, self.project_path, resolve=False)
                 self._runtime_artifact_source_paths.add(source_relative.casefold())
                 binding = dict(binding)
                 binding["runtime_path"] = f"Library/Artifacts/{artifact_name.split('/', 2)[-1]}" if artifact_name.startswith("Library/Artifacts/") else artifact_name
@@ -2447,7 +2225,7 @@ os._exit(_exit_code)
             if entry is None:
                 raise RuntimeError(f"Prefab source is outside the build catalog: {prefab_guid}")
             return os.path.join(data_dir, *relative_path(
-                self._library_source_entry_path(entry), self.project_path
+                self._library_source_entry_path(entry), self.project_path, resolve=False
             ).split("/"))
 
         for guid, entry in sorted(
@@ -2460,12 +2238,12 @@ os._exit(_exit_code)
                 raise RuntimeError(f"Player asset GUID is not path-safe: {guid!r}")
 
             source_path = self._library_source_entry_path(entry)
-            is_project_asset = is_path_within(
+            is_project_asset = is_lexical_path_within(
                 source_path, assets_root, allow_root=False
             )
             is_package_asset = (
                 guid.casefold() in staged_plugin_guids
-                and is_path_within(source_path, packages_root, allow_root=False)
+                and is_lexical_path_within(source_path, packages_root, allow_root=False)
             )
             if not is_project_asset and not is_package_asset:
                 continue
@@ -2478,8 +2256,8 @@ os._exit(_exit_code)
                 continue
 
             source_relative = relative_path(
-                source_path, self.project_path
-            ).replace("\\", "/")
+                source_path, self.project_path, resolve=False
+            )
             staged_source = os.path.join(data_dir, *source_relative.split("/"))
             logical_type = logical_type_for_path("imported" + suffix if imported_document is not None else source_relative)
             payload_kind = payload_kind_for(logical_type)
@@ -3343,6 +3121,7 @@ os._exit(_exit_code)
         data_dir = os.path.join(final_dir, "Data")
         assets_root = resolved_path(os.path.join(self.project_path, "Assets"))
         packages_root = resolved_path(os.path.join(self.project_path, "Packages"))
+        builtin_roots = self._builtin_resource_roots()
         staged_plugin_guids = {
             str(guid).casefold()
             for guid in getattr(self, "_staged_player_plugin_guids", set())
@@ -3378,15 +3157,15 @@ os._exit(_exit_code)
         primary_artifact_by_guid: dict[str, str] = {}
         for guid, entry in sorted(cooked_entries.items()):
             source_path = self._library_source_entry_path(entry)
-            is_project_asset = is_path_within(
+            is_project_asset = is_lexical_path_within(
                 source_path, assets_root, allow_root=False
             )
             is_package_asset = (
                 str(guid).casefold() in staged_plugin_guids
-                and is_path_within(source_path, packages_root, allow_root=False)
+                and is_lexical_path_within(source_path, packages_root, allow_root=False)
             )
             builtin_relative = (
-                self._builtin_resource_relative_path(source_path)
+                self._builtin_resource_relative_path(source_path, roots=builtin_roots)
                 if bool(entry.get("read_only", False))
                 else ""
             )
@@ -3394,7 +3173,7 @@ os._exit(_exit_code)
             if not is_project_asset and not is_package_asset and not is_builtin_resource:
                 continue
             runtime_path = (
-                relative_path(source_path, self.project_path).replace("\\", "/")
+                relative_path(source_path, self.project_path, resolve=False)
                 if is_project_asset or is_package_asset
                 else f"Library/Resources/{builtin_relative}"
             )
@@ -4427,7 +4206,7 @@ os._exit(_exit_code)
         forbidden_plaintext: list[str] = []
         forbidden_direct_payloads: list[str] = []
         forbidden_model_sources: list[str] = []
-        catalog_payloads: set[str] = set()
+        catalog_payloads: dict[str, str] = {}
         processed = 0
         last_report = 0.0
         # This cache belongs to exactly one Content.inxpkg generation.  Clear
@@ -4514,7 +4293,7 @@ os._exit(_exit_code)
                     forbidden_direct_payloads.append(relative)
                 self._rewrite_player_document_paths(path, suffix)
                 if self._runtime_catalog_payload_required(portable_relative):
-                    catalog_payloads.add(portable_relative)
+                    catalog_payloads[portable_relative] = path
                 files.append((relative, path))
                 processed += 1
                 _yield_editor_thread()
@@ -4564,8 +4343,8 @@ os._exit(_exit_code)
             cancel_event=cancel_event,
         )
         self._packed_content_catalog_payloads = {
-            entry_path: read_entry(archive_path, entry_path)
-            for entry_path in catalog_payloads
+            entry_path: Path(source).read_bytes()
+            for entry_path, source in catalog_payloads.items()
         }
         self._report_content_pack_progress(
             on_progress,

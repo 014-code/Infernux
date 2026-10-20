@@ -42,6 +42,9 @@ void StatusBarPanel::OnRender(InxGUIContext *ctx)
     if (dispW <= 0.0f || dispH <= 0.0f)
         return;
 
+    if (syncFromEngine)
+        syncFromEngine();
+
     float dpi = ctx->GetDpiScale();
     float height = EditorTheme::STATUS_BAR_BASE_HEIGHT * dpi;
 

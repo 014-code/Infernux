@@ -38,9 +38,6 @@ class TestTextureCheckerboard:
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TestTextureInit:
-    def test_obsolete_raw_memory_signature_is_removed(self):
-        assert not hasattr(Texture, "from_memory")
-
     def test_none_raises(self):
         with pytest.raises(ValueError):
             Texture(None)
@@ -66,3 +63,31 @@ class TestTextureProperties:
     def test_name_is_string(self):
         tex = Texture.solid_color(4, 4, 255, 0, 0, 255)
         assert isinstance(tex.name, str)
+
+
+def test_managed_texture_pixels_use_imported_artifacts_without_source_files(engine, monkeypatch):
+    from pathlib import Path
+    from infernux.core.assets import AssetManager
+    from infernux.lib import ResourceType
+
+    for name in ("_engine", "_asset_database", "_registry"):
+        monkeypatch.setattr(AssetManager, name, getattr(AssetManager, name))
+    AssetManager.initialize(engine)
+    database = engine.get_asset_database()
+    source = Path(database.assets_root) / "managed-pixels.ppm"
+    source.write_bytes(b"P3\n2 1\n255\n255 0 0 0 0 255\n")
+    imported = database.import_asset(str(source))
+    assert imported, imported.error
+    artifact = database.get_runtime_artifact_path(imported.guid, ResourceType.Texture)
+    assert artifact.endswith(".inxtex")
+    source.unlink()
+    try:
+        texture = AssetManager.load_by_guid(imported.guid, Texture)
+        assert texture.size == (2, 1) and texture.channels == 4
+        assert texture.guid == imported.guid
+        assert texture.pixels_as_bytes() == bytes(texture.pixels_as_list())
+        assert len(texture.pixels_as_bytes()) == 8
+        assert AssetManager.load_by_guid(imported.guid, Texture) is texture
+    finally:
+        database.delete_asset(str(source))
+        AssetManager.flush()

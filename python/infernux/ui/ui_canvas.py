@@ -27,15 +27,7 @@ from infernux.components.fields import FieldType
 from .inx_ui_component import InxUIComponent
 from .inx_ui_screen_component import is_ui_screen_component
 from .enums import RenderMode, UIScaleMode, ScreenMatchMode
-from .ui_render_revision import is_unchanged_ui_scalar, mark_runtime_ui_dirty
-
-
-def _log2(x: float) -> float:
-    return math.log2(max(x, 1e-6))
-
-
-def _pow2(x: float) -> float:
-    return 2.0 ** x
+from .ui_render_revision import is_unchanged_ui_value, mark_runtime_ui_dirty
 
 
 @disallow_multiple
@@ -55,7 +47,7 @@ class UICanvas(InxUIComponent):
         render_mode: ScreenOverlay or CameraOverlay.
         sort_order: Rendering order (lower draws first).
         target_camera: Camera GameObject reference (CameraOverlay mode only).
-        target_camera_id: Compatibility access to the reference's runtime ID.
+        target_camera_id: Runtime ID access to the camera reference.
     """
 
     render_mode: RenderMode = serialized_field(default=RenderMode.ScreenOverlay)
@@ -80,17 +72,6 @@ class UICanvas(InxUIComponent):
         if value < 0:
             raise ValueError("Canvas target_camera_id must not be negative")
         self.target_camera = GameObjectRef(persistent_id=int(value)) if value else None
-
-    def _deserialize_fields_document(self, data, **kwargs):
-        if isinstance(data, dict) and "target_camera_id" in data:
-            if "target_camera" in data:
-                raise ValueError("Canvas document declares both target_camera and target_camera_id")
-            data = dict(data)
-            legacy_id = data.pop("target_camera_id")
-            if isinstance(legacy_id, bool) or not isinstance(legacy_id, Integral) or legacy_id < 0:
-                raise ValueError("Legacy Canvas target_camera_id must be a nonnegative runtime ID")
-            data["target_camera"] = {"$type": "game_object_ref", "object_id": int(legacy_id)}
-        return super()._deserialize_fields_document(data, **kwargs)
 
     # Design reference resolution (serialized, user-editable)
     reference_width: int = int_field(1920, range=(1, 8192), tooltip="Design reference width", slider=False)
@@ -145,7 +126,7 @@ class UICanvas(InxUIComponent):
             self._publish_canvas_membership_change()
 
     def __setattr__(self, name, value):
-        unchanged = is_unchanged_ui_scalar(self, name, value)
+        unchanged = is_unchanged_ui_value(self, name, value)
         super().__setattr__(name, value)
         if not name.startswith("_") and not unchanged:
             mark_runtime_ui_dirty()
@@ -181,15 +162,15 @@ class UICanvas(InxUIComponent):
             return 1.0, 1.0, 1.0
 
         # ScaleWithScreenSize
-        log_w = _log2(screen_w / ref_w) if ref_w > 0 else 0.0
-        log_h = _log2(screen_h / ref_h) if ref_h > 0 else 0.0
+        log_w = math.log2(screen_w / ref_w)
+        log_h = math.log2(screen_h / ref_h)
 
         match_mode = self.screen_match_mode
 
         if match_mode == ScreenMatchMode.MatchWidthOrHeight:
             match_val = max(0.0, min(1.0, float(self.match_width_or_height)))
             log_blend = log_w * (1.0 - match_val) + log_h * match_val
-            scale = _pow2(log_blend)
+            scale = 2.0 ** log_blend
         elif match_mode == ScreenMatchMode.Expand:
             scale = min(screen_w / ref_w, screen_h / ref_h)
         elif match_mode == ScreenMatchMode.Shrink:
@@ -197,14 +178,7 @@ class UICanvas(InxUIComponent):
         else:
             scale = min(screen_w / ref_w, screen_h / ref_h)
 
-        scale_x = scale
-        scale_y = scale
-
-        if self.pixel_perfect:
-            scale_x = max(1.0, round(scale_x))
-            scale_y = max(1.0, round(scale_y))
-
-        return scale_x, scale_y, min(scale_x, scale_y)
+        return scale, scale, scale
 
     def compute_logical_size(self, screen_w: float, screen_h: float) -> tuple:
         """Return the live Canvas rect in logical canvas pixels.
@@ -219,11 +193,23 @@ class UICanvas(InxUIComponent):
             max(1.0, float(screen_h) / max(scale_y, 1e-6)),
         )
 
+    def pixel_adjust_rect(self, rect, scale_x: float, scale_y: float) -> tuple:
+        """Project a logical rect to render pixels, snapping its edges when enabled.
+
+        Pixel alignment changes drawing geometry, never CanvasScaler scale or
+        authored layout and pointer coordinates.
+        """
+        x, y, width, height = rect
+        edges = (x * scale_x, y * scale_y, (x + width) * scale_x, (y + height) * scale_y)
+        left, top, right, bottom = map(round, edges) if self.pixel_perfect else edges
+        return left, top, right - left, bottom - top
+
     # ------------------------------------------------------------------
     # Cached element list (invalidated when hierarchy changes)
     # ------------------------------------------------------------------
-    _cached_elements: list = None
+    _cached_elements: tuple = None
     _cached_elements_version: int = -1
+    _cached_elements_revision: int = 0
     _input_logical_size: tuple[float, float] | None = None
 
     def set_input_logical_size(self, width: float, height: float) -> None:
@@ -245,23 +231,38 @@ class UICanvas(InxUIComponent):
         self._cached_elements = None
 
     def _get_elements(self):
-        """Return the cached element list, rebuilding if necessary.
-
-        Uses scene.structure_version to avoid DFS every frame.
-        """
+        """Inspect structural edits without invalidating unchanged UI snapshots."""
         go = self.game_object
-        if go is not None:
-            scene = go.scene
-            if scene is not None:
-                ver = scene.structure_version
-                if ver != self._cached_elements_version:
-                    self._cached_elements = None
-                    self._cached_elements_version = ver
-                    from .inx_ui_screen_component import _invalidate_rect_cache
+        if self.__dict__.get('_elements_owner') is not go:
+            from infernux.lib import _Infernux
 
-                    _invalidate_rect_cache()
-        if self._cached_elements is None:
-            self._cached_elements = list(self.iter_ui_elements())
+            self._element_dependencies = _Infernux._UIHierarchyDependencies(go)
+            self._elements_owner = go
+            self._cached_elements = None
+        version = self._element_dependencies.poll()
+        topology = self._element_dependencies.topology_revision
+        if self._cached_elements is None or topology != self.__dict__.get('_elements_topology'):
+            self._cached_elements = tuple(self.iter_ui_elements())
+            self._elements_topology = topology
+            self._cached_elements_revision += 1
+            from .inx_ui_screen_component import _invalidate_rect_cache
+
+            _invalidate_rect_cache()
+        elif version != self._cached_elements_version:
+            from .inx_ui_screen_component import _invalidate_rect_cache
+            from .ui_render_revision import _invalidate_ui_command_groups
+
+            # Visibility and enablement retain membership. Only an affected
+            # branch needs new commands.
+            _invalidate_rect_cache(layout=False)
+            mark_runtime_ui_dirty(self)
+            pending = list(dict.fromkeys(self._element_dependencies.policy_changes))
+            while pending:
+                owner = pending.pop()
+                for component in owner.get_py_components():
+                    _invalidate_ui_command_groups(component)
+                pending.extend(owner.get_children())
+        self._cached_elements_version = version
         return self._cached_elements
 
     # ------------------------------------------------------------------
@@ -279,7 +280,6 @@ class UICanvas(InxUIComponent):
         go = self.game_object
         if go is None:
             return
-        from .inx_ui_screen_component import InxUIScreenComponent
 
         for comp in go.get_py_components():
             if is_ui_screen_component(comp):
@@ -355,10 +355,12 @@ class UICanvas(InxUIComponent):
             return ()
         owner = self.game_object
         scene = owner.scene
-        topology = (owner, scene.world_id, scene.structure_version,
-                    scene.temporal_discontinuity_revision, id(elements))
+        policy = _get_hit_policy_revision()
+        topology = (owner, scene.world_id, self._cached_elements_revision,
+                    scene.temporal_discontinuity_revision, id(elements), policy)
         if self.__dict__.get('_hit_topology') != topology:
-            self._hit_geometry = create_ui_transform_dependencies([e.game_object for e in elements], [])
+            self._hit_elements = tuple(element for element in elements if element.raycast_target)
+            self._hit_geometry = create_ui_transform_dependencies([e.game_object for e in self._hit_elements], [])
             self._hit_topology = topology
             self._hit_pose = None
             self._hit_key = None
@@ -368,10 +370,10 @@ class UICanvas(InxUIComponent):
             # its own local Transform signature.
             clear_rect_cache((id(self), pose))
             self._hit_pose = pose
-        key = (pose, _get_hit_policy_revision(), _get_layout_revision(), ref_w, ref_h)
+        key = (pose, policy, self._cached_elements_version, _get_layout_revision(), ref_w, ref_h)
         if self._hit_key != key:
             candidates = []
-            for element in reversed(elements):
+            for element in reversed(self._hit_elements):
                 if (not element.game_object.active_in_hierarchy or not element.enabled
                         or not element.effectively_blocks_raycast()):
                     continue

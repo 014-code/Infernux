@@ -294,7 +294,42 @@ def _record_commands():
                 _command_recording.cpu_batch_dispatches = 0
 
 
-@contextmanager
+class _RecordingScope:
+    """Allocation-free reentrant command-recording scope."""
+
+    __slots__ = ()
+
+    def __enter__(self):
+        outermost = _recording_depth() == 0
+        if outermost and _web_cpu_compute_enabled():
+            _command_recording.cpu_batch_started = perf_counter()
+            _command_recording.cpu_batch_dispatches = int(_cpu_statistics["dispatch_count"])
+        _command_recording.depth = _recording_depth() + 1
+        return None
+
+    def __exit__(self, exc_type, exc, tb):
+        _command_recording.depth -= 1
+        if _recording_depth() == 0:
+            _flush_commands()
+            if _cpu_mesh_frame_depth() == 0:
+                _flush_cpu_meshes()
+            if _web_cpu_compute_enabled():
+                dispatches = int(_cpu_statistics["dispatch_count"]) - int(
+                    _command_recording.cpu_batch_dispatches
+                )
+                if dispatches > 0:
+                    _cpu_statistics["submission_count"] += 1
+                    _cpu_statistics["cpu_submit_ms"] += (
+                        perf_counter() - _command_recording.cpu_batch_started
+                    ) * 1000.0
+                _command_recording.cpu_batch_started = None
+                _command_recording.cpu_batch_dispatches = 0
+        return False
+
+
+_recording_scope = _RecordingScope()
+
+
 def recording():
     """Record ordered :func:`launch` calls into one GPU submission.
 
@@ -304,8 +339,7 @@ def recording():
     submission so fixed-step solvers can group dependent kernels without
     knowing about the Vulkan queue.
     """
-    with _record_commands():
-        yield
+    return _recording_scope
 
 
 def _queue_buffer_update(value: "Buffer", payload: bytes, byte_offset: int) -> None:

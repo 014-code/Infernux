@@ -77,12 +77,13 @@ def events_from_list(raw: Any) -> List[AnimationEvent]:
 
 
 def collect_crossed_events(
-    events: List[AnimationEvent], prev_norm: float, curr_norm: float, looped: bool,
+    events: List[AnimationEvent], prev_norm: float | None, curr_norm: float, looped: bool,
     *, wrap_count: int = 1,
 ) -> List[AnimationEvent]:
     """Return events whose normalized time falls in the just-played window.
 
-    Non-looping window is ``(prev_norm, curr_norm]``.  When the clip wrapped this
+    Non-looping window is ``(prev_norm, curr_norm]``. ``None`` marks the first
+    playback sample and includes events at zero. When the clip wrapped this
     frame (``looped``), visit the tail, each intervening complete cycle, then
     the head. An event may occur more than once in a long frame. Equal-time
     events retain their authored order; the end of one cycle precedes zero
@@ -92,9 +93,15 @@ def collect_crossed_events(
         return []
     eps = 1e-6
     ordered = sorted(events, key=lambda event: event.time_normalized)
+    first_sample = prev_norm is None
+    previous = 0.0 if first_sample else prev_norm
     if not looped:
-        return [ev for ev in ordered if prev_norm + eps < ev.time_normalized <= curr_norm + eps]
-    tail = [ev for ev in ordered if prev_norm + eps < ev.time_normalized <= 1.0 + eps]
+        return [ev for ev in ordered
+                if (first_sample and ev.time_normalized == 0.0 or previous + eps < ev.time_normalized)
+                and ev.time_normalized <= curr_norm + eps]
+    tail = [ev for ev in ordered
+            if (first_sample and ev.time_normalized == 0.0 or previous + eps < ev.time_normalized)
+            and ev.time_normalized <= 1.0 + eps]
     head = [ev for ev in ordered if -eps <= ev.time_normalized <= curr_norm + eps]
     return tail + ordered * (wrap_count - 1) + head
 
@@ -134,7 +141,7 @@ def _same_raw_method(left: RuntimeMethodDescriptor, right: RuntimeMethodDescript
 
 
 def dispatch_animation_events(
-    game_object, events: List[AnimationEvent], prev_norm: float, curr_norm: float, looped: bool,
+    game_object, events: List[AnimationEvent], prev_norm: float | None, curr_norm: float, looped: bool,
     *, wrap_count: int = 1,
 ) -> None:
     """Fire all events crossed in the current frame's playback window."""
@@ -143,7 +150,9 @@ def dispatch_animation_events(
         return
     try:
         comps = list(game_object.get_py_components() or [])
-    except Exception:
+    except RuntimeError as exc:
+        from infernux.debug import Debug
+        Debug.log_suppressed("AnimationEvent.scene_components", exc)
         return
     if not comps:
         return

@@ -23,6 +23,12 @@ class UIImage(InxUIScreenComponent):
         name="texture",
         tooltip="Texture or RenderTexture asset (drag from Project panel)",
     )
+    uv_rect = serialized_field(
+        default=[0.0, 0.0, 1.0, 1.0],
+        field_type=FieldType.VEC4,
+        tooltip="Texture region: normalized X, Y, Width, Height",
+        group="Fill",
+    )
     color: list = serialized_field(
         default=[1.0, 1.0, 1.0, 1.0],
         field_type=FieldType.COLOR,

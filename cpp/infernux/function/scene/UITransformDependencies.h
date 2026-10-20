@@ -1,6 +1,7 @@
 #pragma once
 
 #include "GameObject.h"
+#include "Scene.h"
 #include "WorldUIProjection.h"
 #include <array>
 #include <glm/gtc/quaternion.hpp>
@@ -10,6 +11,100 @@
 
 namespace infernux
 {
+
+/// Inspect a Canvas branch only after a native structural edit. Unrelated
+/// scene edits never force Python to rediscover the Canvas's controls.
+class UIHierarchyDependencies
+{
+  public:
+    explicit UIHierarchyDependencies(GameObject *root) : m_root(root->GetTransform()->GetECSHandle())
+    {
+    }
+
+    uint64_t Poll()
+    {
+        auto &store = TransformECSStore::Instance();
+        if (!store.IsValid(m_root))
+            throw std::runtime_error("UI hierarchy outlived its Canvas owner");
+        auto *root = store.GetOwner(m_root)->GetGameObject();
+        auto *scene = root->GetScene();
+        const auto version = scene ? scene->GetStructureVersion() : 0;
+        if (scene && scene == m_scene && version == m_sceneVersion)
+            return m_revision;
+        m_current.clear();
+        for (auto *parent = root->GetParent(); parent; parent = parent->GetParent())
+            Append(parent);
+        Visit(root);
+        if (m_current != m_snapshot) {
+            m_policyChanges.clear();
+            bool topologyChanged = m_current.size() != m_snapshot.size();
+            for (size_t index = 0; !topologyChanged && index < m_current.size(); ++index) {
+                const auto &current = m_current[index];
+                const auto &previous = m_snapshot[index];
+                topologyChanged = current.identity != previous.identity || current.handle != previous.handle ||
+                                  current.parent != previous.parent;
+                if (current.enabled != previous.enabled)
+                    m_policyChanges.push_back(current.object);
+            }
+            if (topologyChanged) {
+                ++m_topologyRevision;
+                m_policyChanges.clear();
+            }
+            m_snapshot.swap(m_current);
+            ++m_revision;
+        }
+        m_scene = scene;
+        m_sceneVersion = version;
+        return m_revision;
+    }
+
+    uint64_t GetTopologyRevision() const noexcept
+    {
+        return m_topologyRevision;
+    }
+    const std::vector<GameObject *> &GetPolicyChanges() const noexcept
+    {
+        return m_policyChanges;
+    }
+
+  private:
+    struct Entry
+    {
+        const void *identity;
+        ObjectHandle handle;
+        const GameObject *parent;
+        GameObject *object;
+        bool enabled;
+
+        bool operator==(const Entry &other) const
+        {
+            return identity == other.identity && handle == other.handle && parent == other.parent &&
+                   enabled == other.enabled;
+        }
+    };
+
+    void Append(GameObject *object)
+    {
+        m_current.push_back({object, object->GetHandle(), object->GetParent(), object, object->IsActive()});
+        for (const auto &component : object->GetAllComponents())
+            m_current.push_back({component.get(), component->GetHandle(), object, object, component->IsEnabled()});
+    }
+
+    void Visit(GameObject *object)
+    {
+        Append(object);
+        for (const auto &child : object->GetChildren())
+            Visit(child.get());
+    }
+
+    TransformECSStore::Handle m_root;
+    Scene *m_scene = nullptr;
+    uint64_t m_sceneVersion = 0;
+    uint64_t m_revision = 0;
+    uint64_t m_topologyRevision = 0;
+    std::vector<Entry> m_current, m_snapshot;
+    std::vector<GameObject *> m_policyChanges;
+};
 
 /// Geometry dependencies of a recorded UI command list. Retain ECS lifetime
 /// handles, never Python wrappers or raw pointers to destroyed scene objects.

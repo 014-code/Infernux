@@ -77,6 +77,7 @@ def publish_player_asset_catalog_for_host(project_root: str) -> dict[str, Any]:
             return MainThreadCommandQueue.instance().run_sync(
                 "player.build.publish_asset_catalog",
                 lambda: publish_player_asset_catalog(root, active_database),
+                timeout_ms=600000,
             )
         if active_root:
             raise RuntimeError(
@@ -85,8 +86,13 @@ def publish_player_asset_catalog_for_host(project_root: str) -> dict[str, Any]:
             )
 
     from infernux.engine.engine import Engine
+    from infernux.engine.library_sync import sync_resources
     from infernux.lib import LogLevel, RuntimeMode
+    from infernux.resources import activate_library
 
+    # Use the same built-in source identities as graphical Editor startup.
+    sync_resources(root)
+    activate_library(root)
     engine = Engine(LogLevel.Info, mode=RuntimeMode.Headless)
     try:
         engine.init_headless(root)

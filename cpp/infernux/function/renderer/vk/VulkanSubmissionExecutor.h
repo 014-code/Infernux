@@ -46,6 +46,7 @@ class VulkanSubmissionExecutor
         // submitted batch, rather than only the first Graphics batch.
         bool previousFrameWaitAtFirstBatch = false;
         rhi::SubmissionSerial completionEpoch = rhi::InvalidSubmissionSerial;
+        std::array<double, 3> *cpuTimings = nullptr;
     };
 
     struct ExecuteResult

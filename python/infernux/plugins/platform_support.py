@@ -11,20 +11,13 @@ from typing import Mapping
 
 from infernux.core.file_read_cache import FileReadCache
 from infernux.engine.path_utils import lexical_path, resolved_path
+from infernux.engine.user_data import get_infernux_shared_data_root
 
 
-ANDROID_PLUGIN_REFERENCE = "infernux/platform-android"
 ANDROID_SUPPORT_SCHEMA = "infernux.android_support"
 ANDROID_SUPPORT_KIND = "infernux-android-support"
 ANDROID_SUPPORT_VERSION = "0.1.0"
 ANDROID_SUPPORT_MANIFEST = "infernux-android-support.json"
-ANDROID_SUPPORT_REQUIRED_MESSAGE = (
-    "Install Android compatibility from Infernux Hub before importing the "
-    "Android platform plugin."
-)
-ANDROID_SUPPORT_UNSUPPORTED_HOST_MESSAGE = (
-    "Android compatibility requires Windows 10 1709 or later on x64, or Linux x64."
-)
 _manifest_reads = FileReadCache(capacity=8)
 
 
@@ -72,26 +65,14 @@ def _android_support_location(environ: Mapping[str, str] | None) -> Path | None:
     explicit = str(values.get("INFERNUX_ANDROID_SUPPORT_ROOT", "") or "").strip()
     if explicit:
         return Path(lexical_path(os.path.expandvars(os.path.expanduser(explicit))))
-    data_root = str(values.get("INFERNUX_SHARED_DATA_ROOT", "") or "").strip()
-    if not data_root:
-        data_root = str(values.get("INFERNUX_DATA_ROOT", "") or "").strip()
-    if data_root:
-        base = Path(lexical_path(os.path.expandvars(os.path.expanduser(data_root))))
-    elif os.name == "nt":
-        local_app_data = str(values.get("LOCALAPPDATA", "") or "").strip()
-        if not local_app_data:
-            return None
-        base = Path(lexical_path(local_app_data)) / "InfernuxHub"
-    else:
-        xdg_data = str(values.get("XDG_DATA_HOME", "") or "").strip()
-        base = (
-            Path(lexical_path(Path(xdg_data).expanduser())) / "InfernuxHub"
-            if xdg_data
-            else Path.home() / ".local/share/InfernuxHub"
-        )
     host = _host_id()
     if not host:
         return None
+    if os.name == "nt" and not any(values.get(key, "").strip() for key in (
+        "INFERNUX_SHARED_DATA_ROOT", "INFERNUX_DATA_ROOT", "LOCALAPPDATA",
+    )):
+        return None
+    base = Path(get_infernux_shared_data_root(values))
     return base / "PlatformKits/android" / ANDROID_SUPPORT_VERSION / host
 
 
@@ -227,34 +208,9 @@ def activate_android_support_environment() -> bool:
     return True
 
 
-def plugin_install_block_reason(
-    reference: str,
-    environ: Mapping[str, str] | None = None,
-) -> str:
-    if str(reference or "").strip().casefold() != ANDROID_PLUGIN_REFERENCE:
-        return ""
-    if not _host_id():
-        return ANDROID_SUPPORT_UNSUPPORTED_HOST_MESSAGE
-    return "" if android_support_available(environ) else ANDROID_SUPPORT_REQUIRED_MESSAGE
-
-
-def require_plugin_support(
-    reference: str,
-    environ: Mapping[str, str] | None = None,
-) -> None:
-    reason = plugin_install_block_reason(reference, environ)
-    if reason:
-        raise RuntimeError(reason)
-
-
 __all__ = [
-    "ANDROID_PLUGIN_REFERENCE",
-    "ANDROID_SUPPORT_REQUIRED_MESSAGE",
-    "ANDROID_SUPPORT_UNSUPPORTED_HOST_MESSAGE",
     "android_support_available",
     "android_support_environment",
     "android_support_root",
     "activate_android_support_environment",
-    "plugin_install_block_reason",
-    "require_plugin_support",
 ]

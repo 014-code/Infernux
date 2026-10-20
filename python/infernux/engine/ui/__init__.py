@@ -52,6 +52,12 @@ _EXPORTS = {
 __all__ = [] if os.environ.get("_INFERNUX_PLAYER_MODE") else list(_EXPORTS)
 
 
+def _load_builtin_panels():
+    for name, (module_name, _) in _EXPORTS.items():
+        if name.endswith("Panel"):
+            importlib.import_module(module_name, __name__)
+
+
 def __getattr__(name: str):
     if name not in __all__:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

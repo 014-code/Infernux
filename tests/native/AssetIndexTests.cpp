@@ -50,8 +50,8 @@ void TestModelMeshIdentityResolution()
     rejects(valid, "missing-id", "Model mesh identity no longer exists");
     rejects(Json::object(), "mesh-id", "Model mesh identity manifest must be an array");
     rejects(Json::array({Json{{"subresource_id", "mesh-id"}}}), "mesh-id", "Model mesh identity has no node path");
-    rejects(Json::array({Json{{"subresource_id", "mesh-id"}, {"path", Json::array()}}}),
-            "mesh-id", "Model mesh identity has no node path");
+    rejects(Json::array({Json{{"subresource_id", "mesh-id"}, {"path", Json::array()}}}), "mesh-id",
+            "Model mesh identity has no node path");
 }
 
 AssetIndexEntry MakeEntry(size_t index)
@@ -230,7 +230,24 @@ void TestScaleAndStrictRoundTrip()
     start = Clock::now();
     restored.Save(infernux::FromFsPath(indexPath));
     AssetIndex loaded;
-    Require(loaded.Load(infernux::FromFsPath(indexPath), "c:/project"), "AssetIndex file load returned a miss");
+    {
+#ifdef INX_PLATFORM_WINDOWS
+        // A concurrent index invalidator must be allowed to own delete access.
+        const HANDLE handle = ::CreateFileW(indexPath.c_str(), GENERIC_READ | DELETE,
+                                            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        Require(handle != INVALID_HANDLE_VALUE, "Could not open the index invalidation handle");
+        struct IndexInvalidator
+        {
+            HANDLE handle;
+            ~IndexInvalidator()
+            {
+                ::CloseHandle(handle);
+            }
+        } invalidator{handle};
+#endif
+        Require(loaded.Load(infernux::FromFsPath(indexPath), "c:/project"), "AssetIndex file load returned a miss");
+    }
     const double fileRoundTripMs = Milliseconds(start);
     Require(loaded.Size() == entryCount, "AssetIndex file round-trip entry count mismatch");
 

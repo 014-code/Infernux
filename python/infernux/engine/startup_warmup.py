@@ -107,6 +107,8 @@ class PlayerStartupWarmup:
         self._cpu_thread: threading.Thread | None = None
         self._cpu_done = threading.Event()
         self._cpu_error: BaseException | None = None
+        if self._cpu_records:
+            start_cpu_runtime_preload()
 
     def start_cpu(self) -> None:
         """Start already-resolved CPU hooks without delaying the owner thread."""
@@ -428,14 +430,6 @@ def _source_identity(component: object) -> tuple[str, str]:
     return f"{cls.__module__}.{cls.__qualname__}:{qualname}", source
 
 
-def _type_source(component_type: type) -> str:
-    try:
-        source = inspect.getsourcefile(component_type) or inspect.getfile(component_type) or ""
-    except (OSError, TypeError):
-        source = ""
-    return _canonical_source(source, component_type.__module__) if source else ""
-
-
 def _canonical_source(source: str, module_name: str) -> str:
     """Map stale authored absolute paths to the active project copy."""
     candidate = lexical_path(source) if source else ""
@@ -602,7 +596,10 @@ def run_project_script_warmups(*, project_path: str | None, scope: str) -> int:
         )
         for path in source_paths:
             try:
-                tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+                source = path.read_text(encoding="utf-8")
+                if "_infernux_startup_warmup" not in source:
+                    continue
+                tree = ast.parse(source, filename=str(path))
             except (OSError, UnicodeError, SyntaxError) as exc:
                 raise RuntimeError(f"Cannot inspect startup warmup script: {path}") from exc
             if any(

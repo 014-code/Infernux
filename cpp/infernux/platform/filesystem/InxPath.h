@@ -288,6 +288,36 @@ inline bool TryMakeRelativeFilesystemPath(const std::string &path, const std::st
  */
 inline bool ReadFileBytes(const std::string &filePath, std::vector<unsigned char> &out)
 {
+#ifdef INX_PLATFORM_WINDOWS
+    // A reader keeps its file snapshot alive while an atomic writer replaces
+    // or invalidates the pathname. CRT streams do not share delete access.
+    const HANDLE handle =
+        ::CreateFileW(ToFsPath(filePath).c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                      nullptr, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
+    if (handle == INVALID_HANDLE_VALUE)
+        return false;
+    struct InputFile
+    {
+        HANDLE handle;
+        ~InputFile()
+        {
+            ::CloseHandle(handle);
+        }
+    } file{handle};
+    LARGE_INTEGER size;
+    if (!::GetFileSizeEx(file.handle, &size) || size.QuadPart < 0)
+        return false;
+    out.resize(static_cast<size_t>(size.QuadPart));
+    size_t offset = 0;
+    while (offset < out.size()) {
+        const auto count = static_cast<DWORD>((std::min)(out.size() - offset, size_t{1} << 30));
+        DWORD received = 0;
+        if (!::ReadFile(file.handle, out.data() + offset, count, &received, nullptr) || received == 0)
+            return false;
+        offset += received;
+    }
+    return true;
+#else
     std::ifstream file(ToFsPath(filePath), std::ios::binary | std::ios::ate);
     if (!file.is_open())
         return false;
@@ -300,6 +330,7 @@ inline bool ReadFileBytes(const std::string &filePath, std::vector<unsigned char
     file.seekg(0);
     file.read(reinterpret_cast<char *>(out.data()), size);
     return !file.fail();
+#endif
 }
 
 inline std::ifstream OpenInputFile(const std::string &filePath, std::ios_base::openmode mode = std::ios::in)

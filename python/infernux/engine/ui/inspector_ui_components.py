@@ -194,7 +194,8 @@ def _set_native_size(comp):
         if texture is None:
             return
         canvas, _, _ = _canvas_dims(comp)
-        _apply_size_preserve_top_left(comp, texture.width, texture.height, canvas)
+        uv = comp.uv_rect
+        _apply_size_preserve_top_left(comp, texture.width * abs(uv.z), texture.height * abs(uv.w), canvas)
         return
     if not isinstance(comp, UIButton):
         raise TypeError("native size is supported only for UIImage and UIButton")
@@ -963,7 +964,7 @@ def _render_image_fill(ctx, img_comp: UIImage):
     if not render_compact_section_header(ctx, t("ui_comp.fill"), level="primary"):
         return
 
-    section_lw = max_label_w(ctx, [t("ui_comp.texture"), t("ui_comp.color")])
+    section_lw = max_label_w(ctx, [t("ui_comp.texture"), t("ui_comp.color"), "UV Rect"])
 
     from infernux.components.fields import FieldType, get_raw_field_value
     from ._inspector_references import _render_asset_reference_field
@@ -976,6 +977,12 @@ def _render_image_fill(ctx, img_comp: UIImage):
     # ── Tint color ──
     _render_color_field(ctx, img_comp, "color", t("ui_comp.color"), section_lw,
                         "##ui_image_fill_color")
+    from .inspector_utils import render_serialized_field
+
+    metadata = get_serialized_fields(type(img_comp))["uv_rect"]
+    uv = img_comp.uv_rect
+    updated = render_serialized_field(ctx, "##ui_image_uv", "UV Rect", metadata, uv, section_lw)
+    _apply_if_changed(img_comp, "uv_rect", uv, updated)
 
 
 def _render_image_inspector(ctx, img_comp: UIImage):

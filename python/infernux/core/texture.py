@@ -63,6 +63,11 @@ class Texture(ResourceProxy):
         return None
 
     @staticmethod
+    def _load_asset(guid: str) -> Optional["Texture"]:
+        native = TextureLoader.load_asset(guid)
+        return Texture(native) if native is not None else None
+
+    @staticmethod
     def decode(data: bytes, name: str = "memory_texture") -> Optional["Texture"]:
         """Decode PNG/JPEG/BMP/TGA bytes into a texture."""
         native = TextureLoader.load_from_memory(data, name)
@@ -151,11 +156,11 @@ class Texture(ResourceProxy):
         Layout: row-major, RGBA (or RGB) depending on channel count.
         Suitable for conversion to NumPy arrays or PIL images.
         """
-        return self._native.pixels_as_bytes()
+        return self._native.get_pixels()
 
     def pixels_as_list(self) -> list:
         """Get pixel data as a flat list of integers [0-255]."""
-        return self._native.pixels_as_list()
+        return self._native.get_pixels_list()
 
     def to_numpy(self):
         """Convert pixel data to a NumPy array (H, W, C).

@@ -31,7 +31,7 @@ from infernux.renderstack._platform_quality import (
     effective_msaa_samples,
     effective_shadow_resolution,
 )
-from infernux.renderstack.forward_parameters import DefaultForwardParameters, MSAASamples
+from infernux.renderstack.forward_parameters import DefaultForwardParameters
 from infernux.renderstack._pipeline_common import (
     COLOR_TEXTURE,
     LIGHT_LIST_BUFFER,
@@ -44,7 +44,6 @@ from infernux.renderstack._pipeline_common import (
     create_main_scene_targets,
     opaque_queue_range,
     result_resources,
-    transparent_queue_range,
 )
 
 if TYPE_CHECKING:
@@ -93,16 +92,18 @@ class DefaultForwardPipeline(DefaultForwardParameters, RenderPipeline):
         # boundary normalization as a final guard for pipeline values restored
         # from external/custom state before descriptor assignment.
         shadow_res = effective_shadow_resolution(self.shadow_resolution)
+        shadows_enabled = bool(self.shadows_enabled)
 
         # ---- Create resources ----
         create_main_scene_targets(
             graph,
-            shadow_resolution=shadow_res,
+            shadow_resolution=shadow_res if shadows_enabled else 1,
             msaa_samples=msaa_samples,
         )
 
         # Pass 0: Shadow caster pass (depth-only, custom resolution)
-        add_shadow_caster_pass(graph)
+        if shadows_enabled:
+            add_shadow_caster_pass(graph)
 
         # Pass 1: Opaque objects (front-to-back for early-z)
         add_forward_opaque_pass(graph, material_pass=self.material_pass)

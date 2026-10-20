@@ -8,7 +8,6 @@ Game captures and hidden Game tabs consume the same current-frame HUD.
 from __future__ import annotations
 
 import weakref
-import math
 import threading
 from infernux.engine.ui.runtime_canvas_snapshot import (
     collect_sorted_runtime_canvas_snapshot,
@@ -17,7 +16,6 @@ from infernux.engine.ui.runtime_canvas_snapshot import (
 from infernux.ui.ui_canvas_utils import runtime_ui_scenes
 from infernux.ui.inx_ui_screen_component import (
     WORLD_UI_PIXELS_PER_UNIT,
-    clear_rect_cache,
     is_ui_screen_component,
     _get_layout_revision,
 )
@@ -62,50 +60,9 @@ def reset_runtime_ui_state() -> None:
 
 
 def _canvas_metrics(canvas, viewport_width: float, viewport_height: float):
-    """Return scale and logical size for screen UI canvases.
-
-    Player scene publication can briefly retain a Canvas instance created by a
-    previous Python module identity.  Such an object still carries the
-    authored scalar fields but may not expose the newer helper methods.  Keep
-    the metric calculation at the submission boundary so that this
-    compatibility case does not interrupt the render/input frame.
-    """
-    compute_scale = getattr(canvas, "compute_scale", None)
-    compute_logical_size = getattr(canvas, "compute_logical_size", None)
-    if callable(compute_scale) and callable(compute_logical_size):
-        scale_x, scale_y, text_scale = compute_scale(
-            float(viewport_width), float(viewport_height)
-        )
-        logical_width, logical_height = compute_logical_size(
-            float(viewport_width), float(viewport_height)
-        )
-        return (
-            float(scale_x), float(scale_y), float(text_scale),
-            float(logical_width), float(logical_height),
-        )
-
-    ref_w = max(1.0, float(getattr(canvas, "reference_width", 1920.0)))
-    ref_h = max(1.0, float(getattr(canvas, "reference_height", 1080.0)))
-    screen_w = max(1.0, float(viewport_width))
-    screen_h = max(1.0, float(viewport_height))
-    mode = int(getattr(canvas, "ui_scale_mode", 1))
-    if mode in (0, 2):
-        scale = 1.0
-    else:
-        log_w = math.log2(screen_w / ref_w)
-        log_h = math.log2(screen_h / ref_h)
-        match_mode = int(getattr(canvas, "screen_match_mode", 0))
-        if match_mode == 0:
-            match = max(0.0, min(1.0, float(getattr(canvas, "match_width_or_height", 0.5))))
-            scale = 2.0 ** (log_w * (1.0 - match) + log_h * match)
-        elif match_mode == 1:
-            scale = min(screen_w / ref_w, screen_h / ref_h)
-        else:
-            scale = max(screen_w / ref_w, screen_h / ref_h)
-    if bool(getattr(canvas, "pixel_perfect", False)):
-        scale = max(1.0, round(scale))
-    scale_x = scale_y = max(scale, 1.0e-6)
-    return scale_x, scale_y, min(scale_x, scale_y), screen_w / scale_x, screen_h / scale_y
+    """Use the same CanvasScaler metrics for rendering and pointer projection."""
+    return (*canvas.compute_scale(viewport_width, viewport_height),
+            *canvas.compute_logical_size(viewport_width, viewport_height))
 
 
 class WorldUIElementTarget:
@@ -673,8 +630,8 @@ def map_runtime_ui_pointer(
 def _collect_world_ui_elements(*scenes):
     """Share one hierarchy snapshot between UI rendering, input and picking."""
     global _world_elements_key, _world_elements
+    from infernux.components import InxComponent
     from infernux.ui import UICanvas
-    from infernux.ui.inx_ui_screen_component import InxUIScreenComponent
 
     key = tuple(
         (scene, int(getattr(scene, "world_id", 0)),
@@ -685,24 +642,43 @@ def _collect_world_ui_elements(*scenes):
     if key == _world_elements_key:
         return _world_elements
 
+    screen = {element for canvas in collect_sorted_runtime_canvas_snapshot(*scenes)
+              for element in canvas_elements(canvas)}
+    kinds = {}
+    has_world_ui = False
+    for components in InxComponent._active_instances.values():
+        for component in components:
+            if component in screen:
+                continue
+            kind = type(component)
+            if kind not in kinds:
+                kinds[kind] = is_ui_screen_component(component)
+            if kinds[kind] and component._native_scene in scenes:
+                has_world_ui = True
+                break
+        if has_world_ui:
+            break
+    if not has_world_ui:
+        _world_elements_key, _world_elements = key, ()
+        return _world_elements
+
     result = []
 
-    def walk(game_object, canvas_ancestor: bool) -> None:
+    def walk(game_object) -> None:
         if not game_object:
             return
         components = tuple(game_object.get_py_components())
-        canvas_here = canvas_ancestor or any(
-            isinstance(component, UICanvas) for component in components
-        )
+        if any(isinstance(component, UICanvas) for component in components):
+            return
         ui_component = next(
             (component for component in components if is_ui_screen_component(component)),
             None,
         )
-        if ui_component is not None and not canvas_here:
+        if ui_component is not None:
             result.append(ui_component)
         for child in game_object.get_children():
             if child:
-                walk(child, canvas_here)
+                walk(child)
 
     seen = set()
     for scene in scenes:
@@ -710,7 +686,7 @@ def _collect_world_ui_elements(*scenes):
             continue
         seen.add(id(scene))
         for root_object in scene.get_root_objects():
-            walk(root_object, False)
+            walk(root_object)
     _world_elements_key = key
     _world_elements = tuple(result)
     return _world_elements
@@ -726,12 +702,10 @@ class RuntimeScreenUISubmission:
         self._engine_ref = weakref.ref(engine)
         self._target_width = self.DEFAULT_CAPTURE_WIDTH
         self._target_height = self.DEFAULT_CAPTURE_HEIGHT
-        self._scene = None
-        self._scene_structure_version = -1
         self._canvas_snapshot_token = None
         self._canvas_snapshot = ()
         self._last_submission_frame = -1
-        self._command_packets = UICommandPackets()
+        self._command_packets = UICommandPackets(_get_tex_cache())
 
     @property
     def target_size(self) -> tuple[int, int]:
@@ -767,11 +741,6 @@ class RuntimeScreenUISubmission:
         width, height = self.target_size
         scene_manager = SceneManager.instance()
         scenes = runtime_ui_scenes(scene_manager)
-        structure_version = tuple(int(world.structure_version) for world in scenes)
-        if scenes != self._scene or structure_version != self._scene_structure_version:
-            clear_rect_cache((tuple(id(world) for world in scenes), structure_version))
-            self._scene = scenes
-            self._scene_structure_version = structure_version
         canvas_token = runtime_canvas_snapshot_token(*scenes)
         if canvas_token != self._canvas_snapshot_token:
             self._canvas_snapshot = tuple(collect_sorted_runtime_canvas_snapshot(*scenes))
@@ -779,18 +748,16 @@ class RuntimeScreenUISubmission:
         canvases = self._canvas_snapshot
         world_elements = _collect_world_ui_elements(*scenes)
 
-        texture_cache = _get_tex_cache()
+        packets = self._command_packets
+        texture_cache = packets.texture_cache
         revision = _runtime_ui_revision(
             None, canvases, width, height, texture_cache.generation,
             world_elements, None, scenes,
         )
-        packets = self._command_packets
-        if texture_cache.has_pending:
-            packets.prepare(None)
         font_epoch = renderer.command_packet_epoch()
-        packets.prepare((renderer, width, height, texture_cache.generation,
-                         font_epoch, _runtime_command_epoch()), font_epoch=font_epoch)
-        if texture_cache.has_pending:
+        packets.prepare((renderer, width, height, font_epoch,
+                         _runtime_command_epoch()), font_epoch=font_epoch)
+        if packets.has_pending_textures:
             renderer.begin_frame(width, height)
         else:
             if renderer.begin_frame_cached(width, height, revision):
@@ -930,7 +897,7 @@ class RuntimeScreenUISubmission:
         )
 
         elements = canvas_elements(canvas)
-        args = (ui_list, logical_width, logical_height, scale_x, scale_y,
+        args = (canvas, ui_list, logical_width, logical_height, scale_x, scale_y,
                 text_scale, get_texture_id)
         if packets is not None:
             packets.submit_elements(
@@ -946,28 +913,31 @@ class RuntimeScreenUISubmission:
             RuntimeScreenUISubmission._submit_screen_element(element, renderer, *args)
 
     @staticmethod
-    def _submit_screen_element(element, renderer, ui_list, logical_width, logical_height,
+    def _submit_screen_element(element, renderer, canvas, ui_list, logical_width, logical_height,
                                scale_x, scale_y, text_scale, get_texture_id):
         element_object = getattr(element, "game_object", None)
         if element_object is not None and not element_object.active_in_hierarchy:
             return
         if not getattr(element, "enabled", True):
             return
-        x, y, width, height = element.get_rect(logical_width, logical_height)
+        x, y, width, height = canvas.pixel_adjust_rect(
+            element.get_rect(logical_width, logical_height), scale_x, scale_y,
+        )
         begin_object = getattr(renderer, "begin_screen_object", None)
         if callable(begin_object):
-            begin_object(element_object, ui_list, (x + width * 0.5) * scale_x,
-                         (y + height * 0.5) * scale_y, scale_x, scale_y)
+            begin_object(element_object, ui_list, x + width * 0.5, y + height * 0.5, scale_x, scale_y)
         clip = element.get_effective_clip_rect(logical_width, logical_height)
         if clip is not None:
+            left, top, width_clip, height_clip = canvas.pixel_adjust_rect(
+                (clip[0], clip[1], clip[2] - clip[0], clip[3] - clip[1]), scale_x, scale_y,
+            )
             renderer.push_clip_rect(
-                ui_list, clip[0] * scale_x, clip[1] * scale_y,
-                clip[2] * scale_x, clip[3] * scale_y,
+                ui_list, left, top, left + width_clip, top + height_clip,
             )
         try:
             _ui_dispatch(
                 element, "runtime", renderer=renderer, ui_list=ui_list,
-                sx=x * scale_x, sy=y * scale_y, sw=width * scale_x, sh=height * scale_y,
+                sx=x, sy=y, sw=width, sh=height,
                 ref_w=logical_width, ref_h=logical_height, scale_x=scale_x,
                 scale_y=scale_y, text_scale=text_scale, get_tex_id=get_texture_id,
             )

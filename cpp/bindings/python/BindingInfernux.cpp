@@ -5,6 +5,7 @@
 #include <function/renderer/rhi/RhiComputeHost.h>
 #include <function/renderer/rhi/RhiComputeKernel.h>
 #include <function/renderer/rhi/RhiRenderTexture.h>
+#include <function/scene/PythonNativeLifetime.h>
 // Explicit includes for types now only forward-declared in InxRenderer.h
 #include <SDL3/SDL.h>
 #include <algorithm>
@@ -39,6 +40,23 @@ namespace py = pybind11;
 
 namespace
 {
+
+struct PythonFrameCallback
+{
+    py::function function;
+    explicit PythonFrameCallback(py::function value) : function(std::move(value))
+    {
+    }
+    ~PythonFrameCallback()
+    {
+        if (!Py_IsInitialized()) {
+            function.release();
+            return;
+        }
+        py::gil_scoped_acquire acquire;
+        function = py::function();
+    }
+};
 
 // A shared_ptr from pybind11 keeps the C++ trampoline alive, but not its
 // Python subclass or overrides. Attach that Python owner to the registration's
@@ -740,65 +758,6 @@ void infernux::RegisterInfernuxBindings(py::module_ &m)
         .def_readonly("gpu_pinned", &AssetRuntimeRecord::gpuPinned)
         .def_readonly("gpu_version_synchronized", &AssetRuntimeRecord::gpuVersionSynchronized);
 
-    // ---- EngineConfig (centralised runtime configuration) ----
-    py::class_<EngineConfig>(m, "EngineConfig",
-                             "Centralised engine configuration singleton.\n"
-                             "Modify values BEFORE the corresponding subsystem initializes.\n"
-                             "Access via EngineConfig.get().")
-        .def_static("get", &EngineConfig::Get, py::return_value_policy::reference,
-                    "Get the singleton EngineConfig instance.")
-        // Rendering — Swapchain
-        .def_readwrite("max_frames_in_flight", &EngineConfig::maxFramesInFlight)
-        // Physics — Jolt Configuration
-        .def_readwrite("physics_temp_allocator_size", &EngineConfig::physicsTempAllocatorSize)
-        .def_readwrite("physics_max_jobs", &EngineConfig::physicsMaxJobs)
-        .def_readwrite("physics_max_barriers", &EngineConfig::physicsMaxBarriers)
-        .def_readwrite("physics_max_bodies", &EngineConfig::physicsMaxBodies)
-        .def_readwrite("physics_max_body_pairs", &EngineConfig::physicsMaxBodyPairs)
-        .def_readwrite("physics_max_contact_constraints", &EngineConfig::physicsMaxContactConstraints)
-        .def_readwrite("physics_collision_steps", &EngineConfig::physicsCollisionSteps)
-        .def_readwrite("physics_velocity_steps", &EngineConfig::physicsVelocitySteps)
-        .def_readwrite("physics_position_steps", &EngineConfig::physicsPositionSteps)
-        .def_readwrite("physics_penetration_slop", &EngineConfig::physicsPenetrationSlop)
-        .def_readwrite("physics_speculative_contact_distance", &EngineConfig::physicsSpeculativeContactDistance)
-        .def_readwrite("physics_linear_cast_max_penetration", &EngineConfig::physicsLinearCastMaxPenetration)
-        .def_readwrite("physics_baumgarte", &EngineConfig::physicsBaumgarte)
-        .def_readwrite("physics_max_penetration_distance", &EngineConfig::physicsMaxPenetrationDistance)
-        .def_readwrite("physics_linear_cast_threshold", &EngineConfig::physicsLinearCastThreshold)
-        .def_readwrite("physics_min_velocity_for_restitution", &EngineConfig::physicsMinVelocityForRestitution)
-        .def_readwrite("physics_time_before_sleep", &EngineConfig::physicsTimeBeforeSleep)
-        .def_readwrite("physics_point_velocity_sleep_threshold", &EngineConfig::physicsPointVelocitySleepThreshold)
-        .def_property(
-            "physics_gravity", [](EngineConfig &self) { return self.physicsGravity; },
-            [](EngineConfig &self, const glm::vec3 &v) { self.physicsGravity = v; },
-            "Default gravity vector (applied on physics init)")
-        .def_readwrite("physics_max_concurrency", &EngineConfig::physicsMaxConcurrency)
-        // Physics — Default Collider Properties
-        .def_readwrite("default_collider_friction", &EngineConfig::defaultColliderFriction)
-        .def_readwrite("default_collider_bounciness", &EngineConfig::defaultColliderBounciness)
-        // Physics — Default Rigidbody Properties
-        .def_readwrite("default_rigidbody_mass", &EngineConfig::defaultRigidbodyMass)
-        .def_readwrite("default_rigidbody_drag", &EngineConfig::defaultRigidbodyDrag)
-        .def_readwrite("default_rigidbody_angular_drag", &EngineConfig::defaultRigidbodyAngularDrag)
-        .def_readwrite("default_max_angular_velocity", &EngineConfig::defaultMaxAngularVelocity)
-        .def_readwrite("default_max_linear_velocity", &EngineConfig::defaultMaxLinearVelocity)
-        // Physics — Layers
-        .def_readwrite("default_query_layer_mask", &EngineConfig::defaultQueryLayerMask)
-        // Render Queue Ranges
-        .def_readwrite("opaque_queue_min", &EngineConfig::opaqueQueueMin)
-        .def_readwrite("opaque_queue_max", &EngineConfig::opaqueQueueMax)
-        .def_readwrite("transparent_queue_min", &EngineConfig::transparentQueueMin)
-        .def_readwrite("transparent_queue_max", &EngineConfig::transparentQueueMax)
-        .def_readwrite("shadow_caster_queue_min", &EngineConfig::shadowCasterQueueMin)
-        .def_readwrite("shadow_caster_queue_max", &EngineConfig::shadowCasterQueueMax)
-        .def_readwrite("component_gizmo_queue_min", &EngineConfig::componentGizmoQueueMin)
-        .def_readwrite("component_gizmo_queue_max", &EngineConfig::componentGizmoQueueMax)
-        .def_readwrite("editor_gizmo_queue_min", &EngineConfig::editorGizmoQueueMin)
-        .def_readwrite("editor_gizmo_queue_max", &EngineConfig::editorGizmoQueueMax)
-        .def_readwrite("editor_tools_queue_min", &EngineConfig::editorToolsQueueMin)
-        .def_readwrite("editor_tools_queue_max", &EngineConfig::editorToolsQueueMax)
-        .def_readwrite("skybox_queue", &EngineConfig::skyboxQueue);
-
     // ---- EditorCamera (property-based camera access) ----
     py::class_<EditorCameraController>(m, "EditorCamera",
                                        "Editor camera controller with property-based access.\n"
@@ -948,7 +907,7 @@ void infernux::RegisterInfernuxBindings(py::module_ &m)
 
     py::class_<InxScreenUIRenderer::CommandPacket, std::shared_ptr<InxScreenUIRenderer::CommandPacket>>(
         m, "_UICommandPacket");
-    py::class_<InxScreenUIRenderer>(m, "InxScreenUIRenderer")
+    NativeClass<InxScreenUIRenderer>(m, "InxScreenUIRenderer")
         .def("begin_command_packet", &InxScreenUIRenderer::BeginCommandPacket)
         .def("end_command_packet", &InxScreenUIRenderer::EndCommandPacket)
         .def("abort_command_packet", &InxScreenUIRenderer::AbortCommandPacket)
@@ -1345,6 +1304,10 @@ void infernux::RegisterInfernuxBindings(py::module_ &m)
         .def("try_commit_linked_shader_programs", &Infernux::TryCommitLinkedShaderPrograms, py::arg("ticket"),
              "Publish a completed linked-shader preload on the engine owner thread")
         .def_property_readonly("has_renderer", [](const Infernux &self) { return self.GetRenderer() != nullptr; })
+        .def_property_readonly("game_presentation_ready", [](Infernux &self) {
+            auto *renderer = self.GetRenderer();
+            return renderer && renderer->IsGamePresentationReady();
+        })
         .def_property_readonly("pending_mesh_gpu_upload_count",
                                [](const Infernux &self) {
                                    const auto *renderer = self.GetRenderer();
@@ -1851,6 +1814,29 @@ void infernux::RegisterInfernuxBindings(py::module_ &m)
                 result["target_sample_count"] = snapshot.targetSampleCount;
                 result["active"] = snapshot.active;
                 result["timings"] = std::move(timings);
+                py::list slowestFrames;
+                for (const auto &sample : snapshot.slowestFrames) {
+                    py::dict frame;
+                    frame["frame"] = sample.frame;
+                    frame["frame_ms"] = sample.frameMs;
+                    frame["game_only_ms"] = sample.gameOnlyMs;
+                    frame["render_ms"] = sample.renderMs;
+                    frame["scene_ms"] = sample.sceneMs;
+                    frame["gui_ms"] = sample.guiMs;
+                    frame["prepare_ms"] = sample.prepareMs;
+                    frame["input_ms"] = sample.inputMs;
+                    frame["callbacks_ms"] = sample.callbacksMs;
+                    frame["gpu_wait_ms"] = sample.gpuWaitMs;
+                    frame["draw_ms"] = sample.drawMs;
+                    frame["acquire_ms"] = sample.drawPhases[0];
+                    frame["record_submit_ms"] = sample.drawPhases[1];
+                    frame["present_ms"] = sample.drawPhases[2];
+                    frame["command_prepare_ms"] = sample.drawPhases[3];
+                    frame["command_record_ms"] = sample.drawPhases[4];
+                    frame["queue_submit_ms"] = sample.drawPhases[5];
+                    slowestFrames.append(std::move(frame));
+                }
+                result["slowest_frames"] = std::move(slowestFrames);
                 return result;
             },
             "Read the immutable aggregated native frame performance window")
@@ -1950,11 +1936,11 @@ void infernux::RegisterInfernuxBindings(py::module_ &m)
                 if (callback.is_none()) {
                     self.SetPreSceneUpdateCallback(nullptr);
                 } else {
-                    py::function fn = py::cast<py::function>(callback);
+                    auto fn = std::make_shared<PythonFrameCallback>(py::cast<py::function>(callback));
                     self.SetPreSceneUpdateCallback([fn](float deltaTime) {
                         py::gil_scoped_acquire acquire;
                         try {
-                            fn(deltaTime);
+                            fn->function(deltaTime);
                         } catch (const py::error_already_set &e) {
                             LogPythonFrameCallbackError("pre-scene update", e);
                         }
@@ -1972,11 +1958,11 @@ void infernux::RegisterInfernuxBindings(py::module_ &m)
                 if (callback.is_none()) {
                     r->SetPreGuiCallback(nullptr);
                 } else {
-                    py::function fn = py::cast<py::function>(callback);
+                    auto fn = std::make_shared<PythonFrameCallback>(py::cast<py::function>(callback));
                     r->SetPreGuiCallback([fn]() {
                         py::gil_scoped_acquire acquire;
                         try {
-                            fn();
+                            fn->function();
                         } catch (const py::error_already_set &e) {
                             LogPythonFrameCallbackError("pre-GUI", e);
                         }
@@ -1995,11 +1981,11 @@ void infernux::RegisterInfernuxBindings(py::module_ &m)
                 if (callback.is_none()) {
                     r->SetPostDrawCallback(nullptr);
                 } else {
-                    py::function fn = py::cast<py::function>(callback);
+                    auto fn = std::make_shared<PythonFrameCallback>(py::cast<py::function>(callback));
                     r->SetPostDrawCallback([fn]() {
                         py::gil_scoped_acquire acquire;
                         try {
-                            fn();
+                            fn->function();
                         } catch (const py::error_already_set &e) {
                             LogPythonFrameCallbackError("post-draw", e);
                         }
@@ -2067,6 +2053,7 @@ void infernux::RegisterInfernuxBindings(py::module_ &m)
         .def(
             "cleanup",
             [](Infernux &self) {
+                self.RequireFrameInactive();
                 self.RequireComputeHostsReleased();
                 // Python frame callbacks must be released while this binding
                 // still owns the GIL. Native teardown may then release it while

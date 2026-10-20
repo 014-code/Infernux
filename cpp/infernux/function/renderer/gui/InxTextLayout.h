@@ -636,7 +636,7 @@ inline TextLayoutResult LayoutText(const TextLayoutParams &params)
 }
 
 inline void RenderLine(ImDrawList *drawList, const TextLayoutResult &layout, const TextLine &line, float x, float y,
-                       ImU32 color, float letterSpacing)
+                       ImU32 color, float letterSpacing, const ImVec4 *clipRect = nullptr)
 {
     if (drawList == nullptr || layout.font == nullptr)
         return;
@@ -649,14 +649,15 @@ inline void RenderLine(ImDrawList *drawList, const TextLayoutResult &layout, con
             continue;
         if (glyphIndex > 0)
             cursorX += letterSpacing;
-        glyph.font->RenderChar(drawList, glyph.fontSize, ImVec2(cursorX, y), color, glyph.codepoint);
+        glyph.font->RenderChar(drawList, glyph.fontSize, ImVec2(cursorX, y), color, glyph.codepoint, clipRect);
         cursorX += glyph.advance;
         ++glyphIndex;
     }
 }
 
 inline void RenderTextBox(ImDrawList *drawList, float minX, float minY, float maxX, float maxY,
-                          const TextLayoutResult &layout, ImU32 color, float alignX, float alignY, float letterSpacing)
+                          const TextLayoutResult &layout, ImU32 color, float alignX, float alignY, float letterSpacing,
+                          const ImVec4 *clipRect = nullptr)
 {
     if (drawList == nullptr || layout.font == nullptr || layout.lines.empty())
         return;
@@ -670,7 +671,7 @@ inline void RenderTextBox(ImDrawList *drawList, float minX, float minY, float ma
         const TextLine &line = layout.lines[index];
         const float lineX = minX + (boxWidth - line.width) * alignX;
         const float lineY = baseY + layout.lineAdvance * static_cast<float>(index);
-        RenderLine(drawList, layout, line, lineX, lineY, color, letterSpacing);
+        RenderLine(drawList, layout, line, lineX, lineY, color, letterSpacing, clipRect);
     }
 }
 

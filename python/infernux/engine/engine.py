@@ -9,6 +9,7 @@ from infernux.lib import Infernux, InxGUIRenderable, LogLevel, RuntimeMode, lib_
 from infernux.engine.project_context import set_project_root
 from infernux.engine.path_utils import safe_path as _safe_path
 from infernux.debug import Debug
+from infernux.engine.runtime_change_journal import RuntimeChangeDomain, RuntimeFrameBarrier
 
 if TYPE_CHECKING:
     from infernux.engine.play_mode import PlayModeManager
@@ -32,6 +33,9 @@ def _runtime_acceptance_services():
 
 class Engine():
     def __init__(self, engine_log_level=LogLevel.Info, mode=RuntimeMode.Graphical):
+        from infernux.engine.runtime_dispatch import bind_runtime_dispatch_owner
+
+        bind_runtime_dispatch_owner()
         self._mode = RuntimeMode(mode)
         self._application_role = (
             "headless" if self._mode == RuntimeMode.Headless
@@ -83,7 +87,6 @@ class Engine():
         self._headless_undo_manager = None
         self._headless_scene_file_manager = None
         self._before_exit_callback = None
-        self._editor_frame_sync_callback = None
         # The packaged Player entry point terminates the entire process
         # immediately after persistent writes and native cleanup complete.
         # The packaged Player's plugin threads and sockets are process-owned;
@@ -176,8 +179,6 @@ class Engine():
                 project_path=project_path, engine=self._engine
             )
         
-        # Load project materials (default material from project's .mat file)
-        self._load_project_materials(project_path)
         if _PLAYER_MODE:
             self.pump_events()
         
@@ -385,12 +386,8 @@ class Engine():
         scheduler.bind_native_bridge(scene_manager)
 
     def _consume_runtime_frame_barrier(self, barrier):
-        from infernux.engine.runtime_change_journal import (
-            RuntimeChangeDomain,
-            RuntimeFrameBarrier,
-        )
-
-        barrier = RuntimeFrameBarrier(barrier)
+        if not isinstance(barrier, RuntimeFrameBarrier):
+            barrier = RuntimeFrameBarrier(barrier)
         if barrier == RuntimeFrameBarrier.SNAPSHOT_PUBLICATION:
             scene_manager = getattr(self, "_runtime_scene_manager", None)
             getter = getattr(scene_manager, "get_global_transform_serial", None)
@@ -473,46 +470,6 @@ class Engine():
         elif not tag_layers.deserialize(TagLayerManager.serialize_defaults()):
             raise RuntimeError("The runtime rejected its tag/layer defaults")
     
-    def _load_project_materials(self, project_path):
-        """Load all .mat files from the project via AssetRegistry.
-
-        Scans the project's ``materials/`` directory for ``.mat`` files.
-        The first file named ``default_lit.mat`` is promoted to the
-        engine-wide default material; every other ``.mat`` file is
-        loaded via AssetRegistry so that scene deserialization can find it.
-        """
-        from infernux.lib import AssetRegistry
-
-        registry = AssetRegistry.instance()
-
-        # Collect candidate directories
-        search_dirs = []
-        materials_dir = os.path.join(project_path, "materials")
-        if os.path.isdir(materials_dir):
-            search_dirs.append(materials_dir)
-
-        # Also scan Library/Resources/materials for built-in materials
-        library_mat_dir = os.path.join(project_path, "Library", "Resources", "materials")
-        if os.path.isdir(library_mat_dir):
-            search_dirs.append(library_mat_dir)
-
-        default_loaded = False
-        for mat_dir in search_dirs:
-            for fname in os.listdir(mat_dir):
-                if not fname.endswith(".mat"):
-                    continue
-                mat_path = os.path.join(mat_dir, fname)
-
-                # Load the default material via AssetRegistry (replaces builtin DefaultLit)
-                if fname == "default_lit.mat" and not default_loaded:
-                    if registry.load_builtin_material_from_file("DefaultLit", mat_path):
-                        default_loaded = True
-                    else:
-                        Debug.log_warning(f"Failed to load default material from: {mat_path}")
-                else:
-                    # Load via AssetRegistry (unified cache)
-                    registry.load_material(mat_path)
-
     def run(self):
         if self._mode == RuntimeMode.Headless:
             self._run_native_loop()
@@ -547,24 +504,12 @@ class Engine():
         # between frames, sandwiched by SDL_PumpEvents() in C++.  This prevents
         # Windows from flagging the application as "Not Responding" during long
         # scene loads that previously ran inside BuildFrame().
-        #
-        # Manual GC collection also runs here at controlled wall-clock
-        # intervals.  Frame-count scheduling turns into an accidental GC
-        # stress test when the editor renders at several thousand FPS.
-        # Automatic GC is disabled below to prevent unpredictable ~5ms
-        # pauses inside the hot UI/render path.  With 1000+ scene objects,
-        # CPython's default gen0 threshold (700) triggers collections on
-        # nearly every frame inside random timing windows.
-        _gc_deadlines = {
-            0: time.monotonic() + 1.0,
-            1: time.monotonic() + 15.0,
-            2: time.monotonic() + 180.0,
-        }
         _asset_import_progress = None
         _build_preflight_progress = None
         _plugin_install_progress = None
         _plugin_reload_progress = None
         if not _PLAYER_MODE:
+            from infernux.engine.interaction import DocumentRegistry as _DocumentRegistry
             from infernux.engine.ui.asset_import_progress import (
                 AssetImportProgressService,
             )
@@ -582,14 +527,18 @@ class Engine():
             _plugin_install_progress = PluginInstallProgressService.instance()
             _plugin_reload_progress = PluginReloadProgressService.instance()
 
+        from infernux.engine.runtime_event_queue import drain as _drain_runtime_events
+        from infernux.core.assets import AssetManager as _AssetManager
+
         # Same policy as _pre_gui_tick: failures propagate to the C++
         # DrawFrame boundary instead of being swallowed step by step.
         def _post_draw_tick():
+            pmm = getattr(self, "_play_mode_manager", None)
+            playing = pmm is not None and pmm.is_playing
             # UI pointer callbacks may replace scenes or destroy renderables.
             # Drain them only after native GUI drawing and present have
             # released the current renderable traversal.
-            from infernux.engine.runtime_event_queue import drain
-            drain()
+            _drain_runtime_events()
             if _plugin_install_progress is not None:
                 _plugin_install_progress.post_present_tick()
             if _plugin_reload_progress is not None:
@@ -598,51 +547,23 @@ class Engine():
                 _build_preflight_progress.post_present_tick()
             if _asset_import_progress is not None:
                 _asset_import_progress.post_present_tick()
-                from infernux.engine.interaction import DocumentRegistry
-                DocumentRegistry.instance().process_deferred_saves()
-            from infernux.core.assets import AssetManager
-            AssetManager.flush_pending_gpu_texture_reloads()
-            if not _PLAYER_MODE:
+            _AssetManager.flush_pending_gpu_texture_reloads()
+            if not _PLAYER_MODE and not playing:
                 # Asset persistence is an editor service, not a panel
-                # rendering side effect.  Drain due debounced snapshots
-                # even when no Inspector/Project view is visible.
-                AssetManager.flush_scheduled_saves()
-                AssetManager.poll_pending_asset_writes()
-                from infernux.engine.interaction import DocumentRegistry
-                DocumentRegistry.instance().process_pending_saves()
+                # rendering side effect.  Play has no authoring writes, so the
+                # per-frame persistence/deferred-load polls are pure overhead.
+                _AssetManager.flush_scheduled_saves()
+                _AssetManager.poll_pending_asset_writes()
+                _DocumentRegistry.instance().process_pending_saves()
+                _DocumentRegistry.instance().process_deferred_saves()
 
-            if not _PLAYER_MODE:
+            if not _PLAYER_MODE and not playing:
                 from infernux.engine.scene_manager import SceneFileManager
                 sfm = SceneFileManager.instance()
                 if sfm is not None:
                     sfm.poll_deferred_load()
-            # Keep collection cadence independent of render FPS. At 3000 FPS
-            # the old 120/600/3000-frame policy ran at 40/200/1000 ms and a
-            # script reload's retired module graph made the following full
-            # collection visibly stall the editor.
-            now = time.monotonic()
-            generation = None
-            if now >= _gc_deadlines[2]:
-                generation = 2
-            elif now >= _gc_deadlines[1]:
-                generation = 1
-            elif now >= _gc_deadlines[0]:
-                generation = 0
-            if generation is not None:
-                gc.collect(generation)
-                if generation == 2:
-                    _gc_deadlines[2] = now + 180.0
-                    _gc_deadlines[1] = now + 15.0
-                    _gc_deadlines[0] = now + 1.0
-                elif generation == 1:
-                    _gc_deadlines[1] = now + 15.0
-                    _gc_deadlines[0] = now + 1.0
-                else:
-                    _gc_deadlines[0] = now + 1.0
         self._engine.set_post_draw_callback(_post_draw_tick)
 
-        # Disable automatic GC to eliminate unpredictable pauses during
-        # rendering.  Manual collection runs in _post_draw_tick above.
         self._run_native_loop()
 
     def _run_native_loop(self):
@@ -662,8 +583,15 @@ class Engine():
         owns_signals = threading.current_thread() is threading.main_thread()
         if owns_signals:
             previous_sigint = signal.signal(signal.SIGINT, interrupt_loop)
-        gc_enabled = gc.isenabled()
-        gc.disable()
+        gc_was_enabled = gc.isenabled()
+        previous_threshold = gc.get_threshold()
+        if gc_was_enabled:
+            # Startup objects never change again; freezing them keeps the
+            # per-frame collector focused on live scene/editor garbage. The
+            # larger gen0 budget removes the ~700-allocation default cadence.
+            gc.collect()
+            gc.freeze()
+            gc.set_threshold(50_000, 20, 20)
         try:
             self._engine.run()
             if interrupted:
@@ -671,8 +599,8 @@ class Engine():
         finally:
             if owns_signals:
                 signal.signal(signal.SIGINT, previous_sigint)
-            if gc_enabled:
-                gc.enable()
+            gc.set_threshold(*previous_threshold)
+            (gc.enable if gc_was_enabled else gc.disable)()
             # Includes KeyboardInterrupt and native loop failures, not just
             # the SDL window-close path. Cleanup must run before Python joins
             # the non-daemon resource observer during interpreter shutdown.
@@ -731,9 +659,6 @@ class Engine():
         )
         self._last_frame_time = current_time
 
-        if self._editor_frame_sync_callback is not None:
-            self._editor_frame_sync_callback()
-        
         # Process pending script reloads on the main thread, but throttle polling.
         pmm = self._play_mode_manager
         rm = self._resources_manager

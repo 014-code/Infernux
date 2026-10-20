@@ -377,6 +377,7 @@ class _UICommandDependencies:
             self.geometry_revision = geometry_revision
         bindings_revision = _get_resource_binding_revision()
         if bindings_revision != self.bindings_revision:
+            from infernux.core.asset_ref import RenderTextureRef
             from .ui_button import UIButton
             from .ui_image import UIImage
 
@@ -396,9 +397,11 @@ class _UICommandDependencies:
                     if isinstance(element, UIButton)
                     else None
                 )
+                # Imported static textures publish through texture_generation.
+                # Only render targets can resize without another field write.
                 if texture is not None and (
-                    bool(texture.get_raw(element)) or
                     element.__dict__.get("_render_texture") is not None
+                    or isinstance(texture.get_raw(element), RenderTextureRef)
                 ):
                     images.append(element)
             self.materials = tuple(materials)
@@ -459,7 +462,7 @@ def runtime_ui_revision(scene, canvases, width: int, height: int,
     """Build the content revision for native command-list reuse.
 
     UI components increment a shared generation on visual mutation. Scene
-    structure covers hierarchy and active-state changes. Transform, material
+    snapshots cover hierarchy and active-state changes. Transform, material
     and RenderTexture generations also invalidate already-recorded commands.
     """
     canvases = tuple(canvases)
@@ -468,10 +471,11 @@ def runtime_ui_revision(scene, canvases, width: int, height: int,
     scenes = (scene, persistent_scene) if runtime_scenes is None else runtime_scenes
     membership = (
         tuple((id(world), int(getattr(world, "world_id", 0)),
-               int(getattr(world, "structure_version", 0)),
+               int(getattr(world, "structure_version", 0)) if world_elements else 0,
                int(getattr(world, "temporal_discontinuity_revision", 0)))
               for world in scenes if world is not None),
-        canvases, world_elements,
+        tuple((canvas, canvas_elements(canvas), canvas._cached_elements_revision)
+              for canvas in canvases), world_elements,
     )
     dependencies = _runtime_dependencies.revision(
         membership, canvases, world_elements,
@@ -575,10 +579,11 @@ def _editor_render_image(elem, ctx, base_sx, base_sy, base_sw, base_sh, zoom, ge
     tex_id = get_tex_id(tex_path) if tex_path else 0
     rounding = attrs["corner_radius"] * zoom
     if tex_id:
+        uv = elem.uv_rect
         ctx.draw_image_rect(
             tex_id, base_sx, base_sy,
             base_sx + base_sw, base_sy + base_sh,
-            0.0, 0.0, 1.0, 1.0,
+            uv.x, uv.y, uv.x + uv.z, uv.y + uv.w,
             cr, cg, cb, ca,
             attrs["rotation"], attrs["mirror_h"], attrs["mirror_v"],
             rounding,
@@ -653,6 +658,8 @@ def _runtime_render_image(elem, renderer, ui_list, sx, sy, sw, sh,
     material_state = material_visual_state(elem)
     tex_path = image_texture_source(elem, material_state)
     tex_id = get_tex_id(tex_path) if tex_path else 0
+    if tex_path and not tex_id:
+        return
     world_transform_owned = bool(_kw.get("world_transform_owned", False))
 
     attrs = extract_common(
@@ -667,10 +674,11 @@ def _runtime_render_image(elem, renderer, ui_list, sx, sy, sw, sh,
     rounding = attrs["corner_radius"] * min(scale_x, scale_y)
     if tex_id:
         kind = "image"
+        uv = elem.uv_rect
         arguments = (
             ui_list, tex_id,
             sx, sy, sx + sw, sy + sh,
-            0.0, 0.0, 1.0, 1.0,
+            uv.x, uv.y, uv.x + uv.z, uv.y + uv.w,
             cr, cg, cb, ca,
             attrs["rotation"], attrs["mirror_h"], attrs["mirror_v"],
             rounding,

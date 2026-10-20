@@ -31,8 +31,11 @@ class StatusBarPanel : public InxGUIRenderable
     /// Wire to C++ ConsolePanel for count queries and "select latest" action.
     void SetConsolePanel(ConsolePanel *panel);
 
-    /// Update engine-status indicator (called from Python every frame).
+    /// Update the engine-status indicator.
     void SetEngineStatus(const std::string &text, float progress, const std::string &kind = "activity");
+
+    /// Refresh editor state once per GUI build, independently of simulation FPS.
+    std::function<void()> syncFromEngine;
 
     /// Unified command entry used by status-bar actions.
     std::function<bool(const std::string &, const std::string &, const std::string &)> executeCommand;

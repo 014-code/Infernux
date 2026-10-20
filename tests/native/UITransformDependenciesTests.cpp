@@ -19,6 +19,26 @@ int main()
     assert(world.GetChangedEntries() == std::vector<uint32_t>{0});
     assert(screen.GetChangedEntries() == std::vector<uint32_t>{0});
 
+    auto *heldParent = scene->CreateGameObject("Held parent");
+    auto *heldChild = scene->CreateGameObject("Held child");
+    heldChild->SetParent(heldParent, false);
+    heldChild->GetTransform()->SetLocalPosition(2, 0, 0);
+    store.BeginFrameCache();
+    (void)store.EndFrameCache();
+    const auto unchangedSerial = store.GetGlobalTransformSerial();
+    store.BeginFrameCache();
+    heldParent->GetTransform()->SetWorldPosition(glm::vec3(0));
+    heldParent->GetTransform()->SetWorldRotation(glm::quat(1, 0, 0, 0));
+    (void)store.EndFrameCache();
+    assert(store.GetGlobalTransformSerial() == unchangedSerial);
+    store.BeginFrameCache();
+    // The child writes first, retaining its world position while its parent moves.
+    heldChild->GetTransform()->SetWorldPosition(glm::vec3(2, 0, 0));
+    heldParent->GetTransform()->SetWorldPosition(glm::vec3(3, 0, 0));
+    (void)store.EndFrameCache();
+    assert(heldChild->GetTransform()->GetWorldPosition() == glm::vec3(2, 0, 0));
+    assert(heldChild->GetTransform()->GetLocalPosition() == glm::vec3(-1, 0, 0));
+
     store.BeginFrameCache();
     const auto serial = store.GetGlobalTransformSerial();
     for (int index = 1; index <= 4; ++index) {

@@ -10,6 +10,7 @@
 #include <core/log/InxLog.h>
 
 #include <algorithm>
+#include <chrono>
 #include <limits>
 
 namespace infernux::vk
@@ -163,6 +164,7 @@ VulkanSubmissionExecutor::ExecuteResult VulkanSubmissionExecutor::Execute(uint32
                                                                           const ExternalSync &sync)
 {
     ExecuteResult output{};
+    auto phaseStart = sync.cpuTimings ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     if (!m_deviceContext || !m_queues || frameSlot >= m_frames.size() || plan.batches.empty() || !recorder)
         return output;
     const auto firstGraphics = std::find_if(plan.batches.begin(), plan.batches.end(),
@@ -219,7 +221,7 @@ VulkanSubmissionExecutor::ExecuteResult VulkanSubmissionExecutor::Execute(uint32
         if (batchIndex + 1 < plan.batches.size() && targetLane != terminalLane)
             hasCrossQueueDependency = true;
     }
-    if (hasCrossQueueDependency && m_laneTimelines.empty()) {
+    if ((hasCrossQueueDependency || needsTerminalJoin) && m_laneTimelines.empty()) {
         INXLOG_ERROR("VulkanSubmissionExecutor cannot execute cross-queue dependencies without timeline semaphores");
         return output;
     }
@@ -258,43 +260,47 @@ VulkanSubmissionExecutor::ExecuteResult VulkanSubmissionExecutor::Execute(uint32
     diagnostic.batchWaits.reserve(plan.batches.size());
     diagnostic.batchNames.reserve(plan.batches.size());
 
-    try {
-        for (size_t batchIndex = 0; batchIndex < plan.batches.size(); ++batchIndex) {
-            const rhi::SubmissionBatch &batch = plan.batches[batchIndex];
-            VkCommandBuffer commandBuffer = AcquireCommandBuffer(frame, batch.queue);
-            if (commandBuffer == VK_NULL_HANDLE) {
-                CancelReservations(tickets, 0);
-                return output;
-            }
-            commands.push_back(commandBuffer);
-            VulkanCommandUploads::Scope uploadScope(*frame.roles[RoleIndex(batch.queue)].uploads, commandBuffer);
-
-            VkCommandBufferBeginInfo beginInfo{};
-            beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-            beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-            if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
-                CancelReservations(tickets, 0);
-                return output;
-            }
-
-            vkdebug::DescriptorRecordingScope descriptorRecording(
-                &m_deviceContext->GetRhiDevice().GetDescriptorManager(), sync.completionEpoch);
-            if (!recorder(static_cast<uint32_t>(batchIndex), commandBuffer) ||
-                vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
-                return output;
-            }
-            const uint32_t lane = m_queues->GetSnapshot(batch.queue).nativeLane;
-            if (lane < m_laneTimelines.size())
-                signalValues[batchIndex] = m_laneTimelines[lane].nextValue++;
-            diagnostic.batchRoles.push_back(batch.queue);
-            diagnostic.batchLanes.push_back(lane);
-            diagnostic.batchSignalValues.push_back(signalValues[batchIndex]);
-            diagnostic.batchQueuePredecessors.push_back(batch.queuePredecessor);
-            diagnostic.batchWaits.push_back(batch.waitsFor);
-            diagnostic.batchNames.push_back(batch.diagnosticName);
+    if (sync.cpuTimings) {
+        const auto now = std::chrono::steady_clock::now();
+        (*sync.cpuTimings)[0] = std::chrono::duration<double, std::milli>(now - phaseStart).count();
+        phaseStart = now;
+    }
+    for (size_t batchIndex = 0; batchIndex < plan.batches.size(); ++batchIndex) {
+        const rhi::SubmissionBatch &batch = plan.batches[batchIndex];
+        VkCommandBuffer commandBuffer = AcquireCommandBuffer(frame, batch.queue);
+        if (commandBuffer == VK_NULL_HANDLE) {
+            return output;
         }
-    } catch (...) {
-        throw;
+        commands.push_back(commandBuffer);
+        VulkanCommandUploads::Scope uploadScope(*frame.roles[RoleIndex(batch.queue)].uploads, commandBuffer);
+
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
+            return output;
+        }
+
+        vkdebug::DescriptorRecordingScope descriptorRecording(&m_deviceContext->GetRhiDevice().GetDescriptorManager(),
+                                                              sync.completionEpoch);
+        if (!recorder(static_cast<uint32_t>(batchIndex), commandBuffer) ||
+            vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+            return output;
+        }
+        const uint32_t lane = m_queues->GetSnapshot(batch.queue).nativeLane;
+        if (lane < m_laneTimelines.size())
+            signalValues[batchIndex] = m_laneTimelines[lane].nextValue++;
+        diagnostic.batchRoles.push_back(batch.queue);
+        diagnostic.batchLanes.push_back(lane);
+        diagnostic.batchSignalValues.push_back(signalValues[batchIndex]);
+        diagnostic.batchQueuePredecessors.push_back(batch.queuePredecessor);
+        diagnostic.batchWaits.push_back(batch.waitsFor);
+        diagnostic.batchNames.push_back(batch.diagnosticName);
+    }
+    if (sync.cpuTimings) {
+        const auto now = std::chrono::steady_clock::now();
+        (*sync.cpuTimings)[1] = std::chrono::duration<double, std::milli>(now - phaseStart).count();
+        phaseStart = now;
     }
 
     // Recording may publish asynchronous resource uploads. Reserve frame
@@ -563,6 +569,9 @@ VulkanSubmissionExecutor::ExecuteResult VulkanSubmissionExecutor::Execute(uint32
     output.result = VK_SUCCESS;
     diagnostic.completionTimeline = output.completionTimeline;
     diagnostic.completionTimelineValue = output.completionTimelineValue;
+    if (sync.cpuTimings)
+        (*sync.cpuTimings)[2] =
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - phaseStart).count();
     return output;
 }
 

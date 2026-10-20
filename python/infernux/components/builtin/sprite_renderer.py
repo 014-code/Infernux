@@ -11,7 +11,7 @@ wrapper — the two are parallel, same-level renderer types.
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Optional
 
 from infernux.components.builtin_component import BuiltinComponent, CppProperty
 from infernux.components.fields import FieldType
@@ -275,10 +275,11 @@ class SpriteRenderer(BuiltinComponent):
             raise ValueError("sprite texture is missing from the Asset Database")
         from infernux.core.asset_types import (
             TextureType,
-            read_texture_import_settings,
+            TextureImportSettings,
+            read_asset_metadata,
         )
 
-        settings = read_texture_import_settings(asset_path)
+        settings = TextureImportSettings.from_dict(read_asset_metadata(asset_path, guid=guid))
         if settings.texture_type is not TextureType.SPRITE:
             raise ValueError("SpriteRenderer requires a texture imported as Sprite")
         if not settings.sprite_frames:
@@ -418,13 +419,9 @@ class SpriteRenderer(BuiltinComponent):
             transaction=sprite_transaction,
         )
 
-        # ── Stable SpriteFrame picker ──────────────────────────
-        if not self._is_driven_by_animator() and self._sprite_frames:
+        # The displayed frame number is one-based; identity remains the stable ID.
+        if not self._is_driven_by_animator():
             frame_ids = [frame.stable_id for frame in self._sprite_frames]
-            frame_labels = [
-                str(frame.name or f"Frame {index}")
-                for index, frame in enumerate(self._sprite_frames)
-            ]
             current_frame_id = self.frame_id
             current_index = next(
                 (
@@ -434,42 +431,35 @@ class SpriteRenderer(BuiltinComponent):
                 ),
                 -1,
             )
-            labels = frame_labels
-            combo_index = current_index
-            if current_index < 0:
-                missing_label = (
-                    f"Missing ({current_frame_id[:8]})"
-                    if current_frame_id
-                    else "None"
-                )
-                labels = [missing_label, *frame_labels]
-                combo_index = 0
-
             field_label(ctx, "Frame", lw)
-            selected_index = ctx.combo(
-                "##sprite_frame",
-                combo_index,
-                labels,
-                len(labels),
-            )
-            if selected_index != combo_index:
-                source_index = (
-                    selected_index
-                    if current_index >= 0
-                    else selected_index - 1
+            frame_count = len(frame_ids)
+            ctx.begin_disabled(frame_count <= 1)
+            if frame_count:
+                frame_number = current_index + 1
+                selected_number = int(ctx.int_slider(
+                    "##sprite_frame", frame_number,
+                    1 if current_index >= 0 else 0, frame_count,
+                ))
+            else:
+                ctx.label("No Sprite Frames")
+                selected_number = frame_number = 0
+            ctx.end_disabled()
+            if current_index < 0 and frame_count and ctx.is_item_hovered():
+                ctx.set_tooltip(
+                    f"Missing SpriteFrame ({current_frame_id[:8]})"
+                    if current_frame_id else "No SpriteFrame selected"
                 )
-                if 0 <= source_index < len(frame_ids):
-                    SnapshotPropertyTransaction(
-                        f"SpriteRenderer:{game_object_id}:{component_id}:frame",
-                        lambda: {
-                            "sprite_guid": self.sprite_guid,
-                            "frame_id": self.frame_id,
-                        },
-                        self._restore_sprite_assignment,
-                        description="Set Sprite Frame",
-                        normalize=self._frame_assignment_snapshot,
-                        mergeable=False,
-                    ).commit_or_raise(frame_ids[source_index])
+            if frame_count > 1 and selected_number != frame_number and selected_number > 0:
+                SnapshotPropertyTransaction(
+                    f"SpriteRenderer:{game_object_id}:{component_id}:frame",
+                    lambda: {
+                        "sprite_guid": self.sprite_guid,
+                        "frame_id": self.frame_id,
+                    },
+                    self._restore_sprite_assignment,
+                    description="Set Sprite Frame",
+                    normalize=self._frame_assignment_snapshot,
+                ).commit_or_raise(frame_ids[selected_number - 1])
 
         # ── Material slot (supports custom materials) ──────────
         mat = self._get_material()
@@ -609,7 +599,7 @@ class SpriteRenderer(BuiltinComponent):
 
     def sync_visual(self):
         """Public API: push the current C++ properties (frame, flip, color)
-        to this renderer. Called by external drivers like SpiritAnimator
+        to this renderer. Called by external drivers like SpriteAnimator
         after they update ``frame_id`` from Python."""
         self._sync_material_if_dirty()
 
@@ -628,12 +618,12 @@ class SpriteRenderer(BuiltinComponent):
         return restored
 
     def _is_driven_by_animator(self) -> bool:
-        """Return True if a SpiritAnimator is attached to this GameObject."""
+        """Return True if a SpriteAnimator is attached to this GameObject."""
         go = self.game_object
         if go is None:
             return False
-        from infernux.components.spirit_animator import SpiritAnimator
-        return go.get_component(SpiritAnimator) is not None
+        from infernux.components.sprite_animator import SpriteAnimator
+        return go.get_component(SpriteAnimator) is not None
 
     def _sync_material_if_dirty(self):
         """Publish changed sprite fields without modifying the shared material."""

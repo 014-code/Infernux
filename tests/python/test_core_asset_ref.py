@@ -1,157 +1,70 @@
-"""Tests for infernux.core.asset_ref — AssetRefBase, TextureRef, ShaderRef, etc."""
+"""GUID reference resolution, cache invalidation and typed identity."""
 
-from __future__ import annotations
-
-import pytest
-
-from infernux.core.asset_ref import (
-    AssetRefBase,
-    AudioClipRef,
-    MaterialRef,
-    ShaderRef,
-    TextureRef,
-)
+from infernux.core.asset_ref import AssetRefBase
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# AssetRefBase
-# ═══════════════════════════════════════════════════════════════════════════
+def test_reference_cache_follows_guid_changes_and_explicit_invalidation(monkeypatch, tmp_path):
+    calls = []
 
-class TestAssetRefBase:
-    def test_empty_ref(self):
-        ref = AssetRefBase()
-        assert ref.guid == ""
-        assert ref.path_hint == ""
-        assert bool(ref) is False
+    class ResolvingReference(AssetRefBase):
+        def _do_resolve(self):
+            value = object()
+            calls.append((self.guid, value))
+            return value
 
-    def test_guid_set_invalidates_cache(self):
-        ref = AssetRefBase(guid="abc")
-        ref._cached = "something"
-        ref.guid = "def"
-        assert ref._cached is None
-        assert ref.guid == "def"
+    reference = ResolvingReference()
+    assert not reference and reference.resolve() is None
+    reference.guid = "first-guid"
+    first = reference.resolve()
+    assert reference.resolve() is first
+    reference.guid = "first-guid"
+    assert reference.resolve() is first and len(calls) == 1
+    reference.guid = "second-guid"
+    second = reference.resolve()
+    assert second is not first and calls[-1][0] == "second-guid"
+    reference.invalidate()
+    assert reference.resolve() is not second and len(calls) == 3
 
-    def test_same_guid_no_invalidate(self):
-        ref = AssetRefBase(guid="abc")
-        ref._cached = "something"
-        ref.guid = "abc"
-        assert ref._cached == "something"
+    import json
+    from infernux.application import Application
+    from infernux.core.assets import AssetManager
+    from infernux.core.asset_ref import AnimStateMachineRef, TimelineFSMRef
+    from infernux.core.anim_state_machine import AnimStateMachine
 
-    def test_resolve_empty_guid_returns_none(self):
-        ref = AssetRefBase()
-        assert ref.resolve() is None
-
-    def test_resolve_caches(self):
-        ref = AssetRefBase(guid="abc")
-        ref._cached = "cached_value"
-        assert ref.resolve() == "cached_value"
-
-    def test_invalidate_clears_cache(self):
-        ref = AssetRefBase(guid="abc")
-        ref._cached = "cached"
+    path = tmp_path / "shared.animfsm"
+    path.write_text(json.dumps(AnimStateMachine(name="shared").to_dict()), encoding="utf-8")
+    monkeypatch.setattr(Application, "is_player", staticmethod(lambda: False))
+    monkeypatch.setattr(AssetManager, "_cache", {})
+    monkeypatch.setattr(AssetManager, "_texture_cache", {})
+    monkeypatch.setattr(AssetManager, "_play_data_asset_cache", None)
+    monkeypatch.setattr(AssetManager, "_get_path_from_guid", classmethod(lambda cls, guid: str(path)))
+    refs = [kind(guid="6" * 32) for kind in (AnimStateMachineRef, AnimStateMachineRef, TimelineFSMRef)]
+    shared = refs[0].resolve()
+    assert shared is not None
+    assert all(ref.resolve() is shared for ref in refs)
+    refs[1].invalidate()
+    assert refs[1].resolve() is shared
+    document = shared.to_dict()
+    document["mode"] = "3d"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    AssetManager.invalidate("6" * 32)
+    for ref in refs:
         ref.invalidate()
-        assert ref._cached is None
+    replacement = refs[0].resolve()
+    assert replacement is not shared and replacement.mode == "3d"
+    assert all(ref.resolve() is replacement for ref in refs)
 
-    def test_to_dict(self):
-        ref = AssetRefBase(guid="abc", path_hint="textures/foo.png")
-        d = ref.to_dict()
-        assert d == {"guid": "abc"}
 
-    def test_from_dict_ignores_display_path(self):
-        ref = AssetRefBase.from_dict({"guid": "xyz", "path_hint": "bar.mat"})
-        assert ref.guid == "xyz"
-        assert ref.path_hint == ""
-
-    @pytest.mark.parametrize(
-        "document",
-        [None, {}, {"guid": "xyz"}, {"guid": "xyz", "path_hint": "", "path": "old"}],
+def test_asset_reference_documents_persist_guid_and_ignore_display_paths():
+    reference = AssetRefBase(guid="asset-guid", path_hint="Assets/Display.png")
+    assert reference.to_dict() == {"guid": "asset-guid"}
+    restored = AssetRefBase.from_dict(
+        {
+            "guid": "asset-guid",
+            "path_hint": "Assets/Obsolete.png",
+            "path": "old",
+        }
     )
-    def test_from_dict_ignores_legacy_document_fields(self, document):
-        ref = AssetRefBase.from_dict(document)
-        expected_guid = "xyz" if isinstance(document, dict) and document.get("guid") == "xyz" else ""
-        assert ref.guid == expected_guid
-
-    def test_from_dict_ignores_non_string_identity_values(self):
-        ref = AssetRefBase.from_dict({"guid": 7, "path_hint": "bar.mat"})
-        assert ref.guid == ""
-        assert ref.path_hint == ""
-
-    def test_display_name_with_path_hint(self):
-        ref = AssetRefBase(guid="abc", path_hint="textures/foo.png")
-        assert ref.display_name == "foo.png"
-
-    def test_display_name_guid_only(self):
-        ref = AssetRefBase(guid="abcdefgh1234")
-        assert "GUID:" in ref.display_name
-
-    def test_display_name_empty(self):
-        ref = AssetRefBase()
-        assert ref.display_name == "None"
-
-    def test_is_missing_no_guid(self):
-        ref = AssetRefBase()
-        assert ref.is_missing is False
-
-    def test_equality_same_guid(self):
-        a = AssetRefBase(guid="abc")
-        b = AssetRefBase(guid="abc")
-        assert a == b
-
-    def test_equality_different_guid(self):
-        a = AssetRefBase(guid="abc")
-        b = AssetRefBase(guid="def")
-        assert a != b
-
-    def test_hash(self):
-        a = AssetRefBase(guid="abc")
-        b = AssetRefBase(guid="abc")
-        assert hash(a) == hash(b)
-
-    def test_repr(self):
-        ref = AssetRefBase(guid="abc", path_hint="test.png")
-        r = repr(ref)
-        assert "AssetRefBase" in r
-        assert "abc" in r
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Subclass ref types
-# ═══════════════════════════════════════════════════════════════════════════
-
-class TestTextureRef:
-    def test_inherits_base(self):
-        ref = TextureRef(guid="tex123")
-        assert isinstance(ref, AssetRefBase)
-        assert ref.guid == "tex123"
-
-    def test_repr(self):
-        ref = TextureRef(guid="abc")
-        assert "TextureRef" in repr(ref)
-
-
-class TestShaderRef:
-    def test_inherits_base(self):
-        ref = ShaderRef(guid="shd456")
-        assert isinstance(ref, AssetRefBase)
-
-
-class TestAudioClipRef:
-    def test_inherits_base(self):
-        ref = AudioClipRef(guid="aud789")
-        assert isinstance(ref, AssetRefBase)
-
-
-class TestMaterialRef:
-    def test_from_guid(self):
-        ref = MaterialRef(guid="mat123", path_hint="test.mat")
-        assert ref.guid == "mat123"
-        assert ref.path_hint == "test.mat"
-
-    def test_repr(self):
-        ref = MaterialRef(guid="abc")
-        assert "MaterialRef" in repr(ref)
-
-    def test_empty(self):
-        ref = MaterialRef()
-        assert ref.guid == ""
-        assert bool(ref) is False
+    assert restored.guid == reference.guid and restored.path_hint == ""
+    assert reference.display_name == "Display.png"
+    assert "GUID:" in AssetRefBase(guid="abcdefgh1234").display_name

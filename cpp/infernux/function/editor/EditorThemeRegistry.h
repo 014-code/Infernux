@@ -51,6 +51,7 @@ class EditorThemeRegistry
     /// Themes every built-in widget at once (C++ and Python). Cheap; call on
     /// startup and once per theme switch.
     static void ApplyImGuiColors();
+    static void ConfigureImGuiDimensions(ImGuiStyle &style);
 };
 
 } // namespace infernux

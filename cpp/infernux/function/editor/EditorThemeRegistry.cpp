@@ -155,6 +155,36 @@ unsigned long EditorThemeRegistry::Generation()
     return Reg().generation;
 }
 
+void EditorThemeRegistry::ConfigureImGuiDimensions(ImGuiStyle &style)
+{
+    style.WindowPadding = ImVec2(10.0f, 10.0f);
+    style.FramePadding = ImVec2(8.0f, 3.0f);
+    style.CellPadding = ImVec2(4.0f, 4.0f);
+    style.ItemSpacing = ImVec2(8.0f, 6.0f);
+    style.ItemInnerSpacing = ImVec2(6.0f, 4.0f);
+    style.IndentSpacing = 18.0f;
+    style.ScrollbarSize = 8.0f;
+    style.GrabMinSize = 6.0f;
+
+    style.WindowBorderSize = 1.0f;
+    style.ChildBorderSize = 1.0f;
+    style.PopupBorderSize = 1.0f;
+    style.FrameBorderSize = 1.0f;
+    style.TabBorderSize = 0.0f;
+    style.TabBarBorderSize = 1.0f;
+
+    style.WindowRounding = 0.0f;
+    style.ChildRounding = 0.0f;
+    style.FrameRounding = 0.0f;
+    style.PopupRounding = 0.0f;
+    style.ScrollbarRounding = 0.0f;
+    style.GrabRounding = 0.0f;
+    style.TabRounding = 0.0f;
+
+    style.AntiAliasedLines = true;
+    style.AntiAliasedFill = true;
+}
+
 void EditorThemeRegistry::ApplyImGuiColors()
 {
     ImGuiStyle &style = ImGui::GetStyle();

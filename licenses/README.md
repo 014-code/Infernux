@@ -23,6 +23,9 @@ SignPath 的服务署名、适用范围和签名流程见 [英文政策](signing
 | Dear ImGui | [LICENSE](../external/imgui_for_infernux/LICENSE.txt) |
 | GLM | [copying.txt](../external/glm/copying.txt) |
 | glslang | [LICENSE](../external/glslang/LICENSE.txt) |
+| Zstandard | [LICENSE](../external/zstd_for_infernux/LICENSE) |
+| SPIRV-Cross | [LICENSE](../external/spirv_cross_for_infernux/LICENSE) |
+| Volk | [LICENSE](../external/volk_for_infernux/LICENSE.md) |
 | Vulkan Memory Allocator | [LICENSE](../external/VulkanMemoryAllocator/LICENSE.txt) |
 | stb | [LICENSE](../external/stb/LICENSE) |
 | LunaSVG / PlutoVG | [来源、修改与子依赖说明](svg/NOTICE.txt)、[MIT](svg/LunaSVG-PlutoVG.txt)、[FreeType](svg/FTL.txt)；静态链接，声明随 wheel 打包 |

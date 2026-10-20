@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from infernux.engine.i18n import t
-from infernux.plugins import PackageUpdateConflict, plugin_install_block_reason
+from infernux.debug import Debug
+from infernux.plugins import PackageUpdateConflict
 
 from .plugin_install_progress import PluginInstallProgressService
 
@@ -34,14 +35,11 @@ class PluginVersionsView:
             self.selection[reference] = index
             selected = versions[index]
             ctx.text_wrapped(str(selected.get("notes", "")) or t("plugins.versions.no_notes"))
-            block = plugin_install_block_reason(reference)
-            disabled = str(selected["version"]) == current or bool(block)
+            disabled = str(selected["version"]) == current
             ctx.begin_disabled(disabled)
             if ctx.button(t("plugins.versions.apply") + "##plugin_update_version"):
                 self.download(manager, reference, str(selected["release_tag"]))
             ctx.end_disabled()
-            if block:
-                ctx.text_wrapped(t(block))
         elif reference in self.releases:
             ctx.text_wrapped(t("plugins.versions.none"))
         if reference in self.pending:
@@ -92,6 +90,7 @@ class PluginVersionsView:
         except Exception as exc:
             self.pending.pop(reference, None)
             self.messages[reference] = f"{type(exc).__name__}: {exc}"
+            Debug.log_error(f"Plugin update failed for {reference}: {self.messages[reference]}")
         else:
             self.pending.pop(reference, None)
             self.messages[reference] = t("plugins.versions.updated")

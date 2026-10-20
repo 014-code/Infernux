@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import json as _json
 from dataclasses import dataclass, field
-from typing import Dict, Optional, TYPE_CHECKING
+from typing import Dict, Optional
 
 from infernux.components.component import InxComponent
 from infernux.components.fields import FieldType, list_field
@@ -46,8 +46,6 @@ from infernux.renderstack._pipeline_common import (
 from infernux.renderstack.effect_slot import EffectSlot
 from infernux.renderstack.resource_bus import ResourceBus
 
-if TYPE_CHECKING:
-    from infernux.rendergraph.graph import RenderGraph
 
 
 from ._render_pipeline_reload import PipelineReloadMixin
@@ -288,7 +286,24 @@ class RenderStack(PipelineReloadMixin, InxComponent):
         if RenderStack._is_effectively_active(self):
             scene = getattr(self.game_object, "scene", None)
             self._owning_scene = scene
+            self._shadow_poll_elapsed = 0.0
+            self._shadow_lights_present = None
+            self._shadow_light_components = []
+            self._shadow_light_scene_version = -1
             RenderStack.activate_instance(self, scene)
+            self.invalidate_graph()
+
+    def update(self, delta_time: float) -> None:
+        """Poll light shadow state so topology follows authored light changes."""
+        if not hasattr(self.pipeline, "shadows_enabled"):
+            return
+        self._shadow_poll_elapsed = getattr(self, "_shadow_poll_elapsed", 0.0) + delta_time
+        if self._shadow_poll_elapsed < 0.5:
+            return
+        self._shadow_poll_elapsed = 0.0
+        present = self._scene_has_shadow_casting_lights()
+        if present != getattr(self, "_shadow_lights_present", None):
+            self._shadow_lights_present = present
             self.invalidate_graph()
 
     def on_disable(self) -> None:
@@ -306,7 +321,6 @@ class RenderStack(PipelineReloadMixin, InxComponent):
     def _promote_next_stack(self) -> None:
         """Scan the scene for another enabled RenderStack and promote it."""
         try:
-            from infernux.lib import SceneManager as _NativeSceneManager
             scene = self._owning_scene
         except Exception as _exc:
             Debug.log(f"[Suppressed] {type(_exc).__name__}: {_exc}")
@@ -435,7 +449,6 @@ class RenderStack(PipelineReloadMixin, InxComponent):
             current[pipeline_name] = {}
             for name, value in params.items():
                 if name in declared:
-                    value = self._upgrade_legacy_pipeline_enum(value, declared[name], f"{pipeline_name}.{name}")
                     VALUE_CODECS.validate(value, declared[name], f"{pipeline_name}.{name}")
                     current[pipeline_name][name] = value
         serialized = _json.dumps(current, allow_nan=False)
@@ -624,6 +637,28 @@ class RenderStack(PipelineReloadMixin, InxComponent):
                 self._pipeline._render_stack = self
         return self._pipeline
 
+    def _scene_has_shadow_casting_lights(self) -> bool:
+        owner = self._try_get_game_object()
+        scene = owner.scene if owner is not None else None
+        if scene is None:
+            return True
+        version = int(getattr(scene, "structure_version", 0))
+        if version != getattr(self, "_shadow_light_scene_version", -1):
+            from infernux import Light
+
+            self._shadow_light_components = [
+                light
+                for obj in scene.get_all_objects()
+                if obj.is_active_in_hierarchy()
+                for light in (obj.get_component(Light),)
+                if light is not None
+            ]
+            self._shadow_light_scene_version = version
+        return any(
+            light.enabled and int(light.shadows) != 0
+            for light in getattr(self, "_shadow_light_components", ())
+        )
+
     # ==================================================================
     # Graph construction
     # ==================================================================
@@ -641,6 +676,9 @@ class RenderStack(PipelineReloadMixin, InxComponent):
 
         try:
             g = RenderGraph("_FullTopologyProbe")
+            if hasattr(self.pipeline, "shadows_enabled"):
+                self.pipeline.shadows_enabled = self._scene_has_shadow_casting_lights()
+                self._shadow_lights_present = self.pipeline.shadows_enabled
             self.pipeline._defining_graph = g
             try:
                 self.pipeline.define_topology(g)
@@ -828,6 +866,9 @@ class RenderStack(PipelineReloadMixin, InxComponent):
         )
 
         # Pipeline populates graph with passes + injection points
+        if hasattr(self.pipeline, "shadows_enabled"):
+            self.pipeline.shadows_enabled = self._scene_has_shadow_casting_lights()
+            self._shadow_lights_present = self.pipeline.shadows_enabled
         self.pipeline._defining_graph = graph
         try:
             self.pipeline.define_topology(graph)
@@ -1113,30 +1154,6 @@ class RenderStack(PipelineReloadMixin, InxComponent):
             params[name] = encoded
         return params
 
-    @staticmethod
-    def _upgrade_legacy_pipeline_enum(value, meta, path):
-        """Migrate enum records written by earlier RenderStack saves."""
-        from infernux.components.fields import FieldType
-        from infernux.components.value_codec import VALUE_CODECS
-
-        if meta.field_type != FieldType.ENUM:
-            return value
-        if type(value) is int:
-            # The previous parameter setter accepted integer enum input and
-            # saved it unchanged. Only a declared member can be migrated.
-            try:
-                member = meta.enum_type(value)
-            except (TypeError, ValueError) as exc:
-                raise ValueError(f"{path}: unknown legacy enum value {value!r}") from exc
-            return VALUE_CODECS.encode(member, path)
-        if type(value) is dict and set(value) == {"__enum_name__"}:
-            name = value["__enum_name__"]
-            enum_type = meta.enum_type
-            if type(name) is not str or enum_type is None or name not in enum_type.__members__:
-                raise ValueError(f"{path}: unknown legacy enum member {name!r}")
-            return VALUE_CODECS.encode(enum_type[name], path)
-        return value
-
     def _restore_pipeline_params(self, pipeline) -> None:
         if self._pipeline_param_store is None:
             self._pipeline_param_store = {}
@@ -1150,7 +1167,7 @@ class RenderStack(PipelineReloadMixin, InxComponent):
 
         decoded = {
             name: VALUE_CODECS.decode(
-                self._upgrade_legacy_pipeline_enum(saved[name], meta, f"{pipeline.name}.{name}"),
+                saved[name],
                 meta, f"{pipeline.name}.{name}",
             )
             for name, meta in get_serialized_fields(type(pipeline)).items() if name in saved

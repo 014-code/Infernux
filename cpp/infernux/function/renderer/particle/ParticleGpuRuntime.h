@@ -367,6 +367,7 @@ class ParticleGpuRuntime
                 rhi::BindGroupHandle graphSpawnGroup, rhi::BufferHandle indirectArguments = {},
                 uint64_t indirectOffset = 0) const;
     [[nodiscard]] static uint32_t GroupCount(uint32_t invocationCount) noexcept;
+    [[nodiscard]] uint32_t BindingLayoutCount() const noexcept;
 
     rhi::Device *m_device = nullptr;
     uint32_t m_capacity = 0;

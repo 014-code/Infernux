@@ -7,6 +7,7 @@
 #include <function/resources/AssetImporter/ImporterRegistry.h>
 #include <function/resources/AssetRegistry/IAssetLoader.h>
 #include <function/resources/InxResource/InxResourceMeta.h>
+#include <function/scene/NativeLifetime.h>
 #include <platform/filesystem/DocumentTransaction.h>
 
 #include <atomic>
@@ -112,7 +113,7 @@ class AssetCatalogSnapshot final
  *   boundary, before the reference is
  * persisted.
  */
-class AssetDatabase
+class AssetDatabase : public NativeLifetimeOwner
 {
   public:
     AssetDatabase();
@@ -219,6 +220,10 @@ class AssetDatabase
     /// already carry the authoritative GUID.
     [[nodiscard]] std::string GetGuidFromPath(const std::string &path) const;
 
+    /// @brief Query a canonical catalog path without consulting the filesystem.
+    /// Unlike the authoring alias resolver, this reads only the published index.
+    [[nodiscard]] std::string GetGuidFromCatalogPath(const std::string &path) const;
+
     /// @brief Resolve the current mutable location of an authoritative GUID.
     /// Returns empty when the referenced asset is missing.
     [[nodiscard]] std::string GetPathFromGuid(const std::string &guid) const;
@@ -238,6 +243,7 @@ class AssetDatabase
 
     /// @brief Acquire one immutable path/type/fingerprint catalog generation.
     [[nodiscard]] std::shared_ptr<const AssetCatalogSnapshot> GetCatalogSnapshot() const;
+    /// Canonical catalog directory; no filesystem existence or alias resolution.
     [[nodiscard]] std::vector<AssetCatalogEntry> GetDirectoryCatalog(const std::string &directory) const;
 
     /// @brief Published query snapshot generation and asset count.
@@ -523,6 +529,7 @@ class AssetDatabase
         bool readOnly = false;
         bool persistMetadata = true;
         std::optional<AtomicFileState> expectedMetadata;
+        std::string metadataSource;
     };
 
     struct WorkerImport
@@ -559,6 +566,7 @@ class AssetDatabase
         bool inheritedGuid = false;
         std::optional<InxResourceMeta> metadata;
         std::optional<AtomicFileState> expectedMetadata;
+        std::string metadataSource;
         std::string error;
         std::thread::id producerThread;
         Mode mode = Mode::CreateOrLoad;
@@ -583,6 +591,7 @@ class AssetDatabase
         std::unordered_map<std::string, std::string> guidToPath;
         std::unordered_map<std::string, std::string> pathToGuid;
         std::unordered_map<std::string, std::shared_ptr<const InxResourceMeta>> metas;
+        std::unordered_map<std::string, std::string> shaderPaths;
         std::shared_ptr<const AssetCatalogSnapshot> catalog;
     };
 
@@ -658,10 +667,14 @@ class AssetDatabase
     [[nodiscard]] WorkingSet TakeWorkingSet();
     void InstallWorkingSet(WorkingSet workingSet);
     void PublishQuerySnapshot(bool includeCatalog = true);
-    void PublishModelSubAssetEvents(const std::shared_ptr<const QuerySnapshot> &previous);
+    void PublishModelSubAssetEvents(const std::shared_ptr<const QuerySnapshot> &previous,
+                                    const std::unordered_set<std::string> *changedGuids = nullptr);
+    void UpdateModelSubAssets(const std::string &owner, const QuerySnapshot &previous, QuerySnapshot &snapshot,
+                              std::unordered_set<std::string> &changedGuids);
     void PublishRefreshAssetEvents(const WorkingSet &previous);
     void PublishQuerySnapshotForPaths(const std::vector<std::string> &paths);
     void InstallQuerySnapshot(std::shared_ptr<QuerySnapshot> snapshot) noexcept;
+    static void BuildShaderPathIndex(QuerySnapshot &snapshot);
     [[nodiscard]] std::shared_ptr<const QuerySnapshot> LoadQuerySnapshot() const;
     [[nodiscard]] AssetScanRequest CaptureScanRequest() const;
     [[nodiscard]] static AssetScanArtifact BuildScanArtifact(const AssetScanRequest &request);

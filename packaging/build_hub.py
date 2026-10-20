@@ -296,6 +296,9 @@ def _available_visual_studio_generators() -> list[str]:
 
 
 def _find_visual_studio(cmake_generator: str = "") -> Path:
+    configured_instance = os.environ.get("CMAKE_GENERATOR_INSTANCE", "").strip()
+    if configured_instance:
+        return Path(configured_instance)
     program_files_x86 = os.environ.get("ProgramFiles(x86)")
     if not program_files_x86:
         raise RuntimeError(

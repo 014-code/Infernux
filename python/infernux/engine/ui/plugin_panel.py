@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Mapping
 
+from infernux.debug import Debug
 from infernux.engine.i18n import get_locale, t
 from infernux.engine.interaction import PanelInteractionDescriptor
 from infernux.engine.path_utils import resolved_path
@@ -14,7 +15,6 @@ from infernux.plugins import (
     localized_intro,
     markdown_to_plain_text,
     parse_markdown_blocks,
-    plugin_install_block_reason,
     normalize_plugin_category,
 )
 
@@ -245,11 +245,6 @@ class PluginPanel(EditorPanel):
                 manager.cached_reference_path(str(row.get("reference", "")))
             )
             row["_installed"] = key in installed
-            row["_install_block_reason"] = (
-                ""
-                if row["_installed"]
-                else plugin_install_block_reason(str(row.get("reference", "")))
-            )
             if key in installed:
                 installed_version = str(installed[key].get("version", "")).strip()
                 merged = dict(row)
@@ -260,7 +255,6 @@ class PluginPanel(EditorPanel):
                 merged["_official"] = row["_official"]
                 merged["_category_key"] = row["_category_key"]
                 merged["_cached"] = row["_cached"]
-                merged["_install_block_reason"] = ""
                 row = merged
             rows.append(row)
             known.add(key)
@@ -272,7 +266,6 @@ class PluginPanel(EditorPanel):
             value["_official"] = False
             value["_category_key"] = normalize_plugin_category(value.get("category", "other"))
             value["_cached"] = False
-            value["_install_block_reason"] = ""
             value["_installed_version"] = str(value.get("version", "")).strip()
             rows.append(value)
 
@@ -601,12 +594,6 @@ class PluginPanel(EditorPanel):
             ctx.push_style_color(ImGuiCol.Text, *Theme.ERROR_TEXT)
             ctx.text_wrapped(state.error)
             ctx.pop_style_color()
-        install_block = str(row.get("_install_block_reason", "")).strip()
-        if install_block:
-            ctx.separator()
-            ctx.push_style_color(ImGuiCol.Text, *Theme.ERROR_TEXT)
-            ctx.text_wrapped(t(install_block))
-            ctx.pop_style_color()
 
     def _render_detail_footer(self, ctx, manager, row, reference, key, installed, height) -> None:
         source = self._source_text(row)
@@ -649,9 +636,6 @@ class PluginPanel(EditorPanel):
                     self._begin_reload(manager, (reference,))
             else:
                 blocked = bool(str(row.get("diagnostic", "")).strip())
-                install_blocked = bool(
-                    str(row.get("_install_block_reason", "")).strip()
-                )
                 if cached:
                     if blocked:
                         ctx.begin_disabled(True)
@@ -672,39 +656,19 @@ class PluginPanel(EditorPanel):
                     if blocked:
                         ctx.end_disabled()
                     ctx.same_line(0.0, _metric(ctx, Theme.INSPECTOR_TITLE_GAP))
-                    if blocked or install_blocked:
-                        ctx.begin_disabled(True)
-                    if self._primary_button(
-                        ctx, t("plugins.import") + f"##plugin_import_{key}"
-                    ):
-                        self._begin_install(
-                            manager,
-                            label=reference,
-                            work=lambda report, ref=reference: manager.install_reference(
-                                ref,
-                                progress=report,
-                            ),
-                            action="install",
-                        )
-                    if blocked or install_blocked:
-                        ctx.end_disabled()
-                else:
-                    if blocked:
-                        ctx.begin_disabled(True)
-                    if self._primary_button(
-                        ctx, t("plugins.download") + f"##plugin_download_{key}"
-                    ):
-                        self._begin_install(
-                            manager,
-                            label=reference,
-                            work=lambda report, ref=reference: manager.download_reference(
-                                ref,
-                                progress=report,
-                            ),
-                            action="download",
-                        )
-                    if blocked:
-                        ctx.end_disabled()
+                ctx.begin_disabled(blocked)
+                if self._primary_button(
+                    ctx, t("plugins.install") + f"##plugin_install_{key}"
+                ):
+                    self._begin_install(
+                        manager,
+                        label=reference,
+                        work=lambda report, ref=reference: manager.install_reference(
+                            ref, progress=report,
+                        ),
+                        action="install",
+                    )
+                ctx.end_disabled()
         ctx.end_child()
         ctx.pop_style_color()
 
@@ -914,6 +878,7 @@ class PluginPanel(EditorPanel):
                     )
                 except Exception as exc:
                     self._message = f"{type(exc).__name__}: {exc}"
+                    Debug.log_error(f"Plugin update failed for {label}: {self._message}")
                     return
             reference = str(getattr(result, "reference", ""))
             if reference:
@@ -922,6 +887,7 @@ class PluginPanel(EditorPanel):
                         result = manager.finalize_background_install(reference)
                 except Exception as exc:
                     self._message = f"{type(exc).__name__}: {exc}"
+                    Debug.log_error(f"Plugin activation failed for {reference}: {self._message}")
                     return
                 self._selected_reference = reference
             self._message = t("plugins.action_ok").format(
@@ -970,6 +936,7 @@ class PluginPanel(EditorPanel):
             self._message = t("plugins.action_ok").format(action=action, reference=reference)
         except Exception as exc:
             self._message = f"{type(exc).__name__}: {exc}"
+            Debug.log_error(f"Plugin {action} failed: {self._message}")
 
 
 @editor_panel(
@@ -987,7 +954,6 @@ class InxPackageImportPanel(EditorPanel):
         self.package_path = ""
         self._preview = None
         self._selected: dict[str, bool] = {}
-        self._install_block_reason = ""
         self._message = ""
 
     def _initial_size(self) -> tuple[float, float]:
@@ -1012,12 +978,7 @@ class InxPackageImportPanel(EditorPanel):
         self.package_path = resolved_path(package_path)
         self._preview = InxPackage.inspect(self.package_path)
         self._selected = {path: True for path in self._preview.project_entries}
-        self._install_block_reason = plugin_install_block_reason(
-            str(self._preview.metadata.get("reference", ""))
-        )
-        self._message = (
-            t(self._install_block_reason) if self._install_block_reason else ""
-        )
+        self._message = ""
 
     def _begin_import(self) -> bool:
         manager = PluginManager.instance()
@@ -1143,9 +1104,7 @@ class InxPackageImportPanel(EditorPanel):
             button_w = _metric(ctx, 104.0)
             action_x = ctx.get_cursor_pos_x() + max(0.0, ctx.get_content_region_avail_width() - button_w)
             ctx.same_line(action_x)
-            ctx.begin_disabled(
-                not any(self._selected.values()) or bool(self._install_block_reason)
-            )
+            ctx.begin_disabled(not any(self._selected.values()))
             if self._primary_button(ctx, t("inxpackage.import") + "##inxpackage_import"):
                 self._begin_import()
             ctx.end_disabled()

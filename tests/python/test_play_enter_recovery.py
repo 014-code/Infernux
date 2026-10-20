@@ -79,10 +79,9 @@ def assert_authoring_restored(state):
 def test_failed_enter_restores_authoring_and_can_enter_again(authoring_project, monkeypatch, phase):
     state = authoring_project
     from infernux.components.builtin.sprite_renderer import SpriteRenderer
-    from infernux.debug import Debug
+    from infernux.debug import Debug, DebugConsole
 
-    errors = []
-    monkeypatch.setattr(Debug, "log_error", lambda message, *a, **kw: errors.append(str(message)))
+    Debug.clear_console()
 
     def fail(*args, **kwargs):
         # Snapshot capture fails before runtime ownership and must not mutate.
@@ -145,7 +144,10 @@ def test_failed_enter_restores_authoring_and_can_enter_again(authoring_project, 
             fault.setattr(state.manager, "_get_scene_manager", lambda: NativeStartFault())
         assert state.manager.enter_play_mode()
         state.runner.tick()
-        assert errors, "The failed preparation must be reported"
+        errors = DebugConsole.instance().get_filtered_entries(show_logs=False, show_warnings=False)
+        expected = ("Play scripting-domain preparation was rejected" if phase == "domain_rejected"
+                    else f"injected {phase} failure")
+        assert any(expected in entry.message for entry in errors), "The failed preparation must be reported"
         assert state.manager.is_edit_mode, errors
         assert_authoring_restored(state)
 
@@ -171,6 +173,42 @@ def test_enter_publishes_playing_only_after_native_start(authoring_project):
     assert state.manager.enter_play_mode()
     state.runner.tick()
     assert observed == [("ENTERING", False), ("PLAYING", True)]
+
+
+@pytest.mark.parametrize("role", ["editor", "player", "headless"])
+def test_play_progress_window_is_editor_only(authoring_project, monkeypatch, role):
+    from infernux import application
+    from infernux.engine.ui import busy_progress
+
+    events = []
+
+    class Progress:
+        def __init__(self):
+            events.append("open")
+
+        def update(self, value, message):
+            events.append((value, message))
+
+        def close(self):
+            events.append("close")
+
+    monkeypatch.setattr(application, "_runtime_kind", role)
+    monkeypatch.setattr(busy_progress, "BusyProgress", Progress)
+    state = authoring_project
+
+    def capture_preparation():
+        events.append("prepare")
+        raise RuntimeError("Stop at the progress presentation boundary")
+
+    monkeypatch.setattr(state.manager, "_save_scene_state", capture_preparation)
+    assert state.manager.enter_play_mode()
+    state.runner.tick()
+    assert state.manager.is_edit_mode and not state.native.is_playing()
+    if role == "editor":
+        assert events[0] == "open" and events[-1] == "close"
+        assert any(isinstance(event, tuple) for event in events)
+    else:
+        assert events == ["prepare"]
 
 
 @pytest.mark.parametrize("restore_failure", ["rejected", "raised", "notification"])

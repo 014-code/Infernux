@@ -18,12 +18,16 @@ class EditorShortcutInput final : public InxGUIRenderable
   public:
     std::function<bool(const std::string &, bool, bool)> routeShortcut;
 
+    static void PrepareFrame(bool gameCursorLocked);
     void OnRender(InxGUIContext *ctx) override;
+    void CompleteInputFrame();
 
   private:
     int m_lastFrame = -1;
     bool m_popupActivePreviousFrame = false;
     bool m_modalActivePreviousFrame = false;
+    bool m_textInputActive = false;
+    bool m_popupActive = false;
 };
 
 } // namespace infernux

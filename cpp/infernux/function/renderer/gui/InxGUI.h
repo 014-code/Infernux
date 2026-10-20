@@ -20,6 +20,7 @@
 namespace infernux
 {
 struct TextureCpuData;
+class EditorShortcutInput;
 
 namespace vk
 {
@@ -41,7 +42,9 @@ class InxGUI
         return m_dpiScale;
     }
     void BuildFrame();
-    [[nodiscard]] bool BuildFrameIfDue(bool force = false);
+    [[nodiscard]] bool ScheduleFrameBuild(bool force = false);
+    void BuildScheduledFrame();
+    void CompleteInputFrame();
     void RequestFrame() noexcept;
     void RequestSyntheticInputFrame() noexcept;
     [[nodiscard]] uint64_t GetFrameCounter() const noexcept
@@ -216,10 +219,12 @@ class InxGUI
     InxVkCoreModular *m_vkCore_ptr = nullptr;
     SDL_Window *m_window_ptr = nullptr;
     ImGuiContext *m_imguiContext_ptr = nullptr;
+    std::unique_ptr<InxGUIContext> m_guiContext;
     float m_dpiScale = 1.0f;
     VkDescriptorPool m_descriptorPool_vk = VK_NULL_HANDLE;
 
     std::unordered_map<std::string, std::shared_ptr<InxGUIRenderable>> m_renderables_umap;
+    std::shared_ptr<EditorShortcutInput> m_editorShortcutInput;
     std::vector<std::string> m_renderableOrder;
     std::unordered_map<std::string, int> m_renderablePriorities;
     struct PendingDockTabSelection
@@ -252,7 +257,6 @@ class InxGUI
     EditorGuiInputRearmBudget m_syntheticInputRearm;
     EditorGuiFrameScheduler m_editorFrameScheduler;
 
-    void BuildFrameInternal();
     void ApplyPendingDockTabSelections();
     void PromoteActiveModal();
     void PumpTextureUploads();

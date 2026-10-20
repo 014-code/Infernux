@@ -36,6 +36,18 @@ class UITextureCache:
         self._stamp: dict[str, int] = {}        # GUID → latest stamp
         self._pending_keys: set[str] = set()
         self._generation: int = 0
+        self._packet_bindings = None
+
+    def begin_command_packet(self):
+        """Record GUID texture bindings used by one retained draw packet."""
+        self._packet_bindings = {}
+
+    def end_command_packet(self):
+        bindings, self._packet_bindings = self._packet_bindings, None
+        return bindings
+
+    def binding_state(self, guid):
+        return self._cache.get(guid, 0), guid in self._pending_keys
 
     # ── internal ─────────────────────────────────────────────────────
 
@@ -90,6 +102,8 @@ class UITextureCache:
             else:
                 self._cache.pop(guid, None)
                 self._pending_keys.add(guid)
+            if self._packet_bindings is not None:
+                self._packet_bindings[guid] = self.binding_state(guid)
             return tid
         key, tex_path = self._resolve_asset(tex_path)
         cached = self._cache.get(key)

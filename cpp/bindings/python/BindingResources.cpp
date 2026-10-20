@@ -10,6 +10,8 @@
 #include <function/resources/InxFileLoader/InxTextureLoader.hpp>
 #include <function/resources/InxMaterial/InxMaterial.h>
 #include <function/resources/InxResource/InxResourceMeta.h>
+#include <function/resources/InxTexture/TextureLoader.h>
+#include <function/resources/InxTexture/TexturePixels.h>
 #include <function/resources/PhysicMaterial/PhysicMaterial.h>
 #include <iomanip>
 #include <platform/filesystem/AssetDocument.h>
@@ -431,6 +433,33 @@ void RegisterResourceBindings(py::module_ &m)
 
     // InxTextureLoader - static methods for loading textures
     py::class_<InxTextureLoader>(m, "TextureLoader")
+        .def_static(
+            "load_asset",
+            [](const std::string &guid) -> std::optional<InxTextureData> {
+                auto *database = AssetRegistry::Instance().GetAssetDatabase();
+                if (!database)
+                    throw std::runtime_error("Texture asset loading requires an AssetDatabase");
+                const auto path = database->GetPathFromGuid(guid);
+                if (path.empty())
+                    return std::nullopt;
+                TextureLoader loader;
+                const auto payload = loader.LoadStaging(path, guid, database);
+                const auto pixels = texture_pixels::ToRgba8(*payload.Get<TextureCpuData>());
+                const auto &mip = pixels.mipLevels.front();
+                InxTextureData result;
+                result.width = static_cast<int>(mip.width);
+                result.height = static_cast<int>(mip.height);
+                result.channels = 4;
+                result.sourcePath = path;
+                result.name = FromFsPath(ToFsPath(path).stem());
+                result.pixels.resize(static_cast<size_t>(mip.width) * mip.height * 4);
+                for (uint32_t row = 0; row < mip.height; ++row)
+                    std::memcpy(result.pixels.data() + static_cast<size_t>(row) * mip.width * 4,
+                                pixels.bytes.data() + mip.byteOffset + row * mip.rowPitch,
+                                static_cast<size_t>(mip.width) * 4);
+                return result;
+            },
+            py::arg("guid"), "Read imported Texture2D pixels by GUID as RGBA8")
         .def_static("load_from_file", &InxTextureLoader::LoadFromFile, py::arg("file_path"), py::arg("name") = "",
                     py::arg("svg_max_size") = 0,
                     "Load texture from file; SVG uses the requested longest edge (0: 8192)")

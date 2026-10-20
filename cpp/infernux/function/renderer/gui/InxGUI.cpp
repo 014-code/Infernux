@@ -7,6 +7,7 @@
 #include "InxGUIContext.h"
 #include "InxGUISemantics.h"
 #include "InxTextLayout.h"
+#include <function/editor/EditorShortcutInput.h>
 #include <function/editor/EditorTheme.h>
 #include <function/editor/EditorThemeRegistry.h>
 #include <function/renderer/TextureUploadBuilder.h>
@@ -82,36 +83,6 @@ class ImGuiBuildFrameGuard
     bool m_active = true;
 };
 
-void ConfigureEditorStyleDimensions(ImGuiStyle &style)
-{
-    style.WindowPadding = ImVec2(10.0f, 10.0f);
-    style.FramePadding = ImVec2(8.0f, 3.0f);
-    style.CellPadding = ImVec2(4.0f, 4.0f);
-    style.ItemSpacing = ImVec2(8.0f, 6.0f);
-    style.ItemInnerSpacing = ImVec2(6.0f, 4.0f);
-    style.IndentSpacing = 18.0f;
-    style.ScrollbarSize = 8.0f;
-    style.GrabMinSize = 6.0f;
-
-    style.WindowBorderSize = 1.0f;
-    style.ChildBorderSize = 1.0f;
-    style.PopupBorderSize = 1.0f;
-    style.FrameBorderSize = 1.0f;
-    style.TabBorderSize = 0.0f;
-    style.TabBarBorderSize = 1.0f;
-
-    style.WindowRounding = 0.0f;
-    style.ChildRounding = 0.0f;
-    style.FrameRounding = 0.0f;
-    style.PopupRounding = 0.0f;
-    style.ScrollbarRounding = 0.0f;
-    style.GrabRounding = 0.0f;
-    style.TabRounding = 0.0f;
-
-    style.AntiAliasedLines = true;
-    style.AntiAliasedFill = true;
-}
-
 } // namespace
 
 InxGUI::InxGUI(InxVkCoreModular *vkCore) : m_vkCore_ptr(vkCore)
@@ -141,6 +112,7 @@ void InxGUI::Init(SDL_Window *window)
 
     IMGUI_CHECKVERSION();
     m_imguiContext_ptr = ImGui::CreateContext();
+    m_guiContext = std::make_unique<InxGUIContext>();
     ImGui::SetCurrentContext(m_imguiContext_ptr);
     m_imguiContext_ptr->ErrorCallback = [](ImGuiContext *context, void *, const char *message) {
         static thread_local bool handlingError = false;
@@ -175,7 +147,7 @@ void InxGUI::Init(SDL_Window *window)
         // =====================================================================
         // Style dimensions — Notion-style clean, modern spacing
         // =====================================================================
-        ConfigureEditorStyleDimensions(style);
+        EditorThemeRegistry::ConfigureImGuiDimensions(style);
         GetEditorDpiState().baseStyle = style;
 
         // Scale all style dimensions for high-DPI displays
@@ -468,10 +440,10 @@ void InxGUI::PumpTextureUploads()
 void InxGUI::BuildFrame()
 {
     (void)m_editorFrameScheduler.Consume(EditorGuiFrameScheduler::Clock::now(), true);
-    BuildFrameInternal();
+    BuildScheduledFrame();
 }
 
-bool InxGUI::BuildFrameIfDue(bool force)
+bool InxGUI::ScheduleFrameBuild(bool force)
 {
     // Geometry invalidation is level-triggered, unlike the scheduler's input
     // force edge. Consecutive resize/DPI events must not reuse an old layout
@@ -490,7 +462,6 @@ bool InxGUI::BuildFrameIfDue(bool force)
         return false;
     }
 
-    BuildFrameInternal();
     return true;
 }
 
@@ -505,9 +476,9 @@ void InxGUI::RequestSyntheticInputFrame() noexcept
     m_editorFrameScheduler.Request();
 }
 
-void InxGUI::BuildFrameInternal()
+void InxGUI::BuildScheduledFrame()
 {
-    static auto ctx = std::make_unique<InxGUIContext>();
+    auto &ctx = m_guiContext;
     ++m_guiFrameCounter;
 
     // ImGui invalidates the previous ImDrawData as soon as NewFrame() starts.
@@ -579,6 +550,10 @@ void InxGUI::BuildFrameInternal()
     if (InputManager::Instance().GetSyntheticMousePosition(syntheticMouseX, syntheticMouseY)) {
         ImGui::GetIO().AddMousePosEvent(syntheticMouseX, syntheticMouseY);
     }
+    auto &input = InputManager::Instance();
+    if (!m_playerMode && input.IsCursorLocked() && ImGui::GetCurrentContext()->OpenPopupStack.Size != 0)
+        input.SetEditorCursorCaptureAllowed(false);
+    EditorShortcutInput::PrepareFrame(input.IsCursorLocked());
     ImGui::NewFrame();
     // Dear ImGui may leave later transitions in InputEventsQueue. Only a synthetic input
     // batch may re-arm the scheduler, and it has a fixed four-build budget;
@@ -592,18 +567,6 @@ void InxGUI::BuildFrameInternal()
     ctx->BeginFrameInteractionState();
     InxGUISemantics::BeginFrame(m_guiFrameCounter);
     ImGuiBuildFrameGuard frameGuard;
-
-    // When the cursor is locked (game mode), suppress all mouse input from
-    // reaching ImGui so editor panels (Inspector, Hierarchy, etc.) don't
-    // react to invisible cursor movement — matching Unity behaviour.
-    if (InputManager::Instance().IsCursorLocked()) {
-        ImGuiIO &io = ImGui::GetIO();
-        io.MousePos = ImVec2(-FLT_MAX, -FLT_MAX);
-        for (int i = 0; i < IM_ARRAYSIZE(io.MouseDown); ++i)
-            io.MouseDown[i] = false;
-        io.MouseWheel = 0.0f;
-        io.MouseWheelH = 0.0f;
-    }
 
     // In player mode, skip DockSpace/DockBuilder entirely — they are only
     // needed for the editor's multi-panel layout.  The player registers a
@@ -994,10 +957,13 @@ void InxGUI::Shutdown()
     // The central descriptor manager owns the external pool. ImGui has
     // released its sets above; the pool survives until backend shutdown.
     m_descriptorPool_vk = VK_NULL_HANDLE;
+    m_guiContext.reset();
 }
 
 void InxGUI::Register(const std::string &name, std::shared_ptr<InxGUIRenderable> renderable, int priority)
 {
+    if (name == "editor_shortcut_input")
+        m_editorShortcutInput = std::dynamic_pointer_cast<EditorShortcutInput>(renderable);
     auto existing = m_renderables_umap.find(name);
     if (existing != m_renderables_umap.end()) {
         INXLOG_WARN("InxGUI::Register(): Renderable with name '", name, "' already exists. Overwriting.");
@@ -1025,6 +991,8 @@ void InxGUI::Register(const std::string &name, std::shared_ptr<InxGUIRenderable>
 
 void InxGUI::Unregister(const std::string &name)
 {
+    if (name == "editor_shortcut_input")
+        m_editorShortcutInput.reset();
     auto it = m_renderables_umap.find(name);
     if (it != m_renderables_umap.end()) {
         m_renderables_umap.erase(it);
@@ -1035,6 +1003,12 @@ void InxGUI::Unregister(const std::string &name)
     } else {
         INXLOG_WARN("InxGUI::Unregister(): Renderable with name '", name, "' does not exist.");
     }
+}
+
+void InxGUI::CompleteInputFrame()
+{
+    if (!m_playerMode && m_editorShortcutInput)
+        m_editorShortcutInput->CompleteInputFrame();
 }
 
 uint64_t InxGUI::SubmitTextureForImGui(const std::string &name, const unsigned char *pixels, size_t byteCount,

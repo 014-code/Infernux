@@ -12,7 +12,7 @@ from infernux.components import DrivenTransformProperties, GameObjectRef, serial
 from infernux.components.fields import FieldType
 from .inx_ui_component import InxUIComponent
 from .enums import ScreenAlignH, ScreenAlignV, UILayoutPosition, UILayoutSizing
-from .ui_render_revision import is_unchanged_ui_scalar, mark_runtime_ui_dirty
+from .ui_render_revision import is_unchanged_ui_value, mark_runtime_ui_dirty
 
 # Rect cache — avoids repeated hierarchy walks and serialized-field reads.
 # Runtime callers retain it until hierarchy or geometry changes; editor tools
@@ -34,11 +34,12 @@ def clear_rect_cache(frame_id=0) -> None:
         _rect_cache_frame = frame_id
 
 
-def _invalidate_rect_cache() -> None:
-    """Discard cached hierarchy rectangles after a geometry mutation."""
+def _invalidate_rect_cache(*, layout: bool = True) -> None:
+    """Clear rects; only size/flow changes invalidate unrelated layout packets."""
     global _rect_cache_revision
     _rect_cache.clear()
-    _rect_cache_revision += 1
+    if layout:
+        _rect_cache_revision += 1
 
 
 def _get_layout_revision() -> int:
@@ -70,10 +71,9 @@ class InxUIScreenComponent(InxUIComponent):
         if name.startswith("_"):
             super().__setattr__(name, value)
             return
-        unchanged = is_unchanged_ui_scalar(self, name, value)
-        super().__setattr__(name, value)
-        if unchanged:
+        if is_unchanged_ui_value(self, name, value):
             return
+        super().__setattr__(name, value)
         mark_runtime_ui_dirty(
             self,
             binding=name in ("material", "text_material", "texture", "background_texture"),
@@ -159,11 +159,12 @@ class InxUIScreenComponent(InxUIComponent):
         game_object = self._try_get_game_object()
         if game_object is None:
             raise RuntimeError("UI layout requires an attached GameObject Transform")
-        if self.is_world_space() and self._get_parent_ui_component() is None:
+        world_space = self.is_world_space()
+        if world_space and self._get_parent_ui_component() is None:
             return 0.0, 0.0
         position = game_object.transform.local_position
         units = 1.0
-        if self.is_world_space():
+        if world_space:
             units = WORLD_UI_PIXELS_PER_UNIT
         ref_width = float(reference_width if reference_width is not None else self.width)
         ref_height = float(reference_height if reference_height is not None else self.height)
@@ -181,11 +182,15 @@ class InxUIScreenComponent(InxUIComponent):
             raise RuntimeError("UI layout edits require an attached GameObject Transform")
         if self.is_world_space() and self._get_parent_ui_component() is None:
             raise RuntimeError("World UI position is authored through its GameObject Transform")
-        game_object.transform.local_position = self._local_position_for_rect_origin(
+        position = self._local_position_for_rect_origin(
             rect_x, rect_y, canvas_width, canvas_height
         )
-        _invalidate_rect_cache()
-        mark_runtime_ui_dirty()
+        current = game_object.transform.local_position
+        if position.x == current.x and position.y == current.y and position.z == current.z:
+            return
+        game_object.transform.local_position = position
+        _invalidate_rect_cache(layout=False)
+        mark_runtime_ui_dirty(self, subtree=True)
 
     def _local_position_for_rect_origin(self, rect_x: float, rect_y: float,
                                         canvas_width: float, canvas_height: float):
@@ -197,14 +202,19 @@ class InxUIScreenComponent(InxUIComponent):
             return None
         from infernux.lib import Vector3
 
-        px, py, pw, ph = self._get_parent_world_rect(canvas_width, canvas_height)
-        units = WORLD_UI_PIXELS_PER_UNIT if self.is_world_space() else 1.0
+        ref_width, ref_height, reference, units = self._layout_reference()
+        px, py, pw, ph = (
+            reference if canvas_width == ref_width and canvas_height == ref_height
+            else self._get_parent_world_rect(canvas_width, canvas_height)
+        )
         center_x = float(rect_x) + float(self.width) * 0.5
         center_y = float(rect_y) + float(self.height) * 0.5
+        anchor_x, anchor_y = self._anchor_origin(pw, ph)
+        reference_x, reference_y = self._anchor_origin(reference[2], reference[3])
         position = game_object.transform.local_position
         return Vector3(
-            (center_x - (px + pw * 0.5)) / units,
-            -((center_y - (py + ph * 0.5)) / units),
+            (center_x - px - anchor_x + reference_x - reference[2] * 0.5) / units,
+            -(center_y - py - anchor_y + reference_y - reference[3] * 0.5) / units,
             float(position.z),
         )
 
@@ -235,8 +245,8 @@ class InxUIScreenComponent(InxUIComponent):
         game_object.transform.local_euler_angles = Vector3(
             float(angles.x), float(angles.y), float(degrees)
         )
-        _invalidate_rect_cache()
-        mark_runtime_ui_dirty()
+        _invalidate_rect_cache(layout=False)
+        mark_runtime_ui_dirty(self, subtree=True)
 
     def _deserialize_fields_document(self, data, **kwargs):
         if isinstance(data, dict):
@@ -285,16 +295,23 @@ class InxUIScreenComponent(InxUIComponent):
         has no Canvas and retains its ordinary scene ancestry.
         """
         canvas = self.get_canvas()
+        key = self.__dict__["_canvas_ancestor"][0]
+        cached = self.__dict__.get("_layout_ancestor_cache")
+        if key is not None and cached is not None and cached[0] == key:
+            return iter(cached[1])
         boundary = canvas.game_object if canvas is not None else None
         current = self._try_get_game_object()
         if boundary is not None and current.id == boundary.id:
-            return
+            return iter(())
         current = current.get_parent() if current is not None else None
+        parents = []
         while current is not None:
             if boundary is not None and current.id == boundary.id:
                 break
-            yield current
+            parents.append(current)
             current = current.get_parent()
+        self.__dict__["_layout_ancestor_cache"] = (key, tuple(parents))
+        return iter(parents)
 
     def _get_parent_ui_component(self):
         """Return the nearest UI parent within this layout domain."""
@@ -332,11 +349,18 @@ class InxUIScreenComponent(InxUIComponent):
     def get_effective_group_state(self) -> tuple[float, bool, bool]:
         """Return subtree alpha, interactable and raycast-blocking state."""
         from .ui_group import UIGroup
+        from .ui_render_revision import _get_shared_visual_revision
+
+        current = self._try_get_game_object()
+        self._canvas_for_owner(current)
+        key = (self.__dict__["_canvas_ancestor"][0], _get_shared_visual_revision())
+        cached = self.__dict__.get("_group_state_cache")
+        if key[0] is not None and cached is not None and cached[0] == key:
+            return cached[1]
 
         alpha = 1.0
         interactable = True
         blocks_raycast = True
-        current = self._try_get_game_object()
         while current is not None:
             for component in current.get_py_components():
                 if not isinstance(component, UIGroup) or not getattr(component, "enabled", True):
@@ -345,7 +369,9 @@ class InxUIScreenComponent(InxUIComponent):
                 interactable = interactable and bool(component.interactable)
                 blocks_raycast = blocks_raycast and bool(component.blocks_raycast)
             current = current.get_parent()
-        return alpha, interactable, blocks_raycast
+        result = alpha, interactable, blocks_raycast
+        self.__dict__["_group_state_cache"] = (key, result)
+        return result
 
     def is_effectively_interactable(self) -> bool:
         """Return whether this element may receive a pointer transaction."""
@@ -488,13 +514,17 @@ class InxUIScreenComponent(InxUIComponent):
                        reference_rect=None, size=None):
         cw = float(canvas_width)
         ch = float(canvas_height)
+        ref_width, ref_height, reference, _ = self._layout_reference()
         if reference_rect is None:
-            px, py, pw, ph = self._get_parent_world_rect(cw, ch)
+            px, py, pw, ph = (
+                reference if cw == ref_width and ch == ref_height
+                else self._get_parent_world_rect(cw, ch)
+            )
         else:
             px, py, pw, ph = reference_rect
         width, height = size if size is not None else self._layout_desired_size()
         anchor_x, anchor_y = self._anchor_origin(pw, ph)
-        offset_x, offset_y = self._layout_offset(pw, ph)
+        offset_x, offset_y = self._layout_offset(reference[2], reference[3])
         return (px + anchor_x + offset_x, py + anchor_y + offset_y, width, height)
 
     def _rot_sincos(self):
@@ -574,12 +604,9 @@ class InxUIScreenComponent(InxUIComponent):
                  canvas_width: float, canvas_height: float):
         """Store a canvas-space rect back into parent-relative serialized fields."""
         cw, ch = float(canvas_width), float(canvas_height)
-        px, py, pw, ph = self._get_parent_world_rect(cw, ch)
-        anchor_x, anchor_y = self._anchor_origin(pw, ph)
         self.width = float(rect_w)
         self.height = float(rect_h)
         self._set_layout_rect_origin(float(rect_x), float(rect_y), cw, ch)
-        _invalidate_rect_cache()
 
     def set_visual_position(self, vis_x: float, vis_y: float,
                             canvas_width: float, canvas_height: float):
@@ -594,8 +621,8 @@ class InxUIScreenComponent(InxUIComponent):
             game_object.transform.local_position = position
         else:
             raise RuntimeError("UI position is authored through its GameObject Transform")
-        _invalidate_rect_cache()
-        mark_runtime_ui_dirty()
+        _invalidate_rect_cache(layout=False)
+        mark_runtime_ui_dirty(self, subtree=True)
 
     def set_size_preserve_visual_position(self, width: float, height: float,
                                           canvas_width: float, canvas_height: float):
@@ -609,12 +636,9 @@ class InxUIScreenComponent(InxUIComponent):
         new_rx = vis_cx - new_width * 0.5
         new_ry = vis_cy - new_height * 0.5
         cw, ch = float(canvas_width), float(canvas_height)
-        px, py, pw, ph = self._get_parent_world_rect(cw, ch)
-        anchor_x, anchor_y = self._anchor_origin(pw, ph)
         self.width = new_width
         self.height = new_height
         self._set_layout_rect_origin(new_rx, new_ry, cw, ch)
-        _invalidate_rect_cache()
 
     def set_size_preserve_center(self, width: float, height: float,
                                  canvas_width: float, canvas_height: float):
@@ -627,12 +651,9 @@ class InxUIScreenComponent(InxUIComponent):
         new_rect_x = center_x - new_width * 0.5
         new_rect_y = center_y - new_height * 0.5
         cw, ch = float(canvas_width), float(canvas_height)
-        px, py, pw, ph = self._get_parent_world_rect(cw, ch)
-        anchor_x, anchor_y = self._anchor_origin(pw, ph)
         self.width = new_width
         self.height = new_height
         self._set_layout_rect_origin(new_rect_x, new_rect_y, cw, ch)
-        _invalidate_rect_cache()
 
     def set_size_preserve_corner(self, width: float, height: float,
                                  canvas_width: float, canvas_height: float,
@@ -653,12 +674,9 @@ class InxUIScreenComponent(InxUIComponent):
         new_rect_x = fixed_corner_x - off_x
         new_rect_y = fixed_corner_y - off_y
         cw, ch = float(canvas_width), float(canvas_height)
-        px, py, pw, ph = self._get_parent_world_rect(cw, ch)
-        anchor_x, anchor_y = self._anchor_origin(pw, ph)
         self.width = new_width
         self.height = new_height
         self._set_layout_rect_origin(new_rect_x, new_rect_y, cw, ch)
-        _invalidate_rect_cache()
 
     # ------------------------------------------------------------------
     # Scene editing

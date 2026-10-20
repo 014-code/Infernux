@@ -102,6 +102,9 @@ CMake build that lists it in `cmake --help` or set `CMAKE_GENERATOR` to another
 listed generator and configure again. The Hub's MSVC discovery pairs `vswhere`
 with the selected generator, so side-by-side Visual Studio installations do not
 silently mix compiler environments.
+The Hub build uses CMake's selected `CMAKE_GENERATOR_INSTANCE` directly,
+including explicitly selected Insiders installations. VS 2026's generator
+requires CMake 4.2 or newer; VS 2022 remains supported.
 
 The original Linux 0.4.1 Hub bundled OpenSSL with a build-machine conda certificate
 path. On a clean machine this can cause `CERTIFICATE_VERIFY_FAILED` for both the

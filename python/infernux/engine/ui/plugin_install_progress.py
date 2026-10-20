@@ -220,7 +220,7 @@ class PluginInstallProgressService:
             ):
                 self._finish(True, "")
         except Exception as exc:
-            Debug.log_error(f"Plugin installation failed: {exc}")
+            Debug.log_error(f"Plugin operation failed for {transaction.label}: {type(exc).__name__}: {exc}")
             if self._transaction is transaction:
                 self._finish(False, f"{type(exc).__name__}: {exc}")
 
