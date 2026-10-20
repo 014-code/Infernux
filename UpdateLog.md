@@ -1,3 +1,61 @@
+# Infernux v0.4.3 · Faster Frames, Complete Players
+
+0.4.3 brings the editor, animation authoring and cross-platform Players through a sustained real-game validation cycle. The focus is a correct, efficient main path: less repeated frame work, complete startup preparation, consistent asset identities and usable editing tools.
+
+[中文更新日志](UpdateLog-zh.md)
+
+**Baseline for comparison:** [`v0.4.2-v2...v0.4.3`](https://github.com/ChenlizheMe/Infernux/compare/v0.4.2-v2...v0.4.3). This includes the independent 0.4.2 Hub hotfixes and the changes merged in PRs #89 and #90.
+
+### Editor Performance and Startup
+
+- Reuse published component bindings, scene cameras, lights, shader classifications and asset catalogs instead of repeating discovery and filesystem work every frame.
+- Reduce Python lifecycle dispatch, editor status synchronization, change-journal traversal, native pose submissions and allocation overhead. Leave automatic garbage collection in control of ordinary frame-loop collection.
+- Complete declared startup work, material preparation and GPU uploads before revealing gameplay. Loading and GPU preparation no longer advance gameplay clocks or consume the first simulation delta.
+- Show independent Play progress only in the editor, using the same presentation as build progress; packaged Players do not open the editor progress window.
+- Remove the experimental Cython packaging path. Engine wheels and Player builds use the supported Python/native architecture without an additional Cython build dependency.
+
+### Animation and Authoring
+
+- Repair 2D Animation Clip atlas selection, sprite-frame metadata, save operations and previews, and compact the editor layout. Sprite frame selection uses an appropriate numeric control.
+- Route Ctrl+S to the visible editable document when another panel owns keyboard focus, preserving animation, scene and UI document ownership.
+- Add multi-clip animation groups and improve state-machine editing, list controls, localized actions and direct directional transition links.
+- Correct animation transitions, pose-stack bone masks, repeated pose publication and frame-zero events. Sprite, skeletal and grouped playback dispatch the first sample consistently.
+- Preserve selections and scene identities through editing, Play/Stop restoration and runtime scene changes.
+
+### Input, Console and UI
+
+- Repair Game view mouse capture after Escape and Alt+Tab. Process game input before editor Escape handling, with explicit input-edge consumption for in-game menus.
+- Make Console single-click selection target the originating object and double-click navigation open the relevant source location. Present project exceptions consistently and navigate to the deepest project call.
+- Retain unchanged Canvas geometry, layout contexts and screen-UI command packets, with invalidation scoped to actual hierarchy, visibility and texture dependencies.
+- Batch compatible clipped text and atlas-backed images while preserving material, texture and draw-order boundaries. Correct text publication, font invalidation and authored atlas sizing across platforms.
+- Reduce editor panel bookkeeping and avoid unnecessary HUD layout and semantic capture work during normal gameplay.
+
+### Rendering and Cross-Platform Players
+
+- Repair material publication, complete frame presentation, shadow resource reuse and texture decoding through imported asset artifacts.
+- Extend the Web Player with complete split scene bindings, layered cameras, per-camera particles, textured flipbooks and soft-particle scene-depth intersections. Preserve texture and uniform mappings during shader sampler splitting.
+- Declare only the particle descriptor sets actually used by each pass, avoiding Android device descriptor limits. Repair mobile text, input and rendering publication paths exercised by real-device testing.
+- Resolve cooked asset identities from the unpacked content catalog and install catalog snapshots without per-file probing. Preserve editor import identities in headless builds and keep editor-only imports out of Players.
+- Keep incremental Android APK exports compact by replacing obsolete content entries instead of retaining old payloads.
+
+### Plugins, Hub and Build Tooling
+
+- Ship refreshed official MCP, Windows, Linux, Android and Web packages. Each platform package includes its precompiled Player payload; plugin installation does not require a user-managed compiler or toolchain download. Android SDK/device setup remains a separate build prerequisite.
+- Separate plugin installation from target readiness, share the Hub installation root with independently launched plugin processes, and serialize MCP supervisor Player lifecycle operations.
+- Include the Hub startup, single-instance, Python runtime-marker and Windows installation-access repairs released after 0.4.2. Repair inherited runtime permissions from older installations and avoid read-only installation files and invalid pip paths.
+- Support Visual Studio 2022 and Visual Studio 2026 with an appropriate CMake version, and keep Hub packaging on the exact Visual Studio instance selected by CMake.
+- Manage native dependencies through maintained, pinned submodules rather than cloning them during CMake configuration.
+- Adopt the hollow striped monolith logo across engine, Hub, packaging and website assets.
+
+### Delivery and Adoption
+
+- Consolidate redundant tests around current authoring, runtime and delivery workflows, and remove historical reader fallbacks and obsolete helpers.
+- Gate publication on matching Windows/Linux distributions and platform Player acceptance, then publish GitHub, PyPI and Cloudflare artifacts and derive website/download metadata from those actual files.
+- Projects remain pinned to an exact engine release; teams should install 0.4.3 and use its matching precompiled platform packages together. Hub does not silently upgrade an existing project's engine pin.
+- Infernux remains alpha software. Real-game validation improves the tested paths; it does not constitute a guarantee that every game, GPU or project format is supported.
+
+---
+
 # Infernux v0.4.2 · Reliable Worlds and Collaborative Authoring
 
 0.4.2 strengthens the working paths introduced in 0.4.1: portable projects, stable asset identities, transactional editing, script reload, physics, rendering and delivery. This release brings the repair and acceptance work into the published engine, refreshes the website, and ships matching platform packages.
