@@ -4,11 +4,11 @@
   "released_version": "0.4.3",
   "python_abi": "cp313",
   "evidence": {
-    "commit": "9011d80c026c56acadd02961b4b90e040d16e9e2",
-    "desktop_ci": "https://github.com/ChenlizheMe/Infernux/actions/runs/38339783763",
-    "player_ci": "https://github.com/ChenlizheMe/Infernux/actions/runs/38339783763",
-    "scope": "Desktop and Player acceptance jobs passed in the source run; its R2 publication failed and was completed by the linked publication recovery run. Automated acceptance and installed Windows/Linux smoke tests do not establish complete physical-device or mixed-DPI coverage.",
-    "publication_ci": "https://github.com/ChenlizheMe/Infernux/actions/runs/38351978771"
+    "commit": "c30a9fec2553e07f1202dc5d7d2789a542cb9452",
+    "desktop_ci": "https://github.com/ChenlizheMe/Infernux/actions/runs/39495893754",
+    "player_ci": "https://github.com/ChenlizheMe/Infernux/actions/runs/39495893754",
+    "publication_ci": "https://github.com/ChenlizheMe/Infernux/actions/runs/39509624865",
+    "scope": "Automated Windows/Linux Editor and Player acceptance and Android/Web Player acceptance passed in the source run. Publication was recovered with those same tested artifacts after a CDN readback connection reset. Corrupt-asset workflows were also exercised in a local Windows Editor through MCP. Automated checks do not establish complete physical-device or mixed-DPI coverage."
   },
   "platforms": [
     {
