@@ -200,7 +200,7 @@ class SpriteAnimator(InxComponent):
         self._try_auto_transition()
 
     def _dispatch_clip_events(
-        self, clip, prev_norm: float, curr_norm: float, looped: bool, *, wrap_count: int = 1,
+        self, clip, prev_norm: float | None, curr_norm: float, looped: bool, *, wrap_count: int = 1,
     ):
         """Fire any animation events on *clip* crossed this frame."""
         events = getattr(clip, "events", None)
@@ -676,7 +676,7 @@ class SpriteAnimator(InxComponent):
         self._current_state_name = state_name
         self._current_clip = clip
         self._elapsed = 0.0
-        self._prev_event_norm = 0.0
+        self._prev_event_norm = None
         self._playing = True
 
         # State entry and frame advancement share the same renderer/cache owner.

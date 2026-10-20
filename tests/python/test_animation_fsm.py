@@ -118,6 +118,8 @@ class _NativePoseRecorder:
 
 
 def test_skeletal_restart_and_rejected_transition_preserve_playback(monkeypatch):
+    from infernux.core.animation_event import AnimationEvent
+
     animator = _make_animator()
     native = _NativePoseRecorder()
     owner = _HierarchyOwner(renderer=_RendererBinding(native))
@@ -127,8 +129,17 @@ def test_skeletal_restart_and_rejected_transition_preserve_playback(monkeypatch)
         AnimState(name="MissingTimeline", kind="timeline"),
     ])
     animator._clip_cache = {"Walk": _FakeClip()}
+    calls = []
+
+    class Receiver:
+        def start_event(self):
+            calls.append("start")
+
+    owner.get_py_components = lambda: [Receiver()]
+    animator._clip_cache["Walk"].events = [AnimationEvent(0.0, "start_event")]
     assert animator.play("Walk")
     animator.update(0.5)
+    assert calls == ["start"]
     revision = animator._playback_revision
     assert animator.play("Walk")
     assert animator._elapsed == 0.5 and animator._playback_revision == revision
@@ -139,6 +150,7 @@ def test_skeletal_restart_and_rejected_transition_preserve_playback(monkeypatch)
     assert animator.play("Walk", restart=True)
     assert animator._elapsed == 0.0 and animator._playback_revision == revision + 1
     animator.update(0.25)
+    assert calls == ["start", "start"]
     assert native.calls[-1][1] == pytest.approx(0.25)
     layers = animator.get_pose_layers()
     assert layers[0]["time"] == pytest.approx(0.25) and layers[0]["take_name"] == "Walk"
@@ -418,8 +430,8 @@ def test_clip_group_events_independent_loop_clocks_and_whole_group_crossfade(mon
     assert animator._elapsed == 2.5 and animator.normalized_time == pytest.approx(2.5 / 3)
     assert len(received) == 3
     assert animator.get_curve_value("FootPlant") == pytest.approx(3.0)
-    assert received[0][1] == (0.0, 0.5, True)
-    assert received[1][1] == (0.0, 2.5 / 3, False)
+    assert received[0][1] == (None, 0.5, True)
+    assert received[1][1] == (None, 2.5 / 3, False)
     assert not animator.play("Incomplete")
     assert animator.current_state == "Group" and animator._elapsed == 2.5
     assert animator.cross_fade("Idle", .2)
@@ -550,6 +562,17 @@ class _FakeGameObject:
 
 
 class TestAnimationEventWindowing:
+    def test_first_sample_includes_zero_once_and_retains_loop_boundary_order(self):
+        from infernux.core.animation_event import AnimationEvent, collect_crossed_events
+
+        start = AnimationEvent(0.0, "start")
+        end = AnimationEvent(1.0, "end")
+        events = [start, end]
+        assert collect_crossed_events(events, None, 0.0, False) == [start]
+        assert collect_crossed_events(events, 0.0, 0.1, False) == []
+        assert collect_crossed_events(events, None, 0.1, True, wrap_count=2) == [start, end, start, end, start]
+        assert collect_crossed_events(events, 0.9, 0.1, True) == [end, start]
+
     def test_dispatch_uses_precomputed_arity_without_signature_reflection(self, monkeypatch):
         from infernux.core import animation_event
         from infernux.core.animation_event import AnimationEvent
@@ -901,7 +924,7 @@ def test_crossfade_can_sync_phase_then_restart_the_return_state(monkeypatch, sta
     assert incoming["loop"] is True
     assert outgoing["weight"] == incoming["weight"] == pytest.approx(0.5)
     assert animator.cross_fade("Walk", 0.2)
-    assert animator._elapsed == 0.0 and animator._prev_event_norm == 0.0
+    assert animator._elapsed == 0.0 and animator._prev_event_norm is None
 
 
 def test_non_looping_clip_end_condition_follows_clamped_progress():

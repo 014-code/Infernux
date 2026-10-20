@@ -272,7 +272,7 @@ class SkeletalAnimator(InxComponent):
         transform.local_rotation = transform.local_rotation * rotation
 
     def _dispatch_clip_events(
-        self, clip, prev_norm: float, curr_norm: float, looped: bool, *, wrap_count: int = 1,
+        self, clip, prev_norm: float | None, curr_norm: float, looped: bool, *, wrap_count: int = 1,
     ):
         """Fire any animation events on *clip* crossed this frame."""
         events = getattr(clip, "events", None)
@@ -287,7 +287,7 @@ class SkeletalAnimator(InxComponent):
             Debug.log_warning(f"[SkeletalAnimator] event dispatch error: {exc}")
 
     def _dispatch_clip_events_wrapped(
-        self, clip, prev_norm: float, curr_norm: float, wrap_count: int,
+        self, clip, prev_norm: float | None, curr_norm: float, wrap_count: int,
     ) -> None:
         """Dispatch every crossed occurrence, including multiple wraps in one update."""
         self._dispatch_clip_events(clip, prev_norm, curr_norm, True, wrap_count=wrap_count)
@@ -629,7 +629,8 @@ class SkeletalAnimator(InxComponent):
             loop = _clip_should_loop(state, clip)
             before, after = previous / clip_duration, self._elapsed / clip_duration
             wraps = math.floor(after) - math.floor(before) if loop else 0
-            self._dispatch_clip_events(clip, before % 1.0 if loop else min(before, 1.0),
+            previous_sample = None if self._prev_event_norm is None else before % 1.0 if loop else min(before, 1.0)
+            self._dispatch_clip_events(clip, previous_sample,
                                        after % 1.0 if loop else min(after, 1.0),
                                        wraps > 0, wrap_count=max(1, wraps))
             if self._playback_revision != revision:
@@ -640,6 +641,7 @@ class SkeletalAnimator(InxComponent):
                 curve_weights[curve.name] = curve_weights.get(curve.name, 0.0) + weight
         for name, weight in curve_weights.items():
             self._curve_values[name] /= max(weight, 1.0)
+        self._prev_event_norm = self.normalized_time
         self._apply_root_motion(
             [(clip, weight, _clip_should_loop(state, clip))
              for clip, weight in zip(self._group_clips, self._group_weights)
@@ -719,7 +721,7 @@ class SkeletalAnimator(InxComponent):
         self._group_clips = group
         self._group_weights = [entry.weight for entry in state.clips]
         self._elapsed = next_elapsed
-        self._prev_event_norm = (next_elapsed / self._clip_duration(clip)) if next_elapsed > 0.0 else 0.0
+        self._prev_event_norm = (next_elapsed / self._clip_duration(clip)) if next_elapsed > 0.0 else None
         self._playing = True
         self._sample_imported_curves(clip, self.normalized_time)
         self._sync_native_runtime_playback()
