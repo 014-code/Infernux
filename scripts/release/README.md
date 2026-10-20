@@ -1,17 +1,22 @@
 # Hub publication and update discovery
 
-Every public change must have a new version/build identity. A same-version
-rebuild increments `ENGINE_BUILD_NUMBER` in `python/infernux/version.py`: engine metadata stays
-`0.4.2`, the wheel uses build tag `2`, Hub uses `0.4.2-2`, and the GitHub tag
-is `v0.4.2-v2`. Numeric post-release Hub identities are understood by existing
-0.4.1 installations. Published artifact URLs are immutable.
-`build_release_catalog.py --check-version` checks this before publication, and
-the release workflow allows its recovery switch only for unpublished drafts.
-The published release is 0.4.2 (wheel build 2, Hub 0.4.2-2, GitHub tag v0.4.2-v2). Public download pages and catalogs change only
-after its actual artifacts have been published.
-Build 1 reached PyPI before publication stopped. Its wheel files remain immutable;
-build 2 fixes Linux wheel Vulkan-loader packaging and completes publication under
-a new identity. Platform package compatibility still uses the minimum `>=0.4.2`.
+Every public change must have a new version/build identity. Keep the base
+version in `pyproject.toml` and `python/infernux/version.py` aligned. A new base
+release starts with `ENGINE_BUILD_NUMBER = 1` and Hub `build-number = 1`.
+Engine rebuilds increment `ENGINE_BUILD_NUMBER`; Hub-only updates increment
+`tool.infernux.hub.build-number` independently. Numeric Hub revisions are
+understood by installed Hubs. Published artifact URLs are immutable.
+
+Platform plugin packages have their own versions. Their minimum engine
+requirement must match the base engine version used to build their native
+payload, and exported Players check the matching runtime contract. Release
+packagers derive this version from package metadata; Web CMake derives it
+from the engine's version source. Publish a new plugin version when its
+payload changes.
+
+`build_release_catalog.py --check-version` checks the Hub publication identity,
+and recovery is reserved for a failed gated publication. Public download pages
+and catalogs change only after the actual artifacts have been published.
 
 ## Release sequence
 
