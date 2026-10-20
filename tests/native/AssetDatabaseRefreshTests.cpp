@@ -1019,10 +1019,12 @@ void TestModelSettingsPublishOnlyAfterSuccessfulImport()
         Require(readBytes(infernux::ToFsPath(metaPath)) == originalMeta, "failed Apply changed disk settings");
         Require(readBytes(infernux::ToFsPath(artifactPath)) == originalArtifact, "failed Apply changed artifact");
         Require(db->GetMetaByGuid(guid) == originalSnapshot, "failed Apply replaced live metadata");
-        Require(db->GetQueryGeneration() == generation, "failed Apply advanced published catalog");
+        Require(db->GetQueryGeneration() > generation, "failed Apply did not publish its import error");
+        Require(db->GetImportError(guid) == failure.error, "failed Apply lost its import error");
         WriteText(model, geometry);
         const auto success = db->ReimportAsset(path, {{"scale_factor", 3.0}, {"weld_vertices", false}});
         Require(success && success.databaseCommitted, "valid model settings were not published");
+        Require(db->GetImportError(guid).empty(), "successful Apply retained its previous import error");
         const auto published = db->GetMetaByGuid(guid);
         Require(published->GetDataAs<float>("scale_factor") == 3.0f, "scale draft was lost");
         Require(!published->GetDataAs<bool>("weld_vertices"), "welding draft was lost");
