@@ -694,8 +694,7 @@ class AssetDatabase : public NativeLifetimeOwner
                                const std::unordered_map<std::string, std::shared_ptr<InxResourceMeta>> &metas,
                                const std::unordered_map<std::string, CachedFileState> &fileStates,
                                const std::unordered_map<std::string, ImportResultState> &importResults,
-                               uint64_t generation,
-                               bool includeCatalog = true);
+                               uint64_t generation, bool includeCatalog = true);
     [[nodiscard]] bool CommitScanArtifact(AssetScanArtifact artifact, uint64_t expectedQueryGeneration);
     [[nodiscard]] bool ContinuePendingMetadataMerge(const std::shared_ptr<PendingRefreshCommit> &state);
     [[nodiscard]] bool BeginNextImportWave(const std::shared_ptr<PendingRefreshCommit> &state);

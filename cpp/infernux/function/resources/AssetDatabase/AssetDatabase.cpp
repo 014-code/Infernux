@@ -1119,8 +1119,8 @@ void AssetDatabase::InitializeRuntime(const std::string &projectRoot)
     m_assetTransactionJournalPath = FromFsPath(ToFsPath(m_projectRoot) / "Library" / "AssetRefresh.transaction");
     m_ownerThread = std::this_thread::get_id();
     m_initialized = true;
-    InstallQuerySnapshot(
-        BuildQuerySnapshotArtifact(m_guidToPath, m_pathToGuid, m_metas, m_fileStates, m_importResults, m_queryGeneration + 1, false));
+    InstallQuerySnapshot(BuildQuerySnapshotArtifact(m_guidToPath, m_pathToGuid, m_metas, m_fileStates, m_importResults,
+                                                    m_queryGeneration + 1, false));
 }
 
 void AssetDatabase::AddScanRoot(const std::string &path)
@@ -1402,8 +1402,8 @@ void AssetDatabase::InstallRuntimeAssetCatalog(const std::string &catalogPath, b
 
     // Player has no Project/FileManager panel. Keep GUID/path/metadata queries,
     // but do not expand source-model children over cooked artifact identities.
-    InstallQuerySnapshot(
-        BuildQuerySnapshotArtifact(m_guidToPath, m_pathToGuid, m_metas, m_fileStates, m_importResults, m_queryGeneration + 1, false));
+    InstallQuerySnapshot(BuildQuerySnapshotArtifact(m_guidToPath, m_pathToGuid, m_metas, m_fileStates, m_importResults,
+                                                    m_queryGeneration + 1, false));
     reportPhase("publish_snapshot");
     INXLOG_INFO("AssetDatabase: installed ", entries->size(), " cooked Player asset identities");
 }
@@ -3366,9 +3366,8 @@ std::vector<AssetCatalogEntry> AssetDatabase::GetImportFailures() const
             if (!entry.importError.empty())
                 failures.push_back(entry);
     }
-    std::sort(failures.begin(), failures.end(), [](const auto &left, const auto &right) {
-        return left.path < right.path;
-    });
+    std::sort(failures.begin(), failures.end(),
+              [](const auto &left, const auto &right) { return left.path < right.path; });
     return failures;
 }
 
