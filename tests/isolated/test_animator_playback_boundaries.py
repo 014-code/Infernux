@@ -181,7 +181,7 @@ def exercise(project, case):
             ]))
             owner.add_component(Receiver)
             actor.update(0.5)
-            assert calls == ["early"]
+            assert calls == ["zero", "early"]
             calls.clear()
             deltas = ([2.0] if case == "events-long" else
                       [0.25] * 8 if case == "events-partitioned" else [0.5])
