@@ -147,8 +147,10 @@ def test_asset_error_cancel_does_not_repeat_until_user_reopens(monkeypatch, tmp_
     asset.write_bytes(damaged)
     failure = {"guid": "damaged", "path": str(asset), "error": "Invalid material document",
                "modified_ns": asset.stat().st_mtime_ns, "size": len(damaged)}
+    failures = [failure]
     database = SimpleNamespace(project_root=str(tmp_path), query_generation=1,
-                               get_import_failures=lambda: [failure],
+                               get_import_failures=lambda: failures,
+                               get_import_error=lambda guid: failure["error"] if failures else "",
                                get_guid_from_path=lambda path: "damaged",
                                report_asset_load_failure=lambda guid, error: None)
     coordinator = _project_delete_confirmation()
@@ -174,6 +176,17 @@ def test_asset_error_cancel_does_not_repeat_until_user_reopens(monkeypatch, tmp_
     errors.report(str(asset), failure["error"])
     errors.poll()
     assert coordinator.is_active
+    failures.clear()
+    database.query_generation += 1
+    errors.poll()
+    ctx = _ProjectDeleteSemanticContext()
+    coordinator.render(ctx)
+    assert not coordinator.is_active and ctx.closed
+    assert asset.read_bytes() == damaged and not deleted
+
+    failures.append(failure)
+    database.query_generation += 1
+    errors.poll()
     ctx = _ProjectDeleteSemanticContext()
     coordinator.render(ctx)
     next(callback for label, callback in ctx.buttons.items() if label.endswith("##confirm"))()

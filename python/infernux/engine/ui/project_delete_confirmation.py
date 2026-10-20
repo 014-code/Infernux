@@ -40,6 +40,7 @@ class ProjectDeleteConfirmationCoordinator:
         self._requested = False
         self._error = ""
         self._load_error = ""
+        self._load_error_is_current: Optional[Callable[[], bool]] = None
         self._confirming = False
         self._modals.register(
             self.MODAL_ID,
@@ -77,6 +78,7 @@ class ProjectDeleteConfirmationCoordinator:
         delete_handler: Callable[[list[str]], bool],
         *,
         load_error: str = "",
+        load_error_is_current: Optional[Callable[[], bool]] = None,
     ) -> bool:
         if self.is_active or not callable(delete_handler):
             return False
@@ -98,6 +100,7 @@ class ProjectDeleteConfirmationCoordinator:
         self._requested = True
         self._error = ""
         self._load_error = load_error
+        self._load_error_is_current = load_error_is_current
         return True
 
     def render(self, ctx) -> None:
@@ -117,6 +120,10 @@ class ProjectDeleteConfirmationCoordinator:
         ):
             return
 
+        if self._load_error_is_current is not None and not self._load_error_is_current():
+            self._close(ctx)
+            end_editor_modal(ctx)
+            return
         if self._load_error:
             ctx.text_wrapped(t("asset.load_error_message"))
             ctx.text_wrapped(self._load_error)
@@ -149,6 +156,9 @@ class ProjectDeleteConfirmationCoordinator:
     def _confirm(self, ctx) -> None:
         if self._confirming:
             return
+        if self._load_error_is_current is not None and not self._load_error_is_current():
+            self._close(ctx)
+            return
         if not self._history_ready():
             self._error = "project.delete_history_busy"
             return
@@ -179,6 +189,7 @@ class ProjectDeleteConfirmationCoordinator:
         self._requested = False
         self._error = ""
         self._load_error = ""
+        self._load_error_is_current = None
         self._confirming = False
         self._modals.deactivate(self.MODAL_ID)
 

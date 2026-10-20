@@ -2725,21 +2725,14 @@ AssetMutationResult AssetDatabase::ImportAsset(const std::string &path)
                                                        : RunImporter(guid, path, false, !readOnly, nullptr, nullptr,
                                                                      expectedMetadata ? &*expectedMetadata : nullptr);
     if (!imported) {
-        const auto importResult = m_importResults.find(guid);
-        const std::string importError = importResult != m_importResults.end() && !importResult->second.error.empty()
-                                            ? importResult->second.error
-                                            : "asset importer failed";
-        m_metas.erase(guid);
-        RemoveMappingByGuid(guid);
-        m_importResults.erase(guid);
         result.errorCode = AssetMutationErrorCode::ImportFailed;
-        result.error = importError;
-        return result;
+        result.error = m_importResults.at(guid).error;
     }
+    // Failed files retain their authored identity, as during Refresh, but have no runtime publication.
     UpdateCachedFileState(path, readOnly);
     m_assetIndexDirty = true;
     PublishQuerySnapshotForPaths({path});
-    result.succeeded = true;
+    result.succeeded = imported;
     result.databaseCommitted = true;
     result.changed = true;
     result.queryGeneration = GetQueryGeneration();
@@ -2747,7 +2740,8 @@ AssetMutationResult AssetDatabase::ImportAsset(const std::string &path)
     // intentionally survive deletion, so publish availability only after the
     // catalog and importer outputs have committed. Existing runtime references
     // can then resolve their cache without any Project-panel-specific repair.
-    AssetDependencyGraph::Instance().NotifyEvent(guid, type, AssetEvent::Modified);
+    if (imported)
+        AssetDependencyGraph::Instance().NotifyEvent(guid, type, AssetEvent::Modified);
     return result;
 }
 

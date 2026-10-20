@@ -248,6 +248,36 @@ def test_move_query_may_run_on_watcher_but_mutation_waits_for_owner(monkeypatch,
     assert all(entry[-1] == threading.get_ident() for entry in asset_calls)
 
 
+def test_invalid_native_asset_waits_for_source_change_instead_of_retrying(monkeypatch, tmp_path):
+    from infernux.lib import AssetMutationErrorCode
+
+    database = _AssetDatabaseProbe()
+    handler = ResourceChangeHandler(_EngineProbe(database))
+    _patch_asset_manager(monkeypatch, [])
+    path = tmp_path / "Damaged.mat"
+    path.write_text("invalid material", encoding="utf-8")
+    imports = []
+
+    def reject(source):
+        imports.append(source)
+        database.guid_by_path[source] = "failed-guid"
+        result = _mutation("import", source, "failed-guid")
+        result.succeeded = False
+        result.error_code = AssetMutationErrorCode.IMPORT_FAILED
+        result.error = "Invalid material"
+        return result
+
+    database.import_asset = reject
+    handler.on_created(_event(path))
+    assert handler.process_pending_reloads(force=True) == 1
+    assert handler.process_pending_reloads(force=True) == 0
+    assert handler.pending_count == 0 and imports == [str(path)]
+    path.write_text("corrected material", encoding="utf-8")
+    handler.on_modified(_event(path))
+    assert handler.process_pending_reloads(force=True) == 1
+    assert database.mutations[-1][0] == "modified"
+
+
 @pytest.mark.parametrize(
     "extension",
     [

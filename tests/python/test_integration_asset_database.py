@@ -84,7 +84,8 @@ def test_failed_asset_load_is_visible_without_rewriting_source(engine, scene, tm
         database.delete_asset(str(path))
 
 
-def test_refresh_retains_new_invalid_assets_as_failed_catalog_entries(engine, tmp_path):
+@pytest.mark.parametrize("mode", ["scan", "import"])
+def test_new_invalid_assets_remain_visible_as_failed_catalog_entries(engine, tmp_path, mode):
     database = engine.get_asset_database()
     assets = Path(database.project_root) / "Assets" / tmp_path.name
     assets.mkdir(parents=True)
@@ -92,7 +93,12 @@ def test_refresh_retains_new_invalid_assets_as_failed_catalog_entries(engine, tm
     for name, content in damaged.items():
         (assets / name).write_bytes(content)
     try:
-        database.refresh()
+        if mode == "scan":
+            database.refresh()
+        else:
+            for name in damaged:
+                rejected = database.import_asset(str(assets / name))
+                assert not rejected and rejected.database_committed
         failures = {Path(entry["path"]).name: entry for entry in database.get_import_failures()
                     if same_path(str(Path(entry["path"]).parent), str(assets))}
         assert set(failures) == set(damaged)
@@ -1118,13 +1124,14 @@ def test_material_import_artifact_commits_metadata_and_dependencies_atomically(
         failed_import = asset_db.import_asset(str(material))
         assert not failed_import
         assert failed_import.error_code == AssetMutationErrorCode.IMPORT_FAILED
-        assert failed_import.database_committed is False
+        assert failed_import.database_committed is True
         assert failed_import.error
-        assert not asset_db.contains_path(str(material))
+        assert asset_db.contains_path(str(material))
+        assert asset_db.get_import_error(failed_import.guid) == failed_import.error
 
         write_material([(vertex, vertex_guid), (fragment, fragment_guid)])
         material_guid = asset_db.import_asset(str(material)).guid
-        assert material_guid
+        assert material_guid == failed_import.guid
         assert set(graph.get_dependencies(material_guid)) == {
             vertex_guid,
             fragment_guid,

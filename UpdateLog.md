@@ -13,6 +13,7 @@
 - Complete declared startup work, material preparation and GPU uploads before revealing gameplay. Loading and GPU preparation no longer advance gameplay clocks or consume the first simulation delta.
 - Show independent Play progress only in the editor, using the same presentation as build progress; packaged Players do not open the editor progress window.
 - Keep the editor running when an asset cannot be loaded, including damaged initial scenes and files containing bytes from the wrong format. Failed assets use a generic file icon and a Delete/Cancel dialog; cancellation preserves the original file without attempting repairs or restoring cached content over it.
+- Keep failed files visible with their original GUID during live imports. Wait for an actual source change instead of retrying identical invalid content, and close an obsolete error dialog after a successful reimport.
 - Remove the experimental Cython packaging path. Engine wheels and Player builds use the supported Python/native architecture without an additional Cython build dependency.
 
 ### Animation and Authoring

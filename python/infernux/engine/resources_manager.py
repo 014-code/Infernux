@@ -42,14 +42,20 @@ class _AssetImportNotReady(RuntimeError):
     pass
 
 
-class _CompiledAssetRejected(RuntimeError):
-    """A terminal source failure already reported by its runtime compiler."""
+class _AssetImportRejected(RuntimeError):
+    """A source failure that retrying unchanged bytes cannot resolve."""
+
+    def __init__(self, message: str, *, compiled: bool = False):
+        super().__init__(message)
+        self.compiled = compiled
 
 
-def _reject_failed_compiled_asset(path, result) -> None:
+def _reject_failed_asset_import(path, result) -> None:
     from infernux.core.asset_types import RENDER_EFFECT_EXTENSIONS, SHADER_SOURCE_EXTENSIONS
     from infernux.lib import AssetMutationErrorCode
 
+    if result.error_code == AssetMutationErrorCode.IMPORT_FAILED:
+        raise _AssetImportRejected(result.error)
     lower = path.lower()
     compiled_source = any(
         os.path.splitext(source.lower())[1] in SHADER_SOURCE_EXTENSIONS | RENDER_EFFECT_EXTENSIONS
@@ -57,7 +63,7 @@ def _reject_failed_compiled_asset(path, result) -> None:
         for source in (lower, result.previous_path)
     )
     if compiled_source and result.error_code == AssetMutationErrorCode.RUNTIME_APPLY_FAILED:
-        raise _CompiledAssetRejected(result.error)
+        raise _AssetImportRejected(result.error, compiled=True)
 
 
 class _AssetLocalWritePending(_AssetImportNotReady):
@@ -466,10 +472,11 @@ class ResourceChangeHandler(FileSystemEventHandler):
                 self._dispatch_event(event)
             except _AssetLocalWritePending:
                 self._reschedule_asset_event(event, retry=False)
-            except _CompiledAssetRejected:
+            except _AssetImportRejected as exc:
                 # Recompiling identical invalid source cannot make it valid.
                 # A subsequent source save submits a new candidate normally.
-                self._rejected_compiled_assets.add(path_key(event.destination or event.path))
+                if exc.compiled:
+                    self._rejected_compiled_assets.add(path_key(event.destination or event.path))
             except _AssetImportNotReady as exc:
                 if not self._reschedule_asset_event(event, retry=True):
                     Debug.log_error(f"Asset event exhausted retries: {event}: {exc}")
@@ -1261,10 +1268,10 @@ class ResourceChangeHandler(FileSystemEventHandler):
                 suppress_watcher_echo=False,
             )
             if not result:
-                _reject_failed_compiled_asset(path, result)
+                _reject_failed_asset_import(path, result)
                 detail = str(getattr(result, "error", "") or "unknown import error")
                 raise _AssetImportNotReady(f"import failed: {path}: {detail}")
-        except _CompiledAssetRejected:
+        except _AssetImportRejected:
             raise
         except RuntimeError as exc:
             raise _AssetImportNotReady(str(exc)) from exc
@@ -1288,7 +1295,7 @@ class ResourceChangeHandler(FileSystemEventHandler):
                 suppress_watcher_echo=False,
             )
             if not published:
-                _reject_failed_compiled_asset(path, published)
+                _reject_failed_asset_import(path, published)
                 detail = str(
                     getattr(published, "error", "") or "unknown reimport error"
                 )
@@ -1373,7 +1380,7 @@ class ResourceChangeHandler(FileSystemEventHandler):
                     suppress_watcher_echo=False,
                 )
                 if not result:
-                    _reject_failed_compiled_asset(path, result)
+                    _reject_failed_asset_import(path, result)
                     detail = str(
                         getattr(result, "error", "") or "unknown reimport error"
                     )
@@ -1389,7 +1396,7 @@ class ResourceChangeHandler(FileSystemEventHandler):
                     suppress_watcher_echo=False,
                 )
                 if not result:
-                    _reject_failed_compiled_asset(path, result)
+                    _reject_failed_asset_import(path, result)
                     detail = str(
                         getattr(result, "error", "") or "unknown import error"
                     )
@@ -1519,7 +1526,7 @@ class ResourceChangeHandler(FileSystemEventHandler):
             # import of its new asset type must not keep the old code alive.
             self._publish_script_path_move(old_path, new_path, origin="watchdog")
         if not result:
-            _reject_failed_compiled_asset(new_path, result)
+            _reject_failed_asset_import(new_path, result)
             raise RuntimeError(f"moved asset runtime publication failed: {new_path}: {result.error}")
         if os.path.splitext(old_path)[1].lower() != os.path.splitext(new_path)[1].lower():
             # A real move preserves GUID identity, but changing the extension
@@ -1530,7 +1537,7 @@ class ResourceChangeHandler(FileSystemEventHandler):
                 suppress_watcher_echo=False,
             )
             if not result:
-                _reject_failed_compiled_asset(new_path, result)
+                _reject_failed_asset_import(new_path, result)
                 raise _AssetImportNotReady(f"renamed asset reimport failed: {new_path}")
             self._rejected_compiled_assets.discard(path_key(new_path))
         if reload_destination:
@@ -1549,7 +1556,7 @@ class ResourceChangeHandler(FileSystemEventHandler):
                 suppress_watcher_echo=False,
             )
             if not result:
-                _reject_failed_compiled_asset(new_path, result)
+                _reject_failed_asset_import(new_path, result)
                 raise RuntimeError(f"moved shader reimport failed: {new_path}")
             self._notify_shader_reloaded(new_path)
             self._rejected_compiled_assets.discard(path_key(new_path))

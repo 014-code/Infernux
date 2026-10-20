@@ -812,7 +812,8 @@ class AssetManager:
         cls._suppress_meta_watcher(path)
         result = asset_database.import_asset(path)
         if not result:
-            cls._meta_write_suppression.pop(cls._normalize_asset_path(path), None)
+            if not result.database_committed:
+                cls._meta_write_suppression.pop(cls._normalize_asset_path(path), None)
             return result
 
         dependency_error = cls._compile_shader_dependency_runtime(path)

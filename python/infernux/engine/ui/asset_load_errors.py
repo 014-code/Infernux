@@ -70,6 +70,7 @@ class AssetLoadErrors:
             (path,),
             lambda paths: bool(self.project_assets.delete(paths)),
             load_error=f"{display_path}\n{entry['error']}",
+            load_error_is_current=lambda: bool(self.database.get_import_error(entry["guid"])),
         )
         if accepted:
             self._pending.pop(entry["guid"])
