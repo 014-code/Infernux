@@ -1,238 +1,221 @@
 {
   "schema_version": 1,
-  "version": "0.4.2",
-  "tag": "v0.4.2-v2",
-  "title": "Infernux v0.4.2 · Reliable Worlds and Collaborative Authoring",
-  "codename": "Reliable Worlds and Collaborative Authoring",
+  "version": "0.4.3",
+  "tag": "v0.4.3",
+  "title": "Infernux v0.4.3 · Faster Frames, Complete Players",
+  "codename": "Faster Frames, Complete Players",
   "language": "en",
-  "published_at": "2026-10-13T05:28:41Z",
-  "release_url": "https://github.com/ChenlizheMe/Infernux/releases/tag/v0.4.2-v2",
+  "published_at": "2026-10-20T22:42:08Z",
+  "release_url": "https://github.com/ChenlizheMe/Infernux/releases/tag/v0.4.3",
   "source": "UpdateLog.md",
-  "summary": "0.4.2 strengthens the working paths introduced in 0.4.1: portable projects, stable asset identities, transactional editing, script reload, physics, rendering and delivery. This release brings the repair and acceptance work into the published engine, refreshes the website, and ships matching platform packages.",
+  "summary": "0.4.3 brings the editor, animation authoring and cross-platform Players through a sustained real-game validation cycle. The focus is a correct, efficient main path: less repeated frame work, complete startup preparation, consistent asset identities and usable editing tools.",
   "comparison": {
-    "from": "0.4.1",
-    "to": "0.4.2-v2",
-    "url": "https://github.com/ChenlizheMe/Infernux/compare/v0.4.1...v0.4.2-v2"
+    "from": "0.4.2-v2",
+    "to": "0.4.3",
+    "url": "https://github.com/ChenlizheMe/Infernux/compare/v0.4.2-v2...v0.4.3"
   },
-  "section_count": 7,
-  "item_count": 34,
+  "section_count": 6,
+  "item_count": 32,
   "sections": [
     {
-      "id": "publication-revision-2",
-      "title": "Publication revision 2",
+      "id": "editor-performance-and-startup",
+      "title": "Editor Performance and Startup",
       "kind": "changes",
       "items": [
         {
-          "title": "Use the system Vulkan loader in Linux wheels so SDL and the native engine share one instance registry. Build 1 wheel files already uploaded to PyPI remain immutable; the corrected files use wheel build 2, Hub 0.4.2-2 and engine release 0.4.2-v2.",
+          "title": "Reuse published component bindings, scene cameras, lights, shader classifications and asset catalogs instead of repeating discovery and filesystem work every frame.",
           "detail": "",
-          "text": "Use the system Vulkan loader in Linux wheels so SDL and the native engine share one instance registry. Build 1 wheel files already uploaded to PyPI remain immutable; the corrected files use wheel build 2, Hub 0.4.2-2 and engine release 0.4.2-v2."
+          "text": "Reuse published component bindings, scene cameras, lights, shader classifications and asset catalogs instead of repeating discovery and filesystem work every frame."
         },
         {
-          "title": "Wait for newly uploaded wheels to become visible in PyPI's cached metadata before publishing the other channels. Missing metadata has a bounded wait; mismatched files and unrelated errors fail immediately.",
+          "title": "Reduce Python lifecycle dispatch, editor status synchronization, change-journal traversal, native pose submissions and allocation overhead. Leave automatic garbage collection in control of ordinary frame-loop collection.",
           "detail": "",
-          "text": "Wait for newly uploaded wheels to become visible in PyPI's cached metadata before publishing the other channels. Missing metadata has a bounded wait; mismatched files and unrelated errors fail immediately."
+          "text": "Reduce Python lifecycle dispatch, editor status synchronization, change-journal traversal, native pose submissions and allocation overhead. Leave automatic garbage collection in control of ordinary frame-loop collection."
+        },
+        {
+          "title": "Complete declared startup work, material preparation and GPU uploads before revealing gameplay. Loading and GPU preparation no longer advance gameplay clocks or consume the first simulation delta.",
+          "detail": "",
+          "text": "Complete declared startup work, material preparation and GPU uploads before revealing gameplay. Loading and GPU preparation no longer advance gameplay clocks or consume the first simulation delta."
+        },
+        {
+          "title": "Show independent Play progress only in the editor, using the same presentation as build progress; packaged Players do not open the editor progress window.",
+          "detail": "",
+          "text": "Show independent Play progress only in the editor, using the same presentation as build progress; packaged Players do not open the editor progress window."
+        },
+        {
+          "title": "Keep the editor running when an asset cannot be loaded, including damaged initial scenes and files containing bytes from the wrong format. Failed assets use a generic file icon and a Delete/Cancel dialog; cancellation preserves the original file without attempting repairs or restoring cached content over it.",
+          "detail": "",
+          "text": "Keep the editor running when an asset cannot be loaded, including damaged initial scenes and files containing bytes from the wrong format. Failed assets use a generic file icon and a Delete/Cancel dialog; cancellation preserves the original file without attempting repairs or restoring cached content over it."
+        },
+        {
+          "title": "Keep failed files visible with their original GUID during live imports. Wait for an actual source change instead of retrying identical invalid content, and close an obsolete error dialog after a successful reimport.",
+          "detail": "",
+          "text": "Keep failed files visible with their original GUID during live imports. Wait for an actual source change instead of retrying identical invalid content, and close an obsolete error dialog after a successful reimport."
+        },
+        {
+          "title": "Remove the experimental Cython packaging path. Engine wheels and Player builds use the supported Python/native architecture without an additional Cython build dependency.",
+          "detail": "",
+          "text": "Remove the experimental Cython packaging path. Engine wheels and Player builds use the supported Python/native architecture without an additional Cython build dependency."
         }
       ]
     },
     {
-      "id": "projects-assets-and-collaboration",
-      "title": "Projects, Assets and Collaboration",
+      "id": "animation-and-authoring",
+      "title": "Animation and Authoring",
       "kind": "changes",
       "items": [
         {
-          "title": "Pin the exact engine release.",
-          "detail": "Shared projects record the engine revision and CPython ABI. Hub disables projects whose matching engine is not installed and rebuilds their local runtime from the installed release during startup.",
-          "text": "Pin the exact engine release. Shared projects record the engine revision and CPython ABI. Hub disables projects whose matching engine is not installed and rebuilds their local runtime from the installed release during startup."
+          "title": "Repair 2D Animation Clip atlas selection, sprite-frame metadata, save operations and previews, and compact the editor layout. Sprite frame selection uses an appropriate numeric control.",
+          "detail": "",
+          "text": "Repair 2D Animation Clip atlas selection, sprite-frame metadata, save operations and previews, and compact the editor layout. Sprite frame selection uses an appropriate numeric control."
         },
         {
-          "title": "Keep project identities portable.",
-          "detail": "Store project asset metadata and references relative to the project root, separate persistent Scene GUIDs from runtime IDs, and resolve authored asset paths into cooked GUIDs for Players.",
-          "text": "Keep project identities portable. Store project asset metadata and references relative to the project root, separate persistent Scene GUIDs from runtime IDs, and resolve authored asset paths into cooked GUIDs for Players."
+          "title": "Route Ctrl+S to the visible editable document when another panel owns keyboard focus, preserving animation, scene and UI document ownership.",
+          "detail": "",
+          "text": "Route Ctrl+S to the visible editable document when another panel owns keyboard focus, preserving animation, scene and UI document ownership."
         },
         {
-          "title": "Make authored files mergeable.",
-          "detail": "Keep scene, material, prefab and package authoring in stable text documents; preserve independent edits and external revisions, and keep runtime caches, editor view state and MCP sessions outside Git. Git remains responsible for conflict resolution.",
-          "text": "Make authored files mergeable. Keep scene, material, prefab and package authoring in stable text documents; preserve independent edits and external revisions, and keep runtime caches, editor view state and MCP sessions outside Git. Git remains responsible for conflict resolution."
+          "title": "Add multi-clip animation groups and improve state-machine editing, list controls, localized actions and direct directional transition links.",
+          "detail": "",
+          "text": "Add multi-clip animation groups and improve state-machine editing, list controls, localized actions and direct directional transition links."
         },
         {
-          "title": "Publish complete asset changes.",
-          "detail": "Reject duplicate GUIDs, unsafe paths, unresolved dependencies and invalid fields before publication. Preserve authored metadata and imported subasset identities through rename, reimport, deletion and concurrent document saves.",
-          "text": "Publish complete asset changes. Reject duplicate GUIDs, unsafe paths, unresolved dependencies and invalid fields before publication. Preserve authored metadata and imported subasset identities through rename, reimport, deletion and concurrent document saves."
+          "title": "Correct animation transitions, pose-stack bone masks, repeated pose publication and frame-zero events. Sprite, skeletal and grouped playback dispatch the first sample consistently.",
+          "detail": "",
+          "text": "Correct animation transitions, pose-stack bone masks, repeated pose publication and frame-zero events. Sprite, skeletal and grouped playback dispatch the first sample consistently."
         },
         {
-          "title": "Use current project templates.",
-          "detail": "Create projects with a complete default forward rendering setup, current scene/component formats and portable version-control rules.",
-          "text": "Use current project templates. Create projects with a complete default forward rendering setup, current scene/component formats and portable version-control rules."
+          "title": "Preserve selections and scene identities through editing, Play/Stop restoration and runtime scene changes.",
+          "detail": "",
+          "text": "Preserve selections and scene identities through editing, Play/Stop restoration and runtime scene changes."
         }
       ]
     },
     {
-      "id": "scripts-and-editor-workflows",
-      "title": "Scripts and Editor Workflows",
+      "id": "input-console-and-ui",
+      "title": "Input, Console and UI",
       "kind": "changes",
       "items": [
         {
-          "title": "Reload renamed components.",
-          "detail": "Resolve scripts by their asset identity and published component declarations, preserve references across class renames, and publish complete component sets and serialized field metadata together.",
-          "text": "Reload renamed components. Resolve scripts by their asset identity and published component declarations, preserve references across class renames, and publish complete component sets and serialized field metadata together."
+          "title": "Repair Game view mouse capture after Escape and Alt+Tab. Process game input before editor Escape handling, with explicit input-edge consumption for in-game menus.",
+          "detail": "",
+          "text": "Repair Game view mouse capture after Escape and Alt+Tab. Process game input before editor Escape handling, with explicit input-edge consumption for in-game menus."
         },
         {
-          "title": "Restore authoring after Play.",
-          "detail": "Restore saved object data and remap object selections across Play/Stop scene replacement. Failed Play initialization also restores the authoring domain.",
-          "text": "Restore authoring after Play. Restore saved object data and remap object selections across Play/Stop scene replacement. Failed Play initialization also restores the authoring domain."
+          "title": "Make Console single-click selection target the originating object and double-click navigation open the relevant source location. Present project exceptions consistently and navigate to the deepest project call.",
+          "detail": "",
+          "text": "Make Console single-click selection target the originating object and double-click navigation open the relevant source location. Present project exceptions consistently and navigate to the deepest project call."
         },
         {
-          "title": "Preserve editing ownership.",
-          "detail": "Tighten Undo/Redo, Prefab propagation, animation/timeline saves, asset previews, project selections and pointer capture so retired scene or asset owners cannot receive later edits.",
-          "text": "Preserve editing ownership. Tighten Undo/Redo, Prefab propagation, animation/timeline saves, asset previews, project selections and pointer capture so retired scene or asset owners cannot receive later edits."
+          "title": "Retain unchanged Canvas geometry, layout contexts and screen-UI command packets, with invalidation scoped to actual hierarchy, visibility and texture dependencies.",
+          "detail": "",
+          "text": "Retain unchanged Canvas geometry, layout contexts and screen-UI command packets, with invalidation scoped to actual hierarchy, visibility and texture dependencies."
         },
         {
-          "title": "Keep panels efficient.",
-          "detail": "Share observed file and registry snapshots inside the editor's panel mechanism, remove repeated expensive preparation, and make custom-panel and Timeline text inherit the editor font size.",
-          "text": "Keep panels efficient. Share observed file and registry snapshots inside the editor's panel mechanism, remove repeated expensive preparation, and make custom-panel and Timeline text inherit the editor font size."
+          "title": "Batch compatible clipped text and atlas-backed images while preserving material, texture and draw-order boundaries. Correct text publication, font invalidation and authored atlas sizing across platforms.",
+          "detail": "",
+          "text": "Batch compatible clipped text and atlas-backed images while preserving material, texture and draw-order boundaries. Correct text publication, font invalidation and authored atlas sizing across platforms."
         },
         {
-          "title": "Strengthen MCP lifecycle.",
-          "detail": "Separate general editor operations from the plugin's transport service, retain local endpoint and permission settings, and clean up plugin commands, workers and services with their owners. Update the official MCP client for persistent sessions and virtual-environment launchers.",
-          "text": "Strengthen MCP lifecycle. Separate general editor operations from the plugin's transport service, retain local endpoint and permission settings, and clean up plugin commands, workers and services with their owners. Update the official MCP client for persistent sessions and virtual-environment launchers."
-        },
-        {
-          "title": "Keep release diagnostics quiet.",
-          "detail": "Make internal startup and runtime-origin diagnostics opt-in while retaining actionable errors and user logging.",
-          "text": "Keep release diagnostics quiet. Make internal startup and runtime-origin diagnostics opt-in while retaining actionable errors and user logging."
+          "title": "Reduce editor panel bookkeeping and avoid unnecessary HUD layout and semantic capture work during normal gameplay.",
+          "detail": "",
+          "text": "Reduce editor panel bookkeeping and avoid unnecessary HUD layout and semantic capture work during normal gameplay."
         }
       ]
     },
     {
-      "id": "physics-animation-and-audio",
-      "title": "Physics, Animation and Audio",
+      "id": "rendering-and-cross-platform-players",
+      "title": "Rendering and Cross-Platform Players",
       "kind": "changes",
       "items": [
         {
-          "title": "Keep joints physically coherent.",
-          "detail": "Preserve hinge frames and anchors across compound center-of-mass changes and collapsed scales, and prevent a swinging pendulum from sleeping prematurely.",
-          "text": "Keep joints physically coherent. Preserve hinge frames and anchors across compound center-of-mass changes and collapsed scales, and prevent a swinging pendulum from sleeping prematurely."
+          "title": "Repair material publication, complete frame presentation, shadow resource reuse and texture decoding through imported asset artifacts.",
+          "detail": "",
+          "text": "Repair material publication, complete frame presentation, shadow resource reuse and texture decoding through imported asset artifacts."
         },
         {
-          "title": "Publish body changes consistently.",
-          "detail": "Retain authored mass and collider geometry across edits and clones, order nested body poses, compose kinematic targets, and retire joint constraints with their owners.",
-          "text": "Publish body changes consistently. Retain authored mass and collider geometry across edits and clones, order nested body poses, compose kinematic targets, and retire joint constraints with their owners."
+          "title": "Extend the Web Player with complete split scene bindings, layered cameras, per-camera particles, textured flipbooks and soft-particle scene-depth intersections. Preserve texture and uniform mappings during shader sampler splitting.",
+          "detail": "",
+          "text": "Extend the Web Player with complete split scene bindings, layered cameras, per-camera particles, textured flipbooks and soft-particle scene-depth intersections. Preserve texture and uniform mappings during shader sampler splitting."
         },
         {
-          "title": "Correct query and contact contracts.",
-          "detail": "Return target-surface shape-cast contacts and correctly oriented normals, honor query masks and compound ignore rules, and resolve callback targets by their live native lifetime.",
-          "text": "Correct query and contact contracts. Return target-surface shape-cast contacts and correctly oriented normals, honor query masks and compound ignore rules, and resolve callback targets by their live native lifetime."
+          "title": "Declare only the particle descriptor sets actually used by each pass, avoiding Android device descriptor limits. Repair mobile text, input and rendering publication paths exercised by real-device testing.",
+          "detail": "",
+          "text": "Declare only the particle descriptor sets actually used by each pass, avoiding Android device descriptor limits. Repair mobile text, input and rendering publication paths exercised by real-device testing."
         },
         {
-          "title": "Repair animation timing.",
-          "detail": "Correct terminal frames, ordered loop events, Timeline completion and explicitly armed transition triggers; preserve clip events and graph identities through editing and save operations.",
-          "text": "Repair animation timing. Correct terminal frames, ordered loop events, Timeline completion and explicitly armed transition triggers; preserve clip events and graph identities through editing and save operations."
+          "title": "Resolve cooked asset identities from the unpacked content catalog and install catalog snapshots without per-file probing. Preserve editor import identities in headless builds and keep editor-only imports out of Players.",
+          "detail": "",
+          "text": "Resolve cooked asset identities from the unpacked content catalog and install catalog snapshots without per-file probing. Preserve editor import identities in headless builds and keep editor-only imports out of Players."
         },
         {
-          "title": "Respect audio ownership.",
-          "detail": "Retain shared clip dependencies until the last track releases them, register listeners only while enabled, and apply authored clip import settings in exported Players.",
-          "text": "Respect audio ownership. Retain shared clip dependencies until the last track releases them, register listeners only while enabled, and apply authored clip import settings in exported Players."
+          "title": "Keep incremental Android APK exports compact by replacing obsolete content entries instead of retaining old payloads.",
+          "detail": "",
+          "text": "Keep incremental Android APK exports compact by replacing obsolete content entries instead of retaining old payloads."
         }
       ]
     },
     {
-      "id": "rendering-ui-and-compute",
-      "title": "Rendering, UI and Compute",
+      "id": "plugins-hub-and-build-tooling",
+      "title": "Plugins, Hub and Build Tooling",
       "kind": "changes",
       "items": [
         {
-          "title": "Make first-frame rendering valid.",
-          "detail": "Resolve linked shadow variants and implicit DefaultLit before the first draw, collect shadow casters across resident scenes, and fit shadow cascades to the effective camera matrices.",
-          "text": "Make first-frame rendering valid. Resolve linked shadow variants and implicit DefaultLit before the first draw, collect shadow casters across resident scenes, and fit shadow cascades to the effective camera matrices."
+          "title": "Ship refreshed official MCP, Windows, Linux, Android and Web packages. Each platform package includes its precompiled Player payload; plugin installation does not require a user-managed compiler or toolchain download. Android SDK/device setup remains a separate build prerequisite.",
+          "detail": "",
+          "text": "Ship refreshed official MCP, Windows, Linux, Android and Web packages. Each platform package includes its precompiled Player payload; plugin installation does not require a user-managed compiler or toolchain download. Android SDK/device setup remains a separate build prerequisite."
         },
         {
-          "title": "Strengthen RenderGraph synchronization.",
-          "detail": "Declare exact texture/buffer consumers, queue sharing and particle dependencies; retire transient targets, descriptors, materials and camera resources after their GPU completion epoch.",
-          "text": "Strengthen RenderGraph synchronization. Declare exact texture/buffer consumers, queue sharing and particle dependencies; retire transient targets, descriptors, materials and camera resources after their GPU completion epoch."
+          "title": "Separate plugin installation from target readiness, share the Hub installation root with independently launched plugin processes, and serialize MCP supervisor Player lifecycle operations.",
+          "detail": "",
+          "text": "Separate plugin installation from target readiness, share the Hub installation root with independently launched plugin processes, and serialize MCP supervisor Player lifecycle operations."
         },
         {
-          "title": "Validate backend capabilities.",
-          "detail": "Expose a backend-neutral device capability contract and reject unsupported formats, commands and pipeline layouts before recording or allocation.",
-          "text": "Validate backend capabilities. Expose a backend-neutral device capability contract and reject unsupported formats, commands and pipeline layouts before recording or allocation."
+          "title": "Include the Hub startup, single-instance, Python runtime-marker and Windows installation-access repairs released after 0.4.2. Repair inherited runtime permissions from older installations and avoid read-only installation files and invalid pip paths.",
+          "detail": "",
+          "text": "Include the Hub startup, single-instance, Python runtime-marker and Windows installation-access repairs released after 0.4.2. Repair inherited runtime permissions from older installations and avoid read-only installation files and invalid pip paths."
         },
         {
-          "title": "Correct material and effect composition.",
-          "detail": "Preserve shader texture defaults, alpha coverage, surface discard, GBuffer scalars, deformed lighting and slot-ordered Bloom/effect chains; retain exact pixels in equal-size transfers.",
-          "text": "Correct material and effect composition. Preserve shader texture defaults, alpha coverage, surface discard, GBuffer scalars, deformed lighting and slot-ordered Bloom/effect chains; retain exact pixels in equal-size transfers."
+          "title": "Support Visual Studio 2022 and Visual Studio 2026 with an appropriate CMake version, and keep Hub packaging on the exact Visual Studio instance selected by CMake.",
+          "detail": "",
+          "text": "Support Visual Studio 2022 and Visual Studio 2026 with an appropriate CMake version, and keep Hub packaging on the exact Visual Studio instance selected by CMake."
         },
         {
-          "title": "Align UI rendering and input.",
-          "detail": "Repair World UI depth replay, affine billboard picking, per-frame screen pose uploads, text/font invalidation and camera-local rendering state.",
-          "text": "Align UI rendering and input. Repair World UI depth replay, affine billboard picking, per-frame screen pose uploads, text/font invalidation and camera-local rendering state."
+          "title": "Manage native dependencies through maintained, pinned submodules rather than cloning them during CMake configuration.",
+          "detail": "",
+          "text": "Manage native dependencies through maintained, pinned submodules rather than cloning them during CMake configuration."
         },
         {
-          "title": "Keep CPU/GPU work ordered.",
-          "detail": "Correct asynchronous compute readback before later uploads, buffer/resource retirement and particle publication. Add parallel JIT material-kernel fixtures that verify mutation-free warmup and required CPU specialization; these fixtures are not a complete MPM solver.",
-          "text": "Keep CPU/GPU work ordered. Correct asynchronous compute readback before later uploads, buffer/resource retirement and particle publication. Add parallel JIT material-kernel fixtures that verify mutation-free warmup and required CPU specialization; these fixtures are not a complete MPM solver."
+          "title": "Adopt the hollow striped monolith logo across engine, Hub, packaging and website assets.",
+          "detail": "",
+          "text": "Adopt the hollow striped monolith logo across engine, Hub, packaging and website assets."
         }
       ]
     },
     {
-      "id": "players-hub-and-release-delivery",
-      "title": "Players, Hub and Release Delivery",
+      "id": "delivery-and-adoption",
+      "title": "Delivery and Adoption",
       "kind": "changes",
       "items": [
         {
-          "title": "Deliver complete target payloads.",
-          "detail": "Cook enabled package dependencies and current document formats, reject missing scripts before scene replacement, and preserve package data layout in exported Players.",
-          "text": "Deliver complete target payloads. Cook enabled package dependencies and current document formats, reject missing scripts before scene replacement, and preserve package data layout in exported Players."
+          "title": "Consolidate redundant tests around current authoring, runtime and delivery workflows, and remove historical reader fallbacks and obsolete helpers.",
+          "detail": "",
+          "text": "Consolidate redundant tests around current authoring, runtime and delivery workflows, and remove historical reader fallbacks and obsolete helpers."
         },
         {
-          "title": "Run the Web Player through the full path.",
-          "detail": "Repair the static NumPy runtime, startup, keyboard input, camera clears and authored physics timing; validate development and release builds in Chromium with pixel and input checks.",
-          "text": "Run the Web Player through the full path. Repair the static NumPy runtime, startup, keyboard input, camera clears and authored physics timing; validate development and release builds in Chromium with pixel and input checks."
+          "title": "Gate publication on matching Windows/Linux distributions and platform Player acceptance, then publish GitHub, PyPI and Cloudflare artifacts and derive website/download metadata from those actual files.",
+          "detail": "",
+          "text": "Gate publication on matching Windows/Linux distributions and platform Player acceptance, then publish GitHub, PyPI and Cloudflare artifacts and derive website/download metadata from those actual files."
         },
         {
-          "title": "Keep Windows launches portable.",
-          "detail": "Host editors outside deeply nested project runtimes, preserve long asset paths at loader boundaries, and report unsupported executable locations before graphics startup.",
-          "text": "Keep Windows launches portable. Host editors outside deeply nested project runtimes, preserve long asset paths at loader boundaries, and report unsupported executable locations before graphics startup."
+          "title": "Projects remain pinned to an exact engine release; teams should install 0.4.3 and use its matching precompiled platform packages together. Hub does not silently upgrade an existing project's engine pin.",
+          "detail": "",
+          "text": "Projects remain pinned to an exact engine release; teams should install 0.4.3 and use its matching precompiled platform packages together. Hub does not silently upgrade an existing project's engine pin."
         },
         {
-          "title": "Publish one coherent release.",
-          "detail": "Require same-revision Desktop and Player acceptance before GitHub/PyPI/R2 publication, verify immutable release identities and update public catalogs only from the actual published files. Official plugins require Infernux >=0.4.2; this release's native payloads are built with 0.4.2.",
-          "text": "Publish one coherent release. Require same-revision Desktop and Player acceptance before GitHub/PyPI/R2 publication, verify immutable release identities and update public catalogs only from the actual published files. Official plugins require Infernux >=0.4.2; this release's native payloads are built with 0.4.2."
-        },
-        {
-          "title": "Broaden automated evidence.",
-          "detail": "Add software-Vulkan correctness coverage, scene residency and headless physics gates, installed Player tests and isolated parallel Windows Python workers. Android CI covers builds and emulation; physical-device validation remains separate.",
-          "text": "Broaden automated evidence. Add software-Vulkan correctness coverage, scene residency and headless physics gates, installed Player tests and isolated parallel Windows Python workers. Android CI covers builds and emulation; physical-device validation remains separate."
-        }
-      ]
-    },
-    {
-      "id": "website-and-upgrade-notes",
-      "title": "Website and Upgrade Notes",
-      "kind": "changes",
-      "items": [
-        {
-          "title": "Refresh the public site.",
-          "detail": "Ship the dark tape-futurist design, local GSAP animation, unified tutorials, categorized roadmap graphs, bilingual learning chapters and current API documentation.",
-          "text": "Refresh the public site. Ship the dark tape-futurist design, local GSAP animation, unified tutorials, categorized roadmap graphs, bilingual learning chapters and current API documentation."
-        },
-        {
-          "title": "Stream website showcase media efficiently.",
-          "detail": "Delay offscreen simulation/media work and keep large lazy-loaded content out of service-worker precache.",
-          "text": "Stream website showcase media efficiently. Delay offscreen simulation/media work and keep large lazy-loaded content out of service-worker precache."
-        },
-        {
-          "title": "Use the canonical Python namespace.",
-          "detail": "Author scripts with import infernux as inx; update old Infernux imports and serialized package names. This release does not promise arbitrary old-file format compatibility.",
-          "text": "Use the canonical Python namespace. Author scripts with import infernux as inx; update old Infernux imports and serialized package names. This release does not promise arbitrary old-file format compatibility."
-        },
-        {
-          "title": "Keep teams on one exact release.",
-          "detail": "Install 0.4.2-v2 on every development machine and use its matching platform packages. Existing 0.4.1 projects remain pinned to 0.4.1; Hub does not automatically upgrade them. Back up and deliberately update project pins and formats before adopting 0.4.2.",
-          "text": "Keep teams on one exact release. Install 0.4.2-v2 on every development machine and use its matching platform packages. Existing 0.4.1 projects remain pinned to 0.4.1; Hub does not automatically upgrade them. Back up and deliberately update project pins and formats before adopting 0.4.2."
-        },
-        {
-          "title": "Keep the scope clear.",
-          "detail": "Infernux remains alpha software. Neural Network-Native Engine (3N) is the architectural goal; a complete neural-network inference runtime, networking stack and Tiny Glade/MPM game are not delivered by this release.",
-          "text": "Keep the scope clear. Infernux remains alpha software. Neural Network-Native Engine (3N) is the architectural goal; a complete neural-network inference runtime, networking stack and Tiny Glade/MPM game are not delivered by this release."
+          "title": "Infernux remains alpha software. Real-game validation improves the tested paths; it does not constitute a guarantee that every game, GPU or project format is supported.",
+          "detail": "",
+          "text": "Infernux remains alpha software. Real-game validation improves the tested paths; it does not constitute a guarantee that every game, GPU or project format is supported."
         }
       ]
     }
