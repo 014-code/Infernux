@@ -15,7 +15,8 @@ add_custom_target(prepare_bundled_python_runtime
 
 add_custom_target(infernux_hub
     COMMAND ${CMAKE_COMMAND} -E echo "Compiling the native Infernux Hub application..."
-    COMMAND ${Python3_EXECUTABLE}
+    COMMAND ${CMAKE_COMMAND} -E env "CMAKE_GENERATOR_INSTANCE=${CMAKE_GENERATOR_INSTANCE}"
+        ${Python3_EXECUTABLE}
         "${CMAKE_SOURCE_DIR}/packaging/build_hub.py"
         --target hub
         --source-root "${CMAKE_SOURCE_DIR}"
@@ -39,7 +40,8 @@ add_custom_target(infernux_hub_release_assets
 
 add_custom_target(infernux_hub_installer
     COMMAND ${CMAKE_COMMAND} -E echo "Building the native graphical Infernux Hub installer..."
-    COMMAND ${Python3_EXECUTABLE}
+    COMMAND ${CMAKE_COMMAND} -E env "CMAKE_GENERATOR_INSTANCE=${CMAKE_GENERATOR_INSTANCE}"
+        ${Python3_EXECUTABLE}
         "${CMAKE_SOURCE_DIR}/packaging/build_hub.py"
         --target installer
         --source-root "${CMAKE_SOURCE_DIR}"

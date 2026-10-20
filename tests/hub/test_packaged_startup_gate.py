@@ -32,13 +32,20 @@ def test_unqualified_compiler_or_qt_pair_is_rejected(monkeypatch, compiler, qt):
         build_hub._validate_hub_toolchain()
 
 
-def test_msvc_environment_keeps_unicode_and_single_windows_key_identity(tmp_path, monkeypatch):
+@pytest.mark.parametrize("generator,explicit_instance", [
+    ("Visual Studio 17 2022", False), ("Visual Studio 18 2026", True),
+])
+def test_msvc_environment_keeps_unicode_and_single_windows_key_identity(tmp_path, monkeypatch, generator, explicit_instance):
     vs = tmp_path / "Visual Studio"
     for relative in ("VC/Auxiliary/Build/vcvars64.bat", "MSBuild/Current/Bin/MSBuild.exe"):
         path = vs / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.touch()
-    monkeypatch.setattr(build_hub, "_find_visual_studio", lambda _: vs)
+    if explicit_instance:
+        monkeypatch.setenv("CMAKE_GENERATOR_INSTANCE", str(vs))
+    else:
+        monkeypatch.delenv("CMAKE_GENERATOR_INSTANCE", raising=False)
+        monkeypatch.setattr(build_hub, "_find_visual_studio", lambda _: vs)
     monkeypatch.setattr(build_hub.shutil, "which", lambda name, **_: str(vs / name))
     monkeypatch.setenv("LOCALAPPDATA", "previous")
     monkeypatch.setenv("SYSTEMROOT", "previous")
@@ -50,7 +57,7 @@ def test_msvc_environment_keeps_unicode_and_single_windows_key_identity(tmp_path
         return SimpleNamespace(stdout="LocalAppData=C:\\Users\\测试用户\\AppData\\Local\nSystemRoot=C:\\Windows\nPath=toolchain\n")
 
     monkeypatch.setattr(build_hub.subprocess, "run", capture)
-    env, _ = build_hub._msvc_build_environment("Visual Studio 17 2022")
+    env, _ = build_hub._msvc_build_environment(generator)
     assert env["LOCALAPPDATA"] == "C:\\Users\\测试用户\\AppData\\Local"
     assert env["SYSTEMROOT"] == "C:\\Windows"
     assert "SystemRoot" not in env and "LocalAppData" not in env
