@@ -333,13 +333,14 @@ class TestBuiltinComponent:
 
     def test_sprite_assignment_binds_texture_and_persisted_frame_atomically(
         self,
+        engine,
+        scene,
+        tmp_path,
         monkeypatch,
     ):
-        from types import SimpleNamespace
-
-        from infernux.components.builtin import sprite_renderer as sprite_module
         from infernux.components.builtin.sprite_renderer import SpriteRenderer
         from infernux.core import asset_types
+        from infernux.core.assets import AssetManager
 
         first = asset_types.SpriteFrame(
             stable_id="1" * 32,
@@ -358,48 +359,35 @@ class TestBuiltinComponent:
             texture_type=asset_types.TextureType.SPRITE,
             sprite_frames=[first, second],
         )
-        monkeypatch.setattr(
-            sprite_module,
-            "_get_asset_database",
-            lambda: SimpleNamespace(
-                get_path_from_guid=lambda guid: "C:/Project/Assets/sheet.png" if guid == "texture-guid" else ""
-            ),
-        )
-        monkeypatch.setattr(
-            asset_types,
-            "read_texture_import_settings",
-            lambda _path: settings,
-        )
+        source = tmp_path / "sheet.ppm"
+        source.write_bytes(b"P6\n64 32\n255\n" + b"\xff\xff\xff" * (64 * 32))
+        database = engine.get_asset_database()
+        monkeypatch.setattr(AssetManager, "_asset_database", database)
+        imported = database.import_asset(str(source))
+        assert imported.succeeded, imported.error
+        try:
+            assert asset_types.write_texture_import_settings(str(source), settings)
+            assert database.reimport_asset(str(source))
+            wrapper = scene.create_game_object("Sprite assignment").add_component(SpriteRenderer)
+            wrapper.sprite = {"guid": imported.guid}
+            assert wrapper.sprite == imported.guid
+            assert wrapper.frame_id == first.stable_id
+            assert [frame.stable_id for frame in wrapper.sprite_frames] == [first.stable_id, second.stable_id]
 
-        wrapper = SpriteRenderer()
-        wrapper._cpp_component = SimpleNamespace(
-            component_id=1,
-            sprite_guid="",
-            frame_id="",
-        )
-        monkeypatch.setattr(wrapper, "_load_sprite_data", lambda: None)
-        monkeypatch.setattr(wrapper, "_apply_uv_rect", lambda: None)
+            wrapper.frame_id = second.stable_id
+            wrapper.sprite = {"guid": imported.guid}
+            assert wrapper.frame_id == second.stable_id
+            wrapper.sprite = {"guid": imported.guid, "frame_id": first.stable_id}
+            assert wrapper.frame_id == first.stable_id
 
-        wrapper.sprite = {"guid": "texture-guid"}
-        assert wrapper._cpp_component.sprite_guid == "texture-guid"
-        assert wrapper._cpp_component.frame_id == first.stable_id
+            with pytest.raises(ValueError, match="does not belong"):
+                wrapper.sprite = {"guid": imported.guid, "frame_id": "f" * 32}
+            assert (wrapper.sprite, wrapper.frame_id) == (imported.guid, first.stable_id)
 
-        wrapper._cpp_component.frame_id = second.stable_id
-        wrapper.sprite = {"guid": "texture-guid"}
-        assert wrapper._cpp_component.frame_id == second.stable_id
-
-        requested = wrapper._sprite_assignment_snapshot({"guid": "texture-guid", "frame_id": first.stable_id})
-        assert requested == {
-            "sprite_guid": "texture-guid",
-            "frame_id": first.stable_id,
-        }
-
-        with pytest.raises(ValueError, match="does not belong"):
-            wrapper._sprite_assignment_snapshot({"guid": "texture-guid", "frame_id": "f" * 32})
-
-        wrapper.sprite = None
-        assert wrapper._cpp_component.sprite_guid == ""
-        assert wrapper._cpp_component.frame_id == ""
+            wrapper.sprite = None
+            assert (wrapper.sprite, wrapper.frame_id) == ("", "")
+        finally:
+            database.delete_asset(str(source))
 
 
 class TestInxComponentSceneMutation:
