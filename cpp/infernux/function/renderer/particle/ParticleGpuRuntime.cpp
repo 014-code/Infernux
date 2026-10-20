@@ -708,18 +708,11 @@ bool ParticleGpuRuntime::CreateInternal(rhi::Device &device, const GpuEmitterDes
         pipelineDesc.bindingLayouts[1] = m_dataInterfaces ? m_dataInterfaces->layout : m_emptyDataInterfaceLayout;
         pipelineDesc.bindingLayouts[2] = m_vectorFields ? m_vectorFields->layout : m_emptyDataInterfaceLayout;
         pipelineDesc.bindingLayouts[3] = m_graphSpawnLayout;
-#if defined(INFERNUX_WEBGPU_RUNTIME)
-        // The portable Web subset rejects contacts, continuations, and data
-        // interfaces before runtime creation. WebGPU guarantees four bind
-        // groups, so do not publish unused Vulkan-only sets 4 through 7.
-        pipelineDesc.bindingLayoutCount = 4;
-#else
         pipelineDesc.bindingLayouts[4] = m_emptyDataInterfaceLayout;
         pipelineDesc.bindingLayouts[5] = m_continuation ? m_continuation->Layout() : m_emptyDataInterfaceLayout;
         pipelineDesc.bindingLayouts[6] = m_collisionEnabled ? m_collisionSceneLayout : m_emptyDataInterfaceLayout;
         pipelineDesc.bindingLayouts[7] = m_contacts ? m_contacts->Layout() : m_emptyDataInterfaceLayout;
-        pipelineDesc.bindingLayoutCount = 8;
-#endif
+        pipelineDesc.bindingLayoutCount = BindingLayoutCount();
         pipelineDesc.pushConstantBytes = sizeof(GpuParticlePushConstants);
         m_pipelines[index] = device.CreateComputePipeline(pipelineDesc);
         device.Release(shader);
@@ -1345,16 +1338,26 @@ bool ParticleGpuRuntime::Record(const rhi::ComputeCommandEncoder &encoder, GpuKe
     encoder.BindGroup(pipeline, 1, m_dataInterfaces ? m_dataInterfaces->group : m_emptyDataInterfaceGroup);
     encoder.BindGroup(pipeline, 2, m_vectorFields ? m_vectorFields->group : m_emptyDataInterfaceGroup);
     encoder.BindGroup(pipeline, 3, graphSpawnGroup);
-    encoder.BindGroup(pipeline, 4, m_emptyDataInterfaceGroup);
-    encoder.BindGroup(pipeline, 5, m_continuation ? m_continuation->Group() : m_emptyDataInterfaceGroup);
-    encoder.BindGroup(pipeline, 6, m_collisionEnabled ? m_collisionSceneGroup : m_emptyDataInterfaceGroup);
-    encoder.BindGroup(pipeline, 7, m_contacts ? m_contacts->Group() : m_emptyDataInterfaceGroup);
+    if (BindingLayoutCount() > 4) {
+        encoder.BindGroup(pipeline, 4, m_emptyDataInterfaceGroup);
+        encoder.BindGroup(pipeline, 5, m_continuation ? m_continuation->Group() : m_emptyDataInterfaceGroup);
+        if (BindingLayoutCount() > 6)
+            encoder.BindGroup(pipeline, 6, m_collisionEnabled ? m_collisionSceneGroup : m_emptyDataInterfaceGroup);
+        if (m_contacts)
+            encoder.BindGroup(pipeline, 7, m_contacts->Group());
+    }
     encoder.PushConstants(pipeline, sizeof(constants), &constants);
     if (indirectArguments.IsValid())
         encoder.DispatchIndirect(indirectArguments, indirectOffset);
     else
         encoder.Dispatch(GroupCount(invocationCount), 1, 1);
     return true;
+}
+
+uint32_t ParticleGpuRuntime::BindingLayoutCount() const noexcept
+{
+    // Preserve the shader set numbers while omitting unused trailing sets.
+    return m_contacts ? 8u : m_collisionEnabled ? 7u : m_continuation ? 6u : 4u;
 }
 
 uint32_t ParticleGpuRuntime::GroupCount(uint32_t invocationCount) noexcept

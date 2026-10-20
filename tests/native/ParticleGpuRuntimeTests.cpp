@@ -81,6 +81,7 @@ struct FakeDevice final : rhi::Device
     uint32_t groupCreates = 0;
     uint32_t graphicsPipelineCreates = 0;
     uint32_t pipelineCreates = 0;
+    uint32_t maxBindingLayouts = 8;
     uint32_t bufferReleases = 0;
     uint32_t textureReleases = 0;
     uint32_t samplerReleases = 0;
@@ -189,6 +190,8 @@ struct FakeDevice final : rhi::Device
 
     rhi::ComputePipelineHandle CreateComputePipeline(const rhi::ComputePipelineDesc &desc) override
     {
+        if (desc.bindingLayoutCount > maxBindingLayouts)
+            return {};
         assert(desc.computeShader.IsValid() &&
                (desc.bindingLayoutCount == 1 || desc.bindingLayoutCount == 2 || desc.bindingLayoutCount == 4 ||
                 desc.bindingLayoutCount == 5 || desc.bindingLayoutCount == 6 || desc.bindingLayoutCount == 7 ||
@@ -845,8 +848,8 @@ static std::shared_ptr<ShaderProgramArtifact> ViewBindingTestArtifact(bool bindl
     result->domain = ShaderProgramDomain::ParticleSprite;
     result->compatibilitySignature = 1;
     result->usesBindlessTextureABI = bindless;
-    result->properties = {{"texSampler", "Texture2D", "", "white", ShaderProgramStageMask::Fragment,
-                            false, std::nullopt, std::nullopt, 0, 0, 0}};
+    result->properties = {{"texSampler", "Texture2D", "", "white", ShaderProgramStageMask::Fragment, false,
+                           std::nullopt, std::nullopt, 0, 0, 0}};
     for (const auto target : {ShaderCompileTarget::Forward, ShaderCompileTarget::Motion}) {
         ShaderProgramArtifact::PassVariant variant;
         variant.target = target;
@@ -871,7 +874,8 @@ static void TestViewBindingRetirement(const std::string &kind)
     TestTextureSlots textureSlots;
     std::array<uint32_t, 5> words{0x07230203u, 0u, 0u, 0u, 0u};
     const particle::ShaderBytecode shader{words.data(), words.size()};
-    const auto instances = device.CreateBuffer({64 * sizeof(particle::GpuParticleRenderInstance), rhi::BufferUsageFlags::Storage});
+    const auto instances =
+        device.CreateBuffer({64 * sizeof(particle::GpuParticleRenderInstance), rhi::BufferUsageFlags::Storage});
     const auto indices = device.CreateBuffer({64 * sizeof(uint32_t), rhi::BufferUsageFlags::Storage});
     const auto indirect = device.CreateBuffer({16, rhi::BufferUsageFlags::Storage | rhi::BufferUsageFlags::Indirect});
     const auto control = device.CreateBuffer({16, rhi::BufferUsageFlags::Storage});
@@ -885,13 +889,14 @@ static void TestViewBindingRetirement(const std::string &kind)
     material->SetTextureGuid("texSampler", "white");
     const auto artifact = ViewBindingTestArtifact(bindless);
     GraphicsTrace trace;
-    const rhi::GraphicsCommandEncoder::Dispatch dispatch = {
-        &GraphicsTrace::BindPipeline, &GraphicsTrace::BindGroup, &GraphicsTrace::PushConstants,
-        &GraphicsTrace::Draw, &GraphicsTrace::DrawIndirect};
+    const rhi::GraphicsCommandEncoder::Dispatch dispatch = {&GraphicsTrace::BindPipeline, &GraphicsTrace::BindGroup,
+                                                            &GraphicsTrace::PushConstants, &GraphicsTrace::Draw,
+                                                            &GraphicsTrace::DrawIndirect};
     const rhi::GraphicsCommandEncoder encoder(&trace, &dispatch);
     MaterialPassPipelineDescriptor pass;
     pass.target = target;
-    pass.colorFormats = {target == ShaderCompileTarget::Motion ? rhi::PixelFormat::RG16SFloat : rhi::PixelFormat::RGBA8UNorm};
+    pass.colorFormats = {target == ShaderCompileTarget::Motion ? rhi::PixelFormat::RG16SFloat
+                                                               : rhi::PixelFormat::RGBA8UNorm};
     pass.depthFormat = rhi::PixelFormat::D32SFloat;
     pass.samples = rhi::SampleCount::One;
     const particle::GpuParticlePerViewBindings perView{{91000, 1}, {91001, 1}}; // borrowed caller-owned handles
@@ -914,8 +919,8 @@ static void TestViewBindingRetirement(const std::string &kind)
             assert(device.groupCreates - device.groupReleases == baseline + 1);
             const auto creates = device.groupCreates;
             assert(renderer.RecordDraw(encoder, pass, arguments, view, retained, {}, true, perView));
-            assert(device.groupCreates == creates); // Retiring one camera preserves another.
-            renderer.ReleaseViewBinding(transient); // Idempotent; never releases another view.
+            assert(device.groupCreates == creates);                    // Retiring one camera preserves another.
+            renderer.ReleaseViewBinding(transient);                    // Idempotent; never releases another view.
             renderer.ReleaseViewBinding(renderer.RenderIndexBuffer()); // Emitter binding is not view-owned.
             assert(device.groupCreates - device.groupReleases == baseline + 1);
             device.Release(transient);
@@ -977,7 +982,8 @@ static void TestViewBindingRetirement(const std::string &kind)
         subMesh.indexCount = subMesh.vertexCount = 3;
         mesh->SetData(std::move(vertices), {0, 1, 2}, {subMesh});
         particle::GpuMeshRendererDesc desc;
-        desc.vertexShader = desc.shadowFragmentShader = desc.pickingFragmentShader = desc.motionVertexShader = desc.motionFragmentShader = shader;
+        desc.vertexShader = desc.shadowFragmentShader = desc.pickingFragmentShader = desc.motionVertexShader =
+            desc.motionFragmentShader = shader;
         desc.instances = instances;
         desc.renderIndices = indices;
         desc.mesh = mesh;
@@ -1005,10 +1011,12 @@ static void TestViewBindingRetirement(const std::string &kind)
     device.Release(indices);
     device.Release(instances);
     const bool cleanup = device.buffers.size() == device.bufferReleases &&
-        device.textures.size() + device.textureViews.size() == device.textureReleases &&
-        device.samplers.size() == device.samplerReleases && device.shaderCreates == device.shaderReleases &&
-        device.layoutCreates == device.layoutReleases && device.groupCreates == device.groupReleases &&
-        device.graphicsPipelineCreates == device.graphicsPipelineReleases && device.pipelineCreates == device.pipelineReleases;
+                         device.textures.size() + device.textureViews.size() == device.textureReleases &&
+                         device.samplers.size() == device.samplerReleases &&
+                         device.shaderCreates == device.shaderReleases &&
+                         device.layoutCreates == device.layoutReleases && device.groupCreates == device.groupReleases &&
+                         device.graphicsPipelineCreates == device.graphicsPipelineReleases &&
+                         device.pipelineCreates == device.pipelineReleases;
     assert(cleanup);
     assert(inRange);
 }
@@ -2086,7 +2094,10 @@ int main()
     desc.kernels[static_cast<size_t>(particle::GpuKernelStage::UpdateRenderingFused)] = {};
 
     particle::ParticleGpuRuntime runtime;
+    device.maxBindingLayouts = 4;
     assert(runtime.Create(device, desc));
+    assert(std::all_of(device.computePipelineDescs.begin(), device.computePipelineDescs.end(),
+                       [](const auto &pipeline) { return pipeline.bindingLayoutCount == 4; }));
     assert(runtime.IsValid() && runtime.Capacity() == 1000 && runtime.StateStride() == 64 &&
            runtime.EventTypeCount() == 5 && !runtime.CollisionEnabled() && !runtime.SupportsFusedUpdateRendering() &&
            runtime.CounterBufferByteSize() == 112);
@@ -2217,9 +2228,8 @@ int main()
     assert(!runtime.RecordRenderReset(encoder, {}, true));
     assert(runtime.RecordRenderReset(encoder, graphSpawnGroup, true));
     assert(runtime.RecordRendering(encoder, 7, 9, graphSpawnGroup));
-    assert(trace.pipelines.size() == 5 && trace.groups.size() == 40 && trace.constants.size() == 5);
-    assert(trace.groupSets == std::vector<uint32_t>({0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3,
-                                                     4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7}));
+    assert(trace.pipelines.size() == 5 && trace.groups.size() == 20 && trace.constants.size() == 5);
+    assert(trace.groupSets == std::vector<uint32_t>({0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3}));
     assert(trace.dispatches == std::vector<uint32_t>({4, 4, 1}));
     assert(trace.indirectBuffers == std::vector<rhi::BufferHandle>({spawnMetadata, runtime.AliveDispatchBuffer()}));
     assert(trace.indirectOffsets == std::vector<uint64_t>({16u, 16u}));
