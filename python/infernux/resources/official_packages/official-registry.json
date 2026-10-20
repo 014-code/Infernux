@@ -51,7 +51,7 @@
     {
       "reference": "infernux/platform-windows",
       "name": "Infernux Windows Platform",
-      "version": "0.2.8",
+      "version": "0.2.9",
       "intro": "Build Infernux games for Windows with Vulkan.",
       "intros": {
         "zh-CN": "使用 Vulkan 将 Infernux 游戏构建到 Windows。"
@@ -62,7 +62,7 @@
       "repository": "https://github.com/InfernuxEngine/infernux_windows",
       "source": {
         "type": "url",
-        "location": "https://downloads.infernux-engine.com/plugins/infernux.platform-windows/0.2.8/infernux.platform-windows.inxpkg"
+        "location": "https://downloads.infernux-engine.com/plugins/infernux.platform-windows/0.2.9/infernux.platform-windows.inxpkg"
       },
       "category": "platform_build",
       "targets": [

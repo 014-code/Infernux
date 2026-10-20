@@ -2,11 +2,11 @@
 
 #define IDI_INFERNUX_PLAYER 101
 
-IDI_INFERNUX_PLAYER ICON "../../../python/infernux/resources/icons/icon.ico"
+IDI_INFERNUX_PLAYER ICON "@CMAKE_SOURCE_DIR@/python/infernux/resources/icons/icon.ico"
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 0,4,2,0
- PRODUCTVERSION 0,4,2,0
+ FILEVERSION @INFERNUX_PLAYER_VERSION_COMMAS@,0
+ PRODUCTVERSION @INFERNUX_PLAYER_VERSION_COMMAS@,0
  FILEFLAGSMASK 0x3fL
  FILEFLAGS 0x0L
  FILEOS VOS_NT_WINDOWS32
@@ -19,11 +19,11 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "Infernux"
             VALUE "FileDescription", "Infernux PlayerHost"
-            VALUE "FileVersion", "0.4.2.0"
+            VALUE "FileVersion", "@INFERNUX_PLAYER_VERSION@.0"
             VALUE "InternalName", "InfernuxPlayerHost"
             VALUE "OriginalFilename", "InfernuxPlayerHost.exe"
             VALUE "ProductName", "Infernux"
-            VALUE "ProductVersion", "0.4.2.0"
+            VALUE "ProductVersion", "@INFERNUX_PLAYER_VERSION@.0"
         END
     END
     BLOCK "VarFileInfo"

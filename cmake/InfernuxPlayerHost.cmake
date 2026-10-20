@@ -14,8 +14,20 @@ add_executable(InfernuxPlayerHost
     cpp/apps/player/PlayerHost.h
 )
 if(WIN32)
+    set(_player_version_file "${CMAKE_SOURCE_DIR}/python/infernux/version.py")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_player_version_file}")
+    execute_process(
+        COMMAND "${Python3_EXECUTABLE}" -c
+            "import runpy; print(runpy.run_path(r'${_player_version_file}')['ENGINE_VERSION'])"
+        OUTPUT_VARIABLE INFERNUX_PLAYER_VERSION
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        COMMAND_ERROR_IS_FATAL ANY
+    )
+    string(REPLACE "." "," INFERNUX_PLAYER_VERSION_COMMAS "${INFERNUX_PLAYER_VERSION}")
+    configure_file(cpp/apps/player/InfernuxPlayerLauncher.rc
+        "${CMAKE_BINARY_DIR}/generated/InfernuxPlayerLauncher.rc" @ONLY)
     target_sources(InfernuxPlayerHost PRIVATE
-        cpp/apps/player/InfernuxPlayerLauncher.rc
+        "${CMAKE_BINARY_DIR}/generated/InfernuxPlayerLauncher.rc"
         cpp/apps/player/InfernuxPlayerLauncher.manifest
     )
     set_target_properties(InfernuxPlayerHost PROPERTIES WIN32_EXECUTABLE TRUE)

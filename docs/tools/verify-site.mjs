@@ -57,18 +57,11 @@ else if (currentSnapshot.release !== currentVersion) {
 
 const readmeVersionContracts = [
     ["README.md", `version-${currentVersion}-orange.svg`],
-    ["README.md", `**${currentVersion}**`],
     ["README.md", `version = {${currentVersion}}`],
     ["README-zh.md", `version-${currentVersion}-orange.svg`],
-    ["README-zh.md", `**${currentVersion}**`],
     ["README-zh.md", `version = {${currentVersion}}`],
 ];
-const packageVersionContracts = [
-    ["cpp/apps/player/InfernuxPlayerLauncher.rc", `"${packageVersion}.0"`],
-    ["cpp/apps/player/InfernuxPlayerLauncher.rc", `FILEVERSION ${packageVersion.replaceAll(".", ",")},0`],
-    ["cpp/apps/player/InfernuxPlayerLauncher.rc", `PRODUCTVERSION ${packageVersion.replaceAll(".", ",")},0`],
-];
-for (const [relative, token] of [...readmeVersionContracts, ...packageVersionContracts]) {
+for (const [relative, token] of readmeVersionContracts) {
     const content = await readFile(path.resolve(relative), "utf8");
     if (!content.includes(token)) fail(`${relative}: missing version contract '${token}'`);
 }

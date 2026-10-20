@@ -99,7 +99,8 @@ def main():
     run("node", "docs/tools/optimize-static-site.mjs")
     run("node", "docs/tools/build-sitemap.mjs")
     run("node", "docs/tools/build-service-worker.mjs")
-    run("node", "docs/tools/verify-site.mjs")
+    run("node", "docs/tools/check-site-information.mjs")
+    run("node", "docs/tools/check-readme.mjs")
     run("node", "docs/tools/check-static-budget.mjs")
 
 
