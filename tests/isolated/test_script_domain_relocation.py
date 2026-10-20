@@ -33,7 +33,7 @@ def exercise(project, origin, suffix):
     from infernux.engine.engine import Engine
     from infernux.engine.preferences_store import PreferencesStore
     from infernux.engine.project_context import get_script_module_name
-    from infernux.engine.resources_manager import ResourcesManager, _AssetImportNotReady
+    from infernux.engine.resources_manager import ResourcesManager
     from infernux.engine.runtime_dispatch import current_runtime_epoch
     from infernux.engine.runtime_scene_transaction import SceneDocumentTransaction
     from infernux.lib import LogLevel, RuntimeMode, SceneManager
@@ -85,10 +85,7 @@ def exercise(project, origin, suffix):
             handler.process_script_worker()
 
         source.rename(target)
-        if suffix == ".mat":
-            with pytest.raises(_AssetImportNotReady):
-                handler._commit_moved(str(source), str(target))
-        elif origin.startswith("watcher"):
+        if origin.startswith("watcher"):
             handler.on_moved(FileMovedEvent(str(source), str(target)))
             drain()
         elif origin == "internal":
@@ -120,7 +117,7 @@ def exercise(project, origin, suffix):
             missing = reopened.find("Witness").get_py_components()[0]
             assert missing._is_broken and missing._script_guid == guid
             assert missing._get_type_guid() == type_guid
-            if suffix == ".txt":
+            if suffix in (".txt", ".mat"):
                 target.rename(source)
                 handler.on_moved(FileMovedEvent(str(target), str(source)))
                 drain()
