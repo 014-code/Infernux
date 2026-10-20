@@ -412,7 +412,7 @@ def wire_project_callbacks(bs: EditorBootstrap) -> None:
             },
         ).accepted
 
-    def _open_asset(kind, file_path):
+    def _open_asset_impl(kind, file_path):
         kind = str(kind or "").strip()
         file_path = str(file_path or "").strip()
         if not kind or not file_path:
@@ -450,6 +450,19 @@ def wire_project_callbacks(bs: EditorBootstrap) -> None:
             document_kind
             and _open_project_document(file_path, document_kind)
         )
+
+    def _open_asset(kind, file_path):
+        from infernux.engine.ui.asset_load_errors import AssetLoadErrors, report_asset_load_error
+
+        errors = AssetLoadErrors.instance()
+        if errors is not None and errors.error(file_path):
+            errors.show(file_path)
+            return False
+        try:
+            return _open_asset_impl(kind, file_path)
+        except (OSError, ValueError, TypeError, KeyError, RuntimeError) as exc:
+            report_asset_load_error(file_path, str(exc))
+            return False
 
     from infernux.engine.ui.project_delete_confirmation import (
         ProjectDeleteConfirmationCoordinator,

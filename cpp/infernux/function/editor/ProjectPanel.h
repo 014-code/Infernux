@@ -143,6 +143,7 @@ class ProjectPanel : public EditorPanel
         uint64_t mtimeNs = 0;
         int slotIndex = -1; // for SubMaterial
         ResourceType resourceType = ResourceType::DefaultText;
+        bool importFailed = false;
     };
 
     struct SearchIndexEntry

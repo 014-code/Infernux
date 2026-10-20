@@ -1358,6 +1358,11 @@ class BootstrapWiringMixin:
         _dirty_panels = DirtyPanelConfirmationCoordinator.instance()
         _project_delete = ProjectDeleteConfirmationCoordinator.instance()
         _external_conflicts = ExternalDocumentConflictCoordinator.instance()
+        from infernux.engine.ui.asset_load_errors import AssetLoadErrors
+
+        _asset_load_errors = AssetLoadErrors(
+            engine.get_asset_database(), self.interaction_core.project_assets
+        )
         from infernux.engine.ui.command_palette import CommandPalettePresenter
 
         self._command_palette_presenter = CommandPalettePresenter(
@@ -1370,6 +1375,7 @@ class BootstrapWiringMixin:
         class _EditorGlobalOverlays(InxGUIRenderable):
             def on_render(self, ctx: InxGUIContext):
                 _external_conflicts.poll()
+                _asset_load_errors.poll()
                 _modal_portal.on_render(ctx)
 
         self._editor_global_overlays = _EditorGlobalOverlays()

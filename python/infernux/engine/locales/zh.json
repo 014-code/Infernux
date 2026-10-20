@@ -1692,5 +1692,7 @@
   "command.graph.reset_zoom": "重置缩放",
   "command.graph.add_node": "添加节点",
   "command.graph.create_node": "创建节点",
-  "command.graph.workspace.add": "添加项目"
+  "command.graph.workspace.add": "添加项目",
+  "asset.load_error_title": "资产无法加载",
+  "asset.load_error_message": "文件可能已损坏或格式不正确。引擎未修改该文件。请选择删除，或取消以保留原文件。"
 }

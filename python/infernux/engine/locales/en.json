@@ -1692,5 +1692,7 @@
   "command.graph.reset_zoom": "Reset Zoom",
   "command.graph.add_node": "Add Node",
   "command.graph.create_node": "Create Node",
-  "command.graph.workspace.add": "Add Item"
+  "command.graph.workspace.add": "Add Item",
+  "asset.load_error_title": "Asset cannot be loaded",
+  "asset.load_error_message": "The file may be damaged or use an invalid format. It has not been changed. Delete it, or cancel to keep it."
 }

@@ -1,4 +1,5 @@
 from __future__ import annotations
+import pytest
 from infernux.engine.interaction import (
     ModalService,
 )
@@ -69,13 +70,14 @@ class _ProjectDeleteSemanticContext:
         self.closed = True
 
 
-def test_project_delete_modal_publishes_semantics_and_cancel_preserves_asset(tmp_path):
+@pytest.mark.parametrize("load_error", ["", "Assets/Checkpoint.prefab: invalid document"])
+def test_project_delete_modal_publishes_semantics_and_cancel_preserves_asset(tmp_path, load_error):
     asset = tmp_path / "Checkpoint.prefab"
     asset.write_text("prefab", encoding="utf-8")
     deleted: list[list[str]] = []
     coordinator = _project_delete_confirmation()
 
-    assert coordinator.request([str(asset)], lambda paths: deleted.append(paths) or True)
+    assert coordinator.request([str(asset)], lambda paths: deleted.append(paths) or True, load_error=load_error)
     ctx = _ProjectDeleteSemanticContext()
     coordinator.render(ctx)
 
@@ -133,6 +135,47 @@ def test_project_delete_confirmation_rejects_reentrant_double_submit(tmp_path):
     assert calls == 1
     assert coordinator.is_active is False
     assert ctx.closed is True
+
+
+def test_asset_error_cancel_does_not_repeat_until_user_reopens(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    from infernux.engine.ui.asset_load_errors import AssetLoadErrors
+    from infernux.engine.path_utils import path_key
+
+    asset = tmp_path / "Damaged.mat"
+    damaged = b"{ invalid material"
+    asset.write_bytes(damaged)
+    failure = {"guid": "damaged", "path": str(asset), "error": "Invalid material document",
+               "modified_ns": asset.stat().st_mtime_ns, "size": len(damaged)}
+    database = SimpleNamespace(project_root=str(tmp_path), query_generation=1,
+                               get_import_failures=lambda: [failure],
+                               get_guid_from_path=lambda path: "damaged",
+                               report_asset_load_failure=lambda guid, error: None)
+    coordinator = _project_delete_confirmation()
+    monkeypatch.setattr(ProjectDeleteConfirmationCoordinator, "instance", classmethod(lambda cls: coordinator))
+    monkeypatch.setattr(AssetLoadErrors, "_instance", None)
+    deleted = []
+    errors = AssetLoadErrors(database, SimpleNamespace(delete=lambda paths: deleted.extend(paths) or True))
+    errors.poll()
+    assert coordinator.is_active
+    assert coordinator._load_error == "Damaged.mat\nInvalid material document"
+    ctx = _ProjectDeleteSemanticContext()
+    coordinator.render(ctx)
+    next(callback for label, callback in ctx.buttons.items() if label.endswith("##cancel"))()
+    errors.poll()
+    assert not coordinator.is_active
+    assert asset.read_bytes() == damaged
+    assert deleted == []
+    assert errors.errors[path_key(str(asset))]["error"] == failure["error"]
+
+    errors.report(str(asset), failure["error"])
+    errors.poll()
+    assert coordinator.is_active
+    ctx = _ProjectDeleteSemanticContext()
+    coordinator.render(ctx)
+    next(callback for label, callback in ctx.buttons.items() if label.endswith("##confirm"))()
+    assert deleted == [str(asset.resolve())]
+    assert not coordinator.is_active
 
 
 def test_project_script_delete_uses_meta_guid_when_database_path_lookup_misses(monkeypatch, tmp_path):

@@ -65,7 +65,7 @@ def test_scene_entry_points_reject_invalid_disk_fields_and_publish_reason(
         defaults = []
         monkeypatch.setattr(manager, "_do_new_scene", lambda: defaults.append(True))
         manager.load_last_scene_or_default()
-        assert defaults == [True]
+        assert defaults == []
     elif entry == "deferred":
         assert manager.open_scene(str(path))
         assert manager.last_scene_load["status"] == "pending"

@@ -39,6 +39,7 @@ class ProjectDeleteConfirmationCoordinator:
         self._delete_handler: Optional[Callable[[list[str]], bool]] = None
         self._requested = False
         self._error = ""
+        self._load_error = ""
         self._confirming = False
         self._modals.register(
             self.MODAL_ID,
@@ -74,6 +75,8 @@ class ProjectDeleteConfirmationCoordinator:
         self,
         paths: Iterable[str],
         delete_handler: Callable[[list[str]], bool],
+        *,
+        load_error: str = "",
     ) -> bool:
         if self.is_active or not callable(delete_handler):
             return False
@@ -94,31 +97,37 @@ class ProjectDeleteConfirmationCoordinator:
         self._delete_handler = delete_handler
         self._requested = True
         self._error = ""
+        self._load_error = load_error
         return True
 
     def render(self, ctx) -> None:
         if not self.is_active:
             return
 
-        popup_id = f"{t('project.delete_confirm_title')}###project_delete_confirm"
+        title = t("asset.load_error_title") if self._load_error else t("project.delete_confirm_title")
+        popup_id = f"{title}###project_delete_confirm"
         request_open = self._requested
         self._requested = False
         if not begin_editor_modal(
             ctx,
             popup_id=popup_id,
-            title=t("project.delete_confirm_title"),
+            title=title,
             semantic_id="project.delete.dialog",
             request_open=request_open,
         ):
             return
 
-        if len(self._paths) == 1:
+        if self._load_error:
+            ctx.text_wrapped(t("asset.load_error_message"))
+            ctx.text_wrapped(self._load_error)
+        elif len(self._paths) == 1:
             message = t("project.delete_confirm_msg").format(
                 name=os.path.basename(self._paths[0])
             )
+            ctx.text_wrapped(message)
         else:
             message = t("project.delete_confirm_multi_msg").format(count=len(self._paths))
-        ctx.text_wrapped(message)
+            ctx.text_wrapped(message)
         if self._error:
             ctx.spacing()
             ctx.text_wrapped(t(self._error))
@@ -169,6 +178,7 @@ class ProjectDeleteConfirmationCoordinator:
         self._delete_handler = None
         self._requested = False
         self._error = ""
+        self._load_error = ""
         self._confirming = False
         self._modals.deactivate(self.MODAL_ID)
 

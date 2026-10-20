@@ -12,6 +12,7 @@
 - Reduce Python lifecycle dispatch, editor status synchronization, change-journal traversal, native pose submissions and allocation overhead. Leave automatic garbage collection in control of ordinary frame-loop collection.
 - Complete declared startup work, material preparation and GPU uploads before revealing gameplay. Loading and GPU preparation no longer advance gameplay clocks or consume the first simulation delta.
 - Show independent Play progress only in the editor, using the same presentation as build progress; packaged Players do not open the editor progress window.
+- Keep the editor running when an asset cannot be loaded, including a damaged initial scene. Failed assets use a generic file icon and a Delete/Cancel dialog; cancellation preserves the original file without attempting repairs or restoring cached content over it.
 - Remove the experimental Cython packaging path. Engine wheels and Player builds use the supported Python/native architecture without an additional Cython build dependency.
 
 ### Animation and Authoring

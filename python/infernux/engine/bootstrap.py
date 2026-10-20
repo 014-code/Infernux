@@ -627,4 +627,5 @@ class EditorBootstrap(BootstrapPanelsMixin, BootstrapSelectionMixin, BootstrapWi
     def _load_initial_scene(self):
         import infernux.renderstack  # noqa: F401 — ensure RenderStack is discoverable
         self.scene_file_manager.load_last_scene_or_default()
-        self.scene_file_manager.restore_session_state(_panel_state.get("scene_session"))
+        if self.scene_file_manager.last_scene_load["status"] != "failed":
+            self.scene_file_manager.restore_session_state(_panel_state.get("scene_session"))

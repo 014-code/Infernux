@@ -52,6 +52,7 @@ from .inspector_utils import max_label_w, field_label, render_apply_revert
 from .theme import Theme, ImGuiCol
 from .asset_execution_layer import AssetAccessMode, get_asset_execution_layer
 from .asset_resource_preview import render_resource_preview_rect
+from .asset_load_errors import AssetLoadErrors, report_asset_load_error
 from .imgui_keys import KEY_LEFT_CTRL, KEY_RIGHT_CTRL
 from infernux.engine.texture_task_bridge import texture_stamp, query_or_schedule_texture
 from infernux.engine.path_utils import relative_path, resolved_path, same_path
@@ -623,6 +624,7 @@ class _State:
         self.category: str = self.category if keep_view else ""
         self.meta: Optional[dict] = None
         self.settings: Any = None
+        self.failed_path = ""
         self.disk_settings: Any = None   # snapshot for dirty check (read-only)
         self.document_id: str = ""
         self.import_controller: Optional[_ImportSettingsController] = None
@@ -633,15 +635,20 @@ class _State:
 
     def load(self, file_path: str, category: str,
              cat_def: AssetCategoryDef) -> bool:
+        errors = AssetLoadErrors.instance()
+        failed = errors.error(file_path) if errors is not None else ""
+        if failed and self.failed_path == file_path:
+            return False
         # Already loaded — just refresh.
-        if (self.file_path == file_path
+        if (not failed and self.file_path == file_path
                 and self.category == category
                 and self.settings is not None):
             if cat_def.refresh_fn:
                 cat_def.refresh_fn(self)
             return True
         # Fresh load. Return live preview ownership before replacing state.
-        if self.resource_controller is not None and self.resource_controller.autosave_on_close:
+        if (self.resource_controller is not None and self.resource_controller.autosave_on_close
+                and not (errors is not None and errors.error(self.file_path))):
             self.resource_controller.flush_autosave(force=True)
         if self.file_path and self.category in {"texture", "material"}:
             from .asset_resource_preview import (
@@ -656,12 +663,22 @@ class _State:
                 if not AssetManager.has_pending_local_revision(self.file_path):
                     invalidate_live_material_preview(self.file_path)
         self.reset(keep_view=self.category == category and same_path(self.file_path, file_path))
+        if failed:
+            self.failed_path = file_path
+            errors.show(file_path)
+            return False
         self.file_path = file_path
         self.category = category
-        self.meta = (read_asset_metadata(file_path) if any(token in file_path for token in ("::subtex:", "::subanim:"))
-                     else read_meta_file(_meta_host_path_for_virtual_asset(file_path)))
-        result = cat_def.load_fn(file_path)
+        try:
+            self.meta = (read_asset_metadata(file_path) if any(token in file_path for token in ("::subtex:", "::subanim:"))
+                         else read_meta_file(_meta_host_path_for_virtual_asset(file_path)))
+            result = cat_def.load_fn(file_path)
+        except (OSError, ValueError, TypeError, KeyError, RuntimeError) as exc:
+            report_asset_load_error(file_path, str(exc))
+            return False
         if result is None:
+            if category == "material":
+                report_asset_load_error(file_path, "The material document could not be loaded")
             return False
         settings, extra = result
         if settings is None:
@@ -2461,6 +2478,9 @@ def render_asset_inspector(ctx: InxGUIContext, panel,
     if not _state.load(file_path, category, cat_def):
         ctx.label(t("asset.failed_load").format(name=t(cat_def.display_name)))
         ctx.label(file_path)
+        errors = AssetLoadErrors.instance()
+        if errors is not None and errors.error(file_path):
+            ctx.text_wrapped(errors.error(file_path))
         return
 
     _state.exec_layer = get_asset_execution_layer(

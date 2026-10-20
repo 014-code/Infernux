@@ -718,7 +718,7 @@ void AssetDatabase::PublishQuerySnapshot(bool includeCatalog)
 {
     const auto previous = LoadQuerySnapshot();
     ExpandModelSubAssets(m_guidToPath, m_pathToGuid, m_metas, m_fileStates, m_importResults);
-    InstallQuerySnapshot(BuildQuerySnapshotArtifact(m_guidToPath, m_pathToGuid, m_metas, m_fileStates,
+    InstallQuerySnapshot(BuildQuerySnapshotArtifact(m_guidToPath, m_pathToGuid, m_metas, m_fileStates, m_importResults,
                                                     m_queryGeneration + 1, includeCatalog));
     PublishModelSubAssetEvents(previous);
 }
@@ -953,6 +953,7 @@ void AssetDatabase::PublishQuerySnapshotForPaths(const std::vector<std::string> 
             if (m_guidToPath.find(oldGuid) == m_guidToPath.end()) {
                 snapshot->guidToPath.erase(oldGuid);
                 snapshot->metas.erase(oldGuid);
+                snapshot->importErrors.erase(oldGuid);
             }
         }
 
@@ -968,6 +969,10 @@ void AssetDatabase::PublishQuerySnapshotForPaths(const std::vector<std::string> 
         snapshot->pathToGuid[normalizedPath] = guid;
         snapshot->guidToPath[guid] = currentPath->second;
         snapshot->metas[guid] = metadata->second;
+        snapshot->importErrors.erase(guid);
+        const auto importResult = m_importResults.find(guid);
+        if (importResult != m_importResults.end() && !importResult->second.succeeded)
+            snapshot->importErrors[guid] = importResult->second.error;
         if (metadata->second->HasKey("model_textures") || metadata->second->HasKey("model_animations"))
             modelOwners.insert(guid);
     }
@@ -1008,6 +1013,9 @@ void AssetDatabase::PublishQuerySnapshotForPaths(const std::vector<std::string> 
         }
         entry.resourceType = metadata->second->GetResourceType();
         entry.source = fileState->second.source;
+        const auto importError = snapshot->importErrors.find(guid);
+        if (importError != snapshot->importErrors.end())
+            entry.importError = importError->second;
         const size_t separator = normalizedPath.find_last_of('/');
         const std::string parent = separator == std::string::npos ? std::string{} : normalizedPath.substr(0, separator);
         catalog->m_directories[parent].push_back(std::move(entry));
@@ -1112,7 +1120,7 @@ void AssetDatabase::InitializeRuntime(const std::string &projectRoot)
     m_ownerThread = std::this_thread::get_id();
     m_initialized = true;
     InstallQuerySnapshot(
-        BuildQuerySnapshotArtifact(m_guidToPath, m_pathToGuid, m_metas, m_fileStates, m_queryGeneration + 1, false));
+        BuildQuerySnapshotArtifact(m_guidToPath, m_pathToGuid, m_metas, m_fileStates, m_importResults, m_queryGeneration + 1, false));
 }
 
 void AssetDatabase::AddScanRoot(const std::string &path)
@@ -1205,7 +1213,7 @@ bool AssetDatabase::RestoreCachedCatalog()
 
     const uint64_t queryGeneration = m_queryGeneration + 1;
     auto query = BuildQuerySnapshotArtifact(restored.guidToPath, restored.pathToGuid, restored.metas,
-                                            restored.fileStates, queryGeneration);
+                                            restored.fileStates, restored.importResults, queryGeneration);
     reportPhase("build_query_snapshot");
     const uint64_t dependencyGeneration = AssetDependencyGraph::Instance().GetAssetGeneration() + 1;
     auto dependencySnapshot = AssetDependencyGraph::BuildAssetSnapshot(dependencies, dependencyGeneration);
@@ -1395,7 +1403,7 @@ void AssetDatabase::InstallRuntimeAssetCatalog(const std::string &catalogPath, b
     // Player has no Project/FileManager panel. Keep GUID/path/metadata queries,
     // but do not expand source-model children over cooked artifact identities.
     InstallQuerySnapshot(
-        BuildQuerySnapshotArtifact(m_guidToPath, m_pathToGuid, m_metas, m_fileStates, m_queryGeneration + 1, false));
+        BuildQuerySnapshotArtifact(m_guidToPath, m_pathToGuid, m_metas, m_fileStates, m_importResults, m_queryGeneration + 1, false));
     reportPhase("publish_snapshot");
     INXLOG_INFO("AssetDatabase: installed ", entries->size(), " cooked Player asset identities");
 }
@@ -2407,7 +2415,8 @@ std::shared_ptr<AssetDatabase::QuerySnapshot> AssetDatabase::BuildQuerySnapshotA
     const std::unordered_map<std::string, std::string> &guidToPath,
     const std::unordered_map<std::string, std::string> &pathToGuid,
     const std::unordered_map<std::string, std::shared_ptr<InxResourceMeta>> &metas,
-    const std::unordered_map<std::string, CachedFileState> &fileStates, uint64_t generation, bool includeCatalog)
+    const std::unordered_map<std::string, CachedFileState> &fileStates,
+    const std::unordered_map<std::string, ImportResultState> &importResults, uint64_t generation, bool includeCatalog)
 {
     auto snapshot = std::make_shared<QuerySnapshot>();
     snapshot->generation = generation;
@@ -2420,6 +2429,9 @@ std::shared_ptr<AssetDatabase::QuerySnapshot> AssetDatabase::BuildQuerySnapshotA
         snapshot->metas.emplace(guid, metadata);
     }
     BuildShaderPathIndex(*snapshot);
+    for (const auto &[guid, result] : importResults)
+        if (!result.succeeded)
+            snapshot->importErrors.emplace(guid, result.error);
 
     auto catalog = std::make_shared<AssetCatalogSnapshot>();
     catalog->m_generation = generation;
@@ -2452,6 +2464,9 @@ std::shared_ptr<AssetDatabase::QuerySnapshot> AssetDatabase::BuildQuerySnapshotA
         }
         entry.resourceType = metadata->second->GetResourceType();
         entry.source = fileState->second.source;
+        const auto importError = snapshot->importErrors.find(guid);
+        if (importError != snapshot->importErrors.end())
+            entry.importError = importError->second;
         const size_t separator = normalizedPath.find_last_of('/');
         const std::string parent = separator == std::string::npos ? std::string{} : normalizedPath.substr(0, separator);
         catalog->m_directories[parent].push_back(std::move(entry));
@@ -2523,7 +2538,7 @@ void AssetDatabase::BeginPendingIndexBuild(const std::shared_ptr<PendingRefreshC
             const auto queryStarted = std::chrono::steady_clock::now();
             state->builtQuerySnapshot = BuildQuerySnapshotArtifact(
                 state->stagedWorkingSet.guidToPath, state->stagedWorkingSet.pathToGuid, state->stagedWorkingSet.metas,
-                state->stagedWorkingSet.fileStates, queryGeneration);
+                state->stagedWorkingSet.fileStates, state->stagedWorkingSet.importResults, queryGeneration);
             state->queryBuildMilliseconds =
                 std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - queryStarted).count();
 
@@ -2757,6 +2772,8 @@ AssetMutationResult AssetDatabase::ReimportAsset(const std::string &path, const 
                      &candidate.expectedMetadata.value())) {
         result.errorCode = AssetMutationErrorCode::ImportFailed;
         result.error = m_importResults.at(result.guid).error;
+        ReportAssetLoadFailure(result.guid, result.error);
+        result.queryGeneration = GetQueryGeneration();
         return result;
     }
     FinishReimport(result);
@@ -3328,6 +3345,50 @@ std::vector<AssetCatalogEntry> AssetDatabase::GetDirectoryCatalog(const std::str
     if (!catalog)
         return {};
     return catalog->GetDirectory(LexicalFilesystemPathKey(directory));
+}
+
+std::string AssetDatabase::GetImportError(const std::string &guid) const
+{
+    const auto snapshot = LoadQuerySnapshot();
+    const auto found = snapshot->importErrors.find(guid);
+    return found == snapshot->importErrors.end() ? std::string{} : found->second;
+}
+
+std::vector<AssetCatalogEntry> AssetDatabase::GetImportFailures() const
+{
+    const auto snapshot = LoadQuerySnapshot();
+    std::vector<AssetCatalogEntry> failures;
+    if (snapshot->importErrors.empty())
+        return failures;
+    for (const auto &[directory, entries] : snapshot->catalog->GetDirectories()) {
+        (void)directory;
+        for (const auto &entry : entries)
+            if (!entry.importError.empty())
+                failures.push_back(entry);
+    }
+    std::sort(failures.begin(), failures.end(), [](const auto &left, const auto &right) {
+        return left.path < right.path;
+    });
+    return failures;
+}
+
+void AssetDatabase::ReportAssetLoadFailure(const std::string &guid, const std::string &error)
+{
+    AssertMutationThread("ReportAssetLoadFailure");
+    const auto path = m_guidToPath.find(guid);
+    if (path == m_guidToPath.end() || error.empty())
+        return;
+    if (GetImportError(guid) == error)
+        return;
+    m_importResults[guid] = {false, error};
+    if (const auto indexed = m_assetIndex.Find(FilesystemPathKey(path->second))) {
+        auto entry = *indexed;
+        entry.importSucceeded = false;
+        entry.importError = error;
+        m_assetIndex.Upsert(std::move(entry));
+        m_assetIndexDirty = true;
+    }
+    PublishQuerySnapshot();
 }
 
 uint64_t AssetDatabase::GetQueryGeneration() const

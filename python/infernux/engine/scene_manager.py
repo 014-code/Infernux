@@ -640,7 +640,12 @@ class SceneFileManager(ScenePrefabMixin, SceneSaveMixin):
         self._last_scene_load = {
             "status": "failed", "path": resolved_path(path), "error": str(error),
         }
-        Debug.log_error(f"Scene load failed for '{path}': {error}")
+        if path:
+            from infernux.engine.ui.asset_load_errors import report_asset_load_error
+
+            report_asset_load_error(path, error)
+        else:
+            Debug.log_error(f"Scene load failed: {error}")
 
     def mark_dirty(self):
         """Record one real scene-content mutation."""
@@ -1371,8 +1376,7 @@ class SceneFileManager(ScenePrefabMixin, SceneSaveMixin):
         if last_scene and os.path.isfile(last_scene):
             if self._do_open_scene(last_scene, record_navigation=False):
                 self._remember_last_scene(last_scene)
-                return
-            Debug.log_warning(f"Last scene file missing or invalid: {last_scene}")
+            return
 
         # A new checkout has no local navigation state. Its authored build
         # scene order supplies the deterministic initial scene.
@@ -1383,9 +1387,10 @@ class SceneFileManager(ScenePrefabMixin, SceneSaveMixin):
             guids = load_build_settings_for_build(root)["scene_guids"]
             if guids:
                 path = self._scene_path_for_guid(guids[0])
-                if not path or not self._do_open_scene(path, record_navigation=False):
-                    raise RuntimeError(f"Cannot open the project's initial scene GUID {guids[0]}")
-                self._remember_last_scene(path)
+                if not path:
+                    self._scene_load_failed("", "The project's initial scene asset is missing")
+                elif self._do_open_scene(path, record_navigation=False):
+                    self._remember_last_scene(path)
                 return
 
         # Fallback to default (immediate — no rendering loop yet)

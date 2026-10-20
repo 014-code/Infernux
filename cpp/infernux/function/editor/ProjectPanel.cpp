@@ -1031,6 +1031,7 @@ ProjectPanel::DirSnapshot *ProjectPanel::GetDirSnapshot(const std::string &path)
             item.name = asset.name;
             item.path = asset.path;
             item.resourceType = asset.resourceType;
+            item.importFailed = !asset.importError.empty();
             item.ext = infernux::FromFsPath(fs::u8path(asset.path).extension());
             for (char &character : item.ext)
                 character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
@@ -1111,6 +1112,8 @@ std::string GetOptionalMetaString(const infernux::InxResourceMeta &meta, const s
 
 void ProjectPanel::AppendModelSubAssets(std::vector<FileItem> &out, AssetDatabase *adb, const FileItem &modelItem)
 {
+    if (modelItem.importFailed)
+        return;
     const std::string &modelPath = modelItem.path;
     std::shared_ptr<const infernux::InxResourceMeta> meta;
     if (adb)
@@ -1664,6 +1667,10 @@ void ProjectPanel::EnsureTypeIconsLoaded()
 
 uint64_t ProjectPanel::GetTypeIconId(const FileItem &item) const
 {
+    if (item.importFailed) {
+        const auto icon = m_typeIconCache.find("file");
+        return icon == m_typeIconCache.end() ? 0 : icon->second;
+    }
     const std::string *key = nullptr;
     auto &iconMap = GetIconMap();
 
@@ -2461,6 +2468,7 @@ void ProjectPanel::ScheduleSearch(const EditorSearchToken &token, uint64_t gener
                                     if (!item.ext.empty() && item.ext.front() == '.')
                                         item.ext.erase(item.ext.begin());
                                     item.resourceType = entry.resourceType;
+                                    item.importFailed = !entry.importError.empty();
 
                                     SearchIndexEntry indexed;
                                     indexed.item = std::move(item);
@@ -2950,7 +2958,7 @@ void ProjectPanel::RenderFileGrid(InxGUIContext *ctx)
 
             // Expanded model on this row: draw the left portion of the inline strip so it
             // bridges into the first sub-asset cell on the same row.
-            const bool isModelFile = (item.type == FileItem::File && IsModelExt(item.ext));
+            const bool isModelFile = (item.type == FileItem::File && !item.importFailed && IsModelExt(item.ext));
             if (isModelFile && m_modelTreeProjection.IsExpanded(item.path)) {
                 const bool nextIsSubSameRow = (i + 1 < itemCount) && isSubAssetItem((*items)[i + 1]) &&
                                               (*items)[i + 1].parentPath == item.path && ((i + 1) % cols) != 0;
@@ -2996,7 +3004,9 @@ void ProjectPanel::RenderFileGrid(InxGUIContext *ctx)
             // ── Resolve display texture (inline for speed) ──
             uint64_t displayTexId = 0;
             bool isUiPrefab = false;
-            if (item.type == FileItem::SubMesh) {
+            if (item.importFailed) {
+                displayTexId = GetTypeIconId(item);
+            } else if (item.type == FileItem::SubMesh) {
                 if (item.path.find(infernux::ModelMeshToken) != std::string::npos)
                     displayTexId = GetModelThumbnail(item.path);
                 if (displayTexId == 0)

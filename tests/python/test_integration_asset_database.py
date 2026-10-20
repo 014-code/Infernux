@@ -30,6 +30,82 @@ def _enable_mesh_read_write(database, source: Path) -> None:
     assert result, result.error
 
 
+@pytest.mark.parametrize("suffix", [".mat", ".scene", ".ppm"])
+def test_failed_asset_load_is_visible_without_rewriting_source(engine, scene, tmp_path, monkeypatch, suffix):
+    from infernux.engine.scene_authoring import encode_scene_document
+
+    database = engine.get_asset_database()
+    valid = {
+        ".mat": InxMaterial.create_default_lit().serialize().encode(),
+        ".scene": json.dumps(encode_scene_document(scene.serialize_document())).encode(),
+        ".ppm": b"P3\n1 1\n255\n255 0 0\n",
+    }[suffix]
+    path = tmp_path / f"unavailable{suffix}"
+    path.write_bytes(valid)
+    imported = database.import_asset(str(path))
+    assert imported, imported.error
+    guid = imported.guid
+    metadata = Path(str(path) + ".meta").read_bytes()
+    damaged = b"P3\ninvalid image" if suffix == ".ppm" else b"{ damaged document"
+    try:
+        path.write_bytes(damaged)
+        if suffix == ".scene":
+            from infernux.engine.scene_manager import SceneFileManager
+            from infernux.engine.ui.asset_load_errors import AssetLoadErrors
+
+            monkeypatch.setattr(AssetLoadErrors, "_instance", None)
+            AssetLoadErrors(database, None)
+            monkeypatch.setattr(SceneFileManager, "_instance", None)
+            manager = SceneFileManager()
+            manager._asset_database = database
+            monkeypatch.setattr(manager, "_is_under_assets", lambda _path: True)
+            assert not manager._do_open_scene(str(path))
+            error = manager.last_scene_load["error"]
+        else:
+            failed = database.reimport_asset(str(path))
+            assert not failed
+            error = failed.error
+        assert database.get_import_error(guid) == error
+        failure = next(entry for entry in database.get_import_failures() if entry["guid"] == guid)
+        assert same_path(failure["path"], str(path))
+        listed = next(entry for entry in database.get_directory_catalog(str(tmp_path)) if entry["guid"] == guid)
+        assert listed["import_error"] == error
+        assert path.read_bytes() == damaged
+        assert Path(str(path) + ".meta").read_bytes() == metadata
+
+        path.write_bytes(valid)
+        assert database.reimport_asset(str(path))
+        assert not database.get_import_error(guid)
+        assert all(entry["guid"] != guid for entry in database.get_import_failures())
+    finally:
+        database.delete_asset(str(path))
+
+
+def test_refresh_retains_new_invalid_assets_as_failed_catalog_entries(engine, tmp_path):
+    database = engine.get_asset_database()
+    assets = Path(database.project_root) / "Assets" / tmp_path.name
+    assets.mkdir(parents=True)
+    damaged = {"Broken.mat": b"{ invalid material", "Broken.ppm": b"P3\ninvalid image"}
+    for name, content in damaged.items():
+        (assets / name).write_bytes(content)
+    try:
+        database.refresh()
+        failures = {Path(entry["path"]).name: entry for entry in database.get_import_failures()
+                    if same_path(str(Path(entry["path"]).parent), str(assets))}
+        assert set(failures) == set(damaged)
+        for name, content in damaged.items():
+            path = assets / name
+            assert path.read_bytes() == content
+            assert database.get_import_error(failures[name]["guid"])
+            assert next(entry for entry in database.get_directory_catalog(str(assets))
+                        if entry["name"] == name)["import_error"]
+    finally:
+        for name in damaged:
+            database.delete_asset(str(assets / name))
+            (assets / name).unlink()
+        assets.rmdir()
+
+
 def test_mesh_position_publication_preserves_identity_and_source(engine, tmp_path: Path):
     database = engine.get_asset_database()
     registry = AssetRegistry.instance()
@@ -1055,7 +1131,8 @@ def test_material_import_artifact_commits_metadata_and_dependencies_atomically(
 
         material.write_text("{ invalid material", encoding="utf-8")
         assert not asset_db.reimport_asset(str(material))
-        assert asset_db.query_generation == generation_before
+        assert asset_db.query_generation > generation_before
+        assert asset_db.get_import_error(material_guid)
         assert set(graph.get_dependencies(material_guid)) == {
             vertex_guid,
             fragment_guid,

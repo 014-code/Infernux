@@ -151,6 +151,21 @@ void RegisterAssetDatabaseBindings(py::module_ &m)
              "Get all GUIDs in one published generation")
         .def("get_all_asset_paths", &AssetDatabase::GetAllAssetPaths, py::call_guard<py::gil_scoped_release>(),
              "Get all asset paths in one published generation")
+        .def("get_import_error", &AssetDatabase::GetImportError, py::arg("guid"))
+        .def("report_asset_load_failure", &AssetDatabase::ReportAssetLoadFailure, py::arg("guid"), py::arg("error"))
+        .def("get_import_failures", [](const AssetDatabase &database) {
+            py::list result;
+            for (const auto &entry : database.GetImportFailures()) {
+                py::dict item;
+                item["guid"] = entry.guid;
+                item["path"] = entry.path;
+                item["error"] = entry.importError;
+                item["modified_ns"] = entry.source.modifiedNs;
+                item["size"] = entry.source.size;
+                result.append(std::move(item));
+            }
+            return result;
+        })
         .def(
             "get_directory_catalog",
             [](const AssetDatabase &database, const std::string &directory) {
@@ -163,6 +178,7 @@ void RegisterAssetDatabaseBindings(py::module_ &m)
                     item["resource_type"] = entry.resourceType;
                     item["size"] = entry.source.size;
                     item["modified_ns"] = entry.source.modifiedNs;
+                    item["import_error"] = entry.importError;
                     result.append(std::move(item));
                 }
                 return result;

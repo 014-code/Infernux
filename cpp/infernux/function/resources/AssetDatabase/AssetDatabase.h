@@ -68,6 +68,7 @@ struct AssetCatalogEntry
     std::string sortKey;
     ResourceType resourceType = ResourceType::DefaultText;
     AssetFileFingerprint source;
+    std::string importError;
 };
 
 class AssetCatalogSnapshot final
@@ -245,6 +246,9 @@ class AssetDatabase : public NativeLifetimeOwner
     [[nodiscard]] std::shared_ptr<const AssetCatalogSnapshot> GetCatalogSnapshot() const;
     /// Canonical catalog directory; no filesystem existence or alias resolution.
     [[nodiscard]] std::vector<AssetCatalogEntry> GetDirectoryCatalog(const std::string &directory) const;
+    [[nodiscard]] std::string GetImportError(const std::string &guid) const;
+    [[nodiscard]] std::vector<AssetCatalogEntry> GetImportFailures() const;
+    void ReportAssetLoadFailure(const std::string &guid, const std::string &error);
 
     /// @brief Published query snapshot generation and asset count.
     [[nodiscard]] uint64_t GetQueryGeneration() const;
@@ -592,6 +596,7 @@ class AssetDatabase : public NativeLifetimeOwner
         std::unordered_map<std::string, std::string> pathToGuid;
         std::unordered_map<std::string, std::shared_ptr<const InxResourceMeta>> metas;
         std::unordered_map<std::string, std::string> shaderPaths;
+        std::unordered_map<std::string, std::string> importErrors;
         std::shared_ptr<const AssetCatalogSnapshot> catalog;
     };
 
@@ -687,7 +692,9 @@ class AssetDatabase : public NativeLifetimeOwner
     BuildQuerySnapshotArtifact(const std::unordered_map<std::string, std::string> &guidToPath,
                                const std::unordered_map<std::string, std::string> &pathToGuid,
                                const std::unordered_map<std::string, std::shared_ptr<InxResourceMeta>> &metas,
-                               const std::unordered_map<std::string, CachedFileState> &fileStates, uint64_t generation,
+                               const std::unordered_map<std::string, CachedFileState> &fileStates,
+                               const std::unordered_map<std::string, ImportResultState> &importResults,
+                               uint64_t generation,
                                bool includeCatalog = true);
     [[nodiscard]] bool CommitScanArtifact(AssetScanArtifact artifact, uint64_t expectedQueryGeneration);
     [[nodiscard]] bool ContinuePendingMetadataMerge(const std::shared_ptr<PendingRefreshCommit> &state);
