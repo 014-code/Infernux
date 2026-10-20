@@ -20,7 +20,24 @@ permissions:
   pages: write
 
 jobs:
+  release-identity:
+    name: Check release documentation identity
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Check packaged README versions and release notes
+        run: |
+          node docs/tools/check-readme.mjs
+          python scripts/release/build_release_notes.py --output "$RUNNER_TEMP/release-notes.md" --signed "${{ inputs.sign_windows_release }}"
+
   build-test-publish:
+    needs: release-identity
     uses: ./.github/workflows/ci.yml
     with:
       publish_release: true

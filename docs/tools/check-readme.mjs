@@ -84,6 +84,8 @@ const version = pyproject.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
 if (!version) fail("pyproject.toml: project version not found");
 else for (const [language, relative] of Object.entries(readmes)) {
     if (!sources[language].includes(`version-${version}-`)) fail(`${relative}: version badge does not show ${version}`);
+    const citationVersion = sources[language].match(/^\s*version\s*=\s*\{([^}]+)\}\s*,?\s*$/m)?.[1];
+    if (citationVersion !== version) fail(`${relative}: citation version does not show ${version}`);
 }
 
 const en = structure(sources.en);
