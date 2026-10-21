@@ -8,6 +8,8 @@ import os
 import re
 from typing import Any, Callable
 
+from infernux.runtime_services import UpdatePhase, UpdateRegistration
+
 from infernux.engine.path_utils import (
     is_path_within,
     portable_relative_path,
@@ -120,6 +122,19 @@ class PreloadContext:
         path = self.package_path(relative_path)
         register_preload_python_library(f"{self.project_root}:{self.script_guid}:{self.type_id}", path)
         return path
+
+    def add_update(
+        self, callback: Callable[[float], None], *, phase: UpdatePhase = "update",
+        unscaled: bool = False, enabled: bool = True,
+    ) -> UpdateRegistration:
+        """Own a shared-scheduler callback through failure, reload and unload."""
+        from infernux.runtime_services import register_update
+
+        if self._cleanup_callback is None:
+            raise RuntimeError("Preload cleanup ownership is unavailable")
+        registration = register_update(callback, phase=phase, unscaled=unscaled, enabled=enabled)
+        self.add_cleanup(registration.close)
+        return registration
 
 
 class InxPreload(ABC):

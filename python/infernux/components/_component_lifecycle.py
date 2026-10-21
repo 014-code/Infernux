@@ -9,6 +9,9 @@ from types import MappingProxyType
 from typing import Any, Mapping, NamedTuple, Optional
 import sys
 
+from infernux.runtime_services import _dispatch_updates, _update_snapshot
+from infernux.timing import Time
+
 
 
 _RUNTIME_PHASE_NAMES = (
@@ -766,6 +769,11 @@ class RuntimeExecutionScheduler:
     ) -> None:
         from infernux.compute import recording
 
+        callbacks = () if editor_only else frame.update_callbacks.get(phase, ())
+        unscaled_delta = Time.unscaled_delta_time
+        if callbacks and phase == "fixed_update":
+            scale = Time.time_scale
+            unscaled_delta = delta_time / scale if scale > 0.0 else 0.0
         counters = self._counters
         tick_coroutines = (
             phase == "update" or phase == "fixed_update" or phase == "late_update"
@@ -811,6 +819,8 @@ class RuntimeExecutionScheduler:
                         except Exception as exc:
                             self._report_phase_error(component, exc)
                 counters["phase_dispatches"] += 1
+            if callbacks:
+                _dispatch_updates(callbacks, delta_time, unscaled_delta)
 
     def _report_phase_error(self, component: Any, exc: Exception) -> None:
         """Route one phase failure; only the error path pays for the fallback."""
@@ -935,6 +945,10 @@ class RuntimeExecutionScheduler:
                 self._execute_frame_phase(
                     self._native_frame, phase, float(delta_time), editor_only=True,
                 )
+        callbacks = self._native_frame.update_callbacks["editor_update"]
+        if callbacks:
+            with self._change_journal.transaction():
+                _dispatch_updates(callbacks, float(delta_time), float(delta_time))
         self._counters["native_editor_dispatches"] += 1
 
     def consume_native_barrier(self, barrier: Any) -> Any:
@@ -1042,6 +1056,7 @@ class RuntimeExecutionFrame:
         self.phase_plan = snapshot.phase_plan
         self.component_snapshots = snapshot.component_snapshots
         self.dispatch_plan = snapshot.dispatch_plan
+        self.update_callbacks = _update_snapshot()
         self.structure_revision = snapshot.structure_revision
         self.epoch = snapshot.epoch
         self.barrier_changes: dict[Any, Any] = {}
