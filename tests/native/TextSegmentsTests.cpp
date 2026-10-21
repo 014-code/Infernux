@@ -16,6 +16,8 @@ int main()
     const std::string flag = "\xF0\x9F\x87\xA8\xF0\x9F\x87\xB3";
     const std::string chinese = "\xE4\xB8\xAD\xE6\x96\x87";
     const std::string source = accent + " " + family + " " + flag + "\r\n" + chinese;
+    assert(NormalizeTextNFC(accent) == "\xC3\xA9");
+    assert(NormalizeTextNFC(source) == "\xC3\xA9" + source.substr(accent.size()));
     const auto segments = SegmentText(source);
     assert(segments.characters.size() == 8);
     assert(segments.words.size() == 4);

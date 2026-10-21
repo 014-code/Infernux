@@ -26,7 +26,25 @@ TextLayoutResult LayoutText(const TextLayoutParams &params)
         result.displayText = result.text;
         result.styles.push_back({0, result.text.size(), logicalFontSize});
     }
-    result.segments = text::SegmentText(result.displayText);
+    const std::string renderText = text::NormalizeTextNFC(result.displayText);
+    result.segments = text::SegmentText(renderText);
+    std::vector<text::SourceRange> composedSources;
+    if (renderText != result.displayText) {
+        const auto sourceSegments = text::SegmentText(result.displayText);
+        composedSources.resize(renderText.size());
+        // NFC preserves grapheme boundaries. Only changed clusters share a
+        // source range; unaffected glyphs retain their exact byte offsets.
+        for (size_t index = 0; index < result.segments.characters.size(); ++index) {
+            const auto &source = sourceSegments.characters[index];
+            const auto &target = result.segments.characters[index];
+            const bool unchanged = result.displayText.compare(source.start, source.end - source.start, renderText,
+                                                              target.start, target.end - target.start) == 0;
+            for (size_t byte = target.start; byte < target.end; ++byte) {
+                const size_t start = unchanged ? source.start + byte - target.start : source.start;
+                composedSources[byte] = {start, unchanged ? start + 1 : source.end};
+            }
+        }
+    }
     result.characters.reserve(result.segments.characters.size());
     for (const auto &character : result.segments.characters)
         result.characters.push_back({character.start, character.end, 0, 0, 0, character.word, character.whitespace});
@@ -60,8 +78,8 @@ TextLayoutResult LayoutText(const TextLayoutParams &params)
 
     const float wrapWidth = params.wrapWidth > 0.0f ? params.wrapWidth : 0.0f;
     const float letterSpacing = params.letterSpacing;
-    const char *textBegin = result.displayText.c_str();
-    const char *textEnd = textBegin + result.displayText.size();
+    const char *textBegin = renderText.c_str();
+    const char *textEnd = textBegin + renderText.size();
     const char *lineStart = textBegin;
     const char *cursor = textBegin;
     bool endedWithNewline = false;
@@ -77,43 +95,46 @@ TextLayoutResult LayoutText(const TextLayoutParams &params)
     const char *spaceRunEnd = textBegin;
     size_t styleIndex = 0;
 
+    // Measure once before wrapping, including whitespace that a soft break
+    // may skip. Glyph indices then always address the same source codepoint.
+    result.glyphs.reserve(result.segments.codepoints.size());
+    for (const auto &codepointInfo : result.segments.codepoints) {
+        const uint32_t codepoint = codepointInfo.value;
+        const size_t consumed = codepointInfo.end - codepointInfo.start;
+        TextGlyph glyph{};
+        glyph.startOffset = codepointInfo.start;
+        glyph.endOffset = glyph.startOffset + consumed;
+        glyph.codepoint = codepoint;
+        glyph.character = codepointInfo.character;
+        const size_t styleOffset =
+            composedSources.empty() ? glyph.startOffset : composedSources[glyph.startOffset].start;
+        while (styleIndex + 1 < result.styles.size() && result.styles[styleIndex + 1].start <= styleOffset)
+            ++styleIndex;
+        const auto &style = result.styles[styleIndex];
+        glyph.logicalFontSize = style.fontSize;
+        glyph.color = style.color;
+        if (!result.segments.characters[glyph.character].newline) {
+            const auto rasterCodepoint =
+                static_cast<ImWchar>(codepoint <= IM_UNICODE_CODEPOINT_MAX ? codepoint : IM_UNICODE_CODEPOINT_INVALID);
+            glyph.font = ResolveGlyphFont(result, rasterCodepoint);
+            glyph.fontSize = ResolveGlyphRasterSize(result, glyph.font) * style.fontSize / logicalFontSize;
+            const char *begin = textBegin + glyph.startOffset;
+            glyph.advance = glyph.font->CalcTextSizeA(glyph.fontSize, FLT_MAX, 0.0f, begin, begin + consumed).x;
+            auto *baked = glyph.font->GetFontBaked(glyph.fontSize);
+            glyph.baseline = baked->Ascent * glyph.fontSize / baked->Size;
+            const auto *quad = baked->FindGlyph(rasterCodepoint);
+            if (quad && quad->Visible) {
+                const float scale = glyph.fontSize / baked->Size;
+                glyph.inkMinY = quad->Y0 * scale;
+                glyph.inkMaxY = quad->Y1 * scale;
+                glyph.bounds = {quad->X0 * scale, quad->Y0 * scale, quad->X1 * scale, quad->Y1 * scale};
+                glyph.visible = true;
+            }
+        }
+        result.glyphs.push_back(glyph);
+    }
     while (cursor < textEnd) {
         const char *charStart = cursor;
-        // Decode/select/measure once. Word wrap may revisit a measured word;
-        // rendering consumes these same advances instead of measuring again.
-        if (glyphCursor == result.glyphs.size()) {
-            const auto &codepointInfo = result.segments.codepoints[glyphCursor];
-            const uint32_t codepoint = codepointInfo.value;
-            const size_t consumed = codepointInfo.end - codepointInfo.start;
-            TextGlyph glyph{};
-            glyph.startOffset = static_cast<size_t>(cursor - textBegin);
-            glyph.endOffset = glyph.startOffset + consumed;
-            glyph.codepoint = codepoint;
-            glyph.character = codepointInfo.character;
-            while (styleIndex + 1 < result.styles.size() && result.styles[styleIndex + 1].start <= glyph.startOffset)
-                ++styleIndex;
-            const auto &style = result.styles[styleIndex];
-            glyph.logicalFontSize = style.fontSize;
-            glyph.color = style.color;
-            if (!result.segments.characters[glyph.character].newline) {
-                const auto rasterCodepoint = static_cast<ImWchar>(
-                    codepoint <= IM_UNICODE_CODEPOINT_MAX ? codepoint : IM_UNICODE_CODEPOINT_INVALID);
-                glyph.font = ResolveGlyphFont(result, rasterCodepoint);
-                glyph.fontSize = ResolveGlyphRasterSize(result, glyph.font) * style.fontSize / logicalFontSize;
-                glyph.advance = glyph.font->CalcTextSizeA(glyph.fontSize, FLT_MAX, 0.0f, cursor, cursor + consumed).x;
-                auto *baked = glyph.font->GetFontBaked(glyph.fontSize);
-                glyph.baseline = baked->Ascent * glyph.fontSize / baked->Size;
-                const auto *quad = baked->FindGlyph(rasterCodepoint);
-                if (quad && quad->Visible) {
-                    const float scale = glyph.fontSize / baked->Size;
-                    glyph.inkMinY = quad->Y0 * scale;
-                    glyph.inkMaxY = quad->Y1 * scale;
-                    glyph.bounds = {quad->X0 * scale, quad->Y0 * scale, quad->X1 * scale, quad->Y1 * scale};
-                    glyph.visible = true;
-                }
-            }
-            result.glyphs.push_back(glyph);
-        }
         const TextGlyph &glyph = result.glyphs[glyphCursor++];
         const uint32_t codepoint = glyph.codepoint;
         cursor = textBegin + glyph.endOffset;
@@ -273,13 +294,19 @@ TextLayoutResult LayoutText(const TextLayoutParams &params)
         }
     }
 
-    if (params.richText) {
-        const auto sourceRange = [&](size_t &start, size_t &end) {
-            const size_t mappedEnd = end > start                     ? markup.sources[end - 1].end
-                                     : start < markup.sources.size() ? markup.sources[start].start
-                                                                     : markup.sources.back().end;
-            start = start < markup.sources.size() ? markup.sources[start].start : mappedEnd;
+    if (params.richText || !composedSources.empty()) {
+        const auto mapRange = [](size_t &start, size_t &end, const std::vector<text::SourceRange> &sources) {
+            if (sources.empty())
+                return;
+            const size_t mappedEnd = end > start              ? sources[end - 1].end
+                                     : start < sources.size() ? sources[start].start
+                                                              : sources.back().end;
+            start = start < sources.size() ? sources[start].start : mappedEnd;
             end = mappedEnd;
+        };
+        const auto sourceRange = [&](size_t &start, size_t &end) {
+            mapRange(start, end, composedSources);
+            mapRange(start, end, markup.sources);
         };
         for (auto &glyph : result.glyphs)
             sourceRange(glyph.startOffset, glyph.endOffset);
@@ -288,7 +315,7 @@ TextLayoutResult LayoutText(const TextLayoutParams &params)
         for (auto &line : result.lines)
             sourceRange(line.startOffset, line.endOffset);
         for (auto &style : result.styles)
-            sourceRange(style.start, style.end);
+            mapRange(style.start, style.end, markup.sources);
     }
 
     return result;

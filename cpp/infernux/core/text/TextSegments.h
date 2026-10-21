@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -45,5 +46,8 @@ struct Segments
 // Extended graphemes follow Unicode UAX #29. Words are non-whitespace runs;
 // dictionary-based language segmentation is a separate concern.
 Segments SegmentText(std::string_view text);
+
+// Canonical composition for rendering; callers retain original source ranges.
+std::string NormalizeTextNFC(std::string_view text);
 
 } // namespace infernux::text

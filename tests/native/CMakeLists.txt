@@ -196,12 +196,15 @@ if(INFERNUX_BUILD_TESTS)
     infernux_add_native_test(infernux_text_layout_tests
         tests/native/InxTextLayoutTests.cpp
         cpp/infernux/core/log/InxLog.cpp
+        cpp/infernux/core/text/TextSegments.cpp
+        cpp/infernux/core/text/TextMarkup.cpp
+        cpp/infernux/function/renderer/gui/InxTextLayout.cpp
     )
     target_include_directories(infernux_text_layout_tests PRIVATE
         ${CMAKE_SOURCE_DIR}/cpp/infernux
         ${CMAKE_SOURCE_DIR}/external/imgui_for_infernux
     )
-    target_link_libraries(infernux_text_layout_tests PRIVATE imgui)
+    target_link_libraries(infernux_text_layout_tests PRIVATE imgui infernux_utf8proc)
     add_test(NAME infernux.text_layout COMMAND infernux_text_layout_tests)
 
     infernux_add_native_test(infernux_shader_source_dependency_tests tests/native/ShaderSourceDependencyTests.cpp)

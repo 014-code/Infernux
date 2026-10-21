@@ -32,6 +32,11 @@ def test_graphemes_source_words_and_lines_share_one_layout():
 def test_letter_spacing_and_wrap_never_separate_a_grapheme():
     cluster = "e\u0301"
     plain = TextLayout(cluster)
+    composed = TextLayout("é")
+    assert plain.text == plain.display_text == cluster
+    assert [glyph.codepoint for glyph in plain.glyphs] == [ord("é")]
+    assert plain.width == pytest.approx(composed.width)
+    assert plain.glyphs[0].source_start == 0 and plain.glyphs[0].source_end == 3
     spaced = TextLayout(cluster, letter_spacing=12.0)
     assert spaced.width == pytest.approx(plain.width)
     doubled = TextLayout(cluster * 2, letter_spacing=3.0)
@@ -64,6 +69,9 @@ def test_rich_text_keeps_source_indices_baselines_and_graphemes():
         "A", "e\u0301", "中", "Z", "<br>", "B",
     ]
     glyphs = layout.glyphs
+    accent = glyphs[layout.characters[1].glyph_start]
+    assert accent.codepoint == ord("é")
+    assert encoded[accent.source_start:accent.source_end].decode() == "e\u0301"
     large = glyphs[layout.characters[2].glyph_start]
     assert large.font_size == 36
     assert large.color == pytest.approx((1, 0, 0, 128 / 255))

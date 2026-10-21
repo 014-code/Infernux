@@ -1,11 +1,24 @@
 #include "TextSegments.h"
 
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <utf8proc.h>
 
 namespace infernux::text
 {
+
+std::string NormalizeTextNFC(std::string_view text)
+{
+    utf8proc_uint8_t *data = nullptr;
+    const auto length =
+        utf8proc_map(reinterpret_cast<const utf8proc_uint8_t *>(text.data()),
+                     static_cast<utf8proc_ssize_t>(text.size()), &data, UTF8PROC_STABLE | UTF8PROC_COMPOSE);
+    std::unique_ptr<utf8proc_uint8_t, decltype(&utf8proc_free)> normalized(data, &utf8proc_free);
+    if (length < 0)
+        throw std::invalid_argument(utf8proc_errmsg(length));
+    return {reinterpret_cast<const char *>(data), static_cast<size_t>(length)};
+}
 
 Segments SegmentText(std::string_view text)
 {

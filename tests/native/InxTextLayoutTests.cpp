@@ -41,18 +41,33 @@ struct AllocationAudit
 void ReferenceDraw(ImDrawList &draw, const infernux::textlayout::TextLayoutResult &layout, float alignX, float alignY,
                    float spacing)
 {
-    const char *base = layout.text.data();
     for (size_t index = 0; index < layout.lines.size(); ++index) {
         const auto &line = layout.lines[index];
+        const std::string normalized = infernux::text::NormalizeTextNFC(
+            std::string_view(layout.text).substr(line.startOffset, line.endOffset - line.startOffset));
+        const char *base = normalized.data(), *end = base + normalized.size();
         float x = 7.25f + (220.f - line.width) * alignX;
-        const float y = 9.75f + (180.f - (layout.inkMaxY - layout.inkMinY)) * alignY - layout.inkMinY +
-                        index * layout.lineAdvance;
+        const float y =
+            9.75f + (180.f - (layout.inkMaxY - layout.inkMinY)) * alignY - layout.inkMinY + index * layout.lineAdvance;
+        const auto *baseBaked = layout.font->GetFontBaked(layout.fontSize);
+        float baseline = baseBaked->Ascent * layout.fontSize / baseBaked->Size;
+        for (const char *cursor = base; cursor < end;) {
+            unsigned int codepoint = 0;
+            const int consumed = ImTextCharFromUtf8(&codepoint, cursor, end);
+            if (consumed <= 0)
+                break;
+            cursor += consumed;
+            auto *font = infernux::textlayout::ResolveGlyphFont(layout, static_cast<ImWchar>(codepoint));
+            const float size = layout.logicalFontSize * infernux::textlayout::ResolveEmRasterScale(font);
+            const auto *baked = font->GetFontBaked(size);
+            baseline = std::max(baseline, baked->Ascent * size / baked->Size);
+        }
         int count = 0;
         float width = 0;
-        for (const char *cursor = base + line.startOffset; cursor < base + line.endOffset;) {
+        for (const char *cursor = base; cursor < end;) {
             const char *start = cursor;
             unsigned int codepoint = 0;
-            const int consumed = ImTextCharFromUtf8(&codepoint, cursor, base + line.endOffset);
+            const int consumed = ImTextCharFromUtf8(&codepoint, cursor, end);
             if (consumed <= 0)
                 break;
             cursor += consumed;
@@ -65,7 +80,9 @@ void ReferenceDraw(ImDrawList &draw, const infernux::textlayout::TextLayoutResul
                 x += spacing;
                 width += spacing;
             }
-            font->RenderChar(&draw, size, ImVec2(x, y), IM_COL32_WHITE, static_cast<ImWchar>(codepoint));
+            const auto *baked = font->GetFontBaked(size);
+            font->RenderChar(&draw, size, ImVec2(x, y + baseline - baked->Ascent * size / baked->Size), IM_COL32_WHITE,
+                             static_cast<ImWchar>(codepoint));
             x += advance;
             width += advance;
         }
@@ -96,7 +113,7 @@ void CheckVisibleVerticalAlignment(const infernux::textlayout::TextLayoutParams 
         draw.PushTextureID(ImGui::GetIO().Fonts->TexRef);
         draw.PushClipRectFullScreen();
         infernux::textlayout::RenderTextBox(&draw, 0, 40, 240, 120, layout, IM_COL32_WHITE, .5f, alignment,
-                                          params.letterSpacing);
+                                            params.letterSpacing);
         assert(draw.VtxBuffer.Size > 0);
         float minY = FLT_MAX;
         float maxY = -FLT_MAX;
@@ -181,8 +198,10 @@ int main()
 
     const std::filesystem::path repositoryRoot =
         std::filesystem::path(__FILE__).parent_path().parent_path().parent_path();
-    const std::string latinFont = infernux::FromFsPath(repositoryRoot / "external/imgui_for_infernux/misc/fonts/Roboto-Medium.ttf");
-    const std::string cjkFont = infernux::FromFsPath(repositoryRoot / "python/infernux/resources/fonts/PingFangSC-Regular.ttf");
+    const std::string latinFont =
+        infernux::FromFsPath(repositoryRoot / "external/imgui_for_infernux/misc/fonts/Roboto-Medium.ttf");
+    const std::string cjkFont =
+        infernux::FromFsPath(repositoryRoot / "python/infernux/resources/fonts/PingFangSC-Regular.ttf");
     assert(std::filesystem::exists(latinFont));
     assert(std::filesystem::exists(cjkFont));
     infernux::textlayout::TextLayoutParams explicitChain{};
@@ -232,8 +251,8 @@ int main()
         SetDefaultFont(previousDefault);
     }
     for (const auto &fontPath : {std::string(), latinFont, cjkFont}) {
-        for (const auto &label : {std::string("Play"), std::string("Agyp"), std::string("开始游戏"),
-                                 std::string("Play\nAgain")}) {
+        for (const auto &label :
+             {std::string("Play"), std::string("Agyp"), std::string("开始游戏"), std::string("Play\nAgain")}) {
             for (float size : {18.f, 32.22f}) {
                 auto params = explicitChain;
                 params.fontPath = fontPath;
@@ -299,9 +318,15 @@ int main()
             "a 中\r文  b\n\t末尾\n",
             "emoji \xF0\x9F\x98\x80",
             std::string("before\0after", 12),
-            std::string("broken \xE4\xB8", 9),
             std::string(4096, ' ') + "after a long whitespace run",
         };
+        try {
+            auto invalid = explicitChain;
+            invalid.text = std::string("broken \xE4\xB8", 9);
+            infernux::textlayout::LayoutText(invalid);
+            assert(false && "Malformed UTF-8 must fail at layout creation");
+        } catch (const std::invalid_argument &) {
+        }
         size_t cases = 0;
         for (const auto &text : strings) {
             for (float wrap : {0.f, 1.f, 23.f, 85.f, 220.f}) {
@@ -338,6 +363,12 @@ int main()
                         for (int vertex = 0; vertex < drawList.VtxBuffer.Size; ++vertex) {
                             const auto &actual = drawList.VtxBuffer[vertex];
                             const auto &expected = reference.VtxBuffer[vertex];
+                            if (std::abs(actual.pos.x - expected.pos.x) >= .002f ||
+                                std::abs(actual.pos.y - expected.pos.y) >= .002f)
+                                std::cerr << "TEXT_GEOMETRY_MISMATCH case=" << cases << " text=" << text
+                                          << " wrap=" << wrap << " spacing=" << spacing << " size=" << size
+                                          << " vertex=" << vertex << " actual=" << actual.pos.x << ',' << actual.pos.y
+                                          << " expected=" << expected.pos.x << ',' << expected.pos.y << std::endl;
                             assert(std::abs(actual.pos.x - expected.pos.x) < .002f);
                             assert(std::abs(actual.pos.y - expected.pos.y) < .002f);
                             assert(actual.uv.x == expected.uv.x && actual.uv.y == expected.uv.y);
@@ -364,9 +395,9 @@ int main()
     ImGui::EndFrame();
     {
         using namespace infernux::textlayout;
-        const auto folder = std::filesystem::temp_directory_path() /
-                            ("inx-font-reload-" + std::to_string(
-                                std::chrono::steady_clock::now().time_since_epoch().count()));
+        const auto folder =
+            std::filesystem::temp_directory_path() /
+            ("inx-font-reload-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
         std::filesystem::create_directories(folder);
         const auto path = folder / "Shared.ttf";
         const auto cousin = repositoryRoot / "external/imgui_for_infernux/misc/fonts/Cousine-Regular.ttf";
