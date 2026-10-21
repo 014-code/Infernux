@@ -2340,6 +2340,9 @@ class DocumentRegistry:
                 "the document changed outside the Editor; reload it, keep the local draft, or save a copy",
             )
         if not save_as and not document.is_dirty:
+            from .previews import close_editor_previews
+
+            close_editor_previews()
             return DocumentActionResult(DocumentActionStatus.NO_OP)
         active = self.active_save_ticket(document_id)
         if active is not None:

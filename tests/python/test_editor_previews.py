@@ -46,6 +46,7 @@ def test_preview_restores_transform_ui_and_existing_character_state(scene, previ
     original.offsets[:] = 4
     text.set_character_data(original)
     scope = previews.begin("text-panel")
+    assert not scope.closed
     scope.set(owner.transform, "position", Vector3(5, 6, 7))
     scope.set(text, "color", [1, 0, 0, 0.5])
     scope.capture_text(text)
@@ -58,6 +59,7 @@ def test_preview_restores_transform_ui_and_existing_character_state(scene, previ
         previews.begin("other").capture(text, "color")
     scope.close()
     scope.close()
+    assert scope.closed
     assert (owner.transform.position.x, owner.transform.position.y, owner.transform.position.z) == (0, 0, 0)
     assert list(text.color) == [1, 1, 1, 1]
     assert text._resolve_text_geometry() is original_geometry
@@ -83,18 +85,29 @@ def test_preview_material_keeps_other_material_autosaves_working(tmp_path, previ
     assert first_path.read_bytes() == before and not first._preview_active
 
 
-def test_save_cancels_preview_before_capturing_document(scene, previews):
+@pytest.mark.parametrize("clean_request", [False, True])
+def test_save_cancels_preview_before_capturing_document(scene, previews, clean_request):
+    from infernux.engine.interaction import DocumentCapability
+
     owner = scene.create_game_object("Authoring snapshot")
     registry = DocumentRegistry.instance()
     document, _ = registry.open_or_create(
         DocumentKey.asset(DocumentKind.SCENE, "preview-test-scene"), "Preview scene",
+        capabilities=DocumentCapability.SAVE,
     )
     scope = previews.begin("scene-preview")
     scope.set(owner.transform, "position", Vector3(4, 0, 0))
     revision = document.revision
-    ticket = registry.begin_save(document.document_id)
+    if clean_request:
+        from infernux.engine.interaction import DocumentActionStatus
+
+        assert registry.request_save(document.document_id).status is DocumentActionStatus.NO_OP
+    else:
+        ticket = registry.begin_save(document.document_id)
     assert owner.transform.position.x == 0 and document.revision == revision
-    registry.complete_save(ticket.ticket_id, success=True)
+    assert scope.closed
+    if not clean_request:
+        registry.complete_save(ticket.ticket_id, success=True)
 
 
 def test_deleted_target_retires_preview_update(scene, previews, engine):

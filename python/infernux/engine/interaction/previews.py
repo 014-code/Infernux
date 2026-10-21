@@ -30,6 +30,10 @@ class PreviewScope:
         self._updates = []
         self._closed = False
 
+    @property
+    def closed(self) -> bool:
+        return self._closed
+
     def _target(self, target) -> _PreviewTarget:
         if self._closed:
             raise RuntimeError("Preview scope is closed")

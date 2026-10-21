@@ -8,7 +8,7 @@ manually edit ``release_engine()`` for every new panel.
 Usage::
 
     from infernux.engine.interaction import PanelInteractionDescriptor
-    from infernux.engine.ui import EditorPanel, editor_panel
+    from infernux.editor import EditorPanel, editor_panel
 
     @editor_panel(
         "My Panel",

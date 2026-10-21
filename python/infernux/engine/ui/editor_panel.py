@@ -15,7 +15,7 @@ custom panels therefore share the same window and interaction contracts.
 
 Creating a custom panel::
 
-    from infernux.engine.ui import EditorPanel, editor_panel
+    from infernux.editor import EditorPanel, editor_panel
     from infernux.engine.interaction import (
         PanelInteractionDescriptor,
         SelectionService,
