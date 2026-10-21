@@ -107,7 +107,7 @@ def test_character_edits_preserve_layout_and_authored_fields(scene, engine):
 
 
 def test_native_character_geometry_translates_rotates_hides_and_resets(engine, scene):
-    from infernux.lib import TextGeometry, TextGeometryLayer, ScreenUIList, Vector3
+    from infernux.lib import TextGeometry, TextGeometryLayer, ScreenUIList, SceneManager, Vector3
     from infernux.engine.runtime_screen_ui_pipeline import RuntimeScreenUIRenderPipeline
     from infernux.renderstack import RenderStackPipeline
 
@@ -147,6 +147,10 @@ def test_native_character_geometry_translates_rotates_hides_and_resets(engine, s
         original = capture()
         y, x = np.nonzero(original)
         assert len(x) > 10
+        SceneManager.instance().mark_temporal_discontinuity()
+        assert np.array_equal(capture(), original)
+        frame = dict(engine.renderer_frame_snapshot)
+        assert frame["game_render_view_id"] in frame["game_render_view_ids"]
         buffer.offsets[:, 0] = 10
         geometry.set_character_data(buffer)
         shifted = capture()

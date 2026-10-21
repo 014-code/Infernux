@@ -4806,6 +4806,9 @@ void InxRenderer::InvalidateGpuViewStateForSceneBoundary()
     // particle generation instead of recycled handles from two Play cycles ago.
     m_gameRenderGraph = nullptr;
     m_gameRenderGraphs.clear();
+    m_gameCameraCacheValid = false;
+    m_cachedGameCamera = nullptr;
+    m_cachedGameCameras.clear();
     RecreateSceneRenderGraph();
     if (m_vkCore)
         m_vkCore->FlushRetiredGpuResources();
