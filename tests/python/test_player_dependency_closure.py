@@ -16,6 +16,39 @@ from infernux.engine.player_package_native import extract_pack, read_manifest
 from test_game_builder import _make_project, _asset_index_entry, _write_asset_index
 
 
+@pytest.mark.parametrize("installed", [False, True])
+def test_player_keeps_engine_notices_from_source_and_installed_wheel(tmp_path, monkeypatch, installed):
+    import importlib.metadata
+    from infernux.engine import player_dependencies
+
+    source = Path(__file__).resolve().parents[2]
+    expected = {
+        "LICENSE": (source / "LICENSE").read_bytes(),
+        "utf8proc/LICENSE.md": (source / "licenses/utf8proc/LICENSE.md").read_bytes(),
+    }
+    if installed:
+        site = tmp_path / "site-packages"
+        dist_info = site / "infernux-0.4.3.dist-info"
+        dist_info.mkdir(parents=True)
+        (dist_info / "METADATA").write_text("Name: infernux\nVersion: 0.4.3\n", encoding="utf-8")
+        records = []
+        for name, content in expected.items():
+            relative = name if name == "LICENSE" else "licenses/" + name
+            target = dist_info / "licenses" / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+            records.append([target.relative_to(site).as_posix(), "", len(content)])
+        with (dist_info / "RECORD").open("w", encoding="utf-8", newline="") as stream:
+            csv.writer(stream).writerows(records)
+        distribution = importlib.metadata.PathDistribution(dist_info)
+        monkeypatch.setattr(player_dependencies.metadata, "distribution", lambda name: distribution)
+        monkeypatch.setattr(player_dependencies, "__file__", str(site / "infernux/engine/player_dependencies.py"))
+
+    destination = tmp_path / "player/licenses/infernux"
+    written = player_dependencies.stage_engine_licenses(destination)
+    assert {path.relative_to(destination).as_posix(): path.read_bytes() for path in written} == expected
+
+
 def _cook_scripts(tmp_path, *, enabled=True, pin_version=None):
     project = _make_project(tmp_path)
     sources = {

@@ -14,6 +14,7 @@ import io
 from pathlib import Path, PurePosixPath
 import py_compile
 import shutil
+import tomllib
 from typing import Iterable
 
 from packaging.requirements import Requirement
@@ -34,6 +35,44 @@ class RuntimeDependency:
     version: str
     files: tuple[DependencyFile, ...]
     record_path: str
+
+
+def stage_engine_licenses(destination: Path) -> tuple[Path, ...]:
+    """Ship source-declared or installed PEP 639 notices with a Player."""
+    project = Path(__file__).resolve().parents[3] / "pyproject.toml"
+    if project.is_file():
+        configuration = tomllib.loads(project.read_text(encoding="utf-8"))
+        notices = []
+        for pattern in configuration["project"]["license-files"]:
+            paths = sorted(project.parent.glob(pattern))
+            if not paths:
+                raise FileNotFoundError(f"Infernux license declaration has no files: {pattern}")
+            notices.extend((path, path.relative_to(project.parent)) for path in paths)
+    else:
+        distribution = metadata.distribution("infernux")
+        record = distribution.read_text("RECORD")
+        if record is None:
+            raise RuntimeError("Installed Infernux has no license file inventory")
+        notices = []
+        for row in csv.reader(record.splitlines()):
+            if not row:
+                continue
+            entry = Path(row[0])
+            if len(entry.parts) > 2 and entry.parts[0].endswith(".dist-info") and entry.parts[1] == "licenses":
+                notices.append((Path(distribution.locate_file(row[0])), Path(*entry.parts[2:])))
+    if not notices:
+        raise RuntimeError("Infernux Player license notices are missing")
+    written = []
+    for source, relative in notices:
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ValueError(f"Invalid Infernux license path: {relative}")
+        if relative.parts[0] == "licenses":
+            relative = Path(*relative.parts[1:])
+        target = destination / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+        written.append(target)
+    return tuple(written)
 
 
 def _installed_files(distribution: metadata.Distribution) -> tuple[tuple[DependencyFile, ...], str]:

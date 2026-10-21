@@ -712,9 +712,14 @@ def test_web_export_publishes_versioned_cooked_player(monkeypatch, tmp_path):
         "webmanifest",
         "js",
         "json",
+        "file",
+        "md",
         "css",
     ]
     assert all(Path(item.path).is_file() for item in result.artifacts)
+    assert (Path(request.output_dir) / "licenses/infernux/utf8proc/LICENSE.md").read_bytes() == (
+        ROOT / "licenses/utf8proc/LICENSE.md"
+    ).read_bytes()
     assert result.manifest["scope"] == "cooked-player"
     assert result.manifest["game"] == "Balance"
     assert result.manifest["asset_revision"] == revision

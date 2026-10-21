@@ -3903,6 +3903,9 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
             final_runtime = data_root / "Runtime"
             self._publish_extracted_tree(str(bootstrap_root), str(final_runtime))
             self._publish_extracted_tree(str(runtime_root), str(final_runtime))
+            from .player_dependencies import stage_engine_licenses
+
+            stage_engine_licenses(data_root / "licenses" / "infernux")
             if sys.platform.startswith("linux"):
                 self._collapse_linux_shared_library_aliases(final_runtime)
 

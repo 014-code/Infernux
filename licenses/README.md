@@ -26,7 +26,7 @@ SignPath 的服务署名、适用范围和签名流程见 [英文政策](signing
 | Zstandard | [LICENSE](../external/zstd_for_infernux/LICENSE) |
 | SPIRV-Cross | [LICENSE](../external/spirv_cross_for_infernux/LICENSE) |
 | Volk | [LICENSE](../external/volk_for_infernux/LICENSE.md) |
-| utf8proc / Unicode 数据 | [发行授权声明](utf8proc/LICENSE.md)、[上游原文](../external/utf8proc_for_infernux/LICENSE.md)；固定子模块，静态链接；wheel 声明放在 dist-info，不作为项目资源 |
+| utf8proc / Unicode 数据 | [发行授权声明](utf8proc/LICENSE.md)、[上游原文](../external/utf8proc_for_infernux/LICENSE.md)；固定子模块，静态链接；wheel 声明放在 dist-info，Player 在发行文件中保留声明，不作为项目资源 |
 | Vulkan Memory Allocator | [LICENSE](../external/VulkanMemoryAllocator/LICENSE.txt) |
 | stb | [LICENSE](../external/stb/LICENSE) |
 | LunaSVG / PlutoVG | [来源、修改与子依赖说明](svg/NOTICE.txt)、[MIT](svg/LunaSVG-PlutoVG.txt)、[FreeType](svg/FTL.txt)；静态链接，声明随 wheel 打包 |
