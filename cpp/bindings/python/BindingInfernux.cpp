@@ -22,6 +22,7 @@
 #include <function/renderer/gui/InxGUIRenderable.h>
 #include <function/renderer/gui/InxResourcePreviewer.h>
 #include <function/renderer/gui/InxScreenUIRenderer.h>
+#include <function/renderer/gui/InxTextGeometry.h>
 #include <function/renderer/particle/ParticleGpuSystemManager.h>
 #include <function/renderer/particle/ParticleSceneSources.h>
 #include <function/renderer/vk/VkResourceManager.h>
@@ -968,6 +969,11 @@ void infernux::RegisterInfernuxBindings(py::module_ &m)
              py::arg("line_height") = 1.0f, py::arg("letter_spacing") = 0.0f, py::arg("clip") = false,
              py::arg("fallback_font_paths") = std::vector<std::string>(),
              "Add text within a bounding box to the specified draw list with optional rotation and mirroring")
+        .def("add_text_geometry", &InxScreenUIRenderer::AddTextGeometry, py::arg("list"), py::arg("min_x"),
+             py::arg("min_y"), py::arg("max_x"), py::arg("max_y"), py::arg("geometry"), py::arg("r") = 1.0f,
+             py::arg("g") = 1.0f, py::arg("b") = 1.0f, py::arg("a") = 1.0f, py::arg("align_x") = 0.0f,
+             py::arg("align_y") = 0.0f, py::arg("scale") = 1.0f, py::arg("rotation") = 0.0f,
+             py::arg("mirror_h") = false, py::arg("mirror_v") = false, py::arg("clip") = false)
         .def(
             "measure_text",
             [](const InxScreenUIRenderer &renderer, const std::string &text, float font_size, float wrap_width,

@@ -1,0 +1,188 @@
+"""Native layout metadata follows the geometry actually submitted by UIText."""
+
+import pytest
+
+from infernux.lib import TextLayout
+from infernux.resources import engine_font_path
+import numpy as np
+
+
+@pytest.fixture(scope="module", autouse=True)
+def engine_font(engine):
+    engine.set_gui_font(engine_font_path, 18)
+
+
+def test_graphemes_source_words_and_lines_share_one_layout():
+    source = "e\u0301 👨‍👩‍👧 🇨🇳\r\n中文"
+    layout = TextLayout(source)
+    characters = layout.characters
+    encoded = source.encode("utf-8")
+    assert [encoded[item.source_start:item.source_end].decode() for item in characters] == [
+        "e\u0301", " ", "👨‍👩‍👧", " ", "🇨🇳", "\r\n", "中", "文",
+    ]
+    assert [(word.character_start, word.character_end) for word in layout.words] == [(0, 1), (2, 3), (4, 5), (6, 8)]
+    assert len(layout.lines) == 2
+    assert [item.line for item in characters] == [0] * 6 + [1, 1]
+    assert characters[1].word is None and characters[5].word is None
+    glyphs = layout.glyphs
+    assert [item.codepoint for item in glyphs[characters[2].glyph_start:characters[2].glyph_end]] == [ord(c) for c in "👨‍👩‍👧"]
+    assert layout.width > 0 and layout.height > layout.font_size
+
+
+def test_letter_spacing_and_wrap_never_separate_a_grapheme():
+    cluster = "e\u0301"
+    plain = TextLayout(cluster)
+    spaced = TextLayout(cluster, letter_spacing=12.0)
+    assert spaced.width == pytest.approx(plain.width)
+    doubled = TextLayout(cluster * 2, letter_spacing=3.0)
+    assert doubled.width == pytest.approx(plain.width * 2 + 3.0)
+    wrapped = TextLayout(cluster * 3, wrap_width=plain.width + 1.0, letter_spacing=3.0)
+    assert len(wrapped.lines) == 3
+    glyphs = wrapped.glyphs
+    for character in wrapped.characters:
+        assert {item.line for item in glyphs[character.glyph_start:character.glyph_end]} == {character.line}
+        assert character.bounds[2] >= character.bounds[0]
+
+
+def test_layout_snapshots_remain_readable_after_another_layout_is_built():
+    first = TextLayout("first")
+    characters, glyphs = first.characters, first.glyphs
+    del first
+    second = TextLayout("second", font_size=36.0)
+    assert len(characters) == 5 and second.height > 0
+    assert glyphs[0].codepoint == ord("f")
+    with pytest.raises(AttributeError):
+        characters[0].line = 7
+
+
+def test_character_views_retain_storage_and_reject_a_different_text():
+    from infernux.lib import TextGeometry, TextGeometryLayer
+
+    geometry = TextGeometry("AB")
+    buffer = geometry.create_character_buffer()
+    assert buffer.offsets.shape == (2, 2) and buffer.colors.shape == (2, 4, 4)
+    assert np.asarray(buffer).dtype == np.float32
+    assert np.all(buffer.scales == 1) and np.all(buffer.colors == 1)
+    offsets = buffer.offsets
+    offsets[:, 1] = [2, 4]
+    assert np.asarray(buffer)[:, 1].tolist() == [2, 4]
+    geometry.set_character_data(buffer, TextGeometryLayer.Effects)
+    snapshot, revision = geometry.layout, geometry.layout_revision
+    geometry.set_layout("AB", font_size=36)
+    assert geometry.layout_revision > revision and snapshot.font_size == 18
+    geometry.set_character_data(buffer)  # Font/width changes preserve character identity.
+    geometry.set_layout("CD")
+    with pytest.raises(ValueError, match="different text or geometry"):
+        geometry.set_character_data(buffer)
+    del buffer, geometry
+    assert offsets[:, 1].tolist() == [2, 4]
+
+
+def test_character_edits_preserve_layout_and_authored_fields(scene, engine):
+    from infernux.ui import UIText
+    from infernux.ui.ui_command_packets import _CommandGroup
+    from infernux.ui.ui_texture_cache import UITextureCache
+
+    text = scene.create_game_object("Animated text").add_component(UIText)
+    sibling = scene.create_game_object("Static text").add_component(UIText)
+    group = _CommandGroup([text, sibling], UITextureCache())
+    group.dirty.clear()
+    text.text = "A e\u0301 中文"
+    text.resolve_text_layout(engine.get_screen_ui_renderer().measure_text)
+    group.dirty.clear()
+    layout_key = text._text_layout_key
+    layout = text.get_text_layout()
+    buffer = text.create_character_buffer()
+    buffer.rotations[:] = 30
+    text.set_character_data(buffer)
+    assert text.get_text_layout() is layout and text._text_layout_key == layout_key
+    assert group.dirty == {0}
+    group.dirty.clear()
+    text.max_visible_characters = 2
+    assert text.max_visible_characters == 2 and group.dirty == {0}
+    group.dirty.clear()
+    text.max_visible_characters = 2
+    assert not group.dirty
+    assert "max_visible_characters" not in text._serialize_fields_document()
+
+
+def test_native_character_geometry_translates_rotates_hides_and_resets(engine, scene):
+    from infernux.lib import TextGeometry, TextGeometryLayer, ScreenUIList, Vector3
+    from infernux.engine.runtime_screen_ui_pipeline import RuntimeScreenUIRenderPipeline
+    from infernux.renderstack import RenderStackPipeline
+
+    camera = scene.create_game_object("Text geometry camera")
+    camera.transform.position = Vector3(0, 0, -2)
+    camera.add_component("Camera")
+    geometry = TextGeometry("F", font_size=24)
+    buffer = geometry.create_character_buffer()
+    layer = ScreenUIList.Overlay
+    tint = [1, 1, 1, 1]
+
+    class Submission:
+        def submit(self):
+            renderer = engine.get_screen_ui_renderer()
+            renderer.begin_frame(64, 64)
+            renderer.add_filled_rect(layer, 0, 0, 64, 64, 0, 0, 0, 1)
+            renderer.add_text_geometry(layer, 16, 16, 60, 60, geometry, *tint)
+
+    def capture(*, mask=True):
+        ticket = None
+        for _ in range(100):
+            engine.tick(1 / 60)
+            renderer = engine.get_screen_ui_renderer()
+            if ticket is None and renderer.last_submitted_index_count(layer):
+                ticket = engine.request_render_target_readback(True)
+            elif ticket is not None and ticket.done:
+                assert not ticket.error, ticket.error
+                pixels = ticket.result_numpy()
+                return np.max(pixels[:, :, :3], axis=2) > 0.2 if mask else pixels.astype(np.float32)
+        pytest.fail("Text geometry readback did not complete")
+
+    previous_samples = engine.get_msaa_samples()
+    try:
+        engine.set_game_camera_enabled(True)
+        engine.resize_game_render_target(64, 64)
+        engine.set_render_pipeline(RuntimeScreenUIRenderPipeline(Submission(), RenderStackPipeline()))
+        original = capture()
+        y, x = np.nonzero(original)
+        assert len(x) > 10
+        buffer.offsets[:, 0] = 10
+        geometry.set_character_data(buffer)
+        shifted = capture()
+        assert np.nonzero(shifted)[1].mean() - x.mean() == pytest.approx(10, abs=0.6)
+        buffer.reset()
+        buffer.rotations[:] = 90
+        geometry.set_character_data(buffer)
+        rotated = capture()
+        ry, rx = np.nonzero(rotated)
+        assert rx.max() - rx.min() == pytest.approx(y.max() - y.min(), abs=2)
+        assert ry.max() - ry.min() == pytest.approx(x.max() - x.min(), abs=2)
+        second = geometry.create_character_buffer()
+        second.offsets[:, 1] = 8
+        geometry.set_character_data(second, TextGeometryLayer.Appearance)
+        composed = capture()
+        cy, cx = np.nonzero(composed)
+        assert cy.mean() - ry.mean() == pytest.approx(8, abs=0.6)
+        assert cx.mean() == pytest.approx(rx.mean(), abs=0.6)
+        geometry.visible_characters = 0
+        assert not capture().any()
+        geometry.visible_characters = -1
+        geometry.reset_character_data()
+        assert np.array_equal(capture(), original)
+        full = capture(mask=False)
+        solid = full[:, :, :3].max(axis=2) > 0.95
+        assert solid.any()
+        buffer.reset()
+        buffer.colors[:, :, :3] = (1, 0, 0)
+        buffer.colors[:, :, 3] = 0.5
+        geometry.set_character_data(buffer)
+        tint[3] = 0.5
+        faded = capture(mask=False)
+        assert faded[:, :, 0][solid].mean() == pytest.approx(0.25, abs=0.025)
+        assert np.max(faded[:, :, 1:3]) < 0.02
+    finally:
+        engine.set_render_pipeline(None)
+        engine.set_game_camera_enabled(False)
+        engine.get_screen_ui_renderer().begin_frame(64, 64)
+        engine.set_msaa_samples(previous_samples)

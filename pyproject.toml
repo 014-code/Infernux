@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=70.1"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -10,6 +10,7 @@ authors = [{name = "Lizhe Chen", email = "chenlizheme@outlook.com"}]
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
 license = "MIT"
+license-files = ["LICENSE", "licenses/utf8proc/*.md"]
 keywords = ["game-engine", "vulkan", "python", "rendergraph", "editor"]
 classifiers = [
     "Development Status :: 3 - Alpha",

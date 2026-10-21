@@ -24,6 +24,89 @@ from typing import Any, Callable, ClassVar, Dict, List, Literal, Optional, Seque
 from enum import IntEnum
 
 
+class TextLineInfo:
+    source_start: int
+    source_end: int
+    width: float
+    glyph_start: int
+    glyph_end: int
+
+class TextGlyphInfo:
+    source_start: int
+    source_end: int
+    codepoint: int
+    character: int
+    line: int | None
+    advance: float
+    visible: bool
+    bounds: tuple[float, float, float, float]
+
+class TextCharacterInfo:
+    source_start: int
+    source_end: int
+    glyph_start: int
+    glyph_end: int
+    line: int
+    word: int | None
+    whitespace: bool
+    bounds: tuple[float, float, float, float]
+
+class TextWordInfo:
+    character_start: int
+    character_end: int
+
+class TextLayout:
+    """Read-only snapshot; UTF-8 source bytes, extended graphemes, logical pixel bounds."""
+    def __init__(self, text: str, font_size: float = 18.0, wrap_width: float = 0.0,
+                 font_path: str = "", line_height: float = 1.2, letter_spacing: float = 0.0,
+                 fallback_font_paths: Sequence[str] = ()) -> None: ...
+    text: str
+    width: float
+    height: float
+    font_size: float
+    line_advance: float
+    @property
+    def lines(self) -> list[TextLineInfo]: ...
+    @property
+    def glyphs(self) -> list[TextGlyphInfo]: ...
+    @property
+    def characters(self) -> list[TextCharacterInfo]: ...
+    @property
+    def words(self) -> list[TextWordInfo]: ...
+
+class TextGeometryLayer(IntEnum):
+    Manual = 0
+    Effects = 1
+    Appearance = 2
+
+class TextCharacterBuffer:
+    """NumPy views retain this owner; corners use TL, TR, BR, BL order."""
+    columns: ClassVar[int]
+    character_count: int
+    offsets: Any  # float32[N, 2], canvas pixels
+    rotations: Any  # float32[N], degrees
+    scales: Any  # float32[N, 2]
+    skews: Any  # float32[N], horizontal shear
+    vertex_offsets: Any  # float32[N, 4, 2], canvas pixels
+    colors: Any  # float32[N, 4, 4], RGBA multipliers
+    def reset(self) -> None: ...
+
+class TextGeometry:
+    def __init__(self, text: str, font_size: float = 18.0, wrap_width: float = 0.0,
+                 font_path: str = "", line_height: float = 1.2, letter_spacing: float = 0.0,
+                 fallback_font_paths: Sequence[str] = ()) -> None: ...
+    def set_layout(self, text: str, font_size: float = 18.0, wrap_width: float = 0.0,
+                   font_path: str = "", line_height: float = 1.2, letter_spacing: float = 0.0,
+                   fallback_font_paths: Sequence[str] = ()) -> None: ...
+    layout: TextLayout
+    revision: int
+    layout_revision: int
+    visible_characters: int
+    def create_character_buffer(self) -> TextCharacterBuffer: ...
+    def set_character_data(self, buffer: TextCharacterBuffer, layer: TextGeometryLayer = TextGeometryLayer.Manual) -> None: ...
+    def reset_character_data(self, layer: int = -1) -> None: ...
+
+
 class ImGuiStyleVar(IntEnum):
     """Style indices from the ImGui compiled into this native module."""
     Alpha = 0
@@ -2540,6 +2623,10 @@ class PropertyBatchPlan:
 
 class InxGUIContext:
     """ImGui context for building editor panels and tool windows."""
+    def draw_text_geometry(self, min_x: float, min_y: float, max_x: float, max_y: float,
+                           geometry: TextGeometry, r: float = 1.0, g: float = 1.0, b: float = 1.0, a: float = 1.0,
+                           align_x: float = 0.0, align_y: float = 0.0, scale: float = 1.0, rotation: float = 0.0,
+                           mirror_h: bool = False, mirror_v: bool = False, clip: bool = False) -> None: ...
 
     def is_pointer_activation_blocked_by_popup(self) -> bool: ...
 
@@ -3505,6 +3592,10 @@ class UIShaderMaterialBinding:
     def is_valid(self) -> bool: ...
 
 class InxScreenUIRenderer:
+    def add_text_geometry(self, list: int, min_x: float, min_y: float, max_x: float, max_y: float,
+                          geometry: TextGeometry, r: float = 1.0, g: float = 1.0, b: float = 1.0, a: float = 1.0,
+                          align_x: float = 0.0, align_y: float = 0.0, scale: float = 1.0, rotation: float = 0.0,
+                          mirror_h: bool = False, mirror_v: bool = False, clip: bool = False) -> None: ...
     def command_packet_epoch(self) -> list[int]: ...
     def begin_command_packet(self) -> None: ...
     def end_command_packet(self) -> _UICommandPacket: ...

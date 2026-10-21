@@ -86,6 +86,9 @@ class UIText(InxUIScreenComponent):
     )
 
     def __setattr__(self, name, value):
+        if name == "max_visible_characters":
+            object.__setattr__(self, name, value)
+            return
         if name not in _TEXT_MEASURE_FIELDS:
             super().__setattr__(name, value)
             return
@@ -116,6 +119,64 @@ class UIText(InxUIScreenComponent):
 
     def get_wrap_width(self) -> float:
         return 0.0 if self.is_auto_width() else max(1.0, float(self.width))
+
+    def _resolve_text_geometry(self):
+        from infernux.lib import TextGeometry
+        from .ui_font_asset import ui_font_paths, ui_font_signature
+
+        key = (str(self.text), ui_font_signature(self), float(self.font_size),
+               float(self.get_wrap_width()), float(self.line_height), float(self.letter_spacing))
+        geometry = self.__dict__.get("_text_geometry")
+        if self.__dict__.get("_text_geometry_key") != key:
+            font_path, fallbacks = ui_font_paths(self)
+            arguments = (key[0], key[2], key[3], font_path, key[4], key[5], fallbacks)
+            if geometry is None:
+                geometry = TextGeometry(*arguments)
+                object.__setattr__(self, "_text_geometry", geometry)
+            else:
+                geometry.set_layout(*arguments)
+            object.__setattr__(self, "_text_geometry_key", key)
+        return geometry
+
+    def get_text_layout(self):
+        """Return a reusable read-only layout in logical canvas pixels."""
+        return self._resolve_text_geometry().layout
+
+    def create_character_buffer(self):
+        """Create persistent float32 views for offsets, rotations, scales and vertex colors."""
+        return self._resolve_text_geometry().create_character_buffer()
+
+    def set_character_data(self, buffer, layer=None) -> None:
+        """Commit one buffer after edits; character state is transient and never serialized."""
+        from infernux.lib import TextGeometryLayer
+        from .ui_render_revision import mark_runtime_ui_dirty
+
+        self._resolve_text_geometry().set_character_data(
+            buffer, TextGeometryLayer.Manual if layer is None else layer,
+        )
+        mark_runtime_ui_dirty(self)
+
+    def reset_character_data(self, layer=None) -> None:
+        from .ui_render_revision import mark_runtime_ui_dirty
+
+        geometry = self.__dict__.get("_text_geometry")
+        if geometry is not None:
+            geometry.reset_character_data(-1 if layer is None else int(layer))
+            mark_runtime_ui_dirty(self)
+
+    @property
+    def max_visible_characters(self) -> int:
+        geometry = self.__dict__.get("_text_geometry")
+        return -1 if geometry is None else geometry.visible_characters
+
+    @max_visible_characters.setter
+    def max_visible_characters(self, count: int) -> None:
+        from .ui_render_revision import mark_runtime_ui_dirty
+
+        geometry = self._resolve_text_geometry()
+        if geometry.visible_characters != count:
+            geometry.visible_characters = count
+            mark_runtime_ui_dirty(self)
 
     def prepare_text_layout(self, measure_text, scale: float = 1.0) -> bool:
         """Publish this text's font data before render commands are recorded."""

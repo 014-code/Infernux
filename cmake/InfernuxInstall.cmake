@@ -191,6 +191,10 @@ install(DIRECTORY "${CMAKE_SOURCE_DIR}/licenses/svg/"
     DESTINATION "python/infernux/resources/licenses/svg"
     COMPONENT ${INFERNUX_PYTHON_INSTALL_COMPONENT})
 
+install(DIRECTORY "${CMAKE_SOURCE_DIR}/licenses/utf8proc/"
+    DESTINATION "licenses/utf8proc"
+    COMPONENT ${INFERNUX_PYTHON_INSTALL_COMPONENT})
+
 if(NOT INFERNUX_OFFICIAL_PLUGIN_OUTPUT_DIR)
     message(FATAL_ERROR
         "INFERNUX_OFFICIAL_PLUGIN_OUTPUT_DIR must be defined before install rules are declared")

@@ -131,6 +131,8 @@ set(JPH_USE_CPU_COMPUTE ON CACHE BOOL "" FORCE)               # CPU physics only
 
 add_subdirectory(svg)
 
+add_subdirectory(unicode)
+
 # ------------------------------------------------------------------------------
 # InxPack codec — the only codec available to exported Player containers.
 # ------------------------------------------------------------------------------

@@ -20,6 +20,7 @@
 #include <function/editor/StatusBarPanel.h>
 #include <function/editor/ToolbarPanel.h>
 #include <function/renderer/ProfileConfig.h>
+#include <function/renderer/gui/InxTextGeometry.h>
 #include <memory>
 #include <optional>
 #include <pybind11/chrono.h>
@@ -967,6 +968,11 @@ void RegisterGUIBindings(py::module_ &m)
         .def("draw_text", &InxGUIContext::DrawText, py::arg("x"), py::arg("y"), py::arg("text"), py::arg("r"),
              py::arg("g"), py::arg("b"), py::arg("a"), py::arg("font_size") = 0.0f,
              "Draw text at absolute screen coordinates with colour and optional font size")
+        .def("draw_text_geometry", &InxGUIContext::DrawTextGeometry, py::arg("min_x"), py::arg("min_y"),
+             py::arg("max_x"), py::arg("max_y"), py::arg("geometry"),
+             py::arg("r") = 1.0f, py::arg("g") = 1.0f, py::arg("b") = 1.0f, py::arg("a") = 1.0f,
+             py::arg("align_x") = 0.0f, py::arg("align_y") = 0.0f, py::arg("scale") = 1.0f,
+             py::arg("rotation") = 0.0f, py::arg("mirror_h") = false, py::arg("mirror_v") = false, py::arg("clip") = false)
         .def("draw_text_aligned", &InxGUIContext::DrawTextAligned, py::arg("min_x"), py::arg("min_y"), py::arg("max_x"),
              py::arg("max_y"), py::arg("text"), py::arg("r"), py::arg("g"), py::arg("b"), py::arg("a"),
              py::arg("align_x") = 0.0f, py::arg("align_y") = 0.0f, py::arg("font_size") = 0.0f, py::arg("clip") = false,

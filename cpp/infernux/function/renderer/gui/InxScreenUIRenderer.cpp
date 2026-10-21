@@ -18,6 +18,7 @@
  */
 
 #include "InxScreenUIRenderer.h"
+#include "InxTextGeometry.h"
 #include "InxTextLayout.h"
 #include <algorithm>
 #include <array>
@@ -1283,6 +1284,27 @@ void InxScreenUIRenderer::AddText(ScreenUIList list, float minX, float minY, flo
 
     ApplyVertexTransform(*dl, vtxStart, transform);
     TrackHDRColorRange(list, vtxStart, dl->VtxBuffer.Size, hdrScale);
+}
+
+void InxScreenUIRenderer::AddTextGeometry(ScreenUIList list, float minX, float minY, float maxX, float maxY,
+                                          textlayout::TextGeometry &geometry, float r, float g, float b, float a,
+                                          float alignX, float alignY, float scale, float rotation, bool mirrorH,
+                                          bool mirrorV, bool clip)
+{
+    ImDrawList *draw = GetDrawList(list);
+    if (!draw)
+        return;
+    geometry.Prepare(scale);
+    const int firstVertex = draw->VtxBuffer.Size;
+    if (clip)
+        draw->PushClipRect({minX, minY}, {maxX, maxY}, true);
+    draw->PushTextureID(ImGui::GetIO().Fonts->TexRef);
+    const float hdrScale =
+        geometry.Render(*draw, minX, minY, maxX, maxY, {r, g, b, a}, alignX, alignY, scale, rotation, mirrorH, mirrorV);
+    draw->PopTextureID();
+    if (clip)
+        draw->PopClipRect();
+    TrackHDRColorRange(list, firstVertex, draw->VtxBuffer.Size, hdrScale);
 }
 
 std::pair<float, float> InxScreenUIRenderer::MeasureText(const std::string &text, float fontSize, float wrapWidth,

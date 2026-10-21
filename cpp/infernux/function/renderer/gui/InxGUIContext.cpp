@@ -2,6 +2,7 @@
 #include "EditorMenuItem.h"
 #include "EditorWindowBounds.h"
 #include "InxGUISemantics.h"
+#include "InxTextGeometry.h"
 #include "InxTextLayout.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
@@ -2374,6 +2375,22 @@ void InxGUIContext::DrawTextExAligned(float minX, float minY, float maxX, float 
         float ry = local.x * sinA + local.y * cosA;
         drawList->VtxBuffer[i].pos = ImVec2(pivot.x + rx, pivot.y + ry);
     }
+}
+
+void InxGUIContext::DrawTextGeometry(float minX, float minY, float maxX, float maxY, textlayout::TextGeometry &geometry,
+                                     float r, float g, float b, float a, float alignX, float alignY, float scale,
+                                     float rotation, bool mirrorH, bool mirrorV, bool clip)
+{
+    geometry.Prepare(scale);
+    ImDrawList *draw = ImGui::GetWindowDrawList();
+    if (clip)
+        draw->PushClipRect({minX, minY}, {maxX, maxY}, true);
+    draw->PushTextureID(ImGui::GetIO().Fonts->TexRef);
+    geometry.Render(*draw, minX, minY, maxX, maxY, {r, g, b, a}, alignX, alignY, scale, rotation, mirrorH, mirrorV,
+                    false);
+    draw->PopTextureID();
+    if (clip)
+        draw->PopClipRect();
 }
 
 std::pair<float, float> InxGUIContext::CalcTextSizeA(const std::string &text, float fontSize,

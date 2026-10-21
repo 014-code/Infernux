@@ -27,6 +27,7 @@ set(INFERNUX_MAINTAINED_FORKS
     lunasvg_for_infernux
     spirv_cross_for_infernux
     volk_for_infernux
+    utf8proc_for_infernux
 )
 
 # Official plugins are packaged inputs. Their platform-native export projects
@@ -55,6 +56,7 @@ set(INFERNUX_THIRD_PARTY_SUBMODULES
     lunasvg_for_infernux
     spirv_cross_for_infernux
     volk_for_infernux
+    utf8proc_for_infernux
 )
 
 # Source-only Python dependency fork. It has no CMake project and is consumed

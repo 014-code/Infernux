@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Callable, Tuple
 
 from infernux.core.asset_types import FontAssetInfo
+from infernux.lib import TextCharacterBuffer, TextGeometryLayer, TextLayout
 
 from infernux.ui.inx_ui_screen_component import InxUIScreenComponent
 from infernux.ui.enums import TextAlignH, TextAlignV, TextOverflow, TextResizeMode
@@ -48,6 +49,12 @@ class UIText(InxUIScreenComponent):
     overflow: TextOverflow
     resize_mode: TextResizeMode
     color: list
+    max_visible_characters: int
+
+    def get_text_layout(self) -> TextLayout: ...
+    def create_character_buffer(self) -> TextCharacterBuffer: ...
+    def set_character_data(self, buffer: TextCharacterBuffer, layer: TextGeometryLayer | None = None) -> None: ...
+    def reset_character_data(self, layer: TextGeometryLayer | None = None) -> None: ...
 
     def is_auto_width(self) -> bool:
         """Return ``True`` if resize mode is ``AutoWidth``."""

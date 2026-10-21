@@ -67,3 +67,7 @@
 	path = external/volk_for_infernux
 	url = https://github.com/InfernuxEngine/volk_for_infernux.git
 	branch = infernux-support
+[submodule "external/utf8proc_for_infernux"]
+	path = external/utf8proc_for_infernux
+	url = https://github.com/InfernuxEngine/utf8proc_for_infernux.git
+	branch = infernux-support

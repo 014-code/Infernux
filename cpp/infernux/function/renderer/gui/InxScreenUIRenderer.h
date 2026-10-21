@@ -46,6 +46,10 @@ class VkDescriptorManager;
 
 namespace infernux
 {
+namespace textlayout
+{
+class TextGeometry;
+}
 
 /**
  * @brief Screen-space UI command list identifier
@@ -291,6 +295,9 @@ class InxScreenUIRenderer : public NativeLifetimeOwner
                                         const std::string &fontPath = "", float lineHeight = 1.0f,
                                         float letterSpacing = 0.0f,
                                         const std::vector<std::string> &fallbackFontPaths = {}) const;
+    void AddTextGeometry(ScreenUIList list, float minX, float minY, float maxX, float maxY,
+                         textlayout::TextGeometry &geometry, float r, float g, float b, float a, float alignX,
+                         float alignY, float scale, float rotation, bool mirrorH, bool mirrorV, bool clip);
 
     /**
      * @brief Check if a command list has any draw commands

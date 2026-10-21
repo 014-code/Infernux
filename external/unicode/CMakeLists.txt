@@ -1,0 +1,5 @@
+set(_utf8proc_source "${CMAKE_CURRENT_SOURCE_DIR}/../utf8proc_for_infernux")
+add_library(infernux_utf8proc STATIC "${_utf8proc_source}/utf8proc.c")
+target_include_directories(infernux_utf8proc PUBLIC "${_utf8proc_source}")
+target_compile_definitions(infernux_utf8proc PUBLIC UTF8PROC_STATIC)
+set_target_properties(infernux_utf8proc PROPERTIES POSITION_INDEPENDENT_CODE ON)

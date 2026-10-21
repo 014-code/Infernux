@@ -15,6 +15,10 @@ struct SDL_Window;
 
 namespace infernux
 {
+namespace textlayout
+{
+class TextGeometry;
+}
 
 // ── Property batch rendering ────────────────────────────────────────────
 // Python builds a list of PropertyDesc, C++ renders all widgets in one call.
@@ -434,6 +438,9 @@ class InxGUIContext
                            float rotation = 0.0f, bool mirrorH = false, bool mirrorV = false, bool clip = false,
                            const std::string &fontPath = "", float lineHeight = 1.0f, float letterSpacing = 0.0f,
                            const std::vector<std::string> &fallbackFontPaths = {});
+    void DrawTextGeometry(float minX, float minY, float maxX, float maxY, textlayout::TextGeometry &geometry, float r,
+                          float g, float b, float a, float alignX, float alignY, float scale, float rotation,
+                          bool mirrorH, bool mirrorV, bool clip);
     std::pair<float, float> CalcTextSizeA(const std::string &text, float fontSize = 0.0f,
                                           const std::string &fontPath = "", float lineHeight = 1.0f,
                                           float letterSpacing = 0.0f,

@@ -7,6 +7,7 @@ namespace infernux
 
 void RegisterInfernuxBindings(pybind11::module_ &module);
 void RegisterGUIBindings(pybind11::module_ &module);
+void RegisterTextBindings(pybind11::module_ &module);
 void RegisterVector2Bindings(pybind11::module_ &module);
 void RegisterVector3Bindings(pybind11::module_ &module);
 void RegisterVec4fBindings(pybind11::module_ &module);

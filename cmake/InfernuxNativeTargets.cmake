@@ -117,6 +117,8 @@ if(INFERNUX_VULKAN_LOADER_TARGET)
     endforeach()
 endif()
 
+target_link_libraries(InfernuxFoundation PRIVATE infernux_utf8proc)
+
 target_link_libraries(InfernuxAudioRuntime PUBLIC InfernuxFoundation SDL3::SDL3)
 target_link_libraries(InfernuxAudioRuntime PRIVATE dr_libs)
 target_link_libraries(InfernuxAssetRuntime PUBLIC InfernuxFoundation)

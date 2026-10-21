@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from infernux.lib import TextCharacterBuffer as TextCharacterBuffer, TextGeometryLayer as TextGeometryLayer, TextLayout as TextLayout
+
 from .enums import (
     RenderMode as RenderMode,
     ScreenAlignH as ScreenAlignH,
@@ -39,6 +41,7 @@ from .ui_texture_cache import UITextureCache as UITextureCache, get_shared_cache
 from .ui_render_dispatch import register_ui_renderer as register_ui_renderer, dispatch as ui_dispatch
 
 __all__ = [
+    "TextCharacterBuffer", "TextGeometryLayer", "TextLayout",
     "RenderMode",
     "ScreenAlignH",
     "ScreenAlignV",
