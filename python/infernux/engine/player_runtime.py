@@ -87,7 +87,7 @@ class PlayerRuntimeSession:
     @property
     def is_paused(self) -> bool:
         from infernux.lib import SceneManager
-        return self.is_playing and SceneManager.instance().is_paused
+        return self.is_playing and SceneManager.instance().is_paused()
 
     @property
     def state(self) -> str:

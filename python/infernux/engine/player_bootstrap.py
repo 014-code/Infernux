@@ -165,7 +165,7 @@ class PlayerBootstrap:
             # Extra upload frames must not advance gameplay or frame counters.
             from infernux.lib import SceneManager
             scene_manager = SceneManager.instance()
-            pause_for_uploads = not scene_manager.is_paused
+            pause_for_uploads = not scene_manager.is_paused()
             if pause_for_uploads:
                 scene_manager.pause()
             try:

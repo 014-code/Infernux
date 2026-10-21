@@ -55,3 +55,34 @@ def test_scene_load_reset_discards_loading_time_once():
         assert Time.frame_count == 2
     finally:
         Time._reset()
+
+
+def test_player_clock_follows_native_pause_and_time_scale(scene):
+    from types import SimpleNamespace
+    from infernux.engine.player_runtime import PlayerRuntimeSession
+
+    session = PlayerRuntimeSession(scene_service=SimpleNamespace(
+        active_scene_path=None, process_pending_load=lambda: None,
+    ))
+    manager = SceneManager.instance()
+    manager.play()
+    session._state = "playing"
+    Time._reset()
+    try:
+        assert session.is_paused is False
+        session.tick(0.05)
+        assert Time.frame_count == 1
+        assert Time.time == pytest.approx(0.05)
+        assert Time.unscaled_time == pytest.approx(0.05)
+        manager.pause()
+        assert session.is_paused is True
+        assert session.tick(1.0) == 0.0
+        assert Time.frame_count == 1
+        manager.pause()
+        Time.time_scale = 0.0
+        session.tick(0.1)
+        assert Time.time == pytest.approx(0.05)
+        assert Time.unscaled_time == pytest.approx(0.15)
+        assert Time.frame_count == 2
+    finally:
+        Time._reset()
