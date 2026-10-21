@@ -104,6 +104,18 @@ export async function checkSiteInformation(repoRoot = process.cwd()) {
     require(symbols.length > 0 && index.symbol_count === symbols.length, "API index: invalid symbol count");
     require(new Set(symbols.map(symbol => symbol.id)).size === symbols.length, "API index: duplicate identifiers");
     const exists = async file => stat(file).then(info => info.isFile()).catch(() => false);
+    const code = version.replaceAll(".", "");
+    for (const name of ["index.html", "css/style.css"]) {
+        const file = path.join(docs, name);
+        if (!await exists(file)) continue;
+        const text = await readFile(file, "utf8");
+        for (const match of text.matchAll(/data-release-code="([^"]+)"[^>]*>([^<]*)</g)) {
+            require(match[2] === match[1].replaceAll("{code}", code), `${name}: visible release code differs from ${version}`);
+        }
+        for (const match of text.matchAll(/--release-code:\s*"([^"]+)"/g)) {
+            require(match[1] === code, `${name}: decorative release code differs from ${version}`);
+        }
+    }
     for (const [folder, language] of [["en", "en"], ["zh", "zh-CN"]]) {
         const localized = symbols.filter(symbol => symbol.language === language);
         const keys = new Set(localized.map(symbol => symbol.symbol_key));

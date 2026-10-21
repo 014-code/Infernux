@@ -26,6 +26,38 @@ def write_json(path: Path, value):
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
 
 
+def sync_release_labels(version: str):
+    code = version.replace(".", "")
+    for path in DOCS.glob("*.html"):
+        source = path.read_text(encoding="utf-8")
+        source = re.sub(
+            r'(<span\b[^>]*\bdata-release-code="([^"]+)"[^>]*>)[^<]*(</span>)',
+            lambda match: match[1] + html.escape(match[2].format(code=code)) + match[3], source,
+        )
+        path.write_text(source, encoding="utf-8", newline="\n")
+    style = DOCS / "css/style.css"
+    source = style.read_text(encoding="utf-8")
+    source = re.sub(r'(--release-code:\s*")[^"]+(";)', lambda match: match[1] + code + match[2], source)
+    style.write_text(source, encoding="utf-8", newline="\n")
+    catalog = read_json(DOCS / "hub-catalog.json")
+    stable = next(release for release in catalog["releases"] if release["version"] == catalog["stable"])
+    download_path = DOCS / "download.html"
+    download = download_path.read_text(encoding="utf-8")
+    for platform, label in (("windows-x64", "Windows x64"), ("linux-x64", "Linux x64")):
+        url = html.escape(stable["platforms"][platform]["installer"]["url"], quote=True)
+
+        def published_link(match):
+            tag = re.sub(r'\s(?:href|aria-disabled)="[^"]*"', "", match[0]).replace(" is-disabled", "")
+            return tag[:-1] + f' href="{url}">'
+
+        download = re.sub(rf'<a\b[^>]*\bdata-hub-link="{platform}"[^>]*>', published_link, download)
+        download = re.sub(
+            rf'(<span\b[^>]*\bdata-hub-meta="{platform}"[^>]*>)[^<]*(</span>)',
+            lambda match: match[1] + f'{label} · {stable["version"]}' + match[2], download,
+        )
+    download_path.write_text(download, encoding="utf-8", newline="\n")
+
+
 def main():
     os.chdir(ROOT)
     release = read_json(DOCS / "release.json")
@@ -80,6 +112,7 @@ def main():
         if option not in download:
             download = re.sub(r'(<select [^>]*data-version-select>)', lambda match: match[1] + "\n                                " + option, download)
     download_path.write_text(download, encoding="utf-8", newline="\n")
+    sync_release_labels(version)
 
     def run(*args):
         subprocess.run(args, check=True, cwd=ROOT)

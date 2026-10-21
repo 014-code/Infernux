@@ -4,6 +4,7 @@
    the chassis. Post-processing (scanlines, Bayer dither, grain, chromatic
    split) is a static overlay or a transient state, never a layout cost. */
 :root {
+    --release-code: "043";
     --accent: #ff6e6e;
     --accent-strong: #ff8580;
     --accent-deep: #8f2632;
@@ -511,7 +512,7 @@ kbd {
     padding: 4px 10px 5px; background: var(--accent-fill); color: var(--on-accent); font: 700 0.7rem var(--font-mono); letter-spacing: 0.14em;
 }
 .section::after {
-    content: "INFERNUX / 041 / FORGE SIGNAL"; position: absolute; top: 4px; left: 64px;
+    content: "INFERNUX / " var(--release-code) " / FORGE SIGNAL"; position: absolute; top: 4px; left: 64px;
     color: var(--text-soft); font: 600 0.6rem var(--font-mono); letter-spacing: 0.16em;
 }
 .section-head { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 0.7fr); gap: 40px; align-items: end; margin-bottom: 34px; }
