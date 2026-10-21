@@ -45,7 +45,7 @@ class PlayerRuntimeSession:
         self._runtime_manifest: Optional[RuntimeProductManifest] = None
         self._runtime_catalog: Optional[PlayerRuntimeAssetCatalog] = None
         self._state = "stopped"
-        self._last_frame_time = time.time()
+        self._last_frame_time = time.perf_counter()
         self._membership_warmup_frames = 0
         self._startup_warmup = None
 
@@ -222,7 +222,7 @@ class PlayerRuntimeSession:
             Debug.log_warning("Player cannot start without an active scene")
             return False
         Time._reset()
-        self._last_frame_time = time.time()
+        self._last_frame_time = time.perf_counter()
         from infernux.lib import _Infernux as native_module
 
         if getattr(native_module, "__runtime_profile__", "desktop") != "web-player":
@@ -289,7 +289,7 @@ class PlayerRuntimeSession:
         if self._scene_service.active_scene_path != previous_scene_path:
             self._refresh_execution_membership()
 
-        current_time = time.time()
+        current_time = time.perf_counter()
         delta_time = (
             current_time - self._last_frame_time
             if external_delta_time is None

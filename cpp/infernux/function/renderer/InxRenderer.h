@@ -737,7 +737,7 @@ class InxRenderer
     float m_cameraUp[3] = {0.0f, 1.0f, 0.0f};
 
     // Delta time tracking
-    std::chrono::high_resolution_clock::time_point m_lastFrameTime;
+    std::chrono::steady_clock::time_point m_lastFrameTime;
     float m_deltaTime = 0.016f;
     /// Negative = no override. Consumed by the next DrawFrame().
     float m_nextFrameDeltaTimeOverride = -1.0f;

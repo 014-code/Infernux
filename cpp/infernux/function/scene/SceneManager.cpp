@@ -460,11 +460,9 @@ void SceneManager::Update(float deltaTime)
                 callback();
         }
 
-        // Keep gameplay and physics on the same scaled clock. The raw frame
-        // delta is clamped once before scaling so long frames cannot create an
-        // unbounded fixed-step catch-up burst.
-        const float unscaledDeltaTime = std::clamp(deltaTime, 0.0f, m_maxFixedDeltaTime);
-        m_lastScaledDeltaTime = unscaledDeltaTime * m_timeScale;
+        // Bound simulation catch-up after scaling; unscaled consumers keep the
+        // actual frame duration, including long frames and paused game time.
+        m_lastScaledDeltaTime = std::clamp(deltaTime * m_timeScale, 0.0f, m_maxFixedDeltaTime);
 
         // ---- Fixed-update accumulator (Unity-style) ----
         m_fixedTimeAccumulator += m_lastScaledDeltaTime;

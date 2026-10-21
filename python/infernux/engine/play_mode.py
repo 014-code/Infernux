@@ -728,7 +728,7 @@ class PlayModeManager(PlayModeSerializationMixin):
             Material._suppress_auto_save = True
             RenderEffect._suppress_auto_save = True
             try:
-                self._last_frame_time = time.time()
+                self._last_frame_time = time.perf_counter()
                 self._total_play_time = 0.0
                 self._delta_time = 0.0
                 self._step_sequence = 0
@@ -1037,7 +1037,7 @@ class PlayModeManager(PlayModeSerializationMixin):
         
         self._pending_step_requests = 0
         # Reset timing to avoid large delta_time after unpause
-        self._last_frame_time = time.time()
+        self._last_frame_time = time.perf_counter()
         
         scene_manager = self._get_scene_manager()
         if scene_manager:
@@ -1157,7 +1157,7 @@ class PlayModeManager(PlayModeSerializationMixin):
             return
         
         # Calculate delta time
-        current_time = time.time()
+        current_time = time.perf_counter()
         if external_delta_time is not None:
             raw_dt = external_delta_time
         else:

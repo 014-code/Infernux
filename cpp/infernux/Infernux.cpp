@@ -1089,7 +1089,7 @@ void Infernux::Run()
         auto previous = std::chrono::steady_clock::now();
         while (!m_exitRequested.load(std::memory_order_acquire)) {
             const auto now = std::chrono::steady_clock::now();
-            const float deltaTime = std::min(std::chrono::duration<float>(now - previous).count(), 1.0f / 3.0f);
+            const float deltaTime = std::chrono::duration<float>(now - previous).count();
             previous = now;
             Tick(deltaTime);
 

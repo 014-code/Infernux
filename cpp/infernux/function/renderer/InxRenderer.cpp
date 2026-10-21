@@ -1076,13 +1076,9 @@ void InxRenderer::DrawFrame()
         samplePerformanceFrame ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
 
     // Calculate delta time
-    auto currentTime = std::chrono::high_resolution_clock::now();
+    auto currentTime = std::chrono::steady_clock::now();
     m_deltaTime = std::chrono::duration<float>(currentTime - m_lastFrameTime).count();
     m_lastFrameTime = currentTime;
-
-    // Clamp delta time to avoid huge jumps
-    if (m_deltaTime > 1.0f / 3.0f)
-        m_deltaTime = 1.0f / 3.0f;
 
     // Deterministic stepping (Infernux::Tick in graphical mode) supplies the
     // exact simulation delta; the wall clock only reset m_lastFrameTime above
@@ -3178,7 +3174,7 @@ void InxRenderer::InitializeDefaultScene()
     editorCam.FocusOn(glm::vec3(0.0f, 0.0f, 0.0f), 5.0f);
 
     // Initialize last frame time
-    m_lastFrameTime = std::chrono::high_resolution_clock::now();
+    m_lastFrameTime = std::chrono::steady_clock::now();
 
     INXLOG_INFO("Default scene initialized with cube, directional light, and gizmos");
 }
@@ -3194,7 +3190,7 @@ void InxRenderer::InitializeRuntimeScene()
         m_scenePickingService->SetParticleGpuDrawRegistry(m_particleGpuDrawRegistry.get());
 
     SceneManager::Instance().CreateScene("Runtime Bootstrap");
-    m_lastFrameTime = std::chrono::high_resolution_clock::now();
+    m_lastFrameTime = std::chrono::steady_clock::now();
 }
 
 void InxRenderer::UpdateSceneLighting()

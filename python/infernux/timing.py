@@ -268,12 +268,10 @@ class Time(metaclass=_TimeMeta):
         if cls._reset_delta_on_next_tick:
             raw_delta_time = 0.0
             cls._reset_delta_on_next_tick = False
-        clamped = min(max(raw_delta_time, 0.0), cls.maximum_delta_time)
-        time_scale = cls.time_scale
-        cls._unscaled_delta_time = clamped
-        cls._delta_time = clamped * time_scale
+        cls._unscaled_delta_time = max(raw_delta_time, 0.0)
+        cls._delta_time = min(cls._unscaled_delta_time * cls.time_scale, cls.maximum_delta_time)
         cls._time += cls._delta_time
-        cls._unscaled_time += clamped
+        cls._unscaled_time += cls._unscaled_delta_time
         cls._frame_count += 1
 
     @classmethod

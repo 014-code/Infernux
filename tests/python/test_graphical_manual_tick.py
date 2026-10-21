@@ -16,8 +16,8 @@ def test_graphical_tick_advances_one_rendered_frame_with_exact_delta(engine, sce
     engine.set_pre_scene_update_callback(observed.append)
     try:
         engine.tick(1.0 / 60.0)
-        # Larger than DrawFrame's 1/3 s wall-clock clamp: the manual override
-        # must win so deterministic stepping is not silently rescaled.
+        # Simulation clamps its own scaled clock; the frame callback receives
+        # the full caller-provided duration.
         engine.tick(0.5)
     finally:
         engine.set_pre_scene_update_callback(None)
