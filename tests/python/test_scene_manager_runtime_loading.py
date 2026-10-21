@@ -256,8 +256,9 @@ def test_prepare_scene_holds_ready_transaction_until_explicit_activation(monkeyp
     assert calls == ["start", "commit"]
 
 
-def test_player_runtime_tick_advances_pending_scene_load_before_time(monkeypatch):
+def test_player_runtime_tick_advances_pending_scene_load_before_time(scene, monkeypatch):
     from infernux.engine.player_runtime import PlayerRuntimeSession
+    from infernux.lib import SceneManager as NativeSceneManager
 
     calls = []
 
@@ -274,19 +275,19 @@ def test_player_runtime_tick_advances_pending_scene_load_before_time(monkeypatch
 
     monkeypatch.setattr("infernux.timing.Time._tick", lambda value: calls.append("time"))
 
-    native = SimpleNamespace(is_paused=False)
-    monkeypatch.setattr("infernux.lib.SceneManager", SimpleNamespace(instance=lambda: native))
+    native = NativeSceneManager.instance()
+    native.play()
 
     session = PlayerRuntimeSession(scene_service=RuntimeSceneService())
     session._state = "playing"
     session.tick(1.0 / 60.0)
 
     assert calls == ["process", "time"]
-    native.is_paused = True
+    native.pause()
     assert session.is_paused
     assert session.tick(1.0) == 0.0
     assert calls == ["process", "time", "process"]
-    native.is_paused = False
+    native.pause()
     session.tick(1.0 / 60.0)
     assert calls == ["process", "time", "process", "process", "time"]
 

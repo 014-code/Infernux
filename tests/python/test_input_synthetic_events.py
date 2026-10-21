@@ -793,7 +793,7 @@ def test_synthetic_ctrl_a_replaces_focused_imgui_text(engine):
             engine.queue_synthetic_mouse_button_input(0, False, x, y)
             state["clicked"] = True
             state["target"] = target
-        elif state["clicked"] and target and target.get("focused") and not state["typed"]:
+        elif state["clicked"] and target and target.get("active") and not state["typed"]:
             engine.queue_synthetic_key_input(224, True)  # SDL_SCANCODE_LCTRL
             engine.queue_synthetic_key_input(4, True)    # SDL_SCANCODE_A
             engine.queue_synthetic_key_input(4, False)
