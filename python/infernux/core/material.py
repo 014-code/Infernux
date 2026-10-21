@@ -82,6 +82,8 @@ class Material(ResourceProxy):
         self._last_save_time: float = 0.0
         self._save_pending: bool = False
         self._save_error_reported: bool = False
+        self._preview_active = False
+        self._end_preview = None
 
     # ==========================================================================
     # Factory Methods
@@ -436,7 +438,7 @@ class Material(ResourceProxy):
         rapid-fire changes (e.g. every-frame set_texture) don't hammer
         the file system — pending writes are flushed via flush().
         """
-        if Material._suppress_auto_save or self._cannot_persist():
+        if self._preview_active or Material._suppress_auto_save or self._cannot_persist():
             return
 
         file_path = getattr(self._native, "file_path", None)
@@ -453,6 +455,8 @@ class Material(ResourceProxy):
 
     def _flush_save(self):
         """Execute the actual disk write."""
+        if self._preview_active:
+            return
         if Material._suppress_auto_save or self._cannot_persist():
             self._save_pending = False
             Material._pending_saves.pop(id(self), None)
@@ -658,6 +662,8 @@ class Material(ResourceProxy):
 
     def save(self, file_path: str) -> bool:
         """Save material to a .mat file."""
+        if self._end_preview is not None:
+            self._end_preview()
         try:
             return bool(self._native.save_to(file_path))
         except (OSError, RuntimeError, ValueError):

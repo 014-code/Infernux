@@ -667,7 +667,9 @@ class SceneObjectCommandService:
     ) -> bool:
         """Delete explicit objects through the same atomic hierarchy command."""
         from infernux.engine.undo import DeleteGameObjectsCommand, UndoManager
+        from .previews import close_editor_previews
 
+        close_editor_previews()
         ids = []
         for value in object_ids:
             try:

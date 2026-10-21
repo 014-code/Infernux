@@ -520,6 +520,9 @@ class EditorPanel(ClosablePanel):
         """
         if not self._enable_called:
             return
+        from infernux.engine.interaction.previews import close_editor_previews
+
+        close_editor_previews(self.window_id)
         self._enable_called = False
         self._content_visible_previous_frame = bool(self._content_was_visible)
         self._content_was_visible = None

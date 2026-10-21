@@ -712,6 +712,9 @@ class PlayModeManager(PlayModeSerializationMixin):
 
         def step_enter():
             """Save scene, rebuild from snapshot, and activate play — all in one frame."""
+            from infernux.engine.interaction.previews import close_editor_previews
+
+            close_editor_previews()
             transition_started = time.perf_counter()
             report_progress(0.05, "Saving the authored scene")
             # Capture authoring before any preparation can modify the graph.

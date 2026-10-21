@@ -428,6 +428,9 @@ class ComponentCommandService:
         """Capture, validate, and commit one aggregate component edit."""
         if component is None or not callable(edit):
             raise ValueError("component document edit requires a target and callback")
+        from .previews import close_editor_previews
+
+        close_editor_previews()
         manager = self._manager()
         before = self._capture_document(component)
         value = None

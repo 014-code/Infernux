@@ -144,6 +144,9 @@ class UndoManager:
         """Aggregate one user intent into one chronological journal entry."""
         outermost = self._user_action_depth == 0
         if outermost:
+            from infernux.engine.interaction.previews import close_editor_previews
+
+            close_editor_previews()
             self._user_action_id = uuid.uuid4().hex
             self._user_action_description = str(description or "Editor Action")
             from infernux.engine.interaction import current_action_origin
@@ -362,6 +365,10 @@ class UndoManager:
         pending = self._pending_replay
         if pending is None:
             return ContextRestoreStatus.READY
+
+        from infernux.engine.interaction.previews import close_editor_previews
+
+        close_editor_previews()
 
         expected = (
             self._journal.peek_undo()

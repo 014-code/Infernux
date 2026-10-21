@@ -15,6 +15,7 @@ from .command_palette import COMMAND_PALETTE_CONTEXT_ID, COMMAND_PALETTE_MODAL_I
 from .history import HistoryEntrySnapshot, HistoryModel, HistorySnapshot
 from .shortcut_profiles import DEFAULT_PROFILE_ID, DEFAULT_PROFILE_NAME, SHORTCUT_PROFILES_SCHEMA, ShortcutBindingSnapshot, ShortcutOverrideSnapshot, ShortcutProfileDiff, ShortcutProfileDiffKind, ShortcutProfileModel, ShortcutProfileSnapshot, ShortcutProfilesSnapshot
 from .session import EditorInteractionCore
+from .previews import PreviewScope, PreviewService
 from .continuous_edits import ContinuousEditService, ContinuousEditSession
 from .authoring_mutations import AuthoringMutationService
 from .project_assets import ProjectAssetCommandService, ProjectAssetInteractionService

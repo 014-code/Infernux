@@ -6,7 +6,10 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 import os
 import re
-from typing import Any, Callable
+from typing import Any, Callable, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infernux.engine.interaction.previews import PreviewScope
 
 from infernux.runtime_services import UpdatePhase, UpdateRegistration
 
@@ -135,6 +138,17 @@ class PreloadContext:
         registration = register_update(callback, phase=phase, unscaled=unscaled, enabled=enabled)
         self.add_cleanup(registration.close)
         return registration
+
+    def create_preview(self) -> PreviewScope:
+        """Own an Edit-mode preview through preload failure, reload and unload."""
+        from infernux.engine.interaction import EditorInteractionCore
+
+        core = EditorInteractionCore.instance()
+        if core is None or self._cleanup_callback is None:
+            raise RuntimeError("Editor preview ownership is unavailable")
+        scope = core.previews.begin(self.type_id)
+        self.add_cleanup(scope.close)
+        return scope
 
 
 class InxPreload(ABC):

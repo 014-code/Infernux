@@ -40,6 +40,7 @@ from .graph_commands import GraphCommandService
 from .command_palette import CommandPaletteService
 from .history import HistoryModel
 from .external_conflicts import ExternalDocumentConflictService
+from .previews import PreviewService
 
 
 class EditorInteractionCore:
@@ -68,6 +69,7 @@ class EditorInteractionCore:
         self.transient_interactions = TransientInteractionService(self.focus)
         self.continuous_edits = ContinuousEditService()
         self.documents = DocumentRegistry()
+        self.previews = PreviewService()
         self.external_conflicts = ExternalDocumentConflictService(self.documents)
         self.authoring_mutations = AuthoringMutationService(self.documents)
         self.modals = ModalService()
@@ -139,6 +141,7 @@ class EditorInteractionCore:
     def shutdown(self) -> None:
         from infernux.engine.ui.plugin_install_progress import PluginInstallProgressService
 
+        self.previews.close()
         progress = PluginInstallProgressService._instance
         if progress is not None:
             progress.shutdown(modals=self.modals)

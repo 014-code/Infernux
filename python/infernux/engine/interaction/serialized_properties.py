@@ -248,6 +248,9 @@ class PropertyTransaction:
     def commit(self, candidate: Any) -> PropertyTransactionStatus:
         if self.handle.schema.read_only:
             return self._reject(f"{self.handle.property_path} is read-only")
+        from .previews import close_editor_previews
+
+        close_editor_previews()
         try:
             before, after = self.handle.prepare(candidate)
         except Exception as exc:
@@ -432,6 +435,9 @@ class SnapshotPropertyTransaction:
         *,
         mergeable: bool,
     ) -> PropertyTransactionStatus:
+        from .previews import close_editor_previews
+
+        close_editor_previews()
         try:
             before = copy.deepcopy(self.capture())
             after = copy.deepcopy(self.normalize(candidate))

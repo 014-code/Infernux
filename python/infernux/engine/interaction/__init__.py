@@ -104,6 +104,7 @@ from .shortcut_profiles import (
     ShortcutProfilesSnapshot,
 )
 from .session import EditorInteractionCore
+from .previews import PreviewScope, PreviewService
 from .continuous_edits import ContinuousEditService, ContinuousEditSession
 from .authoring_mutations import AuthoringMutationService
 from .project_assets import ProjectAssetCommandService, ProjectAssetInteractionService
@@ -229,6 +230,8 @@ from .serialized_properties import (
 )
 
 __all__ = [
+    "PreviewScope",
+    "PreviewService",
     "EditorInteractionCore",
     "ContinuousEditService",
     "ContinuousEditSession",

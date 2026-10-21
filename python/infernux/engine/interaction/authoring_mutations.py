@@ -54,6 +54,9 @@ class AuthoringMutationService:
         if not owner_view_id:
             raise ValueError("authoring mutation requires an authoring view id")
 
+        from .previews import close_editor_previews
+
+        close_editor_previews()
         document = self._documents.require(identifier)
         controller = document.controller
         capture = getattr(controller, "capture_authoring_snapshot", None)

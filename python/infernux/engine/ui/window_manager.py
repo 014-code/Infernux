@@ -931,6 +931,7 @@ class WindowManager:
 
         core = EditorInteractionCore.instance()
         if core is not None:
+            core.previews.close(window_id)
             core.modals.cancel_owner(window_id)
         self._set_instance_open(instance, False)
 

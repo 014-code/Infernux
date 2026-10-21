@@ -2497,6 +2497,9 @@ class DocumentRegistry:
         return completed
 
     def begin_save(self, document_id: str, *, save_as: bool = False) -> SaveTicket:
+        from .previews import close_editor_previews
+
+        close_editor_previews()
         document = self.require(document_id)
         active = self.active_save_ticket(document_id)
         if active is not None:

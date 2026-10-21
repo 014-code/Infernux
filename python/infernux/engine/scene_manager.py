@@ -1194,6 +1194,9 @@ class SceneFileManager(ScenePrefabMixin, SceneSaveMixin):
                 f"Cannot unload modified Scene '{document.title}'; save or discard it first."
             )
             return False
+        from .interaction.previews import close_editor_previews
+
+        close_editor_previews()
         self._deferred_unload_world_id = world_id
         self._last_scene_load = {"status": "pending_unload", "path": binding.resource_path, "error": ""}
         return True
@@ -1405,6 +1408,9 @@ class SceneFileManager(ScenePrefabMixin, SceneSaveMixin):
         if not self._can_replace_scene():
             self._cancel_scene_navigation()
             return
+        from .interaction.previews import close_editor_previews
+
+        close_editor_previews()
         self._last_scene_load = {
             "status": "pending", "path": resolved_path(path), "error": "",
         }
@@ -1416,6 +1422,9 @@ class SceneFileManager(ScenePrefabMixin, SceneSaveMixin):
         if not self._can_replace_scene():
             self._cancel_scene_navigation()
             return
+        from .interaction.previews import close_editor_previews
+
+        close_editor_previews()
         self._last_scene_load = {"status": "idle", "path": "", "error": ""}
         self._deferred_load_path = None
         self._deferred_new_scene = True
