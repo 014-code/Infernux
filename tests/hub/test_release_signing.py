@@ -362,8 +362,9 @@ def test_release_recovery_keeps_existing_metadata_and_public_assets_immutable():
 def test_publication_updates_current_website_without_recreating_retired_roadmap_copy(tmp_path, monkeypatch):
     module = load('sync_release_site')
     docs = tmp_path / 'docs'
-    for folder in ('tools', 'changelog', 'wiki/docs/en/api', 'wiki/docs/zh/api'):
+    for folder in ('tools', 'css', 'changelog', 'wiki/docs/en/api', 'wiki/docs/zh/api'):
         (docs / folder).mkdir(parents=True, exist_ok=True)
+    (docs / 'css/style.css').write_text(':root { --release-code: "041"; }', encoding='utf-8')
     (tmp_path / 'pyproject.toml').write_text('[project]\nversion = "0.4.2"\n', encoding='utf-8')
     (tmp_path / 'UpdateLog.md').write_text('# Infernux v0.4.2 · Release\n\nPublished changes.\n', encoding='utf-8')
     for path in ('README.md', 'README-zh.md'):
@@ -378,10 +379,16 @@ def test_publication_updates_current_website_without_recreating_retired_roadmap_
         'platform-support.json': {'released_version': '0.4.1'},
         'changelog/history.json': [],
         'tools/i18n-source.json': {'en': {'home.version': 'Engine 0.4.1'}, 'zh': {'home.version': '引擎 0.4.1'}},
+        'hub-catalog.json': {'stable': '0.4.2', 'releases': [{'version': '0.4.2', 'platforms': {
+            platform: {'installer': {'url': f'https://downloads.example.org/hub/{platform}'}}
+            for platform in ('windows-x64', 'linux-x64')
+        }}]},
     }
     for name, data in inputs.items():
         (docs / name).write_text(json.dumps(data), encoding='utf-8')
-    (docs / 'download.html').write_text('<select data-version-select></select>', encoding='utf-8')
+    (docs / 'download.html').write_text(
+        '<select data-version-select></select><span data-release-code="REV {code}">REV 041</span>'
+        '<a data-hub-link="windows-x64" aria-disabled="true"></a>', encoding='utf-8')
     monkeypatch.setattr(module, 'ROOT', tmp_path)
     monkeypatch.setattr(module, 'DOCS', docs)
     monkeypatch.chdir(tmp_path)
@@ -393,4 +400,7 @@ def test_publication_updates_current_website_without_recreating_retired_roadmap_
     translations = json.loads((docs / 'tools/i18n-source.json').read_text(encoding='utf-8'))
     assert translations == {'en': {'home.version': 'Engine 0.4.2'}, 'zh': {'home.version': '引擎 0.4.2'}}
     assert 'https://files.pythonhosted.org/released.whl' in (docs / 'download.html').read_text(encoding='utf-8')
+    assert 'https://downloads.example.org/hub/windows-x64' in (docs / 'download.html').read_text(encoding='utf-8')
+    assert 'REV 042' in (docs / 'download.html').read_text(encoding='utf-8')
+    assert '--release-code: "042";' in (docs / 'css/style.css').read_text(encoding='utf-8')
     assert json.loads((docs / 'docs-manifest.json').read_text())['documented_release'] == '0.4.2'

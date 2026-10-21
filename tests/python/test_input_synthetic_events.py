@@ -761,8 +761,10 @@ def test_synthetic_ctrl_a_replaces_focused_imgui_text(engine):
         def __init__(self) -> None:
             super().__init__()
             self.value = "UntitledScene"
+            self.render_count = 0
 
         def on_render(self, ctx) -> None:
+            self.render_count += 1
             ctx.set_next_window_pos(0.0, 0.0, 0, 0.0, 0.0)
             ctx.set_next_window_size(64.0, 64.0, 0)
             if ctx.begin_window("Synthetic Input Probe###synthetic_input_probe", True, 0):
@@ -772,6 +774,7 @@ def test_synthetic_ctrl_a_replaces_focused_imgui_text(engine):
 
     probe = _TextProbe()
     state = {"frame": 0, "clicked": False, "focused": False, "typed": False, "target": None}
+    deadline = time.monotonic() + 5.0
     set_gui_semantic_capture_enabled(True)
 
     def _find_target():
@@ -803,7 +806,8 @@ def test_synthetic_ctrl_a_replaces_focused_imgui_text(engine):
             state["typed"] = True
         elif state["typed"] and probe.value == "RacingEntry":
             engine.exit()
-        elif state["frame"] >= 32:
+        # GUI updates have their own cadence, independent of the simulation loop.
+        elif probe.render_count >= 16 or time.monotonic() >= deadline:
             engine.exit()
 
     engine.register_gui_renderable("test.synthetic_ctrl_a", probe)
@@ -817,7 +821,7 @@ def test_synthetic_ctrl_a_replaces_focused_imgui_text(engine):
     assert state["target"] is not None
     assert state["focused"] is True
     assert state["typed"] is True
-    assert probe.value == "RacingEntry"
+    assert probe.value == "RacingEntry", {"engine_frames": state["frame"], "gui_frames": probe.render_count}
 
 
 def test_synthetic_ctrl_click_edits_semantic_vector_axis(engine):
