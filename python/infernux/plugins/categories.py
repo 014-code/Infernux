@@ -5,6 +5,7 @@ from __future__ import annotations
 OFFICIAL_PLUGIN_CATEGORIES = (
     "platform_build",
     "compute_simulation",
+    "animation",
     "editor_tools",
     "online_services",
     "other",

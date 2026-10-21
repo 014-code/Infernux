@@ -26,10 +26,11 @@ and catalogs change only after the actual artifacts have been published.
 2. Publish each platform plugin's matching precompiled payload from its own
    repository. A workflow-only repair can recover publication of an existing
    tagged payload without changing that tag.
-3. Run **Publish Official Platform Packages**. It reads the exact versions in
+3. Run **Publish Official Plugins**. It reads the exact versions in
    `official-registry.json`, downloads their GitHub release assets, and uploads
    them through the shared R2 publisher. An optional reference publishes one
-   package; leaving it empty publishes all platform packages and then the registry.
+   package; leaving it empty publishes all official packages. Both modes update
+   the complete registry last.
    Every advertised package, including unchanged editor tools, must be available
    before the public registry is updated.
 4. Run **Publish Infernux Release** to build, test, and publish. Enable
@@ -41,6 +42,13 @@ and catalogs change only after the actual artifacts have been published.
    release, and regenerates the website/catalogs from the actual published URLs.
    `build_release_notes.py` reads the English root changelog; `sync_release_site.py`
    updates the website's versioned history after publication.
+
+Independent official plugins are recorded in `packaging/official_plugin_releases.json`
+using the existing official registry entry format. Catalog generation merges these
+releases with the source-backed entries in `external/plugins/plugins.json` and
+rejects duplicate references. It does not fetch independent plugin sources or
+bundle their archives. Add a release only after its GitHub asset exists; approve
+its exact upload destination in the R2 worker before publishing the registry.
 
 ### Windows signing setup
 

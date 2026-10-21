@@ -102,14 +102,20 @@ def channel(tmp_path, monkeypatch):
         "reference": "fixture/platform", "version": "1.2.3", "category": "platform_build",
         "source": {"location": url + "/public/" + PACKAGE_KEY},
     }, {
-        "reference": "fixture/editor", "category": "editor",
+        "reference": "fixture/editor", "version": "1.0.0", "category": "animation",
         "source": {"location": url + "/public/plugins/editor.inxpkg"},
     }]}), encoding="utf-8")
     objects["plugins/editor.inxpkg"] = b"existing editor package"
+    editor_payload = tmp_path / "editor.inxpkg"
+    editor_payload.write_bytes(objects["plugins/editor.inxpkg"])
     monkeypatch.setattr(plugins, "ROOT", tmp_path)
     monkeypatch.setattr(plugins, "REGISTRY", catalog)
     # Only the GitHub download is supplied locally. Publisher and HTTP are real.
-    monkeypatch.setattr(plugins, "stage", lambda *_: (payload, PACKAGE_KEY))
+    payloads = {
+        "fixture/platform": (payload, PACKAGE_KEY),
+        "fixture/editor": (editor_payload, "plugins/editor.inxpkg"),
+    }
+    monkeypatch.setattr(plugins, "stage", lambda item, _: payloads[item["reference"]])
     monkeypatch.setattr(sys, "argv", ["publish_plugin_objects.py"])
     monkeypatch.setenv("R2_UPLOAD_TOKEN", "local-fixture-token")
     try:
@@ -134,6 +140,7 @@ def test_registry_advances_only_after_all_packages_are_public(channel, existing)
     assert requests.index(("POST", "/upload/stat", PACKAGE_KEY)) < requests.index(
         ("POST", "/upload/start", PACKAGE_KEY)
     )
+    assert ("POST", "/upload/stat", "plugins/editor.inxpkg") in requests
 
 
 @pytest.mark.parametrize("key", [PACKAGE_KEY, "hub/0.4.1/build-3/payload.zip", "hub/0.4.1/build-3/manifest.json"])
@@ -154,9 +161,10 @@ def test_identical_versioned_payload_is_not_uploaded_twice(channel):
 
 
 @pytest.mark.parametrize("contents", [None, b""])
-def test_unavailable_advertised_package_preserves_catalog(channel, contents):
+def test_unavailable_advertised_package_preserves_catalog(channel, monkeypatch, contents):
     _, plugins, objects, requests, _, _, _ = channel
     objects[CATALOG_KEY] = b"old catalog"
+    monkeypatch.setattr(sys, "argv", ["publish_plugin_objects.py", "--reference", "fixture/platform"])
     if contents is None:
         del objects["plugins/editor.inxpkg"]
     else:
@@ -179,13 +187,16 @@ def test_failed_multipart_publication_preserves_previous_catalog(channel, key, s
     assert ("POST", "/upload/abort", key) in requests
 
 
-def test_single_reference_does_not_publish_registry(channel, monkeypatch):
-    _, plugins, objects, requests, _, _, _ = channel
+def test_single_reference_publishes_complete_registry_last(channel, monkeypatch):
+    _, plugins, objects, requests, _, catalog, _ = channel
     objects[CATALOG_KEY] = b"old catalog"
     monkeypatch.setattr(sys, "argv", ["publish_plugin_objects.py", "--reference", "fixture/platform"])
     plugins.main()
-    assert objects[CATALOG_KEY] == b"old catalog"
-    assert ("POST", "/upload/start", CATALOG_KEY) not in requests
+    assert objects[CATALOG_KEY] == catalog.read_bytes()
+    assert ("POST", "/upload/stat", "plugins/editor.inxpkg") not in requests
+    completion = requests.index(("POST", "/upload/complete", CATALOG_KEY))
+    for key in [PACKAGE_KEY, "plugins/editor.inxpkg"]:
+        assert requests.index(("HEAD", "/public/" + key)) < completion
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows local release entry")

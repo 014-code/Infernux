@@ -58,12 +58,10 @@ def stage(package: dict, destination: Path) -> tuple[Path, str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--reference", default="", help="Publish one reference; empty publishes all platform packages and the registry")
+    parser.add_argument("--reference", default="", help="Publish one reference, or all official packages; always update the registry last")
     args = parser.parse_args()
     registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
-    packages = [item for item in registry["packages"] if (
-        item["reference"] == args.reference if args.reference else item["category"] == "platform_build"
-    )]
+    packages = [item for item in registry["packages"] if not args.reference or item["reference"] == args.reference]
     if not packages:
         raise ValueError(f"No matching official package: {args.reference}")
     publisher = Publisher(os.environ["R2_UPLOAD_TOKEN"])
@@ -71,16 +69,15 @@ def main() -> None:
     for path, key in staged:
         publisher.upload(path, key)
     # Never advertise missing packages. This also checks unchanged editor tools.
-    if not args.reference:
-        for item in registry["packages"]:
-            request = urllib.request.Request(
-                item["source"]["location"], method="HEAD",
-                headers={"User-Agent": "Infernux-Release-Publisher"},
-            )
-            with urllib.request.urlopen(request, timeout=60) as response:
-                if int(response.headers["Content-Length"]) <= 0:
-                    raise ValueError(f"Empty public plugin: {item['reference']}")
-        publisher.upload(REGISTRY, "plugins/official-registry.json")
+    for item in registry["packages"]:
+        request = urllib.request.Request(
+            item["source"]["location"], method="HEAD",
+            headers={"User-Agent": "Infernux-Release-Publisher"},
+        )
+        with urllib.request.urlopen(request, timeout=60) as response:
+            if int(response.headers["Content-Length"]) <= 0:
+                raise ValueError(f"Empty public plugin: {item['reference']}")
+    publisher.upload(REGISTRY, "plugins/official-registry.json")
 
 
 if __name__ == "__main__":

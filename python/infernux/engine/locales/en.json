@@ -1541,6 +1541,7 @@
   "plugins.scope.downloaded": "Packages: Downloaded",
   "plugins.category.all": "Category: All",
   "plugins.category.platform_build": "Platform Build",
+  "plugins.category.animation": "Animation",
   "plugins.category.compute_simulation": "Compute & Simulation",
   "plugins.category.editor_tools": "Editor & Tools",
   "plugins.category.online_services": "Online Services",

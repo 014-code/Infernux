@@ -1,10 +1,10 @@
-name: Publish Official Platform Packages
+name: Publish Official Plugins
 
 on:
   workflow_dispatch:
     inputs:
       reference:
-        description: One plugin reference, or empty to publish all platform packages and the registry
+        description: One plugin reference, or empty for all official packages; updates the registry last
         required: false
         default: ''
         type: string

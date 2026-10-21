@@ -18,6 +18,11 @@ if _SOURCE_PYTHON.is_dir() and str(_SOURCE_PYTHON) not in sys.path:
 
 from infernux.plugins import InxPackage
 from infernux.plugins.content import discover_plugin_pages, merge_plugin_pages
+from infernux.plugins.official import (
+    OFFICIAL_REGISTRY_SCHEMA,
+    _catalog_entries,
+    _read_document,
+)
 
 
 _DISTRIBUTION_BASE_URL = "https://downloads.infernux-engine.com"
@@ -33,7 +38,7 @@ def _write_json(path: Path, document: dict[str, object]) -> None:
     os.replace(temporary, path)
 
 
-def build(source_root: Path, output_root: Path, catalog_path: Path) -> None:
+def build(source_root: Path, output_root: Path, catalog_path: Path, releases_path: Path) -> None:
     source_document = json.loads(catalog_path.read_text(encoding="utf-8"))
     if (
         not isinstance(source_document, dict)
@@ -100,6 +105,15 @@ def build(source_root: Path, output_root: Path, catalog_path: Path) -> None:
         if bool(source_entry.get("default", False)):
             defaults.append(reference)
 
+    releases = _read_document(str(releases_path), OFFICIAL_REGISTRY_SCHEMA, "packages")
+    registry.extend(releases["packages"])
+    document = {"$schema": OFFICIAL_REGISTRY_SCHEMA, "packages": registry}
+    _catalog_entries(document, "")
+    references = [str(entry["reference"]).casefold() for entry in registry]
+    if len(set(references)) != len(references):
+        raise RuntimeError("Official plugin references must be unique across sources and releases")
+    registry.sort(key=lambda entry: str(entry["reference"]).casefold())
+
     for existing in output_root.iterdir():
         if existing.is_file() and existing.name not in expected_outputs:
             existing.unlink()
@@ -124,8 +138,9 @@ def main() -> int:
     parser.add_argument("--source-root", required=True, type=Path)
     parser.add_argument("--output-root", required=True, type=Path)
     parser.add_argument("--catalog", required=True, type=Path)
+    parser.add_argument("--releases", required=True, type=Path)
     args = parser.parse_args()
-    build(args.source_root, args.output_root, args.catalog)
+    build(args.source_root, args.output_root, args.catalog, args.releases)
     return 0
 
 

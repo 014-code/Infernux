@@ -9,6 +9,8 @@ set(INFERNUX_OFFICIAL_PLUGIN_CATALOG
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins.json")
 set(INFERNUX_OFFICIAL_PLUGIN_BUILDER
     "${CMAKE_CURRENT_SOURCE_DIR}/build_official_plugins.py")
+set(INFERNUX_OFFICIAL_PLUGIN_RELEASES
+    "${CMAKE_SOURCE_DIR}/packaging/official_plugin_releases.json")
 
 option(INFERNUX_REFRESH_EDITOR_PLUGIN_RESOURCES
     "Copy the generated default plugin catalog/package into the source checkout"
@@ -74,11 +76,13 @@ add_custom_target(infernux_official_plugins
         --source-root "${CMAKE_CURRENT_SOURCE_DIR}"
         --output-root "${INFERNUX_OFFICIAL_PLUGIN_OUTPUT_DIR}"
         --catalog "${INFERNUX_OFFICIAL_PLUGIN_CATALOG}"
+        --releases "${INFERNUX_OFFICIAL_PLUGIN_RELEASES}"
     ${_infernux_editor_plugin_refresh_commands}
     DEPENDS
         _Infernux
         "${INFERNUX_OFFICIAL_PLUGIN_BUILDER}"
         "${INFERNUX_OFFICIAL_PLUGIN_CATALOG}"
+        "${INFERNUX_OFFICIAL_PLUGIN_RELEASES}"
     BYPRODUCTS ${INFERNUX_OFFICIAL_PLUGIN_ARTIFACTS}
     COMMENT "Building official Infernux plugins"
     VERBATIM
