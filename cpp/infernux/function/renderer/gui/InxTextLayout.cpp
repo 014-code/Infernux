@@ -9,10 +9,6 @@ TextLayoutResult LayoutText(const TextLayoutParams &params)
 {
     TextLayoutResult result{};
     result.text = params.text;
-    result.segments = text::SegmentText(result.text);
-    result.characters.reserve(result.segments.characters.size());
-    for (const auto &character : result.segments.characters)
-        result.characters.push_back({character.start, character.end, 0, 0, 0, character.word, character.whitespace});
     result.font = ResolveFont(params.fontPath);
     const float lineFontSize = ResolveFontSize(params.fontSize);
     const float rasterScale = ResolveEmRasterScale(result.font);
@@ -21,6 +17,19 @@ TextLayoutResult LayoutText(const TextLayoutParams &params)
     result.fontSize = params.fontSize > 0.0f ? lineFontSize * rasterScale : lineFontSize;
     result.baseLineHeight = lineFontSize;
     result.lineAdvance = result.baseLineHeight * std::max(params.lineHeight, 0.1f);
+    text::MarkupText markup;
+    if (params.richText) {
+        markup = text::ParseTextMarkup(result.text, logicalFontSize);
+        result.displayText = std::move(markup.text);
+        result.styles = std::move(markup.styles);
+    } else {
+        result.displayText = result.text;
+        result.styles.push_back({0, result.text.size(), logicalFontSize});
+    }
+    result.segments = text::SegmentText(result.displayText);
+    result.characters.reserve(result.segments.characters.size());
+    for (const auto &character : result.segments.characters)
+        result.characters.push_back({character.start, character.end, 0, 0, 0, character.word, character.whitespace});
 
     if (result.font != nullptr) {
         result.fallbackFonts.reserve(params.fallbackFontPaths.size());
@@ -46,13 +55,13 @@ TextLayoutResult LayoutText(const TextLayoutParams &params)
         }
     }
 
-    if (result.font == nullptr || result.text.empty())
+    if (result.font == nullptr || result.displayText.empty())
         return result;
 
     const float wrapWidth = params.wrapWidth > 0.0f ? params.wrapWidth : 0.0f;
     const float letterSpacing = params.letterSpacing;
-    const char *textBegin = result.text.c_str();
-    const char *textEnd = textBegin + result.text.size();
+    const char *textBegin = result.displayText.c_str();
+    const char *textEnd = textBegin + result.displayText.size();
     const char *lineStart = textBegin;
     const char *cursor = textBegin;
     bool endedWithNewline = false;
@@ -66,6 +75,7 @@ TextLayoutResult LayoutText(const TextLayoutParams &params)
     float widthAtBreak = 0.0f;
     size_t glyphCursor = 0;
     const char *spaceRunEnd = textBegin;
+    size_t styleIndex = 0;
 
     while (cursor < textEnd) {
         const char *charStart = cursor;
@@ -80,13 +90,19 @@ TextLayoutResult LayoutText(const TextLayoutParams &params)
             glyph.endOffset = glyph.startOffset + consumed;
             glyph.codepoint = codepoint;
             glyph.character = codepointInfo.character;
+            while (styleIndex + 1 < result.styles.size() && result.styles[styleIndex + 1].start <= glyph.startOffset)
+                ++styleIndex;
+            const auto &style = result.styles[styleIndex];
+            glyph.logicalFontSize = style.fontSize;
+            glyph.color = style.color;
             if (!result.segments.characters[glyph.character].newline) {
                 const auto rasterCodepoint = static_cast<ImWchar>(
                     codepoint <= IM_UNICODE_CODEPOINT_MAX ? codepoint : IM_UNICODE_CODEPOINT_INVALID);
                 glyph.font = ResolveGlyphFont(result, rasterCodepoint);
-                glyph.fontSize = ResolveGlyphRasterSize(result, glyph.font);
+                glyph.fontSize = ResolveGlyphRasterSize(result, glyph.font) * style.fontSize / logicalFontSize;
                 glyph.advance = glyph.font->CalcTextSizeA(glyph.fontSize, FLT_MAX, 0.0f, cursor, cursor + consumed).x;
                 auto *baked = glyph.font->GetFontBaked(glyph.fontSize);
+                glyph.baseline = baked->Ascent * glyph.fontSize / baked->Size;
                 const auto *quad = baked->FindGlyph(rasterCodepoint);
                 if (quad && quad->Visible) {
                     const float scale = glyph.fontSize / baked->Size;
@@ -176,15 +192,23 @@ TextLayoutResult LayoutText(const TextLayoutParams &params)
         PushLine(result, textBegin, textEnd, textEnd, 0.0f);
 
     if (!result.lines.empty()) {
-        result.totalHeight = result.baseLineHeight + result.lineAdvance * static_cast<float>(result.lines.size() - 1);
         // Logical line height still owns wrapping, intrinsic size and spacing.
         // Align the rendered content using the same glyph rectangles RenderChar
         // consumes, so font ascent padding does not shift every label downward.
         result.inkMinY = FLT_MAX;
         result.inkMaxY = -FLT_MAX;
-        for (size_t index = 0; index < result.lines.size(); ++index) {
-            const auto &line = result.lines[index];
-            const float lineY = result.lineAdvance * static_cast<float>(index);
+        float lineY = 0.0f;
+        const auto *baseBaked = result.font->GetFontBaked(result.fontSize);
+        const float baseBaseline = baseBaked->Ascent * result.fontSize / baseBaked->Size;
+        for (auto &line : result.lines) {
+            line.y = lineY;
+            line.height = result.baseLineHeight;
+            float baseline = baseBaseline;
+            for (size_t glyphIndex = line.glyphStart; glyphIndex < line.glyphEnd; ++glyphIndex) {
+                const auto &glyph = result.glyphs[glyphIndex];
+                line.height = std::max(line.height, glyph.logicalFontSize);
+                baseline = std::max(baseline, glyph.baseline);
+            }
             bool visible = false;
             float cursorX = 0.0f;
             size_t lastCharacter = text::NoWord;
@@ -192,31 +216,33 @@ TextLayoutResult LayoutText(const TextLayoutParams &params)
                 auto &glyph = result.glyphs[glyphIndex];
                 if (lastCharacter != text::NoWord && glyph.character != lastCharacter)
                     cursorX += letterSpacing;
-                glyph.line = index;
+                glyph.line = static_cast<size_t>(&line - result.lines.data());
                 glyph.originX = cursorX;
-                glyph.originY = lineY;
+                glyph.originY = lineY + baseline - glyph.baseline;
                 if (glyph.visible) {
                     glyph.bounds[0] += cursorX;
-                    glyph.bounds[1] += lineY;
+                    glyph.bounds[1] += glyph.originY;
                     glyph.bounds[2] += cursorX;
-                    glyph.bounds[3] += lineY;
+                    glyph.bounds[3] += glyph.originY;
                 } else {
-                    glyph.bounds = {cursorX, lineY, cursorX + glyph.advance, lineY + result.baseLineHeight};
+                    glyph.bounds = {cursorX, lineY, cursorX + glyph.advance, lineY + line.height};
                 }
                 cursorX += glyph.advance;
                 lastCharacter = glyph.character;
                 if (!glyph.visible)
                     continue;
-                result.inkMinY = std::min(result.inkMinY, lineY + glyph.inkMinY);
-                result.inkMaxY = std::max(result.inkMaxY, lineY + glyph.inkMaxY);
+                result.inkMinY = std::min(result.inkMinY, glyph.originY + glyph.inkMinY);
+                result.inkMaxY = std::max(result.inkMaxY, glyph.originY + glyph.inkMaxY);
                 visible = true;
             }
             if (!visible) {
                 // Preserve intentional blank/whitespace lines in the block.
                 result.inkMinY = std::min(result.inkMinY, lineY);
-                result.inkMaxY = std::max(result.inkMaxY, lineY + result.baseLineHeight);
+                result.inkMaxY = std::max(result.inkMaxY, lineY + line.height);
             }
+            lineY += line.height * std::max(params.lineHeight, 0.1f);
         }
+        result.totalHeight = result.lines.back().y + result.lines.back().height;
         size_t lineIndex = 0;
         for (size_t index = 0; index < result.characters.size(); ++index) {
             auto &character = result.characters[index];
@@ -226,9 +252,9 @@ TextLayoutResult LayoutText(const TextLayoutParams &params)
             character.line = lineIndex;
             character.glyphStart = segment.codepointStart;
             character.glyphEnd = segment.codepointEnd;
-            const float lineY = result.lineAdvance * static_cast<float>(lineIndex);
+            const float lineY = result.lines[lineIndex].y;
             character.bounds = {result.lines[lineIndex].width, lineY, result.lines[lineIndex].width,
-                                lineY + result.baseLineHeight};
+                                lineY + result.lines[lineIndex].height};
             bool initialized = false;
             for (size_t glyphIndex = character.glyphStart; glyphIndex < character.glyphEnd; ++glyphIndex) {
                 const auto &glyph = result.glyphs[glyphIndex];
@@ -245,6 +271,24 @@ TextLayoutResult LayoutText(const TextLayoutParams &params)
                 }
             }
         }
+    }
+
+    if (params.richText) {
+        const auto sourceRange = [&](size_t &start, size_t &end) {
+            const size_t mappedEnd = end > start                     ? markup.sources[end - 1].end
+                                     : start < markup.sources.size() ? markup.sources[start].start
+                                                                     : markup.sources.back().end;
+            start = start < markup.sources.size() ? markup.sources[start].start : mappedEnd;
+            end = mappedEnd;
+        };
+        for (auto &glyph : result.glyphs)
+            sourceRange(glyph.startOffset, glyph.endOffset);
+        for (auto &character : result.characters)
+            sourceRange(character.startOffset, character.endOffset);
+        for (auto &line : result.lines)
+            sourceRange(line.startOffset, line.endOffset);
+        for (auto &style : result.styles)
+            sourceRange(style.start, style.end);
     }
 
     return result;
@@ -269,6 +313,9 @@ void RenderLine(ImDrawList *drawList, const TextLayoutResult &layout, const Text
     float cursorX = x;
     int glyphIndex = 0;
     size_t lastCharacter = text::NoWord;
+    const auto base = ImGui::ColorConvertU32ToFloat4(color);
+    const bool colored = layout.styles.size() > 1 ||
+                         (!layout.styles.empty() && layout.styles.front().color != std::array<float, 4>{1, 1, 1, 1});
     for (size_t index = line.glyphStart; index < line.glyphEnd; ++index) {
         const TextGlyph &glyph = layout.glyphs[index];
         if (!glyph.font)
@@ -277,7 +324,11 @@ void RenderLine(ImDrawList *drawList, const TextLayoutResult &layout, const Text
             cursorX += letterSpacing;
         const auto codepoint = static_cast<ImWchar>(
             glyph.codepoint <= IM_UNICODE_CODEPOINT_MAX ? glyph.codepoint : IM_UNICODE_CODEPOINT_INVALID);
-        glyph.font->RenderChar(drawList, glyph.fontSize, ImVec2(cursorX, y), color, codepoint, clipRect);
+        const ImU32 tint = colored ? ImGui::ColorConvertFloat4ToU32({base.x * glyph.color[0], base.y * glyph.color[1],
+                                                                     base.z * glyph.color[2], base.w * glyph.color[3]})
+                                   : color;
+        glyph.font->RenderChar(drawList, glyph.fontSize, ImVec2(cursorX, y + glyph.originY - line.y), tint, codepoint,
+                               clipRect);
         cursorX += glyph.advance;
         ++glyphIndex;
         lastCharacter = glyph.character;
@@ -298,7 +349,7 @@ void RenderTextBox(ImDrawList *drawList, float minX, float minY, float maxX, flo
     for (size_t index = 0; index < layout.lines.size(); ++index) {
         const TextLine &line = layout.lines[index];
         const float lineX = minX + (boxWidth - line.width) * alignX;
-        const float lineY = baseY + layout.lineAdvance * static_cast<float>(index);
+        const float lineY = baseY + line.y;
         RenderLine(drawList, layout, line, lineX, lineY, color, letterSpacing, clipRect);
     }
 }

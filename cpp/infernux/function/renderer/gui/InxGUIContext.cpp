@@ -2383,14 +2383,10 @@ void InxGUIContext::DrawTextGeometry(float minX, float minY, float maxX, float m
 {
     geometry.Prepare(scale);
     ImDrawList *draw = ImGui::GetWindowDrawList();
-    if (clip)
-        draw->PushClipRect({minX, minY}, {maxX, maxY}, true);
     draw->PushTextureID(ImGui::GetIO().Fonts->TexRef);
     geometry.Render(*draw, minX, minY, maxX, maxY, {r, g, b, a}, alignX, alignY, scale, rotation, mirrorH, mirrorV,
-                    false);
+                    false, clip);
     draw->PopTextureID();
-    if (clip)
-        draw->PopClipRect();
 }
 
 std::pair<float, float> InxGUIContext::CalcTextSizeA(const std::string &text, float fontSize,

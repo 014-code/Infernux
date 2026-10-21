@@ -902,6 +902,7 @@
   "ui_comp.font": "字体",
   "ui_comp.fallback_fonts": "备用字体",
   "ui_comp.font_size": "字号",
+  "ui_comp.rich_text": "富文本",
   "ui_comp.line_height": "行高",
   "ui_comp.letter_spacing": "字间距",
   "ui_comp.text_alignment": "文本对齐",

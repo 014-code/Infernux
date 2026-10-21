@@ -60,7 +60,7 @@ class TextGeometry
     void Prepare(float scale);
     float Render(ImDrawList &draw, float minX, float minY, float maxX, float maxY, ImVec4 color, float alignX,
                  float alignY, float scale, float rotation = 0.0f, bool mirrorH = false, bool mirrorV = false,
-                 bool allowHDR = true);
+                 bool allowHDR = true, bool clip = false);
 
   private:
     void EnsureLayout();
@@ -78,6 +78,7 @@ class TextGeometry
     std::array<std::shared_ptr<TextCharacterBuffer>, 3> m_layers{};
     std::vector<CharacterState> m_compiled;
     float m_colorScale = 1.0f;
+    float m_preparedScale = 0.0f;
     bool m_stateDirty = true;
     uint64_t m_fontGeneration = 0;
     uint64_t m_layoutRevision = 0;

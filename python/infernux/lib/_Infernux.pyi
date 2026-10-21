@@ -30,6 +30,8 @@ class TextLineInfo:
     width: float
     glyph_start: int
     glyph_end: int
+    y: float
+    height: float
 
 class TextGlyphInfo:
     source_start: int
@@ -39,6 +41,8 @@ class TextGlyphInfo:
     line: int | None
     advance: float
     visible: bool
+    font_size: float
+    color: tuple[float, float, float, float]
     bounds: tuple[float, float, float, float]
 
 class TextCharacterInfo:
@@ -55,12 +59,19 @@ class TextWordInfo:
     character_start: int
     character_end: int
 
+class TextStyleSpan:
+    source_start: int
+    source_end: int
+    font_size: float
+    color: tuple[float, float, float, float]
+
 class TextLayout:
     """Read-only snapshot; UTF-8 source bytes, extended graphemes, logical pixel bounds."""
     def __init__(self, text: str, font_size: float = 18.0, wrap_width: float = 0.0,
                  font_path: str = "", line_height: float = 1.2, letter_spacing: float = 0.0,
-                 fallback_font_paths: Sequence[str] = ()) -> None: ...
+                 fallback_font_paths: Sequence[str] = (), rich_text: bool = False) -> None: ...
     text: str
+    display_text: str
     width: float
     height: float
     font_size: float
@@ -73,6 +84,8 @@ class TextLayout:
     def characters(self) -> list[TextCharacterInfo]: ...
     @property
     def words(self) -> list[TextWordInfo]: ...
+    @property
+    def styles(self) -> list[TextStyleSpan]: ...
 
 class TextGeometryLayer(IntEnum):
     Manual = 0
@@ -94,10 +107,11 @@ class TextCharacterBuffer:
 class TextGeometry:
     def __init__(self, text: str, font_size: float = 18.0, wrap_width: float = 0.0,
                  font_path: str = "", line_height: float = 1.2, letter_spacing: float = 0.0,
-                 fallback_font_paths: Sequence[str] = ()) -> None: ...
+                 fallback_font_paths: Sequence[str] = (), rich_text: bool = False) -> None: ...
     def set_layout(self, text: str, font_size: float = 18.0, wrap_width: float = 0.0,
                    font_path: str = "", line_height: float = 1.2, letter_spacing: float = 0.0,
-                   fallback_font_paths: Sequence[str] = ()) -> None: ...
+                   fallback_font_paths: Sequence[str] = (), rich_text: bool = False) -> None: ...
+    def prepare(self, scale: float = 1.0) -> None: ...
     layout: TextLayout
     revision: int
     layout_revision: int

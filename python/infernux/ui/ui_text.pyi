@@ -39,6 +39,7 @@ class UIText(InxUIScreenComponent):
     """
 
     text: str
+    rich_text: bool
     font: FontAssetInfo | None
     fallback_fonts: list[FontAssetInfo | None]
     font_size: float

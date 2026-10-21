@@ -902,6 +902,7 @@
   "ui_comp.font": "Font",
   "ui_comp.fallback_fonts": "Fallback Fonts",
   "ui_comp.font_size": "Font Size",
+  "ui_comp.rich_text": "Rich Text",
   "ui_comp.line_height": "Line Height",
   "ui_comp.letter_spacing": "Letter Spacing",
   "ui_comp.text_alignment": "Text Alignment",

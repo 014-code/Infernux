@@ -26,6 +26,20 @@ _rect_cache_revision = 0
 WORLD_UI_PIXELS_PER_UNIT = 100.0
 
 
+def _world_ui_pose_matrix(transform):
+    position, rotation = transform.position, transform.rotation
+    x, y, z, w = float(rotation.x), float(rotation.y), float(rotation.z), float(rotation.w)
+    xx, yy, zz = x * x, y * y, z * z
+    xy, xz, yz = x * y, x * z, y * z
+    wx, wy, wz = w * x, w * y, w * z
+    return [
+        1.0 - 2.0 * (yy + zz), 2.0 * (xy + wz), 2.0 * (xz - wy), 0.0,
+        2.0 * (xy - wz), 1.0 - 2.0 * (xx + zz), 2.0 * (yz + wx), 0.0,
+        2.0 * (xz + wy), 2.0 * (yz - wx), 1.0 - 2.0 * (xx + yy), 0.0,
+        float(position.x), float(position.y), float(position.z), 1.0,
+    ]
+
+
 def clear_rect_cache(frame_id=0) -> None:
     """Clear cached rectangles when the caller's invalidation token changes."""
     global _rect_cache_frame
@@ -329,22 +343,7 @@ class InxUIScreenComponent(InxUIComponent):
                     0.0, 1.0, 0.0, 0.0,
                     0.0, 0.0, 1.0, 0.0,
                     0.0, 0.0, 0.0, 1.0]
-        transform = game_object.transform
-        position = transform.position
-        rotation = transform.rotation
-        x, y, z, w = (
-            float(rotation.x), float(rotation.y),
-            float(rotation.z), float(rotation.w),
-        )
-        xx, yy, zz = x * x, y * y, z * z
-        xy, xz, yz = x * y, x * z, y * z
-        wx, wy, wz = w * x, w * y, w * z
-        return [
-            1.0 - 2.0 * (yy + zz), 2.0 * (xy + wz), 2.0 * (xz - wy), 0.0,
-            2.0 * (xy - wz), 1.0 - 2.0 * (xx + zz), 2.0 * (yz + wx), 0.0,
-            2.0 * (xz + wy), 2.0 * (yz - wx), 1.0 - 2.0 * (xx + yy), 0.0,
-            float(position.x), float(position.y), float(position.z), 1.0,
-        ]
+        return _world_ui_pose_matrix(game_object.transform)
 
     def get_effective_group_state(self) -> tuple[float, bool, bool]:
         """Return subtree alpha, interactable and raycast-blocking state."""

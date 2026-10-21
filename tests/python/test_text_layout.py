@@ -55,6 +55,40 @@ def test_layout_snapshots_remain_readable_after_another_layout_is_built():
         characters[0].line = 7
 
 
+def test_rich_text_keeps_source_indices_baselines_and_graphemes():
+    source = 'A<color="#ff000080">e\u0301<size=200%>中</size>Z</color><br>B'
+    layout = TextLayout(source, rich_text=True)
+    assert layout.text == source and layout.display_text == "Ae\u0301中Z\nB"
+    encoded = source.encode("utf-8")
+    assert [encoded[c.source_start:c.source_end].decode() for c in layout.characters] == [
+        "A", "e\u0301", "中", "Z", "<br>", "B",
+    ]
+    glyphs = layout.glyphs
+    large = glyphs[layout.characters[2].glyph_start]
+    assert large.font_size == 36
+    assert large.color == pytest.approx((1, 0, 0, 128 / 255))
+    assert glyphs[-1].color == pytest.approx((1, 1, 1, 1))
+    assert layout.lines[0].height == 36 and layout.lines[1].y == pytest.approx(36 * 1.2)
+    assert len(layout.styles) == 5
+    assert TextLayout("<size=no>literal</size>", rich_text=True).display_text == "<size=no>literal</size>"
+
+
+def test_ui_rich_text_uses_its_parsed_layout_for_intrinsic_size(scene):
+    from infernux.ui import UIText, TextResizeMode
+
+    text = scene.create_game_object("Styled text").add_component(UIText)
+    text.rich_text = True
+    text.text = "<size=200%>Large</size><br>Small"
+    text.resize_mode = TextResizeMode.AutoWidth
+    text.resolve_text_layout(lambda *args: pytest.fail("Rich text must not measure literal markup"))
+    layout = text.get_text_layout()
+    assert text.get_resolved_size()[0] == pytest.approx(layout.width)
+    text.resize_mode = TextResizeMode.AutoHeight
+    text.resolve_text_layout(lambda *args: pytest.fail("Rich text must not measure literal markup"))
+    assert text.get_resolved_size()[1] == pytest.approx(text.get_text_layout().height)
+    assert text.create_character_buffer().character_count == len("Large\nSmall")
+
+
 def test_character_views_retain_storage_and_reject_a_different_text():
     from infernux.lib import TextGeometry, TextGeometryLayer
 
@@ -118,13 +152,15 @@ def test_native_character_geometry_translates_rotates_hides_and_resets(engine, s
     buffer = geometry.create_character_buffer()
     layer = ScreenUIList.Overlay
     tint = [1, 1, 1, 1]
+    box = [16, 16, 60, 60]
+    options = {"rotation": 0.0, "clip": False}
 
     class Submission:
         def submit(self):
             renderer = engine.get_screen_ui_renderer()
             renderer.begin_frame(64, 64)
             renderer.add_filled_rect(layer, 0, 0, 64, 64, 0, 0, 0, 1)
-            renderer.add_text_geometry(layer, 16, 16, 60, 60, geometry, *tint)
+            renderer.add_text_geometry(layer, *box, geometry, *tint, **options)
 
     def capture(*, mask=True):
         ticket = None
@@ -185,6 +221,32 @@ def test_native_character_geometry_translates_rotates_hides_and_resets(engine, s
         faded = capture(mask=False)
         assert faded[:, :, 0][solid].mean() == pytest.approx(0.25, abs=0.025)
         assert np.max(faded[:, :, 1:3]) < 0.02
+        geometry.set_layout("<color=#ff000080>F</color>", font_size=24, rich_text=True)
+        tint[:] = [1, 1, 1, 1]
+        styled = capture(mask=False)
+        assert styled[:, :, 0][solid].mean() == pytest.approx(128 / 255, abs=0.025)
+        assert np.max(styled[:, :, 1:3]) < 0.02
+        geometry.set_layout("FF", font_size=26)
+        distorted = geometry.create_character_buffer()
+        distorted.rotations[:] = [25, -30]
+        distorted.offsets[:, 1] = 4
+        distorted.skews[:] = 0.3
+        geometry.set_character_data(distorted)
+        box[:] = [16, 16, 44, 34]
+        options["rotation"] = 35.0
+        uncut = capture()
+        options["clip"] = True
+        clipped = capture()
+        py, px = np.indices(uncut.shape, dtype=np.float32)
+        dx, dy = px + 0.5 - 30, py + 0.5 - 25
+        angle = np.deg2rad(35)
+        local_x = 30 + dx * np.cos(angle) + dy * np.sin(angle)
+        local_y = 25 - dx * np.sin(angle) + dy * np.cos(angle)
+        distance = np.minimum.reduce([local_x - 16, 44 - local_x, local_y - 16, 34 - local_y])
+        assert np.count_nonzero(uncut & (distance > 1.5)) > 8
+        assert np.array_equal(clipped[distance > 1.5], uncut[distance > 1.5])
+        assert np.count_nonzero(uncut & (distance < -1.5)) > 8
+        assert not clipped[distance < -1.5].any()
     finally:
         engine.set_render_pipeline(None)
         engine.set_game_camera_enabled(False)

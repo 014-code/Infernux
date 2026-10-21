@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/log/InxLog.h>
+#include <core/text/TextMarkup.h>
 #include <core/text/TextSegments.h>
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -37,6 +38,7 @@ struct TextLayoutParams
     float lineHeight = 1.0f;
     float letterSpacing = 0.0f;
     std::vector<std::string> fallbackFontPaths;
+    bool richText = false;
 };
 
 struct TextLine
@@ -46,6 +48,8 @@ struct TextLine
     float width = 0.0f;
     size_t glyphStart = 0;
     size_t glyphEnd = 0;
+    float y = 0.0f;
+    float height = 0.0f;
 };
 
 struct TextGlyph
@@ -64,6 +68,9 @@ struct TextGlyph
     float originX = 0.0f;
     float originY = 0.0f;
     std::array<float, 4> bounds{};
+    float logicalFontSize = 0.0f;
+    float baseline = 0.0f;
+    std::array<float, 4> color{1, 1, 1, 1};
 };
 
 struct TextCharacter
@@ -81,6 +88,8 @@ struct TextCharacter
 struct TextLayoutResult
 {
     std::string text;
+    std::string displayText;
+    std::vector<text::StyleRun> styles;
     ImFont *font = nullptr;
     std::vector<ImFont *> fallbackFonts;
     std::vector<float> fallbackFontSizes;

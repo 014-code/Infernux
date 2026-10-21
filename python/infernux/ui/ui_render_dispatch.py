@@ -548,7 +548,7 @@ def _editor_render_text(elem, ctx, base_sx, base_sy, base_sw, base_sh, zoom, get
     """Render a UIText element in the UI Editor panel."""
     attrs = extract_common(elem)
     color = attrs["color"]
-    if elem.__dict__.get("_text_geometry") is not None:
+    if elem.rich_text or elem.__dict__.get("_text_geometry") is not None:
         align_x, align_y = text_align_to_float(elem.text_align_h, elem.text_align_v)
         ctx.draw_text_geometry(
             base_sx, base_sy, base_sx + base_sw, base_sy + base_sh, elem._resolve_text_geometry(),
@@ -635,7 +635,7 @@ def _runtime_render_text(elem, renderer, ui_list, sx, sy, sw, sh,
         material_in_shader=True,
     )
     color = attrs["color"]
-    if elem.__dict__.get("_text_geometry") is not None:
+    if elem.rich_text or elem.__dict__.get("_text_geometry") is not None:
         align_x, align_y = text_align_to_float(elem.text_align_h, elem.text_align_v)
         _bind_runtime_material(renderer, ui_list, material_state)
         renderer.add_text_geometry(

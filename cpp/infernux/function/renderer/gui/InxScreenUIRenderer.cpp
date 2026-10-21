@@ -1296,14 +1296,10 @@ void InxScreenUIRenderer::AddTextGeometry(ScreenUIList list, float minX, float m
         return;
     geometry.Prepare(scale);
     const int firstVertex = draw->VtxBuffer.Size;
-    if (clip)
-        draw->PushClipRect({minX, minY}, {maxX, maxY}, true);
     draw->PushTextureID(ImGui::GetIO().Fonts->TexRef);
-    const float hdrScale =
-        geometry.Render(*draw, minX, minY, maxX, maxY, {r, g, b, a}, alignX, alignY, scale, rotation, mirrorH, mirrorV);
+    const float hdrScale = geometry.Render(*draw, minX, minY, maxX, maxY, {r, g, b, a}, alignX, alignY, scale, rotation,
+                                           mirrorH, mirrorV, true, clip);
     draw->PopTextureID();
-    if (clip)
-        draw->PopClipRect();
     TrackHDRColorRange(list, firstVertex, draw->VtxBuffer.Size, hdrScale);
 }
 

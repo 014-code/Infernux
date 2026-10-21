@@ -31,6 +31,8 @@ void RegisterTextBindings(py::module_ &module)
         .def_readonly("source_start", &TextLine::startOffset)
         .def_readonly("source_end", &TextLine::endOffset)
         .def_readonly("width", &TextLine::width)
+        .def_readonly("y", &TextLine::y)
+        .def_readonly("height", &TextLine::height)
         .def_readonly("glyph_start", &TextLine::glyphStart)
         .def_readonly("glyph_end", &TextLine::glyphEnd);
     py::class_<TextGlyph>(module, "TextGlyphInfo")
@@ -44,7 +46,14 @@ void RegisterTextBindings(py::module_ &module)
                                })
         .def_readonly("advance", &TextGlyph::advance)
         .def_readonly("visible", &TextGlyph::visible)
+        .def_readonly("font_size", &TextGlyph::logicalFontSize)
+        .def_readonly("color", &TextGlyph::color)
         .def_readonly("bounds", &TextGlyph::bounds);
+    py::class_<text::StyleRun>(module, "TextStyleSpan")
+        .def_readonly("source_start", &text::StyleRun::start)
+        .def_readonly("source_end", &text::StyleRun::end)
+        .def_readonly("font_size", &text::StyleRun::fontSize)
+        .def_readonly("color", &text::StyleRun::color);
     py::class_<TextCharacter>(module, "TextCharacterInfo")
         .def_readonly("source_start", &TextCharacter::startOffset)
         .def_readonly("source_end", &TextCharacter::endOffset)
@@ -64,14 +73,16 @@ void RegisterTextBindings(py::module_ &module)
         module, "TextLayout",
         "Immutable UI text layout. Source offsets are UTF-8 bytes; characters are extended graphemes.")
         .def(py::init([](const std::string &text, float fontSize, float wrapWidth, const std::string &fontPath,
-                         float lineHeight, float letterSpacing, const std::vector<std::string> &fallbackFonts) {
+                         float lineHeight, float letterSpacing, const std::vector<std::string> &fallbackFonts,
+                         bool richText) {
                  return CreateTextLayout(
-                     {text, fontPath, fontSize, wrapWidth, lineHeight, letterSpacing, fallbackFonts});
+                     {text, fontPath, fontSize, wrapWidth, lineHeight, letterSpacing, fallbackFonts, richText});
              }),
              py::arg("text"), py::arg("font_size") = 18.0f, py::arg("wrap_width") = 0.0f, py::arg("font_path") = "",
              py::arg("line_height") = 1.2f, py::arg("letter_spacing") = 0.0f,
-             py::arg("fallback_font_paths") = std::vector<std::string>())
+             py::arg("fallback_font_paths") = std::vector<std::string>(), py::arg("rich_text") = false)
         .def_readonly("text", &TextLayoutResult::text)
+        .def_readonly("display_text", &TextLayoutResult::displayText)
         .def_readonly("width", &TextLayoutResult::totalWidth)
         .def_readonly("height", &TextLayoutResult::totalHeight)
         .def_readonly("font_size", &TextLayoutResult::logicalFontSize)
@@ -79,6 +90,7 @@ void RegisterTextBindings(py::module_ &module)
         .def_property_readonly("lines", [](const TextLayoutResult &layout) { return layout.lines; })
         .def_property_readonly("glyphs", [](const TextLayoutResult &layout) { return layout.glyphs; })
         .def_property_readonly("characters", [](const TextLayoutResult &layout) { return layout.characters; })
+        .def_property_readonly("styles", [](const TextLayoutResult &layout) { return layout.styles; })
         .def_property_readonly("words", [](const TextLayoutResult &layout) { return layout.segments.words; });
 
     py::enum_<TextGeometryLayer>(module, "TextGeometryLayer")
@@ -115,23 +127,26 @@ void RegisterTextBindings(py::module_ &module)
         });
     py::class_<TextGeometry, std::shared_ptr<TextGeometry>>(module, "TextGeometry")
         .def(py::init([](const std::string &text, float fontSize, float wrapWidth, const std::string &fontPath,
-                         float lineHeight, float letterSpacing, const std::vector<std::string> &fallbackFonts) {
-                 return std::make_shared<TextGeometry>(
-                     TextLayoutParams{text, fontPath, fontSize, wrapWidth, lineHeight, letterSpacing, fallbackFonts});
+                         float lineHeight, float letterSpacing, const std::vector<std::string> &fallbackFonts,
+                         bool richText) {
+                 return std::make_shared<TextGeometry>(TextLayoutParams{text, fontPath, fontSize, wrapWidth, lineHeight,
+                                                                        letterSpacing, fallbackFonts, richText});
              }),
              py::arg("text"), py::arg("font_size") = 18.0f, py::arg("wrap_width") = 0.0f, py::arg("font_path") = "",
              py::arg("line_height") = 1.2f, py::arg("letter_spacing") = 0.0f,
-             py::arg("fallback_font_paths") = std::vector<std::string>())
+             py::arg("fallback_font_paths") = std::vector<std::string>(), py::arg("rich_text") = false)
         .def(
             "set_layout",
             [](TextGeometry &geometry, const std::string &text, float fontSize, float wrapWidth,
                const std::string &fontPath, float lineHeight, float letterSpacing,
-               const std::vector<std::string> &fallbackFonts) {
-                geometry.SetLayout({text, fontPath, fontSize, wrapWidth, lineHeight, letterSpacing, fallbackFonts});
+               const std::vector<std::string> &fallbackFonts, bool richText) {
+                geometry.SetLayout(
+                    {text, fontPath, fontSize, wrapWidth, lineHeight, letterSpacing, fallbackFonts, richText});
             },
             py::arg("text"), py::arg("font_size") = 18.0f, py::arg("wrap_width") = 0.0f, py::arg("font_path") = "",
             py::arg("line_height") = 1.2f, py::arg("letter_spacing") = 0.0f,
-            py::arg("fallback_font_paths") = std::vector<std::string>())
+            py::arg("fallback_font_paths") = std::vector<std::string>(), py::arg("rich_text") = false)
+        .def("prepare", &TextGeometry::Prepare, py::arg("scale") = 1.0f)
         .def_property_readonly("layout", &TextGeometry::GetLayout)
         .def_property_readonly("revision", &TextGeometry::GetRevision)
         .def_property_readonly("layout_revision", &TextGeometry::GetLayoutRevision)

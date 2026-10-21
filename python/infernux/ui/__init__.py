@@ -1,6 +1,6 @@
 """Infernux UI module — screen-space UI components."""
 
-from infernux.lib import TextCharacterBuffer, TextGeometryLayer, TextLayout
+from infernux.lib import TextCharacterBuffer, TextGeometryLayer, TextLayout, TextStyleSpan
 
 from .enums import RenderMode, ScreenAlignH, ScreenAlignV, TextAlignH, TextAlignV, TextOverflow, TextResizeMode, UITransitionType, UIScaleMode, ScreenMatchMode, UILayoutDirection, UILayoutSizing, UILayoutPosition, UILayoutAlign, UILayoutJustify, UIFillDirection
 from .inx_ui_component import InxUIComponent
@@ -24,7 +24,7 @@ from .ui_texture_cache import UITextureCache, get_shared_cache
 from .ui_render_dispatch import register_ui_renderer, dispatch as ui_dispatch
 
 __all__ = [
-    "TextCharacterBuffer", "TextGeometryLayer", "TextLayout",
+    "TextCharacterBuffer", "TextGeometryLayer", "TextLayout", "TextStyleSpan",
     "RenderMode",
     "ScreenAlignH",
     "ScreenAlignV",

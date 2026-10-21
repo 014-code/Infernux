@@ -12,7 +12,7 @@ from .enums import TextAlignH, TextAlignV, TextOverflow, TextResizeMode
 
 _TEXT_MEASURE_FIELDS = frozenset({
     "text", "font", "fallback_fonts", "font_size", "line_height", "letter_spacing",
-    "resize_mode", "width",
+    "resize_mode", "width", "rich_text",
 })
 
 
@@ -30,6 +30,10 @@ class UIText(InxUIScreenComponent):
     text: str = serialized_field(
         default="New Text", tooltip="Display text",
         group="Content", multiline=True,
+    )
+    rich_text: bool = serialized_field(
+        default=False, group="Content",
+        tooltip="Parse color (#RRGGBB or #RRGGBBAA), size (pixels or %) and br tags",
     )
 
     # ── Typography ──
@@ -125,11 +129,11 @@ class UIText(InxUIScreenComponent):
         from .ui_font_asset import ui_font_paths, ui_font_signature
 
         key = (str(self.text), ui_font_signature(self), float(self.font_size),
-               float(self.get_wrap_width()), float(self.line_height), float(self.letter_spacing))
+               float(self.get_wrap_width()), float(self.line_height), float(self.letter_spacing), bool(self.rich_text))
         geometry = self.__dict__.get("_text_geometry")
         if self.__dict__.get("_text_geometry_key") != key:
             font_path, fallbacks = ui_font_paths(self)
-            arguments = (key[0], key[2], key[3], font_path, key[4], key[5], fallbacks)
+            arguments = (key[0], key[2], key[3], font_path, key[4], key[5], fallbacks, key[6])
             if geometry is None:
                 geometry = TextGeometry(*arguments)
                 object.__setattr__(self, "_text_geometry", geometry)
@@ -180,7 +184,11 @@ class UIText(InxUIScreenComponent):
 
     def prepare_text_layout(self, measure_text, scale: float = 1.0) -> bool:
         """Publish this text's font data before render commands are recorded."""
-        return self.resolve_text_layout(measure_text, scale, force_measure=True)
+        changed = self.resolve_text_layout(measure_text, scale, force_measure=True)
+        geometry = self.__dict__.get("_text_geometry")
+        if geometry is not None:
+            geometry.prepare(scale)
+        return changed
 
     def resolve_text_layout(self, measure_text, scale: float = 1.0, *, force_measure: bool = False) -> bool:
         """Resolve intrinsic text size without rewriting authored geometry.
@@ -199,25 +207,29 @@ class UIText(InxUIScreenComponent):
         key = (
             str(self.text), ui_font_signature(self), float(self.font_size),
             float(self.line_height), float(self.letter_spacing),
-            float(wrap_width), scale,
+            float(wrap_width), scale, bool(self.rich_text),
         )
         if not force_measure and getattr(self, "_text_layout_key", None) == key:
             return False
 
-        font_path, fallback_paths = ui_font_paths(self)
-        arguments = (
-            str(self.text),
-            max(1.0, float(self.font_size) * scale),
-            0.0 if wrap_width <= 0.0 else wrap_width * scale,
-            font_path,
-            float(self.line_height),
-            float(self.letter_spacing) * scale,
-        )
-        measured_width, measured_height = (
-            measure_text(*arguments, fallback_paths)
-            if fallback_paths
-            else measure_text(*arguments)
-        )
+        if self.rich_text:
+            layout = self.get_text_layout()
+            measured_width, measured_height = layout.width * scale, layout.height * scale
+        else:
+            font_path, fallback_paths = ui_font_paths(self)
+            arguments = (
+                str(self.text),
+                max(1.0, float(self.font_size) * scale),
+                0.0 if wrap_width <= 0.0 else wrap_width * scale,
+                font_path,
+                float(self.line_height),
+                float(self.letter_spacing) * scale,
+            )
+            measured_width, measured_height = (
+                measure_text(*arguments, fallback_paths)
+                if fallback_paths
+                else measure_text(*arguments)
+            )
         resolved = (
             max(1.0, float(measured_width) / scale),
             max(1.0, float(measured_height) / scale),
