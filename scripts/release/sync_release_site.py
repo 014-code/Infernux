@@ -76,7 +76,7 @@ def main():
     # Maintain publication dates when release.json moves on to a later version.
     history_path = DOCS / "changelog/history.json"
     history = read_json(history_path)
-    record = {"tag_name": f"v{version}", "published_at": release["published_at"], "html_url": release["release_url"],
+    record = {"tag_name": release["tag"], "published_at": release["published_at"], "html_url": release["release_url"],
               "body": re.split(r"^\s*---\s*$", (ROOT / "UpdateLog.md").read_text(encoding="utf-8"), maxsplit=1, flags=re.M)[0].strip()}
     history = [record] + [item for item in history if item["tag_name"] != record["tag_name"]]
     write_json(history_path, history)

@@ -2,6 +2,8 @@
   <a href="https://infernux-engine.com/"><img src="docs/assets/logo.svg" width="96" alt="熔炉标志"></a>
 </p>
 
+**0.4.3 热修 2** 新增原生字符动画、可恢复的编辑预览与独立插件更新阶段接口。详见[更新日志](UpdateLog-zh.md)。
+
 <h1 align="center">熔炉 · Infernux</h1>
 
 <p align="center">

@@ -1,3 +1,27 @@
+# Infernux v0.4.3 · Hotfix 2: Native Text and Plugin Foundations
+
+This 0.4.3 hotfix adds reusable native text-animation and plugin-update interfaces, and repairs clocks and rendering state found during cross-platform validation. The base engine version remains 0.4.3; engine and Hub distributions use build 2.
+
+[中文更新日志](UpdateLog-zh.md)
+
+### Runtime and Rendering
+
+- Preserve the real unscaled frame duration and clamp scaled simulation consistently. Fix packaged Players treating the native pause method as a Boolean, which stopped Python clocks and time-driven effects.
+- Provide removable Normal, Late, Fixed and Editor update registrations, with plugin ownership and automatic cleanup.
+- Expose read-only grapheme, glyph, word and line layouts with original UTF-8 source ranges. Compose canonical combining accents during layout and correct whitespace wrapping.
+- Add reusable character buffers for offsets, rotation, scale, skew, four-corner deformation and color, plus visible-character control and separate manual, effects and appearance layers.
+- Support basic rich-text color, size and line-break spans; preserve clipping, group opacity, font atlases and material boundaries in screen and world UI.
+- Invalidate camera state when replacing render graphs. Publish Web font atlases before recording UI geometry, fixing missing world text when animated screen text loads additional fonts.
+
+### Editor and Distribution
+
+- Add reversible editor preview scopes. Saving, entering Play, closing a panel, deleting a target, undoing changes or unloading a plugin restores captured values; saving a clean document also ends its preview.
+- Prepare the official catalog for independently maintained animation plugins without adding their source repositories to the engine's submodules or build dependencies. Publish package files before the complete catalog.
+- Retain the engine and Unicode notices in desktop, Android and Web Player distributions.
+- Preserve each published hotfix's actual release tag in website history, keeping the original base release record.
+
+---
+
 # Infernux v0.4.3 · Faster Frames, Complete Players
 
 0.4.3 brings the editor, animation authoring and cross-platform Players through a sustained real-game validation cycle. The focus is a correct, efficient main path: less repeated frame work, complete startup preparation, consistent asset identities and usable editing tools.

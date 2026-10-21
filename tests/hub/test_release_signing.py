@@ -372,12 +372,12 @@ def test_publication_updates_current_website_without_recreating_retired_roadmap_
     for language in ('en', 'zh'):
         (docs / f'wiki/docs/{language}/api/index.md').write_text('0.4.1\n', encoding='utf-8')
     inputs = {
-        'release.json': {'version': '0.4.2', 'published_at': '2026-10-13T05:28:41Z',
+        'release.json': {'version': '0.4.2', 'tag': 'v0.4.2-v2', 'published_at': '2026-10-13T05:28:41Z',
                          'release_url': 'https://github.com/owner/engine/releases/tag/v0.4.2-v2',
                          'assets': [{'kind': 'python-wheel', 'name': 'infernux-win_amd64.whl', 'url': 'https://files.pythonhosted.org/released.whl'}]},
         'docs-manifest.json': {'documented_release': '0.4.1', 'indexes': {}},
         'platform-support.json': {'released_version': '0.4.1'},
-        'changelog/history.json': [],
+        'changelog/history.json': [{'tag_name': 'v0.4.2', 'body': 'Original release.'}],
         'tools/i18n-source.json': {'en': {'home.version': 'Engine 0.4.1'}, 'zh': {'home.version': '引擎 0.4.1'}},
         'hub-catalog.json': {'stable': '0.4.2', 'releases': [{'version': '0.4.2', 'platforms': {
             platform: {'installer': {'url': f'https://downloads.example.org/hub/{platform}'}}
@@ -404,3 +404,6 @@ def test_publication_updates_current_website_without_recreating_retired_roadmap_
     assert 'REV 042' in (docs / 'download.html').read_text(encoding='utf-8')
     assert '--release-code: "042";' in (docs / 'css/style.css').read_text(encoding='utf-8')
     assert json.loads((docs / 'docs-manifest.json').read_text())['documented_release'] == '0.4.2'
+    history = json.loads((docs / 'changelog/history.json').read_text(encoding='utf-8'))
+    assert [record['tag_name'] for record in history] == ['v0.4.2-v2', 'v0.4.2']
+    assert history[1]['body'] == 'Original release.'

@@ -2,6 +2,8 @@
   <a href="https://infernux-engine.com/"><img src="docs/assets/logo.svg" width="96" alt="Infernux logo"></a>
 </p>
 
+**0.4.3 hotfix 2** adds native character animation, reversible editor previews and independent plugin update hooks. See the [changelog](UpdateLog.md).
+
 <h1 align="center">Infernux · 熔炉</h1>
 
 <p align="center">
