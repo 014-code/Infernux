@@ -16,6 +16,18 @@ from infernux.engine.player_package_native import extract_pack, read_manifest
 from test_game_builder import _make_project, _asset_index_entry, _write_asset_index
 
 
+def test_duplicate_notices_remain_owned_by_each_cooked_plugin():
+    from infernux.engine.player_package_audit import _is_runtime_license_group
+
+    notices = [
+        f"Game_Data/Content.inxpkg::Packages/vendor/{package}/runtime/LICENSE.txt"
+        for package in ("tween", "text")
+    ]
+    assert _is_runtime_license_group(notices)
+    assert not _is_runtime_license_group([path.replace("LICENSE.txt", "texture.png") for path in notices])
+    assert not _is_runtime_license_group([path.replace("Packages/", "Assets/") for path in notices])
+
+
 @pytest.mark.parametrize("installed", [False, True])
 def test_player_keeps_engine_notices_from_source_and_installed_wheel(tmp_path, monkeypatch, installed):
     import importlib.metadata

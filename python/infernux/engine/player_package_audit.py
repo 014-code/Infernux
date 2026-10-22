@@ -219,7 +219,13 @@ def _is_runtime_license_group(paths) -> bool:
     """Dependencies retain their own legal notices even when the text repeats."""
     for path in paths:
         archive, separator, entry = path.partition("::")
-        if not separator or Path(archive).suffix.casefold() not in {".inxrt", ".inxmod"}:
+        if not separator:
+            return False
+        archive_type = Path(archive).suffix.casefold()
+        if archive_type == ".inxpkg":
+            if not entry.startswith("Packages/"):
+                return False
+        elif archive_type not in {".inxrt", ".inxmod"}:
             return False
         if Path(entry).name.casefold() not in {
             "license", "license.txt", "license.md", "copying", "copying.txt",
