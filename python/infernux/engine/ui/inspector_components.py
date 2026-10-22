@@ -22,6 +22,7 @@ from .inspector_utils import (
     find_enum_index as _find_enum_index,
     DRAG_SPEED_DEFAULT, DRAG_SPEED_FINE, build_scalar_desc, semantic_capture_enabled, inspector_component_semantic_id,
     record_inspector_component_item,
+    serialized_field_label as _serialized_field_label,
 )
 
 # ── Sub-module imports (re-exported for backward compatibility) ──
@@ -1383,15 +1384,6 @@ def _get_py_field_value(py_comp, field_name, metadata, cache_entry, refresh_valu
         return metadata.default
 
 
-def _serialized_field_label(field_name, metadata) -> str:
-    key = str(getattr(metadata, "display_name_key", "") or "")
-    if key:
-        translated = t(key)
-        if translated != key:
-            return translated
-    return pretty_field_name(field_name)
-
-
 def _render_py_nonscalar_field(ctx, py_comp, field_name, metadata, current_value, lw, flush_fn):
     """Render a non-scalar field (list, serializable object, component ref, etc.). Returns True if handled."""
     from infernux.components.fields import FieldType
@@ -1499,7 +1491,9 @@ def render_py_component(ctx: InxGUIContext, py_comp):
             _flush()
             _current_group = field_group
             if field_group:
-                _group_visible = render_compact_section_header(ctx, field_group, level="secondary")
+                _group_visible = render_compact_section_header(
+                    ctx, t(field_group), level="secondary", header_id=f"field_group:{field_name}",
+                )
             else:
                 _group_visible = True
         if not _group_visible:

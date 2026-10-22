@@ -72,3 +72,29 @@ def test_native_authoring_payload_preserves_identity_transform_and_prefab_state(
     assert (entry.display_name, entry.category, entry.is_native) == ("Light", "Built-in", True)
     assert prefab.override_count == 3 and prefab.is_readonly
     assert not prefab.is_transform_readonly
+
+
+def test_repeated_serialized_group_labels_have_independent_fold_state(monkeypatch):
+    from infernux.components import SerializableObject, serialized_field
+    from infernux.engine.ui import inspector_declarative as inspector
+
+    class Settings(SerializableObject):
+        first: float = serialized_field(default=1.0, group="Effects")
+        middle: float = serialized_field(default=2.0, group="Playback")
+        last: float = serialized_field(default=3.0, group="Effects")
+
+    headers, drawn = [], []
+    def header(ctx, label, *, header_id, **kwargs):
+        headers.append((label, header_id))
+        return header_id != "settings.group.first"
+
+    monkeypatch.setattr(inspector, "render_compact_section_header", header)
+    monkeypatch.setattr(inspector, "max_label_w", lambda *args: 80)
+    monkeypatch.setattr(inspector, "render_serialized_field",
+                        lambda ctx, key, label, meta, value, width: drawn.append(value) or value)
+    monkeypatch.setattr(inspector, "record_inspector_component_item", lambda *args, **kwargs: None)
+    settings = Settings()
+    control = inspector.InspectorSerializedTarget("settings", lambda: settings, owner=None)
+    inspector._render_serialized_target(None, control)
+    assert len(headers) == len({key for _, key in headers}) == 3
+    assert drawn == [2.0, 3.0]

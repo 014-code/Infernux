@@ -145,7 +145,8 @@ def pretty_field_name(name: str) -> str:
 
 def serialized_field_label(name: str, metadata) -> str:
     key = metadata.display_name_key
-    return t(key) if key else pretty_field_name(name)
+    label = t(key) if key else ""
+    return label if label and label != key else pretty_field_name(name)
 
 
 def semantic_capture_enabled(ctx: InxGUIContext) -> bool:

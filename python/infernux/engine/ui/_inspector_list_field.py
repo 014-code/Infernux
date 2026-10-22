@@ -579,7 +579,7 @@ def _render_list_field(
 
     # ── Unified list header: [label [N] ........... [-][+]] ──
     header_open = IGUI.list_header(
-        ctx, display_name or pretty_field_name(field_name), len(items),
+        ctx, display_name or serialized_field_label(field_name, metadata), len(items),
         on_add=_on_add if not metadata.readonly else None,
         on_remove=_on_remove_last if items and not metadata.readonly else None,
         accept_drop=_hdr_drag_type if not metadata.readonly else None,

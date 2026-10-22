@@ -309,12 +309,12 @@ def _render_serializable_object_field(
 
     so_class = type(current_value) if current_value is not None else getattr(metadata, 'serializable_class', None)
     if so_class is None:
-        field_label(ctx, pretty_field_name(field_name), lw)
+        field_label(ctx, serialized_field_label(field_name, metadata), lw)
         ctx.label(t("inspector.unknown_type"))
         return
 
-    header = f"{pretty_field_name(field_name)} ({so_class.__name__})"
-    if not render_compact_section_header(ctx, header, level="secondary"):
+    header = f"{serialized_field_label(field_name, metadata)} ({so_class.__name__})"
+    if not render_compact_section_header(ctx, header, level="secondary", header_id=f"serializable:{field_name}"):
         return
 
     if current_value is None:
@@ -512,10 +512,7 @@ def _render_asset_reference_field(
             clear_value=None,
         )
 
-    label_key = str(getattr(metadata, "display_name_key", "") or "")
-    label = label_override or (t(label_key) if label_key else pretty_field_name(field_name))
-    if label == label_key:
-        label = pretty_field_name(field_name)
+    label = label_override or serialized_field_label(field_name, metadata)
     field_label(ctx, label, lw)
 
     def _on_ping(_value=current_value):
@@ -562,7 +559,7 @@ def _render_component_ref_inline(ctx, py_comp, field_name, metadata, lw):
         old = get_raw_field_value(_comp, _fn)
         _record_property(_comp, _fn, old, ComponentRef(), f"Clear {_fn}")
 
-    field_label(ctx, pretty_field_name(field_name), lw)
+    field_label(ctx, serialized_field_label(field_name, metadata), lw)
     render_object_field(
         ctx, f"comp_ref_{field_name}", _display, _type_hint,
         accept_drag_type="HIERARCHY_GAMEOBJECT",
@@ -622,7 +619,7 @@ def _render_gameobject_ref_inline(ctx, py_comp, field_name, metadata, current_va
         old = getattr(_comp, _fn, None)
         _record_property(_comp, _fn, old, None, f"Clear {_fn}")
 
-    field_label(ctx, pretty_field_name(field_name), lw)
+    field_label(ctx, serialized_field_label(field_name, metadata), lw)
     render_object_field(
         ctx, f"go_ref_{field_name}", display, _type_hint,
         accept_drag_type=["HIERARCHY_GAMEOBJECT", "PREFAB_GUID", "PREFAB_FILE"],

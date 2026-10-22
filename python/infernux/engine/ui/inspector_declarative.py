@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Sequence
 
 from infernux.lib import InxGUIContext
+from infernux.engine.i18n import t
 
 from .inspector_utils import (
     field_label,
@@ -15,6 +16,7 @@ from .inspector_utils import (
     record_inspector_component_item,
     render_compact_section_header,
     render_serialized_field,
+    serialized_field_label,
 )
 from .theme import ImGuiCol, ImGuiStyleVar, ImGuiTreeNodeFlags, Theme
 
@@ -202,7 +204,7 @@ def _render_serialized_target(ctx: InxGUIContext, control: InspectorSerializedTa
         return
     if control.title:
         ctx.label(control.title)
-    labels = [pretty_field_name(name) for name, meta in fields.items() if not meta.hidden]
+    labels = [serialized_field_label(name, meta) for name, meta in fields.items() if not meta.hidden]
     label_width = max_label_w(ctx, labels) if labels else 0.0
     current_group = ""
     group_visible = True
@@ -213,7 +215,9 @@ def _render_serialized_target(ctx: InxGUIContext, control: InspectorSerializedTa
         if field_group != current_group:
             current_group = field_group
             group_visible = (
-                render_compact_section_header(ctx, field_group, level="tertiary")
+                render_compact_section_header(
+                    ctx, t(field_group), level="tertiary", header_id=f"{control.key}.group.{field_name}",
+                )
                 if field_group else True
             )
         if not group_visible:
@@ -223,7 +227,7 @@ def _render_serialized_target(ctx: InxGUIContext, control: InspectorSerializedTa
         if metadata.space > 0:
             ctx.dummy(0.0, metadata.space)
         current = getattr(target, field_name, metadata.default)
-        display_name = pretty_field_name(field_name)
+        display_name = serialized_field_label(field_name, metadata)
         updated = render_serialized_field(
             ctx,
             f"##{control.key}_{field_name}",
