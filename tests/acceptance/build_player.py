@@ -161,6 +161,7 @@ def _prepare_project_registry(project: Path, *, runtime_host: bool = True):
     from infernux.engine.library_sync import sync_resources
     from infernux.engine.project_context import (
         is_editor_asset_path,
+        is_project_component_script,
         package_script_role,
         set_project_root,
     )
@@ -194,6 +195,8 @@ def _prepare_project_registry(project: Path, *, runtime_host: bool = True):
             if root.name == "Packages" and package_script_role(
                 str(script_path), str(project)
             ) != "runtime":
+                continue
+            if not is_project_component_script(str(script_path), str(project)):
                 continue
             components = tuple(
                 load_all_components_from_file(str(script_path), register=False)

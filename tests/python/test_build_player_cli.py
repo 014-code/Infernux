@@ -109,6 +109,11 @@ def test_prepare_project_registry_imports_runtime_package_scripts_only(tmp_path,
     from infernux.engine import library_sync, project_context
     from infernux.plugins import PluginManager
 
+    library = runtime / "owned_library"
+    library.mkdir()
+    (library / "__init__.py").write_text("raise AssertionError('owned library imported as a component')\n",
+                                       encoding="utf-8")
+    monkeypatch.setattr(project_context, "_preload_python_libraries", {"build-test": (str(library),)})
     monkeypatch.setattr(library_sync, "sync_resources", lambda _root: None)
     monkeypatch.setattr(project_context._context(), "root", None)
     monkeypatch.setattr(

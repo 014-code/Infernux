@@ -1092,7 +1092,7 @@ def test_player_exports_local_author_package_without_installing(tmp_path, refere
         manager.unload_all()
 
 
-def test_player_plugin_component_joins_runtime_type_and_guid_catalogs(tmp_path):
+def test_player_plugin_component_joins_runtime_type_and_guid_catalogs(tmp_path, monkeypatch):
     from infernux.components import InxComponent, serialized_field
     from infernux.components.component_identity import bind_asset_script_guid
     from infernux.engine.project_context import get_script_module_name
@@ -1157,6 +1157,25 @@ def test_player_plugin_component_joins_runtime_type_and_guid_catalogs(tmp_path):
     )
     builder = GameBuilder(str(project), str(output), game_name="PluginComponentGame")
     builder._cooked_asset_entries = {script_guid: _asset_index_entry(project, authored, script_guid, "", "Script")}
+    from infernux.engine import project_context
+    library = authored.parent / "owned_library"
+    library.mkdir()
+    helper = library / "helper.py"
+    helper_source = "from infernux.components import InxComponent\nclass RuntimeHelper(InxComponent): pass\n"
+    helper.write_text(helper_source, encoding="utf-8")
+    staged_helper = staged.parent / "owned_library/helper.py"
+    staged_helper.parent.mkdir()
+    staged_helper.write_text(helper_source, encoding="utf-8")
+    helper_guid = "5" * 32
+    document = json.loads(registry_path.read_text(encoding="utf-8"))
+    document["installed"][0]["files"].append({
+        "logical_path": "runtime/owned_library/helper.py",
+        "path_hint": "Packages/vendor/component-kit/runtime/owned_library/helper.py",
+        "guid": helper_guid, "role": "runtime", "owned": True,
+    })
+    registry_path.write_text(json.dumps(document), encoding="utf-8")
+    builder._cooked_asset_entries[helper_guid] = _asset_index_entry(project, helper, helper_guid, "", "Script")
+    monkeypatch.setattr(project_context, "_preload_python_libraries", {"cook-test": (str(library),)})
 
     builder._compile_player_plugin_scripts(str(output))
 
@@ -1170,6 +1189,9 @@ def test_player_plugin_component_joins_runtime_type_and_guid_catalogs(tmp_path):
     assert record["semantic"]["fields"][0]["attributes"]["default"] == 4.0
     assert staged.with_suffix(".pyc").is_file()
     assert not staged.exists()
+    assert staged_helper.with_suffix(".pyc").is_file() and not staged_helper.exists()
+    assert guid_map[helper_guid].endswith("owned_library/helper.pyc")
+    assert not any(item["qualname"] == "RuntimeHelper" for item in catalog["types"])
 
 
 class TestGameBuilderAnimationClipPreflight:

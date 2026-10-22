@@ -42,6 +42,7 @@ from infernux.core.asset_types import MESH_EXTENSIONS
 from infernux.debug import Debug
 from infernux.engine.build_cancellation import BuildCancelled
 from infernux.engine.i18n import t
+from infernux.engine.project_context import is_preload_python_library
 from infernux.engine.player_package_native import (
     ASSET_CATALOG_ARCHIVE_FILENAME,
     ASSET_CATALOG_ENTRY_PATH,
@@ -1684,14 +1685,15 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
                     registry_changed = True
                     source_text = Path(source).read_text(encoding="utf-8")
                     self._player_python_source_texts[resolved_path(authored_source)] = source_text
-                    component_records.extend(
-                        self._runtime_component_type_records(
-                            source_text,
-                            script_guid=source_guid,
-                            runtime_path=runtime_path,
-                            data_root=data_root,
+                    if not is_preload_python_library(authored_source):
+                        component_records.extend(
+                            self._runtime_component_type_records(
+                                source_text,
+                                script_guid=source_guid,
+                                runtime_path=runtime_path,
+                                data_root=data_root,
+                            )
                         )
-                    )
                     guid_map[source_guid] = runtime_path
                     cooked_source = self._cook_compute_source(source_text)
                     if cooked_source != source_text:
@@ -3081,14 +3083,15 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
                             self._cooked_asset_entries[script_guid]
                         )
                         self._player_python_source_texts[resolved_path(authored_source)] = source_text
-                        runtime_type_records.extend(
-                            self._runtime_component_type_records(
-                                source_text,
-                                script_guid=script_guid,
-                                runtime_path=runtime_path,
-                                data_root=data_dir,
+                        if not is_preload_python_library(authored_source):
+                            runtime_type_records.extend(
+                                self._runtime_component_type_records(
+                                    source_text,
+                                    script_guid=script_guid,
+                                    runtime_path=runtime_path,
+                                    data_root=data_dir,
+                                )
                             )
-                        )
                         cooked_source = self._cook_compute_source(source_text)
                         if cooked_source != source_text:
                             with open(py_path, "w", encoding="utf-8", newline="\n") as compiled_source:
