@@ -15,7 +15,7 @@ from database import ProjectDatabase
 from hub_utils import is_frozen, is_project_open
 from i18n import tr
 from project_python_runtime import read_project_python_version
-from version_manager import VersionManager, display_release
+from version_manager import VersionManager, display_release, hotfix_number
 from view.forge import Monogram, StatusLed, chip, fmt_age, mono_label, toast, track
 from view.hover_widgets import AnimatedSurfaceFrame
 from model.project_model import source_engine_version
@@ -135,6 +135,9 @@ class _ProjectCard(AnimatedSurfaceFrame):
             version = VersionManager.read_project_version(path) or ""
             self.engine_version = version
             version_label = QLabel(display_release(version) if version else tr("Unversioned"))
+            if hotfix_number(version) > 1:
+                version_label.setText(tr("{version} · Hotfix {number}",
+                                         version=display_release(version), number=hotfix_number(version)))
             version_label.setObjectName("projectVersion")
             version_label.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
             unavailable_reason = ""
@@ -236,6 +239,9 @@ class _ProjectCard(AnimatedSurfaceFrame):
             menu.addSeparator()
         if self._fix_action == "install":
             menu.addAction(tr("Install required engine"), lambda: self.fix_clicked.emit(self.project_id, "install"))
+        for label, action in (("Update project hotfix...", "hotfix"), ("Upgrade engine version...", "upgrade")):
+            item = menu.addAction(tr(label), lambda _checked=False, kind=action: self.fix_clicked.emit(self.project_id, kind))
+            item.setEnabled(is_frozen() and os.path.isdir(self.project_path) and not is_project_open(self.project_path))
         show = menu.addAction(tr("Show in Explorer"),
                               lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(self.project_path)))
         show.setEnabled(os.path.isdir(self.project_path))
@@ -323,6 +329,7 @@ class ProjectListPane(QWidget):
     open_requested = Signal()
     install_requested = Signal(str)   # engine version a project needs
     relocate_requested = Signal(str)  # project id
+    engine_update_requested = Signal(str, str)  # project id, hotfix/version
 
     SORTS = ("recent", "name")
 
@@ -564,6 +571,8 @@ class ProjectListPane(QWidget):
             self.install_requested.emit(card.engine_version)
         elif action == "locate":
             self.relocate_requested.emit(project_id)
+        elif action in ("hotfix", "upgrade"):
+            self.engine_update_requested.emit(project_id, "hotfix" if action == "hotfix" else "version")
 
     def keyPressEvent(self, event):
         visible = [pid for pid, card in self.project_cards.items() if not card.isHidden() and card.can_select]

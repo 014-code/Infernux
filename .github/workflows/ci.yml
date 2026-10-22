@@ -6,6 +6,11 @@ on:
     branches: [master, main, '041-post/**']
   workflow_call:
     inputs:
+      hub_only:
+        description: Run Hub and contract regressions without rebuilding the unchanged engine
+        required: false
+        type: boolean
+        default: false
       sign_windows_release:
         description: Request SignPath signing for Windows release artifacts
         required: false
@@ -30,6 +35,11 @@ on:
         required: false
   workflow_dispatch:
     inputs:
+      hub_only:
+        description: Hub regressions only; keep publish_release disabled
+        required: false
+        type: boolean
+        default: false
       sign_windows_release:
         description: Request SignPath signing for Windows release artifacts
         required: true
@@ -111,6 +121,7 @@ jobs:
           if-no-files-found: error
 
   windows-desktop:
+    if: ${{ !inputs.hub_only }}
     needs: [portable-hub, python-correctness]
     runs-on: windows-2022
     timeout-minutes: 240
@@ -331,6 +342,7 @@ jobs:
           if-no-files-found: warn
 
   linux-desktop:
+    if: ${{ !inputs.hub_only }}
     needs: [portable-hub, python-correctness]
     runs-on: ubuntu-22.04
     timeout-minutes: 120

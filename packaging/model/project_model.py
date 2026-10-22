@@ -11,17 +11,19 @@ import runpy
 import sysconfig
 
 from hub_utils import is_frozen, merge_child_env_utf8
+from hub_utils import write_project_lock, remove_project_lock
 from hub_utils import remove_directory_tree as _remove_tree
 from project_paths import inspect_existing_project, new_project_target
 from project_python_runtime import (
     project_runtime_directory,
+    project_runtime_settings_path,
     read_project_python_version,
     write_project_python_version,
 )
 from python_runtime_catalog import PythonRuntimeId
 from python_runtime import PythonRuntimeError, PythonRuntimeManager
 from python_execution import prepare_private_runtime_paths, python_executable_path
-from version_manager import wheel_platform_compatible, wheel_python_version, wheel_release
+from version_manager import release_update_kind, wheel_platform_compatible, wheel_python_version, wheel_release
 from wheel_identity import validate_wheel_identity
 from engine_wheel import read_project_template, runtime_package_script
 
@@ -314,6 +316,36 @@ class ProjectModel:
     def remove_project(self, project_id: str) -> bool:
         """Remove only the Hub registry entry; project files are untouched."""
         return bool(self.db is not None and self.db.remove_project(project_id))
+
+    def change_engine_version(self, project_id: str, version: str) -> None:
+        record = self.db.get_project(project_id)
+        if record is None or not os.path.isdir(record.path):
+            raise RuntimeError("The project folder is unavailable.")
+        manager = self.version_manager
+        current = manager.read_project_version(record.path)
+        if not current or not release_update_kind(current, version):
+            raise ValueError("Select a newer installed engine release.")
+        python_version = manager.python_version_for_engine(version)
+        if not python_version or not manager.is_installed(version, python_version):
+            raise RuntimeError(f"Install Infernux {version} in Hub first.")
+        token = uuid.uuid4().hex
+        write_project_lock(record.path, os.getpid(), token, "version-change", "preparing")
+        try:
+            settings = project_runtime_settings_path(record.path)
+            previous = settings.read_bytes()
+            abi_changed = read_project_python_version(record.path) != python_version
+            if abi_changed:
+                write_project_python_version(record.path, python_version)
+            try:
+                manager.write_project_version(record.path, version)
+            except Exception:
+                if abi_changed:
+                    temporary = settings.with_suffix(".json.tmp")
+                    temporary.write_bytes(previous)
+                    os.replace(temporary, settings)
+                raise
+        finally:
+            remove_project_lock(record.path, token)
 
     def relocate_project(self, project_id: str, project_dir: str):
         """Point an existing registry entry at a validated project directory."""

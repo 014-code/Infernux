@@ -14,6 +14,7 @@ from PySide6.QtGui import QDesktopServices
 from version_manager import (
     VersionManager, EngineVersion, display_release, hotfix_label, hotfix_number, latest_engine_versions,
     latest_releases, wheel_python_version,
+    release_update_kind,
 )
 from install_queue import InstallQueue
 from android_support import AndroidSupportManager
@@ -126,8 +127,9 @@ class _VersionCard(AnimatedSurfaceFrame):
     """Tape-spine card for one installed engine version."""
 
     remove_clicked = Signal(str)
+    update_clicked = Signal(str)
 
-    def __init__(self, version: str, wheel_path: str, parent=None):
+    def __init__(self, version: str, wheel_path: str, parent=None, *, update: str = ""):
         super().__init__("versionCard", parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setFixedHeight(72)
@@ -170,6 +172,12 @@ class _VersionCard(AnimatedSurfaceFrame):
         file_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         info_col.addWidget(file_label)
         layout.addLayout(info_col, 1)
+
+        if update:
+            button = _action_button(tr("Update to hotfix {number}", number=hotfix_number(update)), f"engine:{update}", True)
+            button.setFixedHeight(30)
+            button.clicked.connect(lambda: self.update_clicked.emit(update))
+            layout.addWidget(button)
 
         reveal = QPushButton(tr("Show"))
         reveal.setObjectName("ghostBtn")
@@ -274,13 +282,14 @@ class _FetchWorker(QThread):
     loaded = Signal(list)  # list[EngineVersion]
     failed = Signal(str)
 
-    def __init__(self, vm: VersionManager, parent):
+    def __init__(self, vm: VersionManager, parent, *, refresh: bool = False):
         super().__init__(parent)
         self._vm = vm
+        self._refresh = refresh
 
     def run(self):
         try:
-            versions = self._vm.list_versions(include_prerelease=True)
+            versions = (self._vm.refresh_versions if self._refresh else self._vm.list_versions)(include_prerelease=True)
             self.loaded.emit(versions)
         except Exception as exc:
             import logging
@@ -347,6 +356,18 @@ class _VersionRow(AnimatedSurfaceFrame):
     def set_selected(self, selected: bool):
         self.setProperty("selected", selected)
         self.set_selected_animated(selected)
+
+
+def _enqueue_engine_download(manager, queue, engine):
+    queue.submit(
+        f"engine:{engine.version}", f"Infernux {engine.version}",
+        lambda report: manager.download_version(
+            engine.version,
+            on_progress=lambda done, total: report(tr("Downloading"), done, total),
+            should_cancel=report.should_cancel,
+        ),
+        cancellable=True,
+    )
 
 
 class InstallEditorDialog(QDialog):
@@ -675,16 +696,7 @@ class InstallEditorDialog(QDialog):
         engine = self._selected
         if engine is None or not self._btn_install.isEnabled():
             return
-        manager = self._vm
-        self._queue.submit(
-            f"engine:{engine.version}", f"Infernux {engine.version}",
-            lambda report: manager.download_version(
-                engine.version,
-                on_progress=lambda done, total: report(tr("Downloading"), done, total),
-                should_cancel=getattr(report, "should_cancel", None),
-            ),
-            cancellable=True,
-        )
+        _enqueue_engine_download(self._vm, self._queue, engine)
         self.accept()
 
 
@@ -745,6 +757,9 @@ class InstallsView(QWidget):
         self._vm = version_manager
         self._queue = queue
         self._install_dialog = None
+        self._fetch_thread = None
+        self._updates_checked = False
+        self._available_versions = self._vm.cached_versions()
         self._pending_keys: tuple[str, ...] = ()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 12, 0, 0)
@@ -758,10 +773,14 @@ class InstallsView(QWidget):
         self.btn_install.setObjectName("primaryBtn")
         self.btn_install.setFixedHeight(34)
         self.btn_install.clicked.connect(self._on_install_editor)
+        self.btn_check = QPushButton(tr("Check for Updates"))
+        self.btn_check.setObjectName("normalBtn")
+        self.btn_check.setFixedHeight(34)
+        self.btn_check.clicked.connect(self.check_updates)
         layout.addWidget(_section_header(
             tr("Engine versions"),
             tr("Each engine version is cached once and shared by every project pinned to it."),
-            [self.btn_locate, self.btn_install],
+            [self.btn_check, self.btn_locate, self.btn_install],
         ))
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -778,7 +797,41 @@ class InstallsView(QWidget):
         self.refresh()
 
     def _on_job_finished(self, _job):
+        self._available_versions = self._vm.cached_versions()
         self.refresh()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._updates_checked:
+            self.check_updates()
+
+    def check_updates(self):
+        if self._fetch_thread is not None:
+            return
+        self._updates_checked = True
+        self.btn_check.setEnabled(False)
+        worker = self._fetch_thread = _FetchWorker(self._vm, QApplication.instance(), refresh=True)
+        worker.loaded.connect(self._catalog_loaded)
+        worker.failed.connect(lambda error: toast(self, tr("Could not check engine updates: {error}", error=error), "error"))
+        worker.finished.connect(self._fetch_finished)
+        worker.finished.connect(worker.deleteLater)
+        QApplication.instance().aboutToQuit.connect(worker.wait)
+        worker.start()
+
+    def _catalog_loaded(self, versions):
+        self._available_versions = versions
+        self.refresh()
+
+    def _fetch_finished(self):
+        self._fetch_thread = None
+        self.btn_check.setEnabled(True)
+
+    def _on_update_version(self, version):
+        engine = next(item for item in self._available_versions if item.version == version)
+        if self._vm.installation_block_reason(engine):
+            self.open_install_dialog(version)
+            return
+        _enqueue_engine_download(self._vm, self._queue, engine)
 
     def _active_engine_keys(self) -> tuple[str, ...]:
         return tuple(job.key for job in self._queue.jobs
@@ -802,9 +855,15 @@ class InstallsView(QWidget):
         if not versions and not self._pending_keys:
             self._card_layout.addWidget(_EngineEmptyState(self._on_install_editor, self._on_locate))
         for version in versions:
-            card = _VersionCard(version, self._vm.get_wheel_path(version) or "")
+            updates = [item.version for item in self._available_versions
+                       if item.wheel_url and not item.compatibility_error
+                       and release_update_kind(version, item.version) == "hotfix"]
+            update = latest_releases(updates)[0] if updates else ""
+            card = _VersionCard(version, self._vm.get_wheel_path(version) or "", update=update)
             card.remove_clicked.connect(self._on_remove_version)
+            card.update_clicked.connect(self._on_update_version)
             self._card_layout.addWidget(card)
+        _update_install_buttons(self, self._queue)
 
     def _on_install_editor(self):
         if self._install_dialog is None:

@@ -252,7 +252,7 @@ class LaunchPreparationWorker(QObject):
                         )
                 # The private runtime must contain exactly the pinned engine.
                 # Publish it from the local installation; its receipt skips an
-                # unchanged runtime. Project version migration is not supported.
+                # unchanged runtime. Version changes are explicit in Hub.
                 self.model._install_infernux_in_runtime(
                     project_path,
                     pinned_version,
@@ -274,7 +274,7 @@ class LaunchPreparationWorker(QObject):
                     raise RuntimeError(
                         f"Project requires Infernux {pinned_version or 'an explicit version pin'}; "
                         f"the source engine is {current_version}. "
-                        "Use the exact required engine version. Engine upgrades are not supported."
+                        "Launch this project from Hub using its exact pinned engine version."
                     )
 
                 # A source-launched Hub is a development/test frontend for the
@@ -508,6 +508,57 @@ class ControlPaneViewModel(QObject):
         self.project_list.refresh()
         self.project_list.select_project(relocated.project_id)
         toast(parent, tr("{name} now points to the new folder", name=info.name))
+
+    def change_engine_version(self, parent, project_id, kind):
+        from version_manager import latest_releases, release_update_kind, display_release, hotfix_number
+        from view.forge import ForgeComboBox
+
+        record = self._record_for(project_id)
+        if record is None:
+            return
+        current = self.version_manager.read_project_version(record.path)
+        if not current:
+            dialogs.warning(parent, tr("Missing Version"), tr("Project engine version is missing"))
+            return
+        try:
+            versions = [version for version in latest_releases(self.version_manager.installed_versions())
+                        if release_update_kind(current, version) == kind]
+        except ValueError as exc:
+            dialogs.warning(parent, tr("Missing Version"), str(exc))
+            return
+        title = tr("Update project hotfix") if kind == "hotfix" else tr("Upgrade engine version")
+        if not versions:
+            dialogs.information(parent, title,
+                                tr("Install a newer hotfix in the Installs page first.") if kind == "hotfix"
+                                else tr("Install a newer engine version in the Installs page first."))
+            return
+        choices = ForgeComboBox()
+        choices.setMinimumHeight(36)
+        for version in versions:
+            label = display_release(version)
+            if hotfix_number(version) > 1:
+                label = tr("{version} · Hotfix {number}", version=label, number=hotfix_number(version))
+            choices.addItem(label, version)
+        dialog = dialogs.HubDialog(
+            parent, title=title,
+            text=tr("The project will use the selected engine on its next launch. "
+                    "Commit the engine and Python version settings with your project so the team uses the same release."),
+            subject=(record.name, tr("Current engine: {version}", version=current)), content=choices,
+        )
+        dialog.addButton(tr("Cancel"), "reject")
+        apply = dialog.addButton(tr("Apply hotfix") if kind == "hotfix" else tr("Upgrade engine"), "accept")
+        dialog.setDefaultButton(apply)
+        dialog.exec()
+        if dialog.clickedButton() is not apply:
+            return
+        try:
+            self.model.change_engine_version(project_id, choices.currentData())
+        except (OSError, ValueError, RuntimeError) as exc:
+            dialogs.critical(parent, title, str(exc))
+            return
+        self.project_list.refresh()
+        self.project_list.select_project(project_id)
+        toast(parent, tr("Project engine updated"))
 
     def create_project(self, parent):
         from view.new_project_view import NewProjectView

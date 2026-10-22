@@ -178,6 +178,8 @@ class GameEngineLauncher(QMainWindow):
         self.project_list.install_requested.connect(self._install_engine_for_project)
         self.project_list.relocate_requested.connect(
             lambda project_id: self.viewmodel.relocate_project(self.controls, project_id))
+        self.project_list.engine_update_requested.connect(
+            lambda project_id, kind: self.viewmodel.change_engine_version(self.controls, project_id, kind))
         self.controls = ControlPane(self.viewmodel, parent=projects_page)
         self.project_list.create_requested.connect(lambda: self.viewmodel.create_project(self.controls))
         self.project_list.open_requested.connect(lambda: self.viewmodel.open_existing_project(self.controls))

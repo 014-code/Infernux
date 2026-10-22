@@ -480,6 +480,20 @@ _ZH = {
     'Using current development environment...': '正在使用当前开发环境...',
     'Validating the current development environment...': '正在校验当前开发环境...',
     'HOTFIX {number}': '热修 {number}',
+    '{version} · Hotfix {number}': '{version} · 热修 {number}',
+    'Update to hotfix {number}': '更新热修 {number}',
+    'Update project hotfix...': '更新项目热修…',
+    'Upgrade engine version...': '升级引擎版本…',
+    'Update project hotfix': '更新项目热修',
+    'Upgrade engine version': '升级引擎版本',
+    'Install a newer hotfix in the Installs page first.': '请先在安装页安装当前版本的新热修。',
+    'Install a newer engine version in the Installs page first.': '请先在安装页安装更高版本的引擎。',
+    'The project will use the selected engine on its next launch. Commit the engine and Python version settings with your project so the team uses the same release.': '下次启动项目时将使用所选引擎。请将项目的引擎和 Python 版本设置一起提交，让团队使用一致的版本。',
+    'Current engine: {version}': '当前引擎：{version}',
+    'Apply hotfix': '应用热修',
+    'Upgrade engine': '升级引擎',
+    'Project engine updated': '已更新项目引擎版本',
+    'Could not check engine updates: {error}': '无法检查引擎更新：{error}',
 }
 
 _mode = "system"

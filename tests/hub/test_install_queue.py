@@ -61,11 +61,13 @@ def test_installations_are_serial_and_do_not_block_gui():
     assert all(thread == app.thread() for thread in publications)
 
 
-def test_failed_install_exposes_complete_error_and_allows_next_job_after_thread_cleanup():
+def test_failed_install_exposes_complete_error_and_allows_next_job_after_thread_cleanup(monkeypatch):
+    from unittest.mock import Mock
     from view.job_widgets import JobStrip
 
     app = QApplication.instance() or QApplication([])
-    previous_clipboard = app.clipboard().text()
+    clipboard = Mock()
+    monkeypatch.setattr(QApplication, "clipboard", lambda: clipboard)
     queue = InstallQueue(app)
     completions = []
     queue.job_finished.connect(lambda job: completions.append((job.state, queue._thread)))
@@ -87,11 +89,10 @@ def test_failed_install_exposes_complete_error_and_allows_next_job_after_thread_
         strip.refresh()
         assert strip._copy_error.isVisible()
         strip._copy_error.click()
-        assert app.clipboard().text() == "RuntimeError: " + error
+        clipboard.setText.assert_called_once_with("RuntimeError: " + error)
         queue.clear_finished()
         assert queue.jobs == []
     finally:
-        app.clipboard().setText(previous_clipboard)
         strip.close()
 
 

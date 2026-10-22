@@ -69,7 +69,8 @@ class HubDialog(QDialog):
     """A modal plate. QMessageBox-like accessors keep tests and callers simple."""
 
     def __init__(self, parent=None, *, level: str = "info", title: str = "", text: str = "",
-                 kicker: str = "", detail: str = "", subject: tuple[str, str] | None = None):
+                 kicker: str = "", detail: str = "", subject: tuple[str, str] | None = None,
+                 content: QWidget | None = None):
         super().__init__(parent)
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
         self.setWindowTitle(title or "Infernux Hub")
@@ -116,6 +117,8 @@ class HubDialog(QDialog):
         if subject is not None:
             column.addSpacing(4)
             column.addWidget(self._subject_card(*subject))
+        if content is not None:
+            column.addWidget(content)
         if detail:
             column.addSpacing(2)
             self._detail_toggle = QPushButton(tr("Show details"))

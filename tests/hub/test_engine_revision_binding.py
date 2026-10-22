@@ -70,6 +70,7 @@ def test_git_clone_preserves_exact_release_without_runtime(tmp_path, manager):
     source = tmp_path / "author"
     source.mkdir()
     vm.VersionManager.write_project_version(str(source), "0.4.1-v2")
+    (source / ".gitattributes").write_text("* text=auto eol=lf\n", encoding="utf-8")
     (source / ".gitignore").write_text(".runtime/\n", encoding="utf-8")
     (source / ".runtime").mkdir()
     (source / ".runtime/private.txt").write_text("machine-local", encoding="utf-8")

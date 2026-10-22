@@ -296,3 +296,87 @@ def test_new_project_failure_removes_only_staging(tmp_path: Path, monkeypatch):
     assert unrelated.is_dir()
     assert not (tmp_path / "FailedProject").exists()
     assert not list(tmp_path.glob(".infernux-create-*"))
+
+
+@pytest.fixture
+def upgrade_project(tmp_path):
+    from types import SimpleNamespace
+    from project_python_runtime import write_project_python_version
+    from version_manager import VersionManager
+
+    project = _make_project(tmp_path / "Upgrade", name="Upgrade", version="0.4.3")
+    write_project_python_version(project, "3.13")
+    (project / "Assets/level.inxscene").write_bytes(b"asset contents must remain unchanged")
+    releases = {"0.4.3-v2": "3.13", "0.5.0": "3.12"}
+    manager = SimpleNamespace(
+        read_project_version=VersionManager.read_project_version,
+        write_project_version=VersionManager.write_project_version,
+        installed_versions=lambda: list(releases),
+        python_version_for_engine=lambda version: releases.get(version, ""),
+        is_installed=lambda version, python=None: version in releases and releases[version] == python,
+    )
+    with ProjectDatabase(tmp_path / "hub.db") as db:
+        record = db.add_project("Upgrade", str(project))
+        yield ProjectModel(db, version_manager=manager), record, project
+
+
+@pytest.mark.parametrize(('kind', 'target', 'python'), [('hotfix', '0.4.3-v2', '3.13'), ('version', '0.5.0', '3.12')])
+def test_project_upgrade_selects_only_the_requested_kind_and_preserves_assets(upgrade_project, monkeypatch, kind, target, python):
+    from types import SimpleNamespace
+    from PySide6.QtWidgets import QApplication, QComboBox, QDialog, QPushButton
+    from i18n import configure_language, language_mode
+    from project_python_runtime import read_project_python_version
+    from hub_utils import is_project_open
+    from view import dialogs
+
+    app = QApplication.instance() or QApplication([])
+    previous_language = language_mode()
+    configure_language('en')
+    model, record, project = upgrade_project
+    selected = []
+
+    def apply(dialog):
+        choices = dialog.findChild(QComboBox)
+        assert [choices.itemData(i) for i in range(choices.count())] == [target]
+        action = 'Apply hotfix' if kind == 'hotfix' else 'Upgrade engine'
+        next(button for button in dialog.findChildren(QPushButton) if button.text() == action).click()
+        return QDialog.Accepted
+
+    monkeypatch.setattr(dialogs.HubDialog, 'exec', apply)
+    pane = SimpleNamespace(refresh=lambda: None, select_project=selected.append)
+    controller = ControlPaneViewModel(model, pane, version_manager=model.version_manager)
+    try:
+        controller.change_engine_version(None, record.project_id, kind)
+        assert model.version_manager.read_project_version(str(project)) == target
+        assert read_project_python_version(project) == python
+        assert (project / 'Assets/level.inxscene').read_bytes() == b'asset contents must remain unchanged'
+        assert selected == [record.project_id]
+        assert not is_project_open(str(project))
+    finally:
+        configure_language(previous_language)
+        app.processEvents()
+
+
+@pytest.mark.parametrize('failure', ['locked', 'uninstalled', 'pin-write', 'older'])
+def test_failed_project_upgrade_preserves_the_existing_bindings(upgrade_project, monkeypatch, failure):
+    import os
+    from hub_utils import write_project_lock, remove_project_lock
+
+    model, record, project = upgrade_project
+    pin = project / '.infernux-version'
+    runtime = project / 'ProjectSettings/PythonRuntime.json'
+    before = (pin.read_bytes(), runtime.read_bytes())
+    if failure == 'locked':
+        write_project_lock(str(project), os.getpid(), 'editor-owner', 'editor', 'running')
+    elif failure == 'pin-write':
+        def fail(*args):
+            raise OSError('pin is not writable')
+        monkeypatch.setattr(model.version_manager, 'write_project_version', fail)
+    target = {'uninstalled': '0.6.0', 'older': '0.4.2'}.get(failure, '0.5.0')
+    try:
+        with pytest.raises((OSError, RuntimeError, ValueError)):
+            model.change_engine_version(record.project_id, target)
+        assert (pin.read_bytes(), runtime.read_bytes()) == before
+    finally:
+        if failure == 'locked':
+            remove_project_lock(str(project), 'editor-owner')

@@ -151,3 +151,39 @@ def test_runtime_install_completion_follows_worker_cleanup(failure):
     page.deleteLater()
     queue.deleteLater()
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
+def test_installed_engine_card_updates_its_hotfix_without_replacing_old_installs(engine_dialog, monkeypatch):
+    dialog, engine, installed = engine_dialog
+    installed.add('3.13')
+    cached = ['0.4.0']
+    hotfix = EngineVersion(tag='v0.4.0-v2', version='0.4.0-v2', python_version='3.13', wheel_url=engine.wheel_url)
+    other = EngineVersion(tag='v0.5.0', version='0.5.0', python_version='3.13', wheel_url=engine.wheel_url)
+    manager = dialog._vm
+    monkeypatch.setattr(manager, 'list_versions', lambda **kwargs: [engine, hotfix, other])
+    monkeypatch.setattr(manager, 'installed_versions', lambda: cached)
+    calls = []
+
+    def download(version, **kwargs):
+        calls.append(version)
+        cached.append(version)
+        return '/cached/new.whl'
+
+    monkeypatch.setattr(manager, 'download_version', download)
+    page = installs_view.InstallsView(manager, dialog._queue)
+    try:
+        card = page.findChild(installs_view._VersionCard)
+        button = next(button for button in card.findChildren(installs_view.QPushButton)
+                      if button.text() == 'Update to hotfix 2')
+        button.click()
+        for _ in range(500):
+            QTest.qWait(10)
+            if not dialog._queue.busy:
+                break
+        assert calls == ['0.4.0-v2']
+        assert dialog._queue.jobs[-1].state == 'succeeded'
+        assert cached == ['0.4.0', '0.4.0-v2']
+    finally:
+        page.close()
+        page.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)

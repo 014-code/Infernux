@@ -112,6 +112,10 @@ class VersionManager:
         """
         return self.list_versions(include_prerelease=include_prerelease, offline=True)
 
+    def refresh_versions(self, *, include_prerelease: bool = False) -> List[EngineVersion]:
+        self._fetch_releases(refresh=True)
+        return self.cached_versions(include_prerelease=include_prerelease)
+
     def list_versions(self, *, include_prerelease: bool = False, offline: bool = False) -> List[EngineVersion]:
         """Return available versions (remote + local), newest first."""
         remote = self._offline_releases() if offline else self._fetch_releases()
@@ -498,25 +502,33 @@ class VersionManager:
     @staticmethod
     def write_project_version(project_dir: str, version: str) -> None:
         """Pin an engine version for a project."""
+        if _tag_to_version(version) != version:
+            raise ValueError(f"Invalid engine release: {version}")
         vf = os.path.join(project_dir, ".infernux-version")
-        with open(vf, "w", encoding="utf-8") as f:
-            f.write("# Infernux project version pin — do not edit manually.\n")
-            f.write("# Exact release: <package-version>[-v<revision>]; no automatic upgrades.\n")
-            f.write(version + "\n")
+        temporary = Path(vf + ".tmp")
+        try:
+            temporary.write_text(
+                "# Infernux project version pin — do not edit manually.\n"
+                "# Exact release: <package-version>[-v<revision>]; no automatic upgrades.\n"
+                + version + "\n", encoding="utf-8", newline="\n",
+            )
+            replace_path(str(temporary), vf)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     # ── Internal ─────────────────────────────────────────────────────
 
-    def _fetch_releases(self) -> list[dict]:
+    def _fetch_releases(self, *, refresh: bool = False) -> list[dict]:
         """Fetch and merge the PyPI and GitHub catalogs with local caching."""
         now = time.time()
 
         # Try memory cache
-        if self._cached_releases is not None and (now - self._cached_at) < _CACHE_TTL:
+        if not refresh and self._cached_releases is not None and (now - self._cached_at) < _CACHE_TTL:
             return self._cached_releases
 
         # Cache the raw catalog, never a host's selected download URL.
         cached = self._read_catalog_cache()
-        if cached is not None and 0 <= now - cached[0] < _CACHE_TTL:
+        if not refresh and cached is not None and 0 <= now - cached[0] < _CACHE_TTL:
             self._cached_at, self._cached_releases = cached
             return self._cached_releases
 
@@ -757,6 +769,13 @@ def display_release(release: str) -> str:
 def hotfix_label(release: str) -> str:
     number = hotfix_number(release)
     return f"HOTFIX {number}" if number > 1 else ""
+
+
+def release_update_kind(current: str, target: str) -> str:
+    """Classify an explicit upgrade; older or unchanged releases are not updates."""
+    if _version_tuple(target) <= _version_tuple(current):
+        return ""
+    return "hotfix" if _base_version(current) == _base_version(target) else "version"
 
 
 def latest_releases(releases) -> list[str]:
