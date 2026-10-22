@@ -89,4 +89,5 @@ def test_svg_import_reimport_guid_and_artifact(engine):
         assert artifact.read_bytes() == before
     finally:
         registry.invalidate_asset(guid)
-        database.delete_asset(str(path))
+        path.unlink()
+        assert database.delete_asset(str(path))
