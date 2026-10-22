@@ -43,7 +43,7 @@ jobs:
       - name: Upload the already verified object-channel binaries to the matching draft
         shell: python
         run: |
-          import http.client, json, os, re, subprocess, sys, urllib.parse, urllib.request
+          import http.client, json, os, re, shutil, subprocess, sys, urllib.error, urllib.parse, urllib.request
           from pathlib import Path
 
           sys.path[:0] = ['packaging', 'scripts/release']
@@ -77,7 +77,16 @@ jobs:
           for name in release_assets(hub):
               url = f'https://downloads.infernux-engine.com/hub/{version}/build-{build}/{name}'
               target = destination / name
-              urllib.request.urlretrieve(url, target)
+              print(f'Fetching {name}.', flush=True)
+              request = urllib.request.Request(url, headers={
+                  'User-Agent': 'Infernux-Release-Publisher', 'Cache-Control': 'no-cache',
+              })
+              try:
+                  with urllib.request.urlopen(request, timeout=120) as response, target.open('wb') as output:
+                      shutil.copyfileobj(response, output)
+              except urllib.error.HTTPError as error:
+                  print(error.read().decode(errors='replace')[:1500], flush=True)
+                  raise
               size = target.stat().st_size
               if name in existing:
                   assert existing[name]['state'] == 'uploaded' and existing[name]['size'] == size
