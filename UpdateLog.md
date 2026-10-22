@@ -1,3 +1,30 @@
+# Infernux v0.4.3-v3 · Hotfix 3: Reliable Plugin Reload and Text Authoring
+
+This hotfix fixes issues found while using independently installed animation plugins in real Windows and Linux projects. The base engine version remains 0.4.3; wheels use build 3. Hub 0.4.3-4 accompanies this distribution without changing its project-update workflow.
+
+[中文更新日志](UpdateLog-zh.md)
+
+**Baseline for comparison:** [`v0.4.3-v2...v0.4.3-v3`](https://github.com/ChenlizheMe/Infernux/compare/v0.4.3-v2...v0.4.3-v3).
+
+### Plugin Lifecycle and Editor
+
+- Load preload-owned Python libraries before publishing components during installation and re-enabling. Keep library modules out of component transactions and avoid repeating preload notifications during explicit package publication.
+- Refresh project scripts that import a reloaded plugin library, using the in-memory dependency graph. Their dependent scripts join the same transaction, so animations do not silently retain an unloaded manager.
+- Preserve live component base-class identities after disabling and re-enabling a package. Recognize package Runtime classes as project scripts, bind provisional imported classes to their asset identity transactionally, and initialize package namespaces for relative component imports.
+- Give Inspector field groups stable IDs independent of their visible titles. Repeated groups no longer produce duplicate-item errors or share fold state. Apply field-label translation consistently to lists, asset references and nested objects.
+- Accept ordinary Python name assignments that shadow imports, including Enum member declarations, without treating them as writes to an imported object. Mutating imported objects remains a rejected candidate side effect.
+
+### Text and UI
+
+- Expose renderer-free Unicode grapheme segmentation through `TextLayout.split_graphemes`, preserving original text, combining marks, emoji sequences and line breaks.
+- Append the bundled font after authored primary and fallback fonts so mixed-language text retains its selected face and can display remaining Chinese glyphs. Missing authored font assets remain explicit errors.
+- Route left, right and middle mouse buttons through independent UI press and drag state in Editor, desktop Player and Web. Buttons and sliders continue to activate with the left button; custom pointer handlers receive the actual button.
+- Use adaptive arc subdivision for large rounded rectangles, improving large-radius UI edges without oversampling small corners.
+
+Platform Player packages are rebuilt for the matching engine contract: Windows 0.2.13, Linux 0.2.12, Android 0.2.14 and Web 0.2.20. Tween and Text Animator remain independently maintained plugins; this engine hotfix does not bundle an unfinished game or claim a completed SNKRX replica.
+
+---
+
 # Infernux v0.4.3-v2 · Hotfix 2: Native Text and Plugin Foundations
 
 This 0.4.3 hotfix adds reusable native text-animation and plugin-update interfaces, and repairs clocks and rendering state found during cross-platform validation. The base engine version remains 0.4.3; the engine uses build 2, with the separate Hub update at 0.4.3-3.
