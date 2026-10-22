@@ -161,6 +161,7 @@ jobs:
           PY
 
       - name: Require a new published Hub version
+        if: ${{ !inputs.recover_partial_publication }}
         run: |
           python -m pip install --disable-pip-version-check 'packaging>=24.0'
           python scripts/release/build_release_catalog.py --check-version
@@ -368,6 +369,12 @@ jobs:
           if [ "$catalog_version" != "$RELEASE_VERSION" ] || [ "$catalog_build" != "$WHEEL_BUILD" ] || [ "$catalog_hub" != "$HUB_VERSION" ]; then
             echo "The release branch moved to version $catalog_version while publishing $RELEASE_VERSION" >&2
             exit 1
+          fi
+          published_tag="$(python -c 'import json; print(json.load(open("docs/release.json"))["tag"])')"
+          published_hub="$(python -c 'import json; print(json.load(open("docs/hub-catalog.json"))["stable"])')"
+          if [ "$published_tag" = "$RELEASE_TAG" ] && [ "$published_hub" = "$HUB_VERSION" ]; then
+            echo "Release catalogs already record $RELEASE_TAG and Hub $HUB_VERSION"
+            exit 0
           fi
           python scripts/release/build_release_catalog.py \
             --release-dir "dist/$RELEASE_VERSION" \

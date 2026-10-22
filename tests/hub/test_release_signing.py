@@ -27,6 +27,33 @@ def load(name):
     return module
 
 
+@pytest.mark.parametrize('initial', ['missing', 'queued', 'built', 'errored'])
+def test_pages_publication_uses_the_matching_deployment_without_duplicate_builds(tmp_path, monkeypatch, initial):
+    module = load('deploy_hub_catalog')
+    commit = 'a' * 40
+    catalog = tmp_path / 'catalog.json'
+    catalog.write_text('{"stable":"0.4.3-2"}', encoding='utf-8')
+    build = lambda status, url='build/1': {'commit': commit, 'status': status, 'url': url,
+                                         'error': {'message': 'Page build failed.'}}
+    before = [] if initial == 'missing' else [build(initial)]
+    selected = 'build/2' if initial in ('missing', 'errored') else 'build/1'
+    cancelled = build('errored', 'build/cancelled')
+    responses = iter([before, [cancelled, build('queued', selected)],
+                      [cancelled, build('built', selected)]])
+    calls = []
+
+    def pages(repository, path, *, method='GET'):
+        calls.append((path, method))
+        return {'status': 'queued'} if method == 'POST' else next(responses)
+
+    monkeypatch.setattr(module, '_pages_request', pages)
+    monkeypatch.setattr(module.time, 'sleep', lambda _: None)
+    monkeypatch.setattr(module.urllib.request, 'urlopen',
+                        lambda request, timeout: io.BytesIO(catalog.read_bytes()))
+    module.deploy_catalog('owner/engine', commit, catalog)
+    assert calls.count(('builds', 'POST')) == int(initial in ('missing', 'errored'))
+
+
 def test_release_notes_use_the_engine_hotfix_identity(tmp_path):
     (tmp_path / 'pyproject.toml').write_text(
         '[project]\nversion = "0.4.3"\n[tool.infernux.hub]\nbuild-number = 7\n', encoding='utf-8')

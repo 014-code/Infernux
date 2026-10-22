@@ -13,7 +13,7 @@ import urllib.request
 MAX_DEPLOYMENT_ATTEMPTS = 90  # Branch build plus the site's ten-minute CDN cache.
 
 
-def _pages_request(repository: str, path: str, *, method: str = "GET") -> dict:
+def _pages_request(repository: str, path: str, *, method: str = "GET") -> dict | list:
     return json.loads(subprocess.check_output(
         ["gh", "api", "--method", method, f"repos/{repository}/pages/{path}"],
         text=True, encoding="utf-8", timeout=60,
@@ -30,22 +30,24 @@ def deploy_catalog(repository: str, commit: str, catalog: Path) -> None:
             "Cache-Control": "no-cache",
         },
     )
-    # GITHUB_TOKEN pushes do not trigger a build of a branch-published Pages
-    # site. Request it explicitly and do not report success while still queued.
-    _pages_request(repository, "builds", method="POST")
+    builds = _pages_request(repository, "builds?per_page=20")
+    existing = [build for build in builds if build["commit"] == commit]
+    ignored = set()
+    if not any(build["status"] in ("queued", "building", "built") for build in existing):
+        ignored = {build["url"] for build in existing}
+        _pages_request(repository, "builds", method="POST")
     for attempt in range(MAX_DEPLOYMENT_ATTEMPTS):
-        build = _pages_request(repository, "builds/latest")
-        if build["commit"] == commit:
-            if build["status"] == "built":
-                # Verify the URL and headers used by Hub itself. A different
-                # cache key could conceal a stale catalog at the actual endpoint.
-                with urllib.request.urlopen(request, timeout=15) as response:
-                    actual = json.load(response)
-                if actual == expected:
-                    print(f"Published Hub catalog {expected['stable']} at {commit}")
-                    return
-            if build["status"] == "errored":
-                raise RuntimeError(f"Hub catalog Pages build failed: {build['error']}")
+        builds = [build for build in _pages_request(repository, "builds?per_page=20")
+                  if build["commit"] == commit and build["url"] not in ignored]
+        if any(build["status"] == "built" for build in builds):
+            # Use Hub's exact URL; another cache key could conceal stale data.
+            with urllib.request.urlopen(request, timeout=15) as response:
+                actual = json.load(response)
+            if actual == expected:
+                print(f"Published Hub catalog {expected['stable']} at {commit}")
+                return
+        elif builds and not any(build["status"] in ("queued", "building") for build in builds):
+            raise RuntimeError(f"Hub catalog Pages build failed: {builds[0]['error']}")
         if attempt < MAX_DEPLOYMENT_ATTEMPTS - 1:
             time.sleep(10)
     raise TimeoutError(f"The public Hub catalog did not reach release commit {commit}")

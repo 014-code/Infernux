@@ -22,7 +22,8 @@ def test_recovery_preserves_original_tested_revision_and_artifact_attempt():
     run, jobs = source()
     paths = ['scripts/release/publish_hub_objects.py', 'docs/tools/build-api-diff.mjs',
              'docs/tools/check-site-information.mjs', 'docs/tools/test-site-information.mjs',
-             'docs/tools/verify-site.mjs']
+             'docs/tools/verify-site.mjs', 'docs/hub-catalog.json', 'docs/api-snapshots/0.4.3-v2.json',
+             'scripts/release/deploy_hub_catalog.py', 'README.md']
     assert module.validate(run, jobs, 'owner/engine', 'a' * 40, 'b' * 40, paths) == {
         'sha': 'a' * 40, 'publisher_sha': 'b' * 40, 'branch': 'master', 'attempt': 1}
 

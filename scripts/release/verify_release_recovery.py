@@ -9,10 +9,9 @@ import subprocess
 PUBLICATION_FILES = frozenset({
     '.github/workflows/publish-desktop-release.yml',
     '.github/workflows/recover-release.yml',
-    'docs/tools/build-api-diff.mjs',
-    'docs/tools/check-site-information.mjs',
-    'docs/tools/test-site-information.mjs',
-    'docs/tools/verify-site.mjs',
+    'README.md',
+    'README-zh.md',
+    'scripts/release/deploy_hub_catalog.py',
     'scripts/release/publish_hub_objects.py',
     'scripts/release/r2-upload-worker.mjs',
     'scripts/release/verify_release_recovery.py',
@@ -49,7 +48,7 @@ def validate(run: dict, jobs: dict, repository: str, expected_sha: str,
         raise ValueError('Recovery source must be the official release branch')
     if run['head_sha'] != expected_sha:
         raise ValueError('Recovery source revision differs from the requested revision')
-    if set(changed_files) - PUBLICATION_FILES:
+    if any(path not in PUBLICATION_FILES and not path.startswith('docs/') for path in changed_files):
         raise ValueError('Engine, build, or payload changes require a new complete release run')
     if jobs['total_count'] != len(jobs['jobs']):
         raise ValueError('Recovery must inspect every source job')
