@@ -375,6 +375,8 @@ class PluginManager:
             raise KeyError(f"Plugin is not installed: {reference}")
         self.preloads.reload_package(reference)
         self._rebuild_states()
+        if self.states[reference.casefold()].loaded:
+            self._publish_package_runtime_scripts(reference)
         return self.states[reference.casefold()]
 
     def catch_up_preloads(self) -> tuple[PreloadState, ...]:
@@ -756,7 +758,6 @@ class PluginManager:
             if threading.current_thread() is threading.main_thread():
                 _report_progress(progress, "refresh_assets", 0.90)
                 self._refresh_editor_assets()
-                self._publish_package_runtime_scripts(reference)
                 _report_progress(progress, "preload_plugin", 0.95)
                 state = self.reload(reference)
             else:
@@ -784,7 +785,6 @@ class PluginManager:
                     f"{reference}: {'; '.join(rollback_errors)}"
                 ) from install_error
             if stopped:
-                self._publish_package_runtime_scripts(reference)
                 self.reload(reference)
             raise
         finally:
@@ -854,7 +854,6 @@ class PluginManager:
             self._acknowledge_installed_scripts(planned)
             if threading.current_thread() is threading.main_thread():
                 self._refresh_editor_assets()
-                self._publish_package_runtime_scripts(reference)
                 state = self.reload(reference)
             else:
                 state = PluginState(reference=reference, root=package_control_root(self.project_root, reference))
@@ -1269,10 +1268,11 @@ class PluginManager:
             raise RuntimeError("Plugin installation must be finalized on the editor thread")
         normalized = validate_reference(reference)
         self._refresh_editor_assets()
-        self._publish_package_runtime_scripts(normalized)
         self.preloads.catch_up()
         self._deferred_catalog_changes.clear()
         self._rebuild_states()
+        if self.states[normalized.casefold()].loaded:
+            self._publish_package_runtime_scripts(normalized)
         return self.states[normalized.casefold()]
 
     def _reconcile_python_requirements_for_startup(self) -> tuple[str, ...]:
@@ -1647,9 +1647,7 @@ class PluginManager:
                 self._retire_package_runtime_scripts(record)
             except BaseException:
                 self.registry.set_enabled(reference, True)
-                self._publish_package_runtime_scripts(reference)
-                self.preloads.reload_package(reference)
-                self._rebuild_states()
+                self.reload(reference)
                 raise
             self._rebuild_states()
             return self.states[reference_key]
@@ -1657,7 +1655,6 @@ class PluginManager:
             reference, record.get("dependencies", ()), enabled=True, require_installed=True,
         )
         self.registry.set_enabled(reference, True)
-        self._publish_package_runtime_scripts(reference)
         return self.reload(reference)
 
     def uninstall(self, reference: str) -> dict[str, object]:
@@ -1730,7 +1727,6 @@ class PluginManager:
                 except Exception as python_error:
                     python_rollback_error = python_error
             try:
-                self._publish_package_runtime_scripts(reference)
                 self.reload(reference)
             except Exception as reload_error:
                 Debug.log_suppressed("PluginManager.uninstall.rollback_reload", reload_error)
@@ -2464,7 +2460,22 @@ class PluginManager:
                 "Active ResourcesManager belongs to a different project during plugin install"
             )
 
-        runtime_paths = self._package_runtime_script_paths(record)
+        from infernux.engine.project_context import is_preload_python_library, is_project_component_script
+
+        runtime_paths = [
+            path for path in self._package_runtime_script_paths(record)
+            if is_project_component_script(path, self.project_root)
+        ]
+        root = package_control_root(self.project_root, reference)
+        library_names = tuple(
+            name for name, module in tuple(sys.modules.items())
+            if (source := getattr(module, "__file__", ""))
+            and is_path_within(source, root, allow_root=False)
+            and is_preload_python_library(source)
+        )
+        if library_names:
+            runtime_paths = sorted(set(runtime_paths).union(
+                manager.script_library_dependents(library_names)), key=path_key)
         if not runtime_paths:
             return
 
@@ -2474,7 +2485,7 @@ class PluginManager:
             change = manager.submit_script_change(
                 path,
                 origin="editor",
-                catalog_event="created",
+                catalog_event=None,
                 change_kind="created",
                 transaction_id=transaction_id,
                 force=True,

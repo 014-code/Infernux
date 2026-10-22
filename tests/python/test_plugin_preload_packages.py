@@ -169,6 +169,92 @@ def test_preload_library_ownership_follows_success_and_failure(tmp_path, fail_pr
     assert is_project_component_script(str(implementation), str(project))
 
 
+def test_runtime_components_publish_after_owned_libraries_on_install_and_enable(tmp_path, monkeypatch):
+    from infernux.engine.candidate_import import CandidateImportTransaction
+    from infernux.engine.resources_manager import ResourcesManager
+    from infernux.engine.script_dependency_graph import ScriptDependencyGraph
+    from infernux.engine.project_context import (
+        get_project_root, get_script_module_name, is_preload_python_library, set_project_root,
+    )
+
+    source = _source(tmp_path / "source", "vendor/owned-runtime")
+    library = source / "runtime/owned_reenable"
+    library.mkdir(parents=True)
+    (library / "__init__.py").write_text("API = object()\n", encoding="utf-8")
+    (source / "runtime/Startup.py").write_text(
+        "from infernux.lifecycle import InxPreload\n"
+        "class Startup(InxPreload):\n"
+        "    def preload(self, context):\n"
+        "        context.own_python_library('runtime/owned_reenable')\n"
+        "        import owned_reenable\n", encoding="utf-8",
+    )
+    (source / "runtime/Author.py").write_text("from owned_reenable import API\n", encoding="utf-8")
+    project = _project(tmp_path / "project")
+    consumer = project / "Assets/Consumer.py"
+    consumer.write_text("from owned_reenable import API\n", encoding="utf-8")
+    dependent = project / "Assets/Dependent.py"
+    dependent.write_text("from Consumer import API\n", encoding="utf-8")
+    unrelated = project / "Assets/Unrelated.py"
+    unrelated.write_text("VALUE = 1\n", encoding="utf-8")
+    graph = ScriptDependencyGraph(str(project))
+    graph.index_assets()
+    root = project / "Packages/vendor/owned-runtime/runtime"
+    publications = []
+
+    class Resources:
+        _project_path = str(project.resolve())
+        _event_handler = SimpleNamespace(_dependency_graph=graph)
+        script_library_dependents = ResourcesManager.script_library_dependents
+
+        def begin_script_transaction(self, paths):
+            self.paths = paths
+            assert is_preload_python_library(str(root / "owned_reenable"))
+            assert root / "owned_reenable/__init__.py" not in map(Path, paths)
+            assert {consumer, dependent}.issubset(map(Path, paths))
+            assert unrelated not in map(Path, paths)
+            return "owned-runtime"
+
+        def submit_script_change(self, path, **kwargs):
+            assert kwargs["catalog_event"] is None
+            return object()
+
+        def process_pending_reloads(self, *, force):
+            broker = CandidateImportTransaction()
+            name = get_script_module_name(str(root / "Author.py"), str(project))
+            for path in self.paths:
+                broker.register(get_script_module_name(path, str(project)), path)
+            try:
+                api = broker.load(name).API
+                assert api is sys.modules["owned_reenable"].API
+                assert broker.load("Dependent").API is api
+                publications.append(api)
+            finally:
+                broker.rollback()
+
+        def retire_script_paths(self, paths):
+            pass
+
+    resources = Resources()
+    monkeypatch.setattr("infernux.engine.resources_manager.ResourcesManager.instance",
+                        classmethod(lambda _cls: resources))
+    previous = get_project_root()
+    set_project_root(str(project))
+    manager = PluginManager(str(project))
+    try:
+        reference = "vendor/owned-runtime"
+        assert manager.install_package(str(_export(source, tmp_path / "owned.inxpkg")),
+                                       install_dependencies=False).loaded
+        manager.set_enabled(reference, False)
+        assert "owned_reenable" not in sys.modules
+        assert manager.set_enabled(reference, True).loaded
+        assert manager.reload(reference).loaded
+        assert len(publications) == 3
+        assert len({id(api) for api in publications}) == 3
+    finally:
+        manager.shutdown()
+        set_project_root(previous)
+
+
 def test_package_preloads_with_matching_module_paths_are_isolated(tmp_path):
     project = _project(tmp_path / "project")
     manager = PluginManager(str(project))

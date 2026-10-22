@@ -115,11 +115,9 @@ def _module_file(component_type: type) -> str:
 def _is_project_script(path: str) -> bool:
     if not path:
         return False
-    from infernux.engine.project_context import get_assets_root
-    from infernux.engine.path_utils import is_path_within
+    from infernux.engine.project_context import is_project_component_script
 
-    assets_root = get_assets_root()
-    return bool(assets_root and is_path_within(path, assets_root))
+    return is_project_component_script(path)
 
 
 def _bump_revision() -> None:

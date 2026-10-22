@@ -956,6 +956,8 @@ def stage_component_body_reload_batch(
                 *request.target_types,
                 *(component_type for component_type in published_types
                   if component_type in retained_types),
+                *sorted((component_type for component_type in retained_types
+                         if component_type.__module__ == module_name), key=lambda cls: cls.__qualname__),
             )))
             instances_by_type = {
                 target_type: tuple(values)
@@ -1129,7 +1131,8 @@ def stage_component_body_reload_batch(
                     cds_publish_types.append(candidate_type)
 
             for target_type in effective_targets:
-                if request.script_guid and getattr(target_type, "_asset_script_guid_", "") != request.script_guid:
+                target_guid = getattr(target_type, "_asset_script_guid_", "")
+                if request.script_guid and target_guid and target_guid != request.script_guid:
                     raise ScriptReloadRejected(
                         f"component type '{target_type.__qualname__}' script identity changed; reload rejected"
                     )
@@ -1383,6 +1386,7 @@ def _plan_component_class_body_patch(
             operations.append((name, True, getattr(candidate_type, name)))
     if identity_changed:
         operations.append(("_type_guid_", True, candidate_type._get_type_guid()))
+        operations.append(("_asset_script_guid_", True, candidate_type._asset_script_guid_))
     keys = set(target_body) | set(candidate_body)
     for name in sorted(keys):
         if (
@@ -1651,6 +1655,12 @@ def _load_script_module(
     spec = importlib.util.spec_from_file_location(module_name, file_path)
     if spec is None or spec.loader is None:
         raise ScriptLoadError(f"Failed to create module spec for {file_path}")
+
+    from infernux.engine.project_context import package_script_reference
+    reference = package_script_reference(file_path)
+    if reference:
+        from infernux.plugins.preload import _ensure_module_parents
+        _ensure_module_parents(module_name, file_path, reference)
 
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module

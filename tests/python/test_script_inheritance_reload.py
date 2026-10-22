@@ -131,6 +131,46 @@ def test_actual_base_change_rejects_whole_batch_without_touching_live_objects(sc
     assert instance.marker() == marker
 
 
+def test_package_base_imported_by_python_keeps_identity_when_first_asset_binding_publishes(scene, project):
+    from test_inxpackage_plugins import _source, _meta
+
+    package = _source(project.parent / "Packages/vendor/inherited", "vendor/inherited")
+    runtime = package / "runtime"
+    runtime.mkdir()
+    base, child = write_tree(runtime, True, "old")
+    child.write_text(child.read_text().replace("from reload_tree_base", "from .reload_tree_base"), encoding="utf-8")
+    guids = ("a" * 32, "b" * 32)
+    for path, guid in zip((base, child), guids):
+        path.with_suffix(".py.meta").write_text(_meta(guid), encoding="utf-8")
+    types = {cls.__name__: cls for cls in load_all_components_from_file(str(child), source_only=True)}
+    child_type = types["Child"]
+    base_type = child_type.__bases__[0]
+    assert not base_type._asset_script_guid_
+    assert base_type in component_types_for_script_path(str(base))
+    instance = scene.create_game_object("Package child").add_component(child_type)
+    instance.value = 42
+    from infernux.components.registry import unregister_component_script
+    unregister_component_script(str(base))
+    unregister_component_script(str(child))
+    write_tree(runtime, True, "new", add_field=True)
+    child.write_text(child.read_text().replace("from reload_tree_base", "from .reload_tree_base"), encoding="utf-8")
+    transaction = stage_component_body_reload_batch(tuple(
+        ComponentBodyReloadRequest(str(path), script_guid=guid,
+                                   target_types=(child_type,) if path == child else ())
+        for path, guid in zip((base, child), guids)
+    ))
+    try:
+        transaction.commit()
+        assert type(instance) is child_type and child_type.__bases__ == (base_type,)
+        assert instance.value == 42 and instance.extra == 9
+        assert instance.marker() == "new:Base:new:Child"
+        assert base_type._asset_script_guid_ == guids[0]
+    finally:
+        transaction.rollback()
+    assert instance.value == 42 and instance.marker() == "old:Base:old:Child"
+    assert not base_type._asset_script_guid_
+
+
 @pytest.mark.parametrize("cross_file", [False,True])
 def test_publication_failure_restores_candidate_bases_and_live_schema(scene, project, monkeypatch, cross_file):
     from infernux.components import registry

@@ -2079,6 +2079,20 @@ class ResourcesManager:
             retire_paths=retired,
         )
 
+    def script_library_dependents(self, module_names) -> tuple[str, ...]:
+        """Find component consumers of a reloaded preload library in the live graph."""
+        if self._event_handler is None:
+            return ()
+        graph = self._event_handler._dependency_graph
+        names = frozenset(module_names)
+        seeds = {
+            edge.source for edge in graph.external_dependencies()
+            if any(edge.external_name == name or edge.external_name.startswith(name + ".")
+                   for name in names)
+        }
+        return tuple(graph.module_for_path(module.path_key).source_path
+                     for module in graph.affected_closure(seeds))
+
     def retire_script_paths(self, paths) -> None:
         """Retire package Runtime modules after a disable or uninstall commit."""
 
