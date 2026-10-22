@@ -90,6 +90,7 @@ class _ReplacementLifecycleTarget(InxComponent):
 
 
 class _PlayLifecycleResetComponent(InxComponent):
+    _execute_in_edit_mode_ = True
     awake_calls = 0
     start_calls = 0
     destroy_calls = 0

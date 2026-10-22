@@ -521,6 +521,7 @@ class TestSceneSerialization:
 
     @pytest.mark.parametrize("pre_resolve", [False, True])
     def test_scene_replacement_camera_reference_is_null_during_retired_disable(self, scene, pre_resolve):
+        SceneManager.instance().play()
         camera_object = scene.create_game_object("RetiredCamera")
         camera_object.add_component("Camera")
         owner = scene.create_game_object("CameraCleanupOwner")

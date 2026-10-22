@@ -7,6 +7,11 @@ from infernux.instantiate import Destroy
 from infernux.lib import SceneManager, Vector3
 
 
+@pytest.fixture(autouse=True)
+def playing_scene(scene):
+    SceneManager.instance().play()
+
+
 @pytest.mark.parametrize("operation", ["component", "object", "scene"])
 def test_destroy_callback_can_read_owner_transform_and_native_sibling(scene, operation):
     events = []

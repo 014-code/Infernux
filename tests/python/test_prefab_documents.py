@@ -170,6 +170,7 @@ def test_cold_and_cached_prefab_instances_awaken_after_configuration_without_tem
     path = tmp_path / "cached-awake.prefab"
     assert save_prefab(source, str(path))
     manager = SceneManager.instance()
+    manager.play()
     before_worlds = [manager.get_scene_at(index).world_id for index in range(manager.scene_count)]
     _PrefabAwakeRecorder._placements.clear()
 
