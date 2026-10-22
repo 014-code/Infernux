@@ -10,6 +10,7 @@ This hotfix fixes issues found while using independently installed animation plu
 
 - Load preload-owned Python libraries before publishing components during installation and re-enabling. Keep library modules out of component transactions and avoid repeating preload notifications during explicit package publication.
 - Refresh project scripts that import a reloaded plugin library, using the in-memory dependency graph. Their dependent scripts join the same transaction, so animations do not silently retain an unloaded manager.
+- Compile preload-owned libraries into Players without misregistering their internal helper classes as authored asset components. Player acceptance uses the same import boundary as the editor.
 - Preserve live component base-class identities after disabling and re-enabling a package. Recognize package Runtime classes as project scripts, bind provisional imported classes to their asset identity transactionally, and initialize package namespaces for relative component imports.
 - Give Inspector field groups stable IDs independent of their visible titles. Repeated groups no longer produce duplicate-item errors or share fold state. Apply field-label translation consistently to lists, asset references and nested objects.
 - Accept ordinary Python name assignments that shadow imports, including Enum member declarations, without treating them as writes to an imported object. Mutating imported objects remains a rejected candidate side effect.
