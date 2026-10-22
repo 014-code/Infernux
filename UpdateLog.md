@@ -1,10 +1,15 @@
 # Infernux v0.4.3-v2 · Hotfix 2: Native Text and Plugin Foundations
 
-This 0.4.3 hotfix adds reusable native text-animation and plugin-update interfaces, and repairs clocks and rendering state found during cross-platform validation. The base engine version remains 0.4.3; engine and Hub distributions use build 2.
+This 0.4.3 hotfix adds reusable native text-animation and plugin-update interfaces, and repairs clocks and rendering state found during cross-platform validation. The base engine version remains 0.4.3; the engine uses build 2, with the separate Hub update at 0.4.3-3.
 
 [中文更新日志](UpdateLog-zh.md)
 
 **Baseline for comparison:** [`v0.4.3...v0.4.3-v2`](https://github.com/ChenlizheMe/Infernux/compare/v0.4.3...v0.4.3-v2).
+
+### Hub 0.4.3-3
+
+- Update installed engines to a newer wheel hotfix directly from their cards, with a background catalog refresh. Older cached wheels and project version pins remain unchanged by the download.
+- Separate explicit project hotfix updates from engine version upgrades. Choose an installed release; Hub prepares its exact engine and Python runtime on the next launch. Open projects cannot be switched, and the version change preserves project assets.
 
 ### Runtime and Rendering
 

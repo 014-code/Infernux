@@ -13,13 +13,6 @@
   "release_url": "https://github.com/ChenlizheMe/Infernux/releases/tag/v0.4.3-v2",
   "assets": [
     {
-      "kind": "hub-installer",
-      "name": "InfernuxHubInstaller-0.4.3-2-windows-x64.exe",
-      "size_bytes": 169213952,
-      "url": "https://downloads.infernux-engine.com/hub/0.4.3/build-2/InfernuxHubInstaller-0.4.3-2-windows-x64.exe",
-      "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/v0.4.3-v2/InfernuxHubInstaller-0.4.3-2-windows-x64.exe"
-    },
-    {
       "kind": "python-wheel",
       "name": "infernux-0.4.3-2-cp313-cp313-win_amd64.whl",
       "size_bytes": 26423890,
@@ -27,18 +20,25 @@
       "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/v0.4.3-v2/infernux-0.4.3-2-cp313-cp313-win_amd64.whl"
     },
     {
-      "kind": "hub-installer",
-      "name": "InfernuxHubInstaller-0.4.3-2-linux-x64",
-      "size_bytes": 284653784,
-      "url": "https://downloads.infernux-engine.com/hub/0.4.3/build-2/InfernuxHubInstaller-0.4.3-2-linux-x64",
-      "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/v0.4.3-v2/InfernuxHubInstaller-0.4.3-2-linux-x64"
-    },
-    {
       "kind": "python-wheel",
       "name": "infernux-0.4.3-2-cp313-cp313-manylinux_2_35_x86_64.whl",
       "size_bytes": 44224621,
       "url": "https://files.pythonhosted.org/packages/3a/a8/5a7a7f29a1b08aba0ea5b864b9a41499d1d5cfa843c4e8f08af34c9e3ead/infernux-0.4.3-2-cp313-cp313-manylinux_2_35_x86_64.whl",
       "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/v0.4.3-v2/infernux-0.4.3-2-cp313-cp313-manylinux_2_35_x86_64.whl"
+    },
+    {
+      "kind": "hub-installer",
+      "name": "InfernuxHubInstaller-0.4.3-3-windows-x64.exe",
+      "size_bytes": 169322496,
+      "url": "https://downloads.infernux-engine.com/hub/0.4.3/build-3/InfernuxHubInstaller-0.4.3-3-windows-x64.exe",
+      "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/hub-v0.4.3-v3/InfernuxHubInstaller-0.4.3-3-windows-x64.exe"
+    },
+    {
+      "kind": "hub-installer",
+      "name": "InfernuxHubInstaller-0.4.3-3-linux-x64",
+      "size_bytes": 275445976,
+      "url": "https://downloads.infernux-engine.com/hub/0.4.3/build-3/InfernuxHubInstaller-0.4.3-3-linux-x64",
+      "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/hub-v0.4.3-v3/InfernuxHubInstaller-0.4.3-3-linux-x64"
     }
   ]
 }

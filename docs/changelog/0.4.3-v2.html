@@ -66,8 +66,13 @@
     <main class="page-shell changelog-page" id="main-content">
 <article class="container release-article" data-page-language="en"><a href="../roadmap.html#release-log">← All releases</a><header class="changelog-heading"><span class="mini-tag">v0.4.3-v2 · 2026-10-22</span><h1>Hotfix 2: Native Text and Plugin Foundations</h1>
 <a href="https://github.com/ChenlizheMe/Infernux/releases/tag/v0.4.3-v2">GitHub Release ↗</a>
-</header><div class="release-prose"><p>This 0.4.3 hotfix adds reusable native text-animation and plugin-update interfaces, and repairs clocks and rendering state found during cross-platform validation. The base engine version remains 0.4.3; engine and Hub distributions use build 2.</p>
+</header><div class="release-prose"><p>This 0.4.3 hotfix adds reusable native text-animation and plugin-update interfaces, and repairs clocks and rendering state found during cross-platform validation. The base engine version remains 0.4.3; the engine uses build 2, with the separate Hub update at 0.4.3-3.</p>
 <p><strong>Baseline for comparison:</strong> <a href="https://github.com/ChenlizheMe/Infernux/compare/v0.4.3...v0.4.3-v2"><code>v0.4.3...v0.4.3-v2</code></a>.</p>
+<h2 id="en-hub-043-3">Hub 0.4.3-3</h2>
+<ul>
+<li>Update installed engines to a newer wheel hotfix directly from their cards, with a background catalog refresh. Older cached wheels and project version pins remain unchanged by the download.</li>
+<li>Separate explicit project hotfix updates from engine version upgrades. Choose an installed release; Hub prepares its exact engine and Python runtime on the next launch. Open projects cannot be switched, and the version change preserves project assets.</li>
+</ul>
 <h2 id="en-runtime-and-rendering">Runtime and Rendering</h2>
 <ul>
 <li>Preserve the real unscaled frame duration and clamp scaled simulation consistently. Fix packaged Players treating the native pause method as a Boolean, which stopped Python clocks and time-driven effects.</li>
@@ -86,8 +91,13 @@
 </ul></div></article>
 <article class="container release-article" data-page-language="zh" hidden><a href="../roadmap.html#release-log">← 全部版本</a><header class="changelog-heading"><span class="mini-tag">v0.4.3-v2 · 2026-10-22</span><h1>热修 2：原生文字与插件基础能力</h1>
 <a href="https://github.com/ChenlizheMe/Infernux/releases/tag/v0.4.3-v2">GitHub Release ↗</a>
-</header><div class="release-prose"><p>本次 0.4.3 热修补齐可复用的原生文字动画、插件更新阶段与编辑预览接口，并修复跨平台验证中发现的时钟和渲染状态问题。引擎基础版本仍为 0.4.3，引擎与 Hub 发行使用构建号 2。</p>
+</header><div class="release-prose"><p>本次 0.4.3 热修补齐可复用的原生文字动画、插件更新阶段与编辑预览接口，并修复跨平台验证中发现的时钟和渲染状态问题。引擎基础版本仍为 0.4.3，引擎使用构建号 2，独立的 Hub 更新为 0.4.3-3。</p>
 <p><strong>对比基线：</strong> <a href="https://github.com/ChenlizheMe/Infernux/compare/v0.4.3...v0.4.3-v2"><code>v0.4.3...v0.4.3-v2</code></a>。</p>
+<h2 id="zh-hub-043-3">Hub 0.4.3-3</h2>
+<ul>
+<li>已安装引擎的卡片可直接更新 wheel 热修，并在后台刷新版本目录；下载保留旧 wheel，不自动改变现有项目的版本绑定。</li>
+<li>项目操作区分“更新项目热修”和“升级引擎版本”。选择已安装版本并确认后，下次启动使用其精确引擎与 Python 运行时；禁止切换已打开的项目，版本变更不会重写项目资产。</li>
+</ul>
 <h2 id="zh-_1">运行时与渲染</h2>
 <ul>
 <li>保留真实的 unscaled 帧时长，并统一缩放后的模拟时长上限；修复 Player 把原生暂停方法当作布尔值，导致 Python 时钟和时间驱动效果不前进的问题。</li>

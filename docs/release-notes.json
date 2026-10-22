@@ -8,15 +8,32 @@
   "published_at": "2026-10-22T03:57:32Z",
   "release_url": "https://github.com/ChenlizheMe/Infernux/releases/tag/v0.4.3-v2",
   "source": "UpdateLog.md",
-  "summary": "This 0.4.3 hotfix adds reusable native text-animation and plugin-update interfaces, and repairs clocks and rendering state found during cross-platform validation. The base engine version remains 0.4.3; engine and Hub distributions use build 2.",
+  "summary": "This 0.4.3 hotfix adds reusable native text-animation and plugin-update interfaces, and repairs clocks and rendering state found during cross-platform validation. The base engine version remains 0.4.3; the engine uses build 2, with the separate Hub update at 0.4.3-3.",
   "comparison": {
     "from": "0.4.3",
     "to": "0.4.3-v2",
     "url": "https://github.com/ChenlizheMe/Infernux/compare/v0.4.3...v0.4.3-v2"
   },
-  "section_count": 2,
-  "item_count": 10,
+  "section_count": 3,
+  "item_count": 12,
   "sections": [
+    {
+      "id": "hub-0-4-3-3",
+      "title": "Hub 0.4.3-3",
+      "kind": "changes",
+      "items": [
+        {
+          "title": "Update installed engines to a newer wheel hotfix directly from their cards, with a background catalog refresh. Older cached wheels and project version pins remain unchanged by the download.",
+          "detail": "",
+          "text": "Update installed engines to a newer wheel hotfix directly from their cards, with a background catalog refresh. Older cached wheels and project version pins remain unchanged by the download."
+        },
+        {
+          "title": "Separate explicit project hotfix updates from engine version upgrades. Choose an installed release; Hub prepares its exact engine and Python runtime on the next launch. Open projects cannot be switched, and the version change preserves project assets.",
+          "detail": "",
+          "text": "Separate explicit project hotfix updates from engine version upgrades. Choose an installed release; Hub prepares its exact engine and Python runtime on the next launch. Open projects cannot be switched, and the version change preserves project assets."
+        }
+      ]
+    },
     {
       "id": "runtime-and-rendering",
       "title": "Runtime and Rendering",
