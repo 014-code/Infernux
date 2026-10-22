@@ -756,6 +756,9 @@ def test_graphical_run_releases_gil_for_background_python_work(engine):
 
 def test_synthetic_ctrl_a_replaces_focused_imgui_text(engine):
     """Synthetic modifier state must reach ImGui shortcuts, not just InputManager."""
+    from infernux.resources import engine_font_path
+
+    engine.set_gui_font(engine_font_path, 18)
 
     class _TextProbe(InxGUIRenderable):
         def __init__(self) -> None:
@@ -787,10 +790,9 @@ def test_synthetic_ctrl_a_replaces_focused_imgui_text(engine):
     def on_update(_delta_time: float) -> None:
         state["frame"] += 1
         target = _find_target()
-        if not state["clicked"] and target:
-            rect = target["rect"]
-            x = float(rect[0]) + float(rect[2]) * 0.5
-            y = float(rect[1]) + float(rect[3]) * 0.5
+        if (not state["clicked"] and target and target.get("visible")
+                and target.get("enabled") and target.get("has_click_point")):
+            x, y = map(float, target["click_point"])
             engine.queue_synthetic_mouse_motion_input(x, y, 0.0, 0.0)
             engine.queue_synthetic_mouse_button_input(0, True, x, y)
             engine.queue_synthetic_mouse_button_input(0, False, x, y)
@@ -819,8 +821,8 @@ def test_synthetic_ctrl_a_replaces_focused_imgui_text(engine):
         engine.unregister_gui_renderable("test.synthetic_ctrl_a")
 
     assert state["target"] is not None
-    assert state["focused"] is True
-    assert state["typed"] is True
+    assert state["focused"] is True, state
+    assert state["typed"] is True, state
     assert probe.value == "RacingEntry", {"engine_frames": state["frame"], "gui_frames": probe.render_count}
 
 
