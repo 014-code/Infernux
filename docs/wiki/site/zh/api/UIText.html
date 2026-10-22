@@ -338,7 +338,10 @@
 <h2 id="_1">描述<a class="headerlink" href="#_1" title="Permanent link">&para;</a></h2>
 <p>UI 文本组件。在屏幕上显示文字。</p>
 <!-- USER CONTENT START -->
-<p>description</p>
+<p>description
+启用 <code>rich_text</code> 后，支持嵌套的 <code>&lt;color=#RRGGBB&gt;</code> / <code>&lt;color=#RRGGBBAA&gt;</code>、
+<code>&lt;size=32&gt;</code> / <code>&lt;size=125%&gt;</code> 和 <code>&lt;br&gt;</code> 标记。不支持的标记按原文显示。
+字号和字符偏移使用 UI 逻辑像素，Canvas 缩放在渲染时统一应用。</p>
 <!-- USER CONTENT END -->
 
 <h2 id="_2">属性<a class="headerlink" href="#_2" title="Permanent link">&para;</a></h2>
@@ -355,6 +358,11 @@
 <td>text</td>
 <td><code>str</code></td>
 <td>显示的文本内容。</td>
+</tr>
+<tr>
+<td>rich_text</td>
+<td><code>bool</code></td>
+<td></td>
 </tr>
 <tr>
 <td>font</td>
@@ -406,6 +414,11 @@
 <td><code>list</code></td>
 <td>文本颜色。</td>
 </tr>
+<tr>
+<td>max_visible_characters</td>
+<td><code>int</code></td>
+<td></td>
+</tr>
 </tbody>
 </table>
 <!-- USER CONTENT START -->
@@ -421,6 +434,22 @@
 </tr>
 </thead>
 <tbody>
+<tr>
+<td><code>get_text_layout() → TextLayout</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>create_character_buffer() → TextCharacterBuffer</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>set_character_data(buffer: TextCharacterBuffer, layer: TextGeometryLayer | None = None) → None</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>reset_character_data(layer: TextGeometryLayer | None = None) → None</code></td>
+<td></td>
+</tr>
 <tr>
 <td><code>is_auto_width() → bool</code></td>
 <td>Return <code>True</code> if resize mode is <code>AutoWidth</code>.</td>
@@ -456,15 +485,39 @@
 </tbody>
 </table>
 <!-- USER CONTENT START -->
-<p>public_methods</p>
+<p>public_methods
+<code>get_text_layout()</code> 返回缓存的只读布局快照，包含行、词、字素和字形。
+源文本范围使用包含富文本标记的原文 UTF-8 字节偏移。组合字符序列按一个字符计数；
+词是连续的非空白字素，不是按特定语言分词。</p>
+<p><code>create_character_buffer()</code> 返回可写的 NumPy 视图：<code>offsets[N,2]</code>、
+以度为单位的 <code>rotations[N]</code>、<code>scales[N,2]</code>、<code>skews[N]</code>、<code>vertex_offsets[N,4,2]</code>
+和 <code>colors[N,4,4]</code>。四角顺序为左上、右上、右下、左下，颜色与文本/样式颜色相乘。
+修改后调用 <code>set_character_data()</code> 提交；字符状态是临时数据，不写入场景文件。
+修改文本或富文本模式后需要重新创建缓冲区；字体和文本框变化保留字符身份。</p>
+<p>层叠顺序为 Manual → Effects → Appearance。<code>reset_character_data(layer)</code> 重置一层，
+省略参数则重置全部。<code>max_visible_characters</code> 按字素计数，包含空白，<code>-1</code> 表示全部显示。</p>
 <!-- USER CONTENT END -->
 
 <h2 id="_4">示例<a class="headerlink" href="#_4" title="Permanent link">&para;</a></h2>
 <!-- USER CONTENT START -->
-<p>example</p>
-<blockquote>
-<p><strong>示例状态：</strong> 当前尚未为此符号验证 0.4.3 示例。请以上方签名为准；不要根据其他引擎中的同名 API 推测行为。</p>
-</blockquote>
+<p>example
+<div class="language-python highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">infernux.ui</span><span class="w"> </span><span class="kn">import</span> <span class="n">TextGeometryLayer</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="c1"># label 是已有的 UIText 组件。</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">label</span><span class="o">.</span><span class="n">rich_text</span> <span class="o">=</span> <span class="kc">True</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">label</span><span class="o">.</span><span class="n">text</span> <span class="o">=</span> <span class="s2">"&lt;color=#ef5858&gt;Infernux&lt;/color&gt; · 逐字动画"</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="n">characters</span> <span class="o">=</span> <span class="n">label</span><span class="o">.</span><span class="n">create_character_buffer</span><span class="p">()</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="n">characters</span><span class="o">.</span><span class="n">offsets</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="mf">6.0</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="n">characters</span><span class="o">.</span><span class="n">rotations</span><span class="p">[:]</span> <span class="o">=</span> <span class="mf">8.0</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="n">label</span><span class="o">.</span><span class="n">set_character_data</span><span class="p">(</span><span class="n">characters</span><span class="p">,</span> <span class="n">TextGeometryLayer</span><span class="o">.</span><span class="n">Effects</span><span class="p">)</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="n">label</span><span class="o">.</span><span class="n">max_visible_characters</span> <span class="o">=</span> <span class="mi">8</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="c1"># 效果结束后恢复。</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="n">label</span><span class="o">.</span><span class="n">reset_character_data</span><span class="p">(</span><span class="n">TextGeometryLayer</span><span class="o">.</span><span class="n">Effects</span><span class="p">)</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="n">label</span><span class="o">.</span><span class="n">max_visible_characters</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+</code></pre></div></p>
+<p>字符效果复用原生字体图集，适用于 Canvas 和世界空间文字。该接口保证按字素索引，
+不代表新增了复杂文字塑形、双向排版或彩色 Emoji 渲染。</p>
 <!-- USER CONTENT END -->
 
 <h2 id="_5">另请参阅<a class="headerlink" href="#_5" title="Permanent link">&para;</a></h2>
