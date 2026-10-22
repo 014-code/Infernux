@@ -82,14 +82,17 @@ void RegisterTextBindings(py::module_ &module)
              py::arg("text"), py::arg("font_size") = 18.0f, py::arg("wrap_width") = 0.0f, py::arg("font_path") = "",
              py::arg("line_height") = 1.2f, py::arg("letter_spacing") = 0.0f,
              py::arg("fallback_font_paths") = std::vector<std::string>(), py::arg("rich_text") = false)
-        .def_static("split_graphemes", [](const std::string &source) {
-            const auto segments = text::SegmentText(source);
-            std::vector<std::string> characters;
-            characters.reserve(segments.characters.size());
-            for (const auto &character : segments.characters)
-                characters.emplace_back(source.substr(character.start, character.end - character.start));
-            return characters;
-        }, py::arg("text"), "Split original text into extended graphemes without a renderer or font.")
+        .def_static(
+            "split_graphemes",
+            [](const std::string &source) {
+                const auto segments = text::SegmentText(source);
+                std::vector<std::string> characters;
+                characters.reserve(segments.characters.size());
+                for (const auto &character : segments.characters)
+                    characters.emplace_back(source.substr(character.start, character.end - character.start));
+                return characters;
+            },
+            py::arg("text"), "Split original text into extended graphemes without a renderer or font.")
         .def_readonly("text", &TextLayoutResult::text)
         .def_readonly("display_text", &TextLayoutResult::displayText)
         .def_readonly("width", &TextLayoutResult::totalWidth)
