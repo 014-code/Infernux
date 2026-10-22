@@ -25,7 +25,7 @@ from infernux.engine.project_view_settings import (
 )
 from infernux.ui.ui_texture_cache import get_shared_cache as _get_tex_cache
 from infernux.ui.ui_render_dispatch import dispatch as _ui_dispatch
-from infernux.ui.ui_event_system import UIEventProcessor
+from infernux.ui.ui_event_system import UIEventProcessor, _mouse_pointer_frames
 from infernux.ui.ui_button import UIButton
 from infernux.ui.ui_canvas_utils import runtime_ui_scenes
 from infernux.engine.runtime_mouse_events import MouseEventDispatcher
@@ -994,10 +994,15 @@ class GameViewPanel(EditorPanel):
         from infernux.timing import Time
         dt = Time.unscaled_delta_time
 
-        self._ui_event_processor.process(
-            surfaces, canvas_positions,
-            mouse_down, mouse_up, mouse_held,
-            scroll, dt,
+        self._ui_event_processor.process_pointers(
+            surfaces,
+            _mouse_pointer_frames(
+                canvas_positions,
+                ((mouse_held, mouse_down, mouse_up),
+                 Input.get_game_mouse_frame_state(1)[4:], Input.get_game_mouse_frame_state(2)[4:]),
+                scroll,
+            ),
+            dt,
         )
         # UI dispatch remains authoritative: blocking screen UI suppresses a
         # hidden 3D query, while Canvas-free world UI and ordinary mouse

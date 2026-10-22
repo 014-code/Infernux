@@ -25,6 +25,7 @@ from infernux.debug import Debug
 from .enums import TextAlignH, TextAlignV
 from .ui_selectable import UISelectable
 from .ui_event import UIEvent
+from .ui_event_data import PointerButton
 from .ui_event_entry import (
     UIEventEntry,
     _UIEventRuntimeBinding,
@@ -174,7 +175,7 @@ class UIButton(UISelectable):
     # ------------------------------------------------------------------
 
     def on_pointer_click(self, event_data):
-        if not self.interactable:
+        if not self.interactable or event_data.button != PointerButton.Left:
             return
         self._init_button_state()
         self._on_click.invoke()

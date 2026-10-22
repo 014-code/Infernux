@@ -203,6 +203,10 @@ class _PolicyVisitor(ast.NodeVisitor):
         return root in self.imported_modules or root in self.imported_members
 
     def _check_target(self, node: ast.AST, target: ast.AST) -> None:
+        # Binding a name does not write to the imported object. Augmented
+        # assignment can call its in-place mutator and remains checked.
+        if isinstance(target, ast.Name) and not isinstance(node, ast.AugAssign):
+            return
         if not self._target_is_imported(target):
             return
         chain = _chain(target)

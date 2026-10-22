@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Sequence, Tuple, TYPE_CHECKING
 
-from .ui_event_data import PointerType
+from .ui_event_data import PointerButton, PointerType
 
 if TYPE_CHECKING:
     from infernux.ui.ui_canvas import UICanvas
@@ -24,6 +24,7 @@ class UIPointerFrame:
     canceled: bool = False
     scroll_delta: Tuple[float, float] = (0.0, 0.0)
     press_canvas_positions: Tuple[Tuple[float, float], ...] = ()
+    button: PointerButton = PointerButton.Left
 
 
 class UIEventProcessor:

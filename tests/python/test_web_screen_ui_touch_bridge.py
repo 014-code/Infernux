@@ -10,7 +10,7 @@ import infernux.engine.runtime_screen_ui as runtime_screen_ui
 import infernux.engine.ui.runtime_canvas_snapshot as canvas_snapshot
 import infernux.input as input_module
 from infernux.input import TouchPhase
-from infernux.ui.ui_event_data import PointerType
+from infernux.ui.ui_event_data import PointerButton, PointerType
 
 
 BOOTSTRAP = (
@@ -19,7 +19,7 @@ BOOTSTRAP = (
 )
 
 
-def test_web_screen_ui_forwards_same_frame_touch_and_mouse(monkeypatch):
+def test_web_screen_ui_forwards_same_frame_touch_and_mouse_buttons(monkeypatch):
     source = ast.parse(BOOTSTRAP.read_text(encoding="utf-8"))
     function = next(
         node for node in source.body
@@ -88,7 +88,7 @@ def test_web_screen_ui_forwards_same_frame_touch_and_mouse(monkeypatch):
         input_module,
         "Input",
         SimpleNamespace(
-            get_game_mouse_frame_state=lambda _button: (200, 100, 0, 0, False, False, False),
+            get_game_mouse_frame_state=lambda button: (200, 100, 0, 0, button == 1, button == 1, button == 2),
             touches=(touch,),
         ),
     )
@@ -98,14 +98,16 @@ def test_web_screen_ui_forwards_same_frame_touch_and_mouse(monkeypatch):
     canvases, pointers, dt = captured.pop()
     assert canvases == (canvas,)
     assert dt == 0.016
-    assert len(pointers) == 2
+    assert len(pointers) == 4
     assert pointers[0].pointer_type is PointerType.Mouse
     assert pointers[0].canvas_positions == ((100.0, 50.0),)
-    assert pointers[1].pointer_type is PointerType.Touch
-    assert pointers[1].pointer_id == 5
-    assert pointers[1].canvas_positions == ((320.0, 90.0),)
-    assert pointers[1].press_canvas_positions == ((160.0, 180.0),)
-    assert pointers[1].down and pointers[1].up and not pointers[1].canceled
+    assert [p.button for p in pointers[:3]] == [PointerButton.Left, PointerButton.Right, PointerButton.Middle]
+    assert pointers[1].down and pointers[1].held and pointers[2].up
+    assert pointers[3].pointer_type is PointerType.Touch
+    assert pointers[3].pointer_id == 5
+    assert pointers[3].canvas_positions == ((320.0, 90.0),)
+    assert pointers[3].press_canvas_positions == ((160.0, 180.0),)
+    assert pointers[3].down and pointers[3].up and not pointers[3].canceled
     assert len(scene_pointer_frames) == 1
     scene_args, scene_kwargs = scene_pointer_frames[0]
     assert scene_args[1:] == ((200, 100), (1280.0, 720.0))

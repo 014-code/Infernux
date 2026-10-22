@@ -199,9 +199,11 @@ def test_player_ui_font_texture_and_chinese_text_use_only_cooked_guid_closure(
     )
     set_runtime_asset_resolver(catalog.resolve_guid)
     try:
+        from infernux.resources import engine_font_path
+
         attrs = _extract_text_attrs(text)
         assert attrs["font_path"] == cooked_paths[primary_guid]
-        assert attrs["fallback_font_paths"] == [cooked_paths[fallback_guid]]
+        assert attrs["fallback_font_paths"] == [cooked_paths[fallback_guid], str(engine_font_path)]
         assert Path(attrs["font_path"]).read_bytes() == b"project-primary-font"
         assert Path(attrs["fallback_font_paths"][0]).read_bytes() == b"project-cjk-font"
         assert resolve_runtime_asset_guid(texture_guid) == cooked_paths[texture_guid]

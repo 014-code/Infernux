@@ -70,6 +70,10 @@ class TextLayout:
     def __init__(self, text: str, font_size: float = 18.0, wrap_width: float = 0.0,
                  font_path: str = "", line_height: float = 1.2, letter_spacing: float = 0.0,
                  fallback_font_paths: Sequence[str] = (), rich_text: bool = False) -> None: ...
+    @staticmethod
+    def split_graphemes(text: str) -> list[str]:
+        """Split original Unicode text without initializing a renderer or font."""
+        ...
     text: str
     display_text: str
     width: float

@@ -23,7 +23,7 @@ from infernux.lib import InxGUIRenderable, InxGUIContext
 from infernux.input import Input, TouchPhase
 from infernux.engine.ui.viewport_utils import capture_viewport_info
 from infernux.ui.ui_event_data import PointerType
-from infernux.ui.ui_event_system import UIEventProcessor, UIPointerFrame
+from infernux.ui.ui_event_system import UIEventProcessor, UIPointerFrame, _mouse_pointer_frames
 from infernux.engine.runtime_screen_ui import (
     collect_runtime_ui_input_surfaces,
     map_runtime_ui_pointer,
@@ -392,17 +392,12 @@ class PlayerGUI(InxGUIRenderable):
         )
         self._has_shared_scene_query = True
 
-        pointers = [
-            UIPointerFrame(
-                pointer_id=-1,
-                pointer_type=PointerType.Mouse,
-                canvas_positions=mouse_positions,
-                down=mouse_down,
-                up=mouse_up,
-                held=mouse_held,
-                scroll_delta=(scroll_x, scroll_y),
-            )
-        ]
+        pointers = _mouse_pointer_frames(
+            mouse_positions,
+            ((mouse_held, mouse_down, mouse_up),
+             Input.get_game_mouse_frame_state(1)[4:], Input.get_game_mouse_frame_state(2)[4:]),
+            (scroll_x, scroll_y),
+        )
         touch_points = tuple(
             (
                 float(touch.normalized_position[0]) * float(game_w),

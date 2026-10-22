@@ -251,7 +251,8 @@ def test_repository_package_export_install_reexport_and_player_inventory(tmp_pat
         button.on_click.add_listener(
             lambda: Application.open_url(Application.asset_path("Assets/Plugins/web/index.html"))
         )
-        button.on_pointer_click(None)
+        from infernux.ui import PointerEventData
+        button.on_pointer_click(PointerEventData())
         assert engine.urls == [page.resolve().as_uri()]
     finally:
         Application._unbind_engine(engine)

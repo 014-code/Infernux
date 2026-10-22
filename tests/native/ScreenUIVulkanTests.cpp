@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cassert>
 #include <chrono>
+#include <cmath>
 #include <iostream>
 #include <unordered_map>
 
@@ -467,6 +468,21 @@ int main(int argc, char **argv)
     assert(io.Fonts->Build());
     io.Fonts->SetTexID(static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(device.Resolve(group))));
     ImGui::NewFrame();
+    {
+        ImDrawList rounded(ImGui::GetDrawListSharedData());
+        rounded.PathRect(ImVec2(0, 0), ImVec2(2000, 2000), 1000);
+        const int quarterPoints = rounded._Path.Size / 4;
+        assert(quarterPoints > 12);
+        const ImVec2 center(999, 999);
+        const float tolerance = ImGui::GetStyle().CircleTessellationMaxError;
+        for (int index = 1; index < quarterPoints; ++index) {
+            const ImVec2 midpoint((rounded._Path[index - 1].x + rounded._Path[index].x) * 0.5f,
+                                  (rounded._Path[index - 1].y + rounded._Path[index].y) * 0.5f);
+            const float dx = midpoint.x - center.x;
+            const float dy = midpoint.y - center.y;
+            assert(999.0f - std::sqrt(dx * dx + dy * dy) <= tolerance + 0.001f);
+        }
+    }
     InxScreenUIRenderer renderer;
     assert(renderer.Initialize(context.GetDevice(), context.GetVmaAllocator(), device.GetDescriptorManager(),
                                VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_D32_SFLOAT, VK_SAMPLE_COUNT_1_BIT, 4));

@@ -14,7 +14,7 @@ from infernux.components import serialized_field
 from infernux.components.fields import FieldType
 from .inx_ui_screen_component import InxUIScreenComponent
 from .enums import UITransitionType
-from .ui_event_data import PointerType
+from .ui_event_data import PointerButton, PointerType
 from .ui_render_revision import mark_runtime_ui_dirty
 
 
@@ -151,13 +151,15 @@ class UISelectable(InxUIScreenComponent):
         self._evaluate_state()
 
     def on_pointer_down(self, event_data):
-        if not self.interactable:
+        if not self.interactable or event_data.button != PointerButton.Left:
             return
         self._init_selectable_state()
         self._pressed_pointers.add(self._pointer_key(event_data))
         self._evaluate_state()
 
     def on_pointer_up(self, event_data):
+        if event_data.button != PointerButton.Left:
+            return
         self._init_selectable_state()
         self._pressed_pointers.discard(self._pointer_key(event_data))
         self._evaluate_state()

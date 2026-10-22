@@ -85,6 +85,8 @@ def test_missing_font_arrival_delete_restore_and_move(font_assets):
 
 
 def test_fallback_face_update_invalidates_text_measurement(font_assets):
+    from infernux.resources import engine_font_path
+
     database, root, renderer = font_assets
     primary = _import(database, root / "ASCII.ttf", "ProggyClean.ttf")
     fallback = _import(database, root / "Fallback.ttf", "Roboto-Medium.ttf")
@@ -96,10 +98,31 @@ def test_fallback_face_update_invalidates_text_measurement(font_assets):
     shutil.copyfile(FONTS / "Cousine-Regular.ttf", root / "Fallback.ttf")
     assert AssetManager.reimport_asset(str(root / "Fallback.ttf"), database=database)
     expected = renderer.measure_text(text.text, 24, 0, str(root / "ASCII.ttf"), 1.2, 0,
-                                     [str(FONTS / "Cousine-Regular.ttf")])[0]
+                                     [str(FONTS / "Cousine-Regular.ttf"), str(engine_font_path)])[0]
     assert abs(before-expected) > 1
     text.resolve_text_layout(renderer.measure_text)
     assert text.get_resolved_size()[0] == pytest.approx(expected, abs=.01)
+
+
+def test_default_face_completes_the_authored_mixed_language_chain(font_assets):
+    from infernux.resources import engine_font_path
+    from infernux.ui.ui_font_asset import ui_font_paths
+
+    database, root, renderer = font_assets
+    primary = _import(database, root / "Latin.ttf", "ProggyClean.ttf")
+    fallback = _import(database, root / "Greek.ttf", "Roboto-Medium.ttf")
+    text = UIText()
+    text.font, text.fallback_fonts = primary, [fallback]
+    text.text, text.font_size, text.resize_mode = "S中Ω", 24, TextResizeMode.AutoWidth
+    font, fallbacks = ui_font_paths(text)
+    assert Path(font) == root / "Latin.ttf"
+    assert list(map(Path, fallbacks)) == [root / "Greek.ttf", Path(engine_font_path)]
+    expected = sum(renderer.measure_text(value, 24, 0, face)[0] for value, face in (
+        ("S", font), ("中", str(engine_font_path)), ("Ω", fallbacks[0])))
+    text.resolve_text_layout(renderer.measure_text)
+    assert text.get_resolved_size()[0] == pytest.approx(expected, abs=.01)
+    text.font, text.fallback_fonts = None, []
+    assert ui_font_paths(text) == (str(engine_font_path), [])
 
 
 def test_filesystem_watcher_publishes_font_revision(font_assets, engine, monkeypatch):

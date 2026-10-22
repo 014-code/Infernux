@@ -3,8 +3,8 @@
 import pytest
 
 from infernux.engine import runtime_event_queue
-from infernux.ui import UIButton, UICanvas, UIGroup, UISlider, UIPointerFrame, PointerType
-from infernux.ui.ui_event_system import UIEventProcessor
+from infernux.ui import UIButton, UICanvas, UIGroup, UISlider, UIPointerFrame, PointerButton, PointerType
+from infernux.ui.ui_event_system import UIEventProcessor, _mouse_pointer_frames
 
 
 class TrackedSlider(UISlider):
@@ -22,6 +22,24 @@ class TrackedSlider(UISlider):
     def on_pointer_exit(self, event):
         super().on_pointer_exit(event)
         self.terminals.append(("exit", event.canceled))
+
+
+class TrackedButton(UIButton):
+    def awake(self):
+        super().awake()
+        self.events = []
+
+    def on_pointer_enter(self, event):
+        super().on_pointer_enter(event)
+        self.events.append(("enter", event.pointer_id, event.button, event.canceled))
+
+    def on_pointer_down(self, event):
+        super().on_pointer_down(event)
+        self.events.append(("down", event.pointer_id, event.button, event.canceled))
+
+    def on_pointer_up(self, event):
+        super().on_pointer_up(event)
+        self.events.append(("up", event.pointer_id, event.button, event.canceled))
 
 
 @pytest.fixture(autouse=True)
@@ -50,6 +68,39 @@ def make_control(scene, root, kind, x=0):
 
 def pointer(identifier, x=20, pointer_type=PointerType.Touch, **flags):
     return UIPointerFrame(identifier, pointer_type, ((float(x), 20.0),), **flags)
+
+
+def test_mouse_buttons_keep_independent_capture_with_one_hover_and_one_button_click(scene):
+    root, canvas = make_canvas(scene)
+    control = make_control(scene, root, TrackedButton)
+    processor, clicks = UIEventProcessor(), []
+    control.on_click.add_listener(lambda: clicks.append("left"))
+    for states in ([(True, True, False)] * 3, [(False, False, True)] * 3):
+        frames = _mouse_pointer_frames(((20, 20),), states)
+        processor.process_pointers([canvas], frames, 0.016)
+        runtime_event_queue.drain()
+    assert [item[0] for item in control.events].count("enter") == 1
+    assert [(item[1], item[2]) for item in control.events if item[0] == "down"] == [
+        (-1, PointerButton.Left), (-2, PointerButton.Right), (-3, PointerButton.Middle)]
+    assert clicks == ["left"]
+    right = _mouse_pointer_frames(((20, 20),), [(False, False, False), (True, True, False)])
+    processor.process_pointers([canvas], right, 0.016)
+    runtime_event_queue.drain()
+    processor.process_pointers([canvas], _mouse_pointer_frames(((20, 20),), [(False, False, False)]), 0.016)
+    runtime_event_queue.drain()
+    assert control.events[-1] == ("up", -2, PointerButton.Right, True)
+    assert processor._pointers[(PointerType.Mouse, -1)].hover_target is control
+    assert clicks == ["left"]
+
+
+def test_right_mouse_does_not_change_slider_value(scene):
+    root, canvas = make_canvas(scene)
+    slider = make_control(scene, root, UISlider)
+    processor = UIEventProcessor()
+    for x, state in ((20, (True, True, False)), (180, (True, False, False)), (190, (False, False, True))):
+        processor.process_pointers([canvas], _mouse_pointer_frames(((x, 20),), [(False, False, False), state]), 0.016)
+        runtime_event_queue.drain()
+    assert slider.value == 0
 
 
 MODES = (

@@ -71,11 +71,23 @@ class UIPointerFrame:
     canceled: bool = False
     scroll_delta: Tuple[float, float] = (0.0, 0.0)
     press_canvas_positions: Tuple[Tuple[float, float], ...] = ()
+    button: PointerButton = PointerButton.Left
+
+
+def _mouse_pointer_frames(positions, button_states, scroll=(0.0, 0.0)):
+    return [
+        UIPointerFrame(-1-index, PointerType.Mouse, tuple(positions),
+                       held=held, down=down, up=up, button=PointerButton(index),
+                       scroll_delta=scroll if index == 0 else (0.0, 0.0))
+        for index, (held, down, up) in enumerate(button_states)
+        if index == 0 or held or down or up
+    ]
 
 
 @dataclass(slots=True)
 class _PointerState:
     pointer_type: PointerType
+    button: PointerButton = PointerButton.Left
     hover_target: Optional[InxUIScreenComponent] = None
     hover_canvas: Optional[UICanvas] = None
     hover_canvas_size: Tuple[float, float] = (0.0, 0.0)
@@ -158,12 +170,15 @@ class UIEventProcessor:
             seen.add(pointer_key)
             self._process_pointer(canvases, pointer, epoch)
 
-        missing_touches = tuple(
+        missing_captures = tuple(
             pointer_key
             for pointer_key, state in self._pointers.items()
-            if state.pointer_type is PointerType.Touch and pointer_key not in seen
+            if pointer_key not in seen and (
+                state.pointer_type is PointerType.Touch
+                or (state.button != PointerButton.Left and state.press_target is not None)
+            )
         )
-        for pointer_key in missing_touches:
+        for pointer_key in missing_captures:
             self._cancel_pointer(pointer_key, epoch)
 
     def _process_pointer(self, canvases, pointer: UIPointerFrame, epoch) -> None:
@@ -187,7 +202,7 @@ class UIEventProcessor:
         pointer_key = (pointer.pointer_type, pointer_id)
         state = self._pointers.get(pointer_key)
         if state is None:
-            state = _PointerState(pointer_type=pointer.pointer_type)
+            state = _PointerState(pointer_type=pointer.pointer_type, button=pointer.button)
             self._pointers[pointer_key] = state
 
         captured = state.press_target
@@ -245,6 +260,7 @@ class UIEventProcessor:
             self._last_pointer_debug = {
                 "pointer_id": pointer_id,
                 "pointer_type": pointer.pointer_type.name,
+                "button": pointer.button.name,
                 "canvas_count": len(canvases),
                 "canvas_position": [float(hit_position[0]), float(hit_position[1])],
                 "down": bool(pointer.down),
@@ -263,7 +279,9 @@ class UIEventProcessor:
             }
 
         previous_hover = state.hover_target
-        if hit_element is not previous_hover:
+        # Mouse buttons share one cursor. Only its left channel owns hover;
+        # right/middle retain separate press, drag and double-click state.
+        if (pointer.pointer_type is PointerType.Touch or pointer.button == PointerButton.Left) and hit_element is not previous_hover:
             if previous_hover is not None:
                 event = self._make_event(
                     pointer, hit_position, delta, state.hover_canvas, previous_hover,
@@ -437,6 +455,7 @@ class UIEventProcessor:
             canvas_positions=positions,
             up=True,
             canceled=True,
+            button=state.button,
         )
         self._release_pointer(
             pointer, state, current, (0.0, 0.0), None, None, current, epoch
@@ -580,7 +599,7 @@ class UIEventProcessor:
         event.pointer_id = int(pointer.pointer_id)
         event.pointer_type = pointer.pointer_type
         event.canceled = bool(pointer.canceled)
-        event.button = PointerButton.Left
+        event.button = pointer.button
         event.scroll_delta = pointer.scroll_delta
         event.canvas = canvas
         event.target = target

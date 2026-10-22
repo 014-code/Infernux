@@ -42,6 +42,22 @@ def _broker(assets: Path, name: str, source: str) -> CandidateImportTransaction:
     return broker
 
 
+def test_candidate_policy_allows_enum_member_names_that_shadow_imports():
+    from infernux.engine.script_candidate_policy import analyze_script_candidate
+
+    source = '''from enum import Enum
+from infernux.components.builtin import Rigidbody
+class TargetKind(str, Enum):
+    Rigidbody = "Rigidbody"
+Rigidbody = None
+del Rigidbody
+'''
+    assert not analyze_script_candidate(source).is_rejected
+    for statement in ("Rigidbody.enabled = False", "Rigidbody.settings[0] = False", "Rigidbody += [1]"):
+        report = analyze_script_candidate("from shared import Rigidbody\n" + statement)
+        assert report.is_rejected and report.blocked[0].operation.startswith("Rigidbody")
+
+
 def test_preload_library_uses_python_identity_and_lazy_children(candidate_project, monkeypatch):
     from infernux.engine.project_context import register_preload_python_library, release_preload_python_libraries
 

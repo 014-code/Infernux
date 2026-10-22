@@ -9,6 +9,7 @@ from infernux.components.fields import FieldType
 
 from .enums import UIFillDirection
 from .ui_event import UIEvent1
+from .ui_event_data import PointerButton
 from .ui_selectable import UISelectable
 
 
@@ -124,13 +125,13 @@ class UISlider(UISelectable):
 
     def on_pointer_down(self, event_data):
         super().on_pointer_down(event_data)
-        if self.interactable:
+        if self.interactable and event_data.button == PointerButton.Left:
             self._set_from_pointer(event_data)
 
     def on_begin_drag(self, event_data):
-        if self.interactable:
+        if self.interactable and event_data.button == PointerButton.Left:
             self._set_from_pointer(event_data)
 
     def on_drag(self, event_data):
-        if self.interactable:
+        if self.interactable and event_data.button == PointerButton.Left:
             self._set_from_pointer(event_data)

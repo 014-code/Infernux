@@ -1,6 +1,8 @@
 """Native layout metadata follows the geometry actually submitted by UIText."""
 
 import pytest
+import subprocess
+import sys
 
 from infernux.lib import TextLayout
 from infernux.resources import engine_font_path
@@ -10,6 +12,18 @@ import numpy as np
 @pytest.fixture(scope="module", autouse=True)
 def engine_font(engine):
     engine.set_gui_font(engine_font_path, 18)
+
+
+def test_unicode_segmentation_is_available_without_a_renderer():
+    code = '''from infernux.lib import TextLayout
+source = "e\\u0301 👨‍👩‍👧 🇨🇳\\r\\n中👍🏽"
+parts = TextLayout.split_graphemes(source)
+assert parts == ["e\\u0301", " ", "👨‍👩‍👧", " ", "🇨🇳", "\\r\\n", "中", "👍🏽"], parts
+assert "".join(parts) == source
+assert TextLayout.split_graphemes("") == []
+'''
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_graphemes_source_words_and_lines_share_one_layout():
