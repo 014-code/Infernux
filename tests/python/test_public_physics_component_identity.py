@@ -29,6 +29,7 @@ class PublicPhysicsProbe(inx.InxComponent):
 @pytest.mark.parametrize('shape', [inx.BoxCollider, inx.SphereCollider, inx.CapsuleCollider, inx.CylinderCollider])
 @pytest.mark.parametrize('phase', ['enter', 'stay', 'exit'])
 def test_trigger_bridge_reuses_exact_public_collider(scene, shape, phase):
+    SceneManager.instance().play()
     owner = scene.create_game_object('CallbackCollider')
     expected = owner.add_component(shape)
     listener = scene.create_game_object('CallbackListener').add_component(PublicPhysicsProbe)
@@ -99,6 +100,7 @@ def test_overlap_queries_return_public_components_with_stable_identity(scene, qu
 
 @pytest.mark.parametrize('phase', ['enter', 'stay', 'exit'])
 def test_trigger_component_identity_does_not_select_first_same_type_collider(scene, phase):
+    SceneManager.instance().play()
     owner = scene.create_game_object('CompoundCallbackOwner')
     first = owner.add_component(inx.BoxCollider)
     second = owner.add_component(inx.BoxCollider)

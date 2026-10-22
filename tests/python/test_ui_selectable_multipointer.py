@@ -103,6 +103,9 @@ def test_repeated_same_pointer_events_are_idempotent(controls):
 
 
 def test_native_owner_destruction_clears_pointer_visual_state(scene, controls):
+    from infernux.lib import SceneManager
+
+    SceneManager.instance().play()
     canvas, button, processor = controls
     frame(processor, canvas, [pointer(PointerType.Touch, 1, down=True), pointer(PointerType.Touch, 2, down=True)])
     scene.destroy_game_object(button.game_object)

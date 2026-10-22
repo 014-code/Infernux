@@ -53,6 +53,45 @@ def script(tmp_path):
         Path(str(path) + '.meta').unlink(missing_ok=True)
 
 
+@pytest.mark.parametrize('prepared', [False, True])
+@pytest.mark.parametrize('edit_callbacks', [False, True])
+def test_runtime_lifecycle_waits_for_play_unless_edit_mode_is_requested(scene, prepared, edit_callbacks):
+    from infernux.components import InxComponent
+
+    manager = SceneManager.instance()
+    events = []
+
+    class LifecycleBoundary(InxComponent):
+        _execute_in_edit_mode_ = edit_callbacks
+
+        def awake(self):
+            events.append(('awake', manager.is_playing()))
+
+        def on_enable(self):
+            events.append(('enable', manager.is_playing()))
+
+        def start(self):
+            events.append(('start', manager.is_playing()))
+
+    owner = scene.create_game_object('LifecycleBoundary')
+    if prepared:
+        component = owner._attach_prepared_py_component(LifecycleBoundary(), 0)
+        owner._activate_prepared_py_component(component._cpp_component)
+    else:
+        component = owner.add_component(LifecycleBoundary)
+    assert events == ([('awake', False), ('enable', False)] if edit_callbacks else [])
+    if not edit_callbacks:
+        component.enabled = False
+        component.enabled = True
+        owner.active = False
+        owner.active = True
+        assert events == []
+
+    manager.play()
+    expected = [('awake', False), ('enable', False)] if edit_callbacks else [('awake', True), ('enable', True)]
+    assert events == expected + [('start', True)]
+
+
 @pytest.mark.parametrize('drive', ['add', 'object', 'scene'])
 @pytest.mark.parametrize('decision,authored', [
     ('keep', True), ('keep', False), ('disable', True), ('enable', False),

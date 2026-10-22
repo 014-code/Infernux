@@ -8,6 +8,7 @@ from infernux.lib import Vector3
 
 
 class DomainCleanupProbe(InxComponent):
+    _execute_in_edit_mode_ = True
     value: int = serialized_field(default=3)
     _events = []
     _reject_publication = False

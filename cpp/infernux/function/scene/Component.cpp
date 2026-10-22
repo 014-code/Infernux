@@ -124,7 +124,8 @@ bool Component::IsComponentType(const std::string &typeName) const
 
 void Component::CallAwake()
 {
-    if (m_gameObject && m_gameObject->GetScene() && m_gameObject->GetScene()->IsPreview())
+    if (const Scene *scene = m_gameObject ? m_gameObject->GetScene() : nullptr;
+        scene && (scene->IsPreview() || (!scene->IsPlaying() && !WantsEditModeLifecycle())))
         return;
     if (m_hasAwake || m_hasDestroyed) {
         return;
@@ -154,7 +155,7 @@ void Component::CallOnEnable()
 {
     if (m_gameObject && m_gameObject->GetScene() && m_gameObject->GetScene()->IsPreview())
         return;
-    if (m_wasEnabled || m_hasDestroyed) {
+    if (!m_hasAwake || m_wasEnabled || m_hasDestroyed) {
         return;
     }
     m_wasEnabled = true;

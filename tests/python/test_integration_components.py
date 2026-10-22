@@ -649,6 +649,7 @@ class TestComponentLifecycle:
             PlayModeManager._instance = previous_manager
 
     def test_inactive_component_awakens_once_and_orders_enable_disable_and_destruction(self, scene):
+        SceneManager.instance().play()
         events = []
 
         class Probe(InxComponent):
@@ -785,6 +786,7 @@ class TestComponentLifecycle:
         assert events == ["continued"]
 
     def test_awake_exception_disables_component(self, scene):
+        SceneManager.instance().play()
         events = []
 
         class ProbeComponent(InxComponent):

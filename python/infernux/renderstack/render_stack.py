@@ -35,7 +35,7 @@ from typing import Dict, Optional
 
 from infernux.components.component import InxComponent
 from infernux.components.fields import FieldType, list_field
-from infernux.components.decorators import disallow_multiple, add_component_menu
+from infernux.components.decorators import disallow_multiple, add_component_menu, execute_in_edit_mode
 from infernux.debug import Debug
 from infernux.lib import _Infernux
 from infernux.renderstack._pipeline_common import (
@@ -67,6 +67,7 @@ class _ViewGraphState:
 
 @disallow_multiple
 @add_component_menu("Rendering/RenderStack")
+@execute_in_edit_mode
 class RenderStack(PipelineReloadMixin, InxComponent):
     """Scene-level rendering configuration component.
 
