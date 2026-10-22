@@ -11,6 +11,10 @@ on:
         description: Successful Desktop Release And Tests run for that source
         required: true
         type: string
+      draft_release_id:
+        description: Existing unpublished Hub release ID
+        required: true
+        type: string
 
 permissions:
   actions: read
@@ -28,6 +32,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       SOURCE_SHA: ${{ inputs.source_sha }}
       VALIDATION_RUN: ${{ inputs.validation_run }}
+      DRAFT_RELEASE_ID: ${{ inputs.draft_release_id }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -38,7 +43,7 @@ jobs:
       - name: Upload the already verified object-channel binaries to the matching draft
         shell: python
         run: |
-          import json, os, re, subprocess, sys, urllib.request
+          import http.client, json, os, re, subprocess, sys, urllib.parse, urllib.request
           from pathlib import Path
 
           sys.path[:0] = ['packaging', 'scripts/release']
@@ -62,26 +67,33 @@ jobs:
           version, hub = project_version(), project_hub_version()
           build = project_hub_build_number()
           tag = 'hub-' + release_tag_for(version, build)
-          release = api(f'releases/tags/{tag}')
-          assert release['draft'] and release['target_commitish'] == source
+          release_id = os.environ['DRAFT_RELEASE_ID']
+          assert release_id.isdecimal()
+          release = api(f'releases/{release_id}')
+          assert release['tag_name'] == tag and release['draft'] and release['target_commitish'] == source
           existing = {asset['name']: asset for asset in release['assets']}
           destination = Path(os.environ['RUNNER_TEMP']) / 'hub-release'
           destination.mkdir()
-          missing = []
           for name in release_assets(hub):
               url = f'https://downloads.infernux-engine.com/hub/{version}/build-{build}/{name}'
-              request = urllib.request.Request(url, method='HEAD')
-              with urllib.request.urlopen(request, timeout=30) as response:
-                  size = int(response.headers['Content-Length'])
+              target = destination / name
+              urllib.request.urlretrieve(url, target)
+              size = target.stat().st_size
               if name in existing:
                   assert existing[name]['state'] == 'uploaded' and existing[name]['size'] == size
                   continue
-              target = destination / name
-              urllib.request.urlretrieve(url, target)
-              assert target.stat().st_size == size
-              missing.append(str(target))
-          if missing:
-              subprocess.run(['gh', 'release', 'upload', tag, *missing, '--repo', repository], check=True)
+              endpoint = urllib.parse.urlsplit(release['upload_url'].split('{', 1)[0])
+              connection = http.client.HTTPSConnection(endpoint.hostname, timeout=300)
+              with target.open('rb') as body:
+                  connection.request('POST', endpoint.path + '?name=' + urllib.parse.quote(name), body, {
+                      'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+                      'Content-Type': 'application/octet-stream', 'Content-Length': str(size),
+                  })
+                  response = connection.getresponse()
+                  result = json.load(response)
+                  assert response.status == 201, result
+              connection.close()
+              print(f'Uploaded {name} ({size} bytes).', flush=True)
           uploaded = api(f'releases/{release["id"]}')['assets']
           assert {asset['name'] for asset in uploaded if asset['state'] == 'uploaded'} == set(release_assets(hub))
           print(f'{tag}: all six Hub assets uploaded; the release remains a draft.')

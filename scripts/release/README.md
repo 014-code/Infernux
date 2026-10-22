@@ -187,8 +187,8 @@ replace Hub files while leaving installed clients on the same version.
 
 For a Hub-only publication prepared locally, `Upload verified Hub release assets`
 can transfer the six immutable `hub/<version>/build-<revision>/` objects into the
-matching GitHub draft. Supply the frozen source SHA and its successful Desktop
-Release And Tests run. Both portable Hub jobs must have passed. The workflow
+matching GitHub draft. Supply the draft release ID, frozen source SHA and its
+successful Desktop Release And Tests run. Both portable Hub jobs must have passed. The workflow
 preserves uploaded files and leaves the release as a draft; publish it and update
 the catalogs after upload verification. Engine wheels are unchanged.
 
