@@ -21,6 +21,22 @@ CATALOG_KEY = "plugins/official-registry.json"
 PACKAGE_KEY = "plugins/fixture.platform/1.2.3/fixture.platform.inxpkg"
 
 
+def test_official_plugin_reference_must_match_its_registered_repository(monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / "scripts/release"))
+    plugins = importlib.import_module("publish_plugin_objects")
+    package = {
+        "reference": "infernux/tween", "version": "0.1.0", "artifact": "infernux.tween.inxpkg",
+        "repository": "https://github.com/InfernuxEngine/infernux_tween",
+        "source": {"location": "https://downloads.infernux-engine.com/plugins/infernux.tween/0.1.0/infernux.tween.inxpkg"},
+    }
+    assert plugins.release_identity(package) == (
+        "InfernuxEngine/infernux_tween", "v0.1.0", "plugins/infernux.tween/0.1.0/infernux.tween.inxpkg",
+    )
+    package["repository"] = "https://github.com/InfernuxEngine/infernux_text_animator"
+    with pytest.raises(ValueError, match="registered"):
+        plugins.release_identity(package)
+
+
 @pytest.fixture
 def channel(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(ROOT / "scripts/release"))

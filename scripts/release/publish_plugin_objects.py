@@ -23,6 +23,9 @@ def release_identity(package: dict) -> tuple[str, str, str]:
     expected = f"plugins/{package['reference'].replace('/', '.')}/{package['version']}/{name}"
     if repository.scheme != "https" or repository.netloc != "github.com":
         raise ValueError("Official plugin releases must come from GitHub")
+    repositories = json.loads((ROOT / "packaging/official_plugin_repositories.json").read_text(encoding="utf-8"))
+    if repositories.get(package["reference"]) != package["repository"]:
+        raise ValueError("Plugin reference is not registered to this official repository")
     if source.scheme != "https" or source.netloc != "downloads.infernux-engine.com" or source.path != "/" + expected:
         raise ValueError("Official plugin destination disagrees with its registry identity")
     if Path(name).name != name or not name.endswith(".inxpkg"):

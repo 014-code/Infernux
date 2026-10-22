@@ -43,7 +43,11 @@ and catalogs change only after the actual artifacts have been published.
    `build_release_notes.py` reads the English root changelog; `sync_release_site.py`
    updates the website's versioned history after publication.
 
-Independent official plugins are recorded in `packaging/official_plugin_releases.json`
+Official reference ownership is registered in `packaging/official_plugin_repositories.json`.
+This includes independent repositories that have not released a package yet;
+registration alone does not advertise an installable version.
+
+Independent official releases are recorded in `packaging/official_plugin_releases.json`
 using the existing official registry entry format. Catalog generation merges these
 releases with the source-backed entries in `external/plugins/plugins.json` and
 rejects duplicate references. It does not fetch independent plugin sources or

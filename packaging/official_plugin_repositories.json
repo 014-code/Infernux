@@ -1,0 +1,9 @@
+{
+  "infernux/mcp": "https://github.com/InfernuxEngine/infernux_mcp",
+  "infernux/platform-android": "https://github.com/InfernuxEngine/infernux_android",
+  "infernux/platform-linux": "https://github.com/InfernuxEngine/infernux_linux",
+  "infernux/platform-web": "https://github.com/InfernuxEngine/infernux_web",
+  "infernux/platform-windows": "https://github.com/InfernuxEngine/infernux_windows",
+  "infernux/text_animator": "https://github.com/InfernuxEngine/infernux_text_animator",
+  "infernux/tween": "https://github.com/InfernuxEngine/infernux_tween"
+}

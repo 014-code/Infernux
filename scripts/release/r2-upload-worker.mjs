@@ -1,6 +1,8 @@
 // Source of upload.infernux-engine.com (existing Worker: infernux-r2-upload-040).
 // Explicit release destinations; keep published versions available. Secrets are bindings.
 const ALLOWED_KEYS = new Set([
+  "plugins/infernux.tween/0.1.0/infernux.tween.inxpkg",
+  "plugins/infernux.text_animator/0.1.0/infernux.text_animator.inxpkg",
   "plugins/infernux.platform-linux/0.2.11/infernux.platform-linux.inxpkg",
   "plugins/infernux.platform-windows/0.2.12/infernux.platform-windows.inxpkg",
   "plugins/infernux.platform-web/0.2.19/infernux.platform-web.inxpkg",
