@@ -19,6 +19,7 @@ const currentVersion = String(release.version || "").trim();
 
 if (!currentVersion) fail("release.json: missing the current release version");
 const releaseTag = String(release.tag || "");
+const apiRelease = releaseTag.slice(1);
 const releaseBaseTag = releaseTag.replace(/-v[1-9]\d*$/, "");
 if (releaseBaseTag !== `v${currentVersion}`) fail(`release.json: tag '${release.tag}' does not match version ${currentVersion}`);
 for (const asset of release.assets || []) {
@@ -43,16 +44,16 @@ if (releaseNotes.version !== currentVersion || releaseNotes.tag !== releaseTag) 
 if (apiIndex.generated_for_release !== currentVersion) {
     fail(`api-index.json: generated_for_release ${apiIndex.generated_for_release} does not match current release ${currentVersion}`);
 }
-if (apiChanges.current_release !== currentVersion) {
-    fail(`api-changes.json: current_release ${apiChanges.current_release} does not match current release ${currentVersion}`);
+if (apiChanges.current_release !== apiRelease) {
+    fail(`api-changes.json: current_release ${apiChanges.current_release} does not match current release ${apiRelease}`);
 }
-const currentSnapshotPath = path.join(docsRoot, "api-snapshots", `${currentVersion}.json`);
+const currentSnapshotPath = path.join(docsRoot, "api-snapshots", `${apiRelease}.json`);
 const currentSnapshot = await readFile(currentSnapshotPath, "utf8")
     .then((content) => JSON.parse(content))
     .catch(() => null);
-if (!currentSnapshot) fail(`api-snapshots/${currentVersion}.json: current release snapshot is missing or invalid`);
-else if (currentSnapshot.release !== currentVersion) {
-    fail(`api-snapshots/${currentVersion}.json: snapshot release ${currentSnapshot.release} does not match ${currentVersion}`);
+if (!currentSnapshot) fail(`api-snapshots/${apiRelease}.json: current release snapshot is missing or invalid`);
+else if (currentSnapshot.release !== apiRelease) {
+    fail(`api-snapshots/${apiRelease}.json: snapshot release ${currentSnapshot.release} does not match ${apiRelease}`);
 }
 
 const readmeVersionContracts = [

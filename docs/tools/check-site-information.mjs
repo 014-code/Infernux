@@ -40,9 +40,11 @@ export async function checkSiteInformation(repoRoot = process.cwd()) {
     require(tag?.[1] === version, "release.json: tag/version mismatch");
     for (const [label, actual] of Object.entries({
         "release notes": notes.version, "documentation": manifest.documented_release,
-        "API index": index.generated_for_release, "API changes": changes.current_release,
+        "API index": index.generated_for_release,
         "platform release": platforms.released_version,
     })) require(actual === version, `${label}: version ${actual} differs from ${version}`);
+    const apiRelease = release.tag.slice(1);
+    require(changes.current_release === apiRelease, "API changes: wrong release revision");
     require(notes.tag === release.tag, "release notes: tag mismatch");
     const project = await readFile(path.join(repoRoot, "pyproject.toml"), "utf8");
     const engineVersion = project.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
@@ -98,8 +100,8 @@ export async function checkSiteInformation(repoRoot = process.cwd()) {
             && item.name.includes(platforms.python_abi)), `${platform.id}: released editor wheel/ABI missing`);
     }
 
-    const snapshot = await json(`api-snapshots/${version}.json`);
-    require(snapshot.release === version, "API snapshot: wrong release");
+    const snapshot = await json(`api-snapshots/${apiRelease}.json`);
+    require(snapshot.release === apiRelease, "API snapshot: wrong release revision");
     const symbols = index.symbols || [];
     require(symbols.length > 0 && index.symbol_count === symbols.length, "API index: invalid symbol count");
     require(new Set(symbols.map(symbol => symbol.id)).size === symbols.length, "API index: duplicate identifiers");

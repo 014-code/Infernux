@@ -37,6 +37,7 @@ jobs:
         run: |
           python -m pip install pytest pyyaml packaging
           python -m pytest -q -o pythonpath=packaging --confcutdir=tests/hub tests/hub/test_release_signing.py tests/hub/test_release_recovery.py
+          node --test docs/tools/test-site-information.mjs
           node tests/release/test-r2-upload-worker.mjs python/infernux/resources/official_packages/official-registry.json
   recover:
     needs: publication-tests

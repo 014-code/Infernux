@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { checkSiteInformation } from "./check-site-information.mjs";
 
 async function fixture(t) {
@@ -35,10 +37,10 @@ async function fixture(t) {
     const documents = {
         "release.json": release, "release-notes.json": { version, tag, release_url: releaseUrl },
         "docs-manifest.json": { documented_release: version }, "api-index.json": index,
-        "api-changes.json": { current_release: version }, "hub-catalog.json": catalog,
+        "api-changes.json": { current_release: tag.slice(1) }, "hub-catalog.json": catalog,
         "platform-support.json": { development_version: version, released_version: version, python_abi: "cp313",
             platforms: [{ id: "windows-x64", released: true, editor: true }] },
-        "api-snapshots/0.4.1.json": { release: version, symbols: [{ symbol_key: "Infernux.Component",
+        [`api-snapshots/${tag.slice(1)}.json`]: { release: tag.slice(1), symbols: [{ symbol_key: "Infernux.Component",
             canonical_url: "https://infernux-engine.com/wiki/site/en/api/Component.html" }] },
     };
     for (const [name, value] of Object.entries(documents)) await put(`docs/${name}`, value);
@@ -50,6 +52,43 @@ test("new layouts and CRLF do not change information validation", async t => {
     const { root, put } = await fixture(t);
     await put("docs/index.html", '<main class="a-completely-new-design">Current website</main>');
     assert.equal((await checkSiteInformation(root)).apiSymbols, 2);
+});
+
+test("hotfix API snapshots preserve published bytes and sort revisions numerically", async t => {
+    const { root, put, release, index } = await fixture(t);
+    await rm(path.join(root, "docs/api-snapshots/0.4.1-v3.json"));
+    const symbol = index.symbols[0];
+    Object.assign(symbol, { module: "infernux", symbol: "Component", kind: "class",
+        signatures: ["Component()"], status: "stable", since: "0.4.1",
+        canonical_url: "https://infernux-engine.com/wiki/site/en/api/Component.html" });
+    const build = () => execFileSync(process.execPath,
+        [fileURLToPath(new URL("./build-api-diff.mjs", import.meta.url)), "--record-current"],
+        { cwd: root, stdio: "pipe" });
+    const record = async tag => {
+        release.tag = tag;
+        await put("docs/release.json", release);
+        await put("docs/api-index.json", index);
+        build();
+    };
+    const snapshot = name => readFile(path.join(root, `docs/api-snapshots/${name}.json`), "utf8");
+    await record("v0.4.1");
+    const base = await snapshot("0.4.1");
+    symbol.signatures = ["Component(enabled=True)"];
+    await record("v0.4.1-v2");
+    const hotfix = await snapshot("0.4.1-v2");
+    symbol.signatures = ["Component(enabled=True, owner=None)"];
+    await record("v0.4.1-v10");
+    const changes = JSON.parse(await readFile(path.join(root, "docs/api-changes.json"), "utf8"));
+    assert.equal(changes.current_release, "0.4.1-v10");
+    assert.equal(changes.previous_release, "0.4.1-v2");
+    assert.equal(changes.counts.changed, 1);
+    const latest = await snapshot("0.4.1-v10");
+    symbol.signatures = ["Component(unpublished=True)"];
+    await put("docs/api-index.json", index);
+    assert.throws(build, /Refusing to overwrite immutable API snapshot/);
+    assert.equal(await snapshot("0.4.1"), base);
+    assert.equal(await snapshot("0.4.1-v2"), hotfix);
+    assert.equal(await snapshot("0.4.1-v10"), latest);
 });
 test("reject mismatched published versions", async t => {
     const { root, put } = await fixture(t);

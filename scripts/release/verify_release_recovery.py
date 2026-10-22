@@ -9,6 +9,10 @@ import subprocess
 PUBLICATION_FILES = frozenset({
     '.github/workflows/publish-desktop-release.yml',
     '.github/workflows/recover-release.yml',
+    'docs/tools/build-api-diff.mjs',
+    'docs/tools/check-site-information.mjs',
+    'docs/tools/test-site-information.mjs',
+    'docs/tools/verify-site.mjs',
     'scripts/release/publish_hub_objects.py',
     'scripts/release/r2-upload-worker.mjs',
     'scripts/release/verify_release_recovery.py',

@@ -10,7 +10,11 @@ const recordCurrent = process.argv.includes("--record-current");
 
 const manifest = JSON.parse(await readFile(path.join(docsRoot, "docs-manifest.json"), "utf8"));
 const apiIndex = JSON.parse(await readFile(path.join(docsRoot, "api-index.json"), "utf8"));
-const release = manifest.documented_release;
+const published = JSON.parse(await readFile(path.join(docsRoot, "release.json"), "utf8"));
+const release = published.tag.slice(1);
+if (published.version !== manifest.documented_release) {
+  throw new Error("release.json and docs-manifest.json must document the same engine version.");
+}
 
 function json(value) {
   return `${JSON.stringify(value, null, 2)}\n`;
@@ -59,7 +63,8 @@ function snapshotFromIndex() {
 }
 
 function versionParts(version) {
-  return version.split(/[.-]/).map((part) => /^\d+$/.test(part) ? Number(part) : part);
+  return version.replace(/-v(\d+)$/, ".$1").split(/[.-]/)
+    .map((part) => /^\d+$/.test(part) ? Number(part) : part);
 }
 
 function compareVersions(a, b) {
@@ -143,7 +148,7 @@ let currentText = await readFile(snapshotFile, "utf8").catch(() => "");
 
 if (recordCurrent) {
   if (currentText && currentText.replace(/\r\n/g, "\n") !== expectedText) {
-    throw new Error(`Refusing to overwrite immutable API snapshot ${release}. Bump docs-manifest.json documented_release and release.json before recording a new release baseline.`);
+    throw new Error(`Refusing to overwrite immutable API snapshot ${release}. Set release.json to the new release tag before recording a new release baseline.`);
   }
   if (!currentText) {
     await writeFile(snapshotFile, expectedText, "utf8");
@@ -175,7 +180,7 @@ if (currentText.replace(/\r\n/g, "\n") !== expectedText && !samePublishedApi) {
   ].filter(Boolean).join(" | ");
   throw new Error(
     `API index drifted from immutable release ${release}: ${drift.counts.added} added, ${drift.counts.removed} removed, ${drift.counts.changed} changed. ` +
-    `Do not overwrite the published snapshot. Regenerate the API index from the ${release} release source, or bump documented_release and release.json before recording a new snapshot.` +
+    `Do not overwrite the published snapshot. Regenerate the API index from the ${release} release source, or set release.json to a new release tag before recording a new snapshot.` +
     (details ? ` ${details}` : "")
   );
 }
