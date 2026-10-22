@@ -1,44 +1,44 @@
 {
   "schema_version": 2,
   "version": "0.4.3",
-  "tag": "v0.4.3",
-  "name": "Infernux 0.4.3 v1",
+  "tag": "v0.4.3-v2",
+  "name": "Infernux 0.4.3 v2",
   "channel": "stable",
-  "published_at": "2026-10-20T22:42:08Z",
+  "published_at": "2026-10-22T03:57:32Z",
   "platforms": [
     "Windows 10/11 x64",
     "Linux x86_64"
   ],
   "python_abi": "CPython 3.13 x64",
-  "release_url": "https://github.com/ChenlizheMe/Infernux/releases/tag/v0.4.3",
+  "release_url": "https://github.com/ChenlizheMe/Infernux/releases/tag/v0.4.3-v2",
   "assets": [
     {
       "kind": "hub-installer",
-      "name": "InfernuxHubInstaller-0.4.3-windows-x64.exe",
-      "size_bytes": 169078784,
-      "url": "https://downloads.infernux-engine.com/hub/0.4.3/build-1/InfernuxHubInstaller-0.4.3-windows-x64.exe",
-      "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/v0.4.3/InfernuxHubInstaller-0.4.3-windows-x64.exe"
+      "name": "InfernuxHubInstaller-0.4.3-2-windows-x64.exe",
+      "size_bytes": 169213952,
+      "url": "https://downloads.infernux-engine.com/hub/0.4.3/build-2/InfernuxHubInstaller-0.4.3-2-windows-x64.exe",
+      "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/v0.4.3-v2/InfernuxHubInstaller-0.4.3-2-windows-x64.exe"
     },
     {
       "kind": "python-wheel",
-      "name": "infernux-0.4.3-1-cp313-cp313-win_amd64.whl",
-      "size_bytes": 26280038,
-      "url": "https://files.pythonhosted.org/packages/c9/3d/c206cea8256f4c431d1be9e46d0d4ad5c66821a5c99a5844fb940b14960a/infernux-0.4.3-1-cp313-cp313-win_amd64.whl",
-      "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/v0.4.3/infernux-0.4.3-1-cp313-cp313-win_amd64.whl"
+      "name": "infernux-0.4.3-2-cp313-cp313-win_amd64.whl",
+      "size_bytes": 26423890,
+      "url": "https://files.pythonhosted.org/packages/bf/8b/6582d1401cad0a4c8e2833a0af1b6e776b258f87b97b7e018c5d5ab29713/infernux-0.4.3-2-cp313-cp313-win_amd64.whl",
+      "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/v0.4.3-v2/infernux-0.4.3-2-cp313-cp313-win_amd64.whl"
     },
     {
       "kind": "hub-installer",
-      "name": "InfernuxHubInstaller-0.4.3-linux-x64",
-      "size_bytes": 284481752,
-      "url": "https://downloads.infernux-engine.com/hub/0.4.3/build-1/InfernuxHubInstaller-0.4.3-linux-x64",
-      "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/v0.4.3/InfernuxHubInstaller-0.4.3-linux-x64"
+      "name": "InfernuxHubInstaller-0.4.3-2-linux-x64",
+      "size_bytes": 284653784,
+      "url": "https://downloads.infernux-engine.com/hub/0.4.3/build-2/InfernuxHubInstaller-0.4.3-2-linux-x64",
+      "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/v0.4.3-v2/InfernuxHubInstaller-0.4.3-2-linux-x64"
     },
     {
       "kind": "python-wheel",
-      "name": "infernux-0.4.3-1-cp313-cp313-manylinux_2_35_x86_64.whl",
-      "size_bytes": 44059918,
-      "url": "https://files.pythonhosted.org/packages/34/bf/2b1f37f273e1c436dcea7d175dcfbe34ffdfeeb2fc78f32c59df0ae36cfc/infernux-0.4.3-1-cp313-cp313-manylinux_2_35_x86_64.whl",
-      "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/v0.4.3/infernux-0.4.3-1-cp313-cp313-manylinux_2_35_x86_64.whl"
+      "name": "infernux-0.4.3-2-cp313-cp313-manylinux_2_35_x86_64.whl",
+      "size_bytes": 44224621,
+      "url": "https://files.pythonhosted.org/packages/3a/a8/5a7a7f29a1b08aba0ea5b864b9a41499d1d5cfa843c4e8f08af34c9e3ead/infernux-0.4.3-2-cp313-cp313-manylinux_2_35_x86_64.whl",
+      "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/v0.4.3-v2/infernux-0.4.3-2-cp313-cp313-manylinux_2_35_x86_64.whl"
     }
   ]
 }
