@@ -42,6 +42,36 @@ def _broker(assets: Path, name: str, source: str) -> CandidateImportTransaction:
     return broker
 
 
+def test_preload_library_uses_python_identity_and_lazy_children(candidate_project, monkeypatch):
+    from infernux.engine.project_context import register_preload_python_library, release_preload_python_libraries
+
+    library = candidate_project.parent / "Packages/vendor/tween/runtime/owned_tween"
+    library.mkdir(parents=True)
+    (library / "__init__.py").write_text("VALUE = object()\n", encoding="utf-8")
+    (library / "lazy.py").write_text("from . import VALUE\n", encoding="utf-8")
+    monkeypatch.syspath_prepend(str(library.parent))
+    module = importlib.import_module("owned_tween")
+    register_preload_python_library("fixture-tween", str(library))
+    candidate = _broker(candidate_project, "tween_consumer",
+                        "from owned_tween import VALUE\nfrom owned_tween.lazy import VALUE as CHILD\n")
+    try:
+        result = candidate.load("tween_consumer")
+        assert result.VALUE is module.VALUE and result.CHILD is module.VALUE
+        assert candidate.loaded_module_names == ("tween_consumer",)
+        candidate.rollback()
+        assert sys.modules["owned_tween"] is module
+        release_preload_python_libraries("fixture-tween")
+        unowned = _broker(candidate_project, "unowned_consumer", "import owned_tween\n")
+        with pytest.raises(CandidateImportError, match="path/name mismatch"):
+            unowned.load("unowned_consumer")
+        unowned.rollback()
+    finally:
+        candidate.rollback()
+        release_preload_python_libraries("fixture-tween")
+        sys.modules.pop("owned_tween.lazy", None)
+        sys.modules.pop("owned_tween", None)
+
+
 def test_serializable_candidate_is_private_until_module_commit(candidate_project):
     from infernux.components.serializable_object import get_serializable_class
 

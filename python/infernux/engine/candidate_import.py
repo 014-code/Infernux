@@ -27,6 +27,7 @@ from .module_classification import is_stdlib_module
 from .project_context import (
     get_project_script_roots,
     get_script_module_name,
+    is_preload_python_library,
 )
 
 
@@ -242,6 +243,10 @@ class CandidateImportTransaction:
         if not any(is_path_within(module_path, root) for root in project_roots):
             # Trusted interpreter/engine modules are not project LKG entries.
             return None
+        if is_preload_python_library(module_path):
+            # Preload owns this library's imports and teardown, independently
+            # of the component transaction's isolated module names.
+            return None
         expected = get_script_module_name(module_path)
         if name != expected:
             raise CandidateImportError(
@@ -272,7 +277,7 @@ class CandidateImportTransaction:
         origin = getattr(loaded, "__file__", None) if loaded is not None else spec.origin
         if origin and origin not in {"built-in", "frozen"}:
             locations += (origin,)
-        external = not any(
+        external = any(is_preload_python_library(location) for location in locations) or not any(
             is_path_within(resolved_path(location), project_root)
             for location in locations
             for project_root in self._roots

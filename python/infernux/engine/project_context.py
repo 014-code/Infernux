@@ -390,6 +390,12 @@ def release_preload_python_libraries(owner: str) -> None:
     _preload_python_libraries.pop(owner, None)
 
 
+def is_preload_python_library(path: str) -> bool:
+    """Return whether a library root or source is owned by a live preload."""
+    return any(is_path_within(path, library, allow_root=True)
+               for libraries in _preload_python_libraries.values() for library in libraries)
+
+
 def is_project_component_script(
     path: str,
     project_root: Optional[str] = None,
@@ -401,8 +407,7 @@ def is_project_component_script(
         return False
     root = resolved_path(project_root or _context().root)
     candidate = resolved_path(path)
-    if any(is_path_within(candidate, library, allow_root=False)
-           for libraries in _preload_python_libraries.values() for library in libraries):
+    if is_preload_python_library(candidate):
         return False
     if is_path_within(candidate, roots[0], allow_root=False):
         return True
