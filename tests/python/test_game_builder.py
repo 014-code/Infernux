@@ -1162,6 +1162,7 @@ def test_player_plugin_component_joins_runtime_type_and_guid_catalogs(tmp_path, 
     library.mkdir()
     helper = library / "helper.py"
     helper_source = "from infernux.components import InxComponent\nclass RuntimeHelper(InxComponent): pass\n"
+    helper_source = "import requests\nimport owned_runtime\n" + helper_source
     helper.write_text(helper_source, encoding="utf-8")
     staged_helper = staged.parent / "owned_library/helper.py"
     staged_helper.parent.mkdir()
@@ -1176,6 +1177,7 @@ def test_player_plugin_component_joins_runtime_type_and_guid_catalogs(tmp_path, 
     registry_path.write_text(json.dumps(document), encoding="utf-8")
     builder._cooked_asset_entries[helper_guid] = _asset_index_entry(project, helper, helper_guid, "", "Script")
     monkeypatch.setattr(project_context, "_preload_python_libraries", {"cook-test": (str(library),)})
+    monkeypatch.setitem(sys.modules, "owned_runtime", SimpleNamespace(__file__=str(helper)))
 
     builder._compile_player_plugin_scripts(str(output))
 
@@ -1192,6 +1194,7 @@ def test_player_plugin_component_joins_runtime_type_and_guid_catalogs(tmp_path, 
     assert staged_helper.with_suffix(".pyc").is_file() and not staged_helper.exists()
     assert guid_map[helper_guid].endswith("owned_library/helper.pyc")
     assert not any(item["qualname"] == "RuntimeHelper" for item in catalog["types"])
+    assert builder._collect_user_dependencies() == ["requests"]
 
 
 class TestGameBuilderAnimationClipPreflight:

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 from typing import List
 
 import infernux._jit_kernels as _jit_kernels
@@ -11,6 +12,8 @@ from infernux.engine.project_requirements import (
     _parse_requirements,
     requirements_path,
 )
+from infernux.engine.path_utils import path_key
+from infernux.engine.project_context import is_preload_python_library
 
 
 class BuildDependencyMixin:
@@ -135,5 +138,11 @@ class BuildDependencyMixin:
                 continue
             relative = Path(source).relative_to(assets_dir)
             names.add(relative.parts[0] if len(relative.parts) > 1 else relative.stem)
+        cooked = {path_key(source) for source in self.cooked_python_source_paths()}
+        names.update(
+            name for name, module in tuple(sys.modules.items())
+            if "." not in name and (source := getattr(module, "__file__", ""))
+            and path_key(source) in cooked and is_preload_python_library(source)
+        )
         return names
 
