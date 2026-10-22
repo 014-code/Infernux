@@ -1,8 +1,10 @@
-# Infernux v0.4.3 · 热修 2：原生文字与插件基础能力
+# Infernux v0.4.3-v2 · 热修 2：原生文字与插件基础能力
 
 本次 0.4.3 热修补齐可复用的原生文字动画、插件更新阶段与编辑预览接口，并修复跨平台验证中发现的时钟和渲染状态问题。引擎基础版本仍为 0.4.3，引擎与 Hub 发行使用构建号 2。
 
 [English changelog](UpdateLog.md)
+
+**对比基线：** [`v0.4.3...v0.4.3-v2`](https://github.com/ChenlizheMe/Infernux/compare/v0.4.3...v0.4.3-v2)。
 
 ### 运行时与渲染
 

@@ -4,9 +4,13 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 import re
+import sys
 import tomllib
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "packaging"))
+from hub_release import project_build_number, release_tag_for
+
 SIGNING_CREDIT = "Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/)."
 SIGNING_POLICY = "https://infernux-engine.com/code-signing-policy.html"
 
@@ -23,7 +27,8 @@ def release_block(path: Path, version: str) -> str:
 
 def build_notes(root: Path, *, signed: bool) -> str:
     version = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
-    english = release_block(root / "UpdateLog.md", version)
+    release = release_tag_for(version, project_build_number(root)).removeprefix("v")
+    english = release_block(root / "UpdateLog.md", release)
     notice = (
         "The Windows Hub executable (in both the installer and update archive) and the installer executable have been signed through SignPath. "
         "This does not claim signatures on the ZIP container, engine wheels, or bundled third-party libraries.\n\n" + SIGNING_CREDIT

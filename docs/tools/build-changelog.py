@@ -25,7 +25,7 @@ def authored_notes(filename: str) -> dict[str, str]:
     for block in blocks:
         if not block.strip():
             continue
-        match = re.match(r"# Infernux v(\d+\.\d+\.\d+)\b", block)
+        match = re.match(r"# Infernux v(\d+\.\d+\.\d+(?:-v[1-9]\d*)?) · ", block)
         if not match or match[1] in result:
             raise ValueError(f"Invalid or duplicate release heading in {filename}")
         result[match[1]] = re.sub(r"\n---\s*$", "", block).strip()
@@ -41,13 +41,13 @@ def release_records() -> list[dict]:
     records = {record["tag_name"][1:]: record for record in history}
     published = json.loads((DOCS / "release.json").read_text(encoding="utf-8"))
     if published.get("published_at"):
-        version = published["version"]
+        version = published["tag"].removeprefix("v")
         records.setdefault(version, {}).update(published_at=published["published_at"], html_url=published["release_url"])
     for version in english:
         record = records.setdefault(version, {})
         record.update(en=english[version], zh=chinese[version])
     return [dict(records[version], version=version) for version in sorted(
-        records, key=lambda value: tuple(map(int, value.split("."))), reverse=True
+        records, key=lambda value: tuple(map(int, value.replace("-v", ".").split("."))), reverse=True
     )]
 
 

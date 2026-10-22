@@ -1,8 +1,10 @@
-# Infernux v0.4.3 · Hotfix 2: Native Text and Plugin Foundations
+# Infernux v0.4.3-v2 · Hotfix 2: Native Text and Plugin Foundations
 
 This 0.4.3 hotfix adds reusable native text-animation and plugin-update interfaces, and repairs clocks and rendering state found during cross-platform validation. The base engine version remains 0.4.3; engine and Hub distributions use build 2.
 
 [中文更新日志](UpdateLog-zh.md)
+
+**Baseline for comparison:** [`v0.4.3...v0.4.3-v2`](https://github.com/ChenlizheMe/Infernux/compare/v0.4.3...v0.4.3-v2).
 
 ### Runtime and Rendering
 

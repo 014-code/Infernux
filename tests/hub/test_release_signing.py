@@ -27,6 +27,20 @@ def load(name):
     return module
 
 
+def test_release_notes_use_the_engine_hotfix_identity(tmp_path):
+    (tmp_path / 'pyproject.toml').write_text(
+        '[project]\nversion = "0.4.3"\n[tool.infernux.hub]\nbuild-number = 7\n', encoding='utf-8')
+    version = tmp_path / 'python/infernux/version.py'
+    version.parent.mkdir(parents=True)
+    version.write_text('ENGINE_BUILD_NUMBER = 2\n', encoding='utf-8')
+    (tmp_path / 'UpdateLog.md').write_text(
+        '# Infernux v0.4.3-v2 · Text hotfix\n\nCurrent changes.\n\n---\n\n'
+        '# Infernux v0.4.3 · Base release\n\nOriginal changes.\n', encoding='utf-8')
+    body = load('build_release_notes').build_notes(tmp_path, signed=False)
+    assert body.startswith('# Infernux v0.4.3-v2 · Text hotfix')
+    assert 'Current changes.' in body and 'Original changes.' not in body
+
+
 def pe_pair(magic=0x20b, length=515):
     original = bytearray(length)
     original[:2] = b'MZ'

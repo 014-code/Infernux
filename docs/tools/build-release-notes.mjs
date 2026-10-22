@@ -25,8 +25,8 @@ const release = JSON.parse(await readFile(path.join(docsRoot, "release.json"), "
 const manifest = JSON.parse(await readFile(path.join(docsRoot, "docs-manifest.json"), "utf8"));
 const heading = currentMarkdown.match(/^#\s+Infernux\s+v([^\s·]+)(?:\s+·\s+(.+))?$/m);
 if (!heading) throw new Error("UpdateLog.md must start with '# Infernux v<version> · <codename>'");
-const version = heading[1];
-if (version !== release.version || version !== manifest.documented_release) {
+const version = heading[1].replace(/-v[1-9]\d*$/, "");
+if (`v${heading[1]}` !== release.tag || version !== manifest.documented_release) {
   if (release.version !== manifest.documented_release) {
     throw new Error("release.json version must match docs-manifest.json documented_release");
   }
@@ -47,7 +47,7 @@ if (version !== release.version || version !== manifest.documented_release) {
   ) {
     throw new Error(`release-notes.json must remain synchronized with published release v${release.version}`);
   }
-  console.log(`Verified published release notes for v${release.version}; UpdateLog.md targets upcoming v${version}.`);
+  console.log(`Verified published release notes for ${release.tag}; UpdateLog.md targets upcoming v${heading[1]}.`);
   process.exit(0);
 }
 
