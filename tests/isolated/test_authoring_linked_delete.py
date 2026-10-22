@@ -62,6 +62,7 @@ def _exercise(project, nested, reference, scenario):
     from infernux.lib import LogLevel, RuntimeMode, SceneManager, Vector3
 
     class LinkedPuzzleNode(InxComponent):
+        _execute_in_edit_mode_ = True
         target = serialized_field(default=None, field_type=FieldType.GAME_OBJECT)
         peer = serialized_field(default=None, field_type=FieldType.COMPONENT)
         marker: int = serialized_field(default=0)
