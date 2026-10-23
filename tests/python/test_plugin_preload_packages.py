@@ -169,24 +169,30 @@ def test_preload_library_ownership_follows_success_and_failure(tmp_path, fail_pr
     assert is_project_component_script(str(implementation), str(project))
 
 
-def test_runtime_components_publish_after_owned_libraries_on_install_and_enable(tmp_path, monkeypatch):
+def test_runtime_components_follow_owned_library_install_enable_reload_and_catalog(tmp_path, monkeypatch):
     from infernux.engine.candidate_import import CandidateImportTransaction
     from infernux.engine.resources_manager import ResourcesManager
     from infernux.engine.script_dependency_graph import ScriptDependencyGraph
     from infernux.engine.project_context import (
         get_project_root, get_script_module_name, is_preload_python_library, set_project_root,
     )
+    from infernux.runtime_services import _dispatch_updates, _update_snapshot
 
     source = _source(tmp_path / "source", "vendor/owned-runtime")
     library = source / "runtime/owned_reenable"
     library.mkdir(parents=True)
-    (library / "__init__.py").write_text("API = object()\n", encoding="utf-8")
+    (library / "__init__.py").write_text(
+        "from types import SimpleNamespace\n"
+        "API = SimpleNamespace(ticks=0)\n"
+        "def advance(delta): API.ticks += 1\n", encoding="utf-8",
+    )
     (source / "runtime/Startup.py").write_text(
         "from infernux.lifecycle import InxPreload\n"
         "class Startup(InxPreload):\n"
         "    def preload(self, context):\n"
         "        context.own_python_library('runtime/owned_reenable')\n"
-        "        import owned_reenable\n", encoding="utf-8",
+        "        import owned_reenable\n"
+        "        context.add_update(owned_reenable.advance)\n", encoding="utf-8",
     )
     (source / "runtime/Author.py").write_text("from owned_reenable import API\n", encoding="utf-8")
     project = _project(tmp_path / "project")
@@ -200,13 +206,30 @@ def test_runtime_components_publish_after_owned_libraries_on_install_and_enable(
     graph.index_assets()
     root = project / "Packages/vendor/owned-runtime/runtime"
     publications = []
+    previous_updates = _update_snapshot()["update"]
+    unrelated_module = SimpleNamespace(__file__=str(unrelated), VALUE=1)
+    monkeypatch.setitem(sys.modules, "Unrelated", unrelated_module)
 
     class Resources:
         _project_path = str(project.resolve())
-        _event_handler = SimpleNamespace(_dependency_graph=graph)
+        _engine = SimpleNamespace(get_asset_database=lambda: None)
+        _startup_prepared = False
+        _frontend_worker_running = True
         script_library_dependents = ResourcesManager.script_library_dependents
+        defer_script_catalog_publication = ResourcesManager.defer_script_catalog_publication
+        process_pending_reloads = ResourcesManager.process_pending_reloads
+
+        def __init__(self):
+            self._script_catalog_publications = {}
+            self.catalog_pending = False
+            self.in_catalog = False
+            self._event_handler = SimpleNamespace(
+                _dependency_graph=graph, process_script_worker=lambda: None,
+                process_pending_reloads=self.publish,
+            )
 
         def begin_script_transaction(self, paths):
+            assert not self.in_catalog
             self.paths = paths
             assert is_preload_python_library(str(root / "owned_reenable"))
             assert root / "owned_reenable/__init__.py" not in map(Path, paths)
@@ -218,7 +241,14 @@ def test_runtime_components_publish_after_owned_libraries_on_install_and_enable(
             assert kwargs["catalog_event"] is None
             return object()
 
-        def process_pending_reloads(self, *, force):
+        def publish(self, *, force):
+            if self.catalog_pending:
+                self.catalog_pending = False
+                self.in_catalog = True
+                manager._on_script_catalog_changed(str(root / "Startup.py"), "modified")
+                assert len(publications) == 3
+                self.in_catalog = False
+                return 1
             broker = CandidateImportTransaction()
             name = get_script_module_name(str(root / "Author.py"), str(project))
             for path in self.paths:
@@ -230,6 +260,7 @@ def test_runtime_components_publish_after_owned_libraries_on_install_and_enable(
                 publications.append(api)
             finally:
                 broker.rollback()
+            return 1
 
         def retire_script_paths(self, paths):
             pass
@@ -250,9 +281,21 @@ def test_runtime_components_publish_after_owned_libraries_on_install_and_enable(
         assert manager.reload(reference).loaded
         assert len(publications) == 3
         assert len({id(api) for api in publications}) == 3
+        old_api = publications[-1]
+        _dispatch_updates(_update_snapshot()["update"], 0.1, 0.1)
+        assert old_api.ticks == 1
+        resources.catalog_pending = True
+        resources.process_pending_reloads(force=True)
+        assert len(publications) == 4
+        assert len({id(api) for api in publications}) == 4
+        _dispatch_updates(_update_snapshot()["update"], 0.1, 0.1)
+        assert publications[-1].ticks == old_api.ticks == 1
+        assert len(_update_snapshot()["update"]) == len(previous_updates) + 1
+        assert sys.modules["Unrelated"] is unrelated_module
     finally:
         manager.shutdown()
         set_project_root(previous)
+    assert _update_snapshot()["update"] == previous_updates
 
 
 def test_package_preloads_with_matching_module_paths_are_isolated(tmp_path):

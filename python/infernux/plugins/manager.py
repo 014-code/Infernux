@@ -2431,16 +2431,29 @@ class PluginManager:
             self._deferred_catalog_changes.add(resolved_path(file_path))
             return
         normalized = portable_path(str(file_path)).casefold()
+        reloaded = ()
         if normalized.endswith("/editor/translations.json"):
             reference = self.preloads.package_reference_for_path(file_path)
             if not reference:
                 return
             self.preloads.reload_package_translations(reference)
         elif normalized.endswith(".py"):
-            self.preloads.reload_path(file_path)
+            reloaded = self.preloads.reload_path(file_path)
         else:
             return
         self._rebuild_states()
+        references = sorted({state.package_reference for state in reloaded
+                             if state.loaded and state.package_reference}, key=str.casefold)
+        if references:
+            from infernux.engine.resources_manager import ResourcesManager
+
+            manager = ResourcesManager.instance()
+            if manager is not None:
+                for reference in references:
+                    if self.states[reference.casefold()].loaded:
+                        manager.defer_script_catalog_publication(
+                            self._publish_package_runtime_scripts, reference,
+                        )
 
     def _publish_package_runtime_scripts(self, reference: str) -> None:
         """Publish installed Runtime components through the resource authority."""

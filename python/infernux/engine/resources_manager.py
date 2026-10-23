@@ -1819,6 +1819,7 @@ class ResourcesManager:
         self._frontend_worker_running = False
         self._script_reload_callbacks = {}  # file_path -> [callbacks]
         self._script_catalog_callbacks = []  # [callback(file_path, event_type)]
+        self._script_catalog_publications = {}
         self._initial_scan_lock = threading.Lock()
         self._initial_scan_artifact = None
         self._startup_prepared = False
@@ -2047,13 +2048,20 @@ class ResourcesManager:
             getattr(asset_database, "refresh_pending", False)
         ):
             asset_database.try_commit_refresh()
-        if self._event_handler is None:
-            return 0
-        if force or not self._frontend_worker_running:
-            self._event_handler.process_script_worker()
         processed = 0
-        processed += self._event_handler.process_pending_reloads(force=force)
+        if self._event_handler is not None:
+            if force or not self._frontend_worker_running:
+                self._event_handler.process_script_worker()
+            processed = self._event_handler.process_pending_reloads(force=force)
+        if self._script_catalog_publications:
+            publications, self._script_catalog_publications = self._script_catalog_publications, {}
+            for callback, args in publications:
+                callback(*args)
         return processed
+
+    def defer_script_catalog_publication(self, callback, *args) -> None:
+        """Publish consumers after the notifying script transaction has retired."""
+        self._script_catalog_publications[callback, args] = None
 
     def begin_script_transaction(
         self,
@@ -2275,5 +2283,6 @@ class ResourcesManager:
         self._skip_initial_scan = False
         self._script_reload_callbacks.clear()
         self._script_catalog_callbacks.clear()
+        self._script_catalog_publications.clear()
         if ResourcesManager._instance is self:
             ResourcesManager._instance = None
