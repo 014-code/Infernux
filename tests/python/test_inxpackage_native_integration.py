@@ -323,6 +323,8 @@ def _check_official_mcp_lifecycle(tmp_path, monkeypatch):
         "infernux/platform-linux",
         "infernux/platform-web",
         "infernux/platform-windows",
+        "infernux/tween",
+        "infernux/text_animator",
     }
     record = manager.registry.installed_record("infernux/mcp")
     localized_pages = manager.content_pages(record, locale="zh")
