@@ -130,6 +130,22 @@ test("Hub can publish its own revision without changing engine wheel links", asy
     await put("docs/hub-catalog.json", catalog);
     await assert.rejects(checkSiteInformation(root), /Hub release destination differs/);
 });
+test("bundled Hub and engine revisions can differ while downloads retain the Hub version", async t => {
+    const { root, put, release, catalog } = await fixture(t);
+    catalog.stable = catalog.releases[0].version = "0.4.1-4";
+    const installer = release.assets[0];
+    for (const field of ["name", "url", "fallback_url"]) {
+        installer[field] = installer[field].replace("0.4.1-3", "0.4.1-4");
+    }
+    await put("docs/release.json", release);
+    await put("docs/hub-catalog.json", catalog);
+    assert.equal((await checkSiteInformation(root)).tag, "v0.4.1-v3");
+    installer.name = installer.name.replace("0.4.1-4", "0.4.1-3");
+    await put("docs/release.json", release);
+    await put("docs/hub-catalog.json", catalog);
+    await assert.rejects(checkSiteInformation(root), /Hub installer revision differs/);
+});
+
 test("reject an API link whose rendered page is missing", async t => {
     const { root } = await fixture(t);
     await rm(path.join(root, "docs/wiki/site/en/api/Component.html"));

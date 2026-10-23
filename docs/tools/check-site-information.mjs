@@ -9,13 +9,17 @@ export function hubReleaseInformationErrors(release, catalog) {
     const identity = catalog.stable?.match(/^(\d+\.\d+\.\d+)(?:-([1-9]\d*))?$/);
     if (identity?.[1] !== release.version) errors.push("Hub stable base version differs from engine release");
     const tag = `v${identity?.[1]}${identity?.[2] ? `-v${identity[2]}` : ""}`;
-    if (![tag, `hub-${tag}`].some(value => stable.release_url?.endsWith(`/releases/tag/${value}`))) {
+    if (stable.release_url !== release.release_url
+        && ![tag, `hub-${tag}`].some(value => stable.release_url?.endsWith(`/releases/tag/${value}`))) {
         errors.push("Hub release destination differs from its own revision");
     }
     const platforms = Object.entries(stable.platforms || {});
     if (!platforms.length) errors.push("Hub catalog: platform downloads are missing");
     for (const [id, platform] of platforms) {
         const installer = platform.installer;
+        if (!installer?.name?.startsWith(`InfernuxHubInstaller-${catalog.stable}-`)) {
+            errors.push(`${id}: Hub installer revision differs from the catalog`);
+        }
         const asset = release.assets?.find(item => item.kind === "hub-installer" && item.name === installer?.name);
         if (!asset || asset.url !== installer?.url || asset.fallback_url !== installer?.fallback_url) {
             errors.push(`${id}: catalog installer and release asset differ`);
