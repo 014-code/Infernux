@@ -21,7 +21,7 @@ def test_inspector_collects_each_supported_renderer(scene, renderer_type):
 
 
 @pytest.mark.parametrize("replacement", ["same_world", "unload"])
-def test_game_view_cancellation_discards_retired_pointer_targets(scene, replacement):
+def test_game_view_cancellation_discards_retired_pointer_targets(scene, replacement, editor_project):
     from infernux.engine.ui.game_view_panel import GameViewPanel
     from infernux.lib import SceneManager
     from infernux.ui.ui_canvas import UICanvas

@@ -148,6 +148,14 @@ def runtime_scheduler(engine):
         scheduler.unbind_native_bridge()
 
 
+@pytest.fixture
+def editor_project(engine):
+    from infernux.engine.project_context import using_project_root
+
+    with using_project_root(engine.get_asset_database().project_root) as root:
+        yield root
+
+
 @pytest.fixture(autouse=True)
 def _install_runtime_scheduler_bridge(runtime_scheduler):
     """Restore the authoritative bridge before every native integration test."""

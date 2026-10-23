@@ -136,7 +136,7 @@ def test_synthetic_events_follow_the_graphical_input_path(engine):
 
 
 @pytest.mark.parametrize("button,occluded", [(index, False) for index in range(5)] + [(0, True)])
-def test_game_capture_is_resolved_before_component_update(engine, scene, button, occluded):
+def test_game_capture_is_resolved_before_component_update(engine, scene, button, occluded, editor_project):
     from infernux.components import InxComponent
     from infernux.engine.ui.game_view_panel import GameViewPanel
     from infernux.lib import SceneManager

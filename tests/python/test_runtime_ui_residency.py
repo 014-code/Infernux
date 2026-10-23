@@ -133,7 +133,7 @@ def test_world_ui_and_cached_membership_follow_moves_and_unload(scene, submissio
 
 
 @pytest.mark.parametrize("host", ["player", "game_view"])
-def test_host_input_hits_nonactive_canvas_and_observes_sort_order(scene, monkeypatch, host):
+def test_host_input_hits_nonactive_canvas_and_observes_sort_order(scene, monkeypatch, host, editor_project):
     from infernux.input import Input
     from infernux.ui.ui_event_data import PointerType
     from infernux.engine.runtime_event_queue import drain, clear
