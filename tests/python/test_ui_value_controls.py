@@ -155,6 +155,35 @@ class _Renderer:
         self.rects.append(args)
 
 
+@pytest.mark.parametrize("component_type", [UIProgressBar, UISlider])
+def test_rotated_value_control_keeps_fill_and_handle_on_its_pivot(scene, component_type):
+    from infernux.lib import Vector3
+
+    element = scene.create_game_object("Rotated value control").add_component(component_type)
+    element.game_object.transform.local_euler_angles = Vector3(0, 0, 90)
+    element.value = 0.25
+    if isinstance(element, UISlider):
+        element.handle_size = 10
+    for mirrored in (False, True):
+        element.mirror_x = mirrored
+        renderer = _Renderer()
+        dispatch(element, "runtime", renderer=renderer, ui_list=1,
+                 sx=10, sy=20, sw=200, sh=20, scale_x=1, scale_y=1)
+        fill = renderer.rects[1]
+        expected_y = 95 if mirrored else -55
+        assert fill[1:5] == pytest.approx((85, expected_y, 135, expected_y + 20))
+        assert fill[-3:] == pytest.approx((90, mirrored, False))
+        if isinstance(element, UISlider):
+            handle = renderer.rects[2]
+            expected_y = 75 if mirrored else -25
+            assert handle[1:5] == pytest.approx((105, expected_y, 115, expected_y + 10))
+        editor = SimpleNamespace(draw_filled_rect_rotated=lambda *args: renderer.rects.append(args))
+        dispatch(element, "editor", ctx=editor,
+                 base_sx=10, base_sy=20, base_sw=200, base_sh=20, zoom=1)
+        count = 3 if isinstance(element, UISlider) else 2
+        assert renderer.rects[count + 1][:4] == pytest.approx(fill[1:5])
+
+
 def test_value_controls_submit_managed_runtime_geometry():
     renderer = _Renderer()
     progress = UIProgressBar()

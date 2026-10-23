@@ -12,6 +12,25 @@ class _CanvasStub(SimpleNamespace):
     pixel_adjust_rect = UICanvas.pixel_adjust_rect
 
 
+@pytest.mark.parametrize("component_type", ["UIImage", "UIButton"])
+def test_solid_controls_submit_the_same_pose_as_textured_controls(scene, component_type):
+    from infernux import Vector3
+    from infernux import ui
+    from infernux.ui.ui_render_dispatch import dispatch
+
+    element = scene.create_game_object("Rotated solid control").add_component(getattr(ui, component_type))
+    element.game_object.transform.local_euler_angles = Vector3(0, 0, 37)
+    element.mirror_x, element.mirror_y = True, True
+    draws = []
+    renderer = SimpleNamespace(add_filled_rect=lambda *args: draws.append(args), add_text=lambda *args: None)
+    arguments = dict(renderer=renderer, ui_list=1, sx=10, sy=20, sw=60, sh=24,
+                     scale_x=1, scale_y=1, text_scale=1, get_tex_id=lambda _: 0)
+    dispatch(element, "runtime", **arguments)
+    assert draws[-1][-3:] == pytest.approx((37, True, True))
+    dispatch(element, "runtime", world_transform_owned=True, **arguments)
+    assert draws[-1][-3:] == pytest.approx((0, True, True))
+
+
 def test_pending_image_waits_for_its_texture_without_a_colored_placeholder(scene):
     from infernux.core.asset_ref import TextureRef
     from infernux.ui import UIImage

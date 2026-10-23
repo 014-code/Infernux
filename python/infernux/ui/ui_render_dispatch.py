@@ -11,6 +11,7 @@ Two back-ends:
 
 from __future__ import annotations
 
+from math import cos, radians, sin
 from typing import Callable, Dict, Optional
 
 from infernux.lib import _Infernux
@@ -707,6 +708,7 @@ def _runtime_render_image(elem, renderer, ui_list, sx, sy, sw, sh,
             sx, sy, sx + sw, sy + sh,
             cr, cg, cb, ca,
             rounding,
+            attrs["rotation"], attrs["mirror_h"], attrs["mirror_v"],
         )
     if kind == "image":
         _bind_runtime_material(renderer, ui_list, material_state)
@@ -843,7 +845,8 @@ def _runtime_render_button(elem, renderer, ui_list, sx, sy, sw, sh,
         )
         commands.append(("image", arguments))
     else:
-        commands.append(("rect", (ui_list, sx, sy, sx + sw, sy + sh, r, g, b, a, rounding)))
+        commands.append(("rect", (ui_list, sx, sy, sx + sw, sy + sh, r, g, b, a, rounding,
+                                  attrs["rotation"], attrs["mirror_h"], attrs["mirror_v"])))
 
     # Label
     label, lc, ta = _get_label_attrs(
@@ -896,21 +899,39 @@ def _value_fill_rect(elem, x, y, width, height):
     return x, y, width * fraction, height
 
 
+def _value_part_rect(rect, owner, attrs):
+    """Keep a fill or handle on the control's pivot when it rotates/mirrors."""
+    x, y, width, height = rect
+    ox, oy, ow, oh = owner
+    dx, dy = x + width * 0.5 - ox - ow * 0.5, y + height * 0.5 - oy - oh * 0.5
+    if attrs["mirror_h"]:
+        dx = -dx
+    if attrs["mirror_v"]:
+        dy = -dy
+    angle = radians(attrs["rotation"])
+    c, s = cos(angle), sin(angle)
+    return (ox + ow * 0.5 + dx * c - dy * s - width * 0.5,
+            oy + oh * 0.5 + dx * s + dy * c - height * 0.5, width, height)
+
+
 def _editor_render_progress(elem, ctx, base_sx, base_sy, base_sw, base_sh, zoom, **_kw):
     attrs = extract_common(elem)
     background = _multiply_rgba(_pad_rgba(elem.background_color), attrs["color"])
     fill = _multiply_rgba(_pad_rgba(elem.fill_color), attrs["color"])
     rounding = attrs["corner_radius"] * zoom
-    ctx.draw_filled_rect(
+    ctx.draw_filled_rect_rotated(
         base_sx, base_sy, base_sx + base_sw, base_sy + base_sh,
         background[0], background[1], background[2],
-        background[3] * attrs["opacity"], rounding,
+        background[3] * attrs["opacity"],
+        attrs["rotation"], attrs["mirror_h"], attrs["mirror_v"], rounding,
     )
-    x, y, width, height = _value_fill_rect(elem, base_sx, base_sy, base_sw, base_sh)
+    owner = base_sx, base_sy, base_sw, base_sh
+    x, y, width, height = _value_part_rect(_value_fill_rect(elem, *owner), owner, attrs)
     if width > 0.0 and height > 0.0:
-        ctx.draw_filled_rect(
+        ctx.draw_filled_rect_rotated(
             x, y, x + width, y + height,
-            fill[0], fill[1], fill[2], fill[3] * attrs["opacity"], rounding,
+            fill[0], fill[1], fill[2], fill[3] * attrs["opacity"],
+            attrs["rotation"], attrs["mirror_h"], attrs["mirror_v"], rounding,
         )
 
 
@@ -931,13 +952,16 @@ def _runtime_render_progress(elem, renderer, ui_list, sx, sy, sw, sh,
         ui_list, sx, sy, sx + sw, sy + sh,
         background[0], background[1], background[2],
         background[3] * attrs["opacity"], rounding,
+        attrs["rotation"], attrs["mirror_h"], attrs["mirror_v"],
     )
-    x, y, width, height = _value_fill_rect(elem, sx, sy, sw, sh)
+    owner = sx, sy, sw, sh
+    x, y, width, height = _value_part_rect(_value_fill_rect(elem, *owner), owner, attrs)
     if width > 0.0 and height > 0.0:
         _bind_runtime_material(renderer, ui_list, material_state)
         renderer.add_filled_rect(
             ui_list, x, y, x + width, y + height,
             fill[0], fill[1], fill[2], fill[3] * attrs["opacity"], rounding,
+            attrs["rotation"], attrs["mirror_h"], attrs["mirror_v"],
         )
 
 
@@ -954,10 +978,14 @@ def _editor_render_slider(elem, ctx, base_sx, base_sy, base_sw, base_sh, zoom, *
     else:
         center_x = base_sx + base_sw * 0.5
         center_y = y if elem.fill_direction == UIFillDirection.BottomToTop else y + height
-    ctx.draw_filled_rect(
-        center_x - size * 0.5, center_y - size * 0.5,
-        center_x + size * 0.5, center_y + size * 0.5,
-        handle[0], handle[1], handle[2], handle[3] * attrs["opacity"], size * 0.5,
+    x, y, width, height = _value_part_rect(
+        (center_x - size * 0.5, center_y - size * 0.5, size, size),
+        (base_sx, base_sy, base_sw, base_sh), attrs,
+    )
+    ctx.draw_filled_rect_rotated(
+        x, y, x + width, y + height,
+        handle[0], handle[1], handle[2], handle[3] * attrs["opacity"],
+        attrs["rotation"], attrs["mirror_h"], attrs["mirror_v"], size * 0.5,
     )
 
 
@@ -984,11 +1012,15 @@ def _runtime_render_slider(elem, renderer, ui_list, sx, sy, sw, sh,
         center_x = sx + sw * 0.5
         center_y = y if elem.fill_direction == UIFillDirection.BottomToTop else y + height
     _bind_runtime_material(renderer, ui_list, material_state)
+    x, y, width, height = _value_part_rect(
+        (center_x - size * 0.5, center_y - size * 0.5, size, size),
+        (sx, sy, sw, sh), attrs,
+    )
     renderer.add_filled_rect(
         ui_list,
-        center_x - size * 0.5, center_y - size * 0.5,
-        center_x + size * 0.5, center_y + size * 0.5,
+        x, y, x + width, y + height,
         handle[0], handle[1], handle[2], handle[3] * attrs["opacity"], size * 0.5,
+        attrs["rotation"], attrs["mirror_h"], attrs["mirror_v"],
     )
 
 
