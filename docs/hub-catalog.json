@@ -1,93 +1,48 @@
 {
   "$schema": "infernux.hub_catalog",
-  "stable": "0.4.3-3",
+  "stable": "0.4.3-4",
   "releases": [
     {
-      "version": "0.4.3-3",
+      "version": "0.4.3-4",
       "channel": "stable",
-      "published_at": "2026-10-22T06:53:40Z",
-      "release_url": "https://github.com/ChenlizheMe/Infernux/releases/tag/hub-v0.4.3-v3",
+      "published_at": "2026-10-23T01:54:14Z",
+      "release_url": "https://github.com/ChenlizheMe/Infernux/releases/tag/v0.4.3-v3",
       "minimum_updatable_version": "0.4.0",
       "platforms": {
         "windows-x64": {
           "installer": {
-            "name": "InfernuxHubInstaller-0.4.3-3-windows-x64.exe",
-            "url": "https://downloads.infernux-engine.com/hub/0.4.3/build-3/InfernuxHubInstaller-0.4.3-3-windows-x64.exe",
-            "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/hub-v0.4.3-v3/InfernuxHubInstaller-0.4.3-3-windows-x64.exe"
+            "name": "InfernuxHubInstaller-0.4.3-4-windows-x64.exe",
+            "url": "https://downloads.infernux-engine.com/hub/0.4.3/build-4/InfernuxHubInstaller-0.4.3-4-windows-x64.exe",
+            "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/v0.4.3-v3/InfernuxHubInstaller-0.4.3-4-windows-x64.exe"
           },
           "update": {
-            "name": "InfernuxHub-0.4.3-3-windows-x64-full.zip",
-            "url": "https://downloads.infernux-engine.com/hub/0.4.3/build-3/InfernuxHub-0.4.3-3-windows-x64-full.zip",
-            "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/hub-v0.4.3-v3/InfernuxHub-0.4.3-3-windows-x64-full.zip",
-            "size": 30718567
+            "name": "InfernuxHub-0.4.3-4-windows-x64-full.zip",
+            "url": "https://downloads.infernux-engine.com/hub/0.4.3/build-4/InfernuxHub-0.4.3-4-windows-x64-full.zip",
+            "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/v0.4.3-v3/InfernuxHub-0.4.3-4-windows-x64-full.zip",
+            "size": 30666550
           },
           "manifest": {
             "name": "InfernuxHub-windows-x64-manifest.json",
-            "url": "https://downloads.infernux-engine.com/hub/0.4.3/build-3/InfernuxHub-windows-x64-manifest.json",
-            "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/hub-v0.4.3-v3/InfernuxHub-windows-x64-manifest.json"
+            "url": "https://downloads.infernux-engine.com/hub/0.4.3/build-4/InfernuxHub-windows-x64-manifest.json",
+            "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/v0.4.3-v3/InfernuxHub-windows-x64-manifest.json"
           }
         },
         "linux-x64": {
           "installer": {
-            "name": "InfernuxHubInstaller-0.4.3-3-linux-x64",
-            "url": "https://downloads.infernux-engine.com/hub/0.4.3/build-3/InfernuxHubInstaller-0.4.3-3-linux-x64",
-            "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/hub-v0.4.3-v3/InfernuxHubInstaller-0.4.3-3-linux-x64"
+            "name": "InfernuxHubInstaller-0.4.3-4-linux-x64",
+            "url": "https://downloads.infernux-engine.com/hub/0.4.3/build-4/InfernuxHubInstaller-0.4.3-4-linux-x64",
+            "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/v0.4.3-v3/InfernuxHubInstaller-0.4.3-4-linux-x64"
           },
           "update": {
-            "name": "InfernuxHub-0.4.3-3-linux-x64-full.zip",
-            "url": "https://downloads.infernux-engine.com/hub/0.4.3/build-3/InfernuxHub-0.4.3-3-linux-x64-full.zip",
-            "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/hub-v0.4.3-v3/InfernuxHub-0.4.3-3-linux-x64-full.zip",
-            "size": 52087147
+            "name": "InfernuxHub-0.4.3-4-linux-x64-full.zip",
+            "url": "https://downloads.infernux-engine.com/hub/0.4.3/build-4/InfernuxHub-0.4.3-4-linux-x64-full.zip",
+            "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/v0.4.3-v3/InfernuxHub-0.4.3-4-linux-x64-full.zip",
+            "size": 58469551
           },
           "manifest": {
             "name": "InfernuxHub-linux-x64-manifest.json",
-            "url": "https://downloads.infernux-engine.com/hub/0.4.3/build-3/InfernuxHub-linux-x64-manifest.json",
-            "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/hub-v0.4.3-v3/InfernuxHub-linux-x64-manifest.json"
-          }
-        }
-      }
-    },
-    {
-      "version": "0.4.3-2",
-      "channel": "stable",
-      "published_at": "2026-10-22T03:57:32Z",
-      "release_url": "https://github.com/ChenlizheMe/Infernux/releases/tag/v0.4.3-v2",
-      "minimum_updatable_version": "0.4.0",
-      "platforms": {
-        "windows-x64": {
-          "installer": {
-            "name": "InfernuxHubInstaller-0.4.3-2-windows-x64.exe",
-            "url": "https://downloads.infernux-engine.com/hub/0.4.3/build-2/InfernuxHubInstaller-0.4.3-2-windows-x64.exe",
-            "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/v0.4.3-v2/InfernuxHubInstaller-0.4.3-2-windows-x64.exe"
-          },
-          "update": {
-            "name": "InfernuxHub-0.4.3-2-windows-x64-full.zip",
-            "url": "https://downloads.infernux-engine.com/hub/0.4.3/build-2/InfernuxHub-0.4.3-2-windows-x64-full.zip",
-            "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/v0.4.3-v2/InfernuxHub-0.4.3-2-windows-x64-full.zip",
-            "size": 30647667
-          },
-          "manifest": {
-            "name": "InfernuxHub-windows-x64-manifest.json",
-            "url": "https://downloads.infernux-engine.com/hub/0.4.3/build-2/InfernuxHub-windows-x64-manifest.json",
-            "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/v0.4.3-v2/InfernuxHub-windows-x64-manifest.json"
-          }
-        },
-        "linux-x64": {
-          "installer": {
-            "name": "InfernuxHubInstaller-0.4.3-2-linux-x64",
-            "url": "https://downloads.infernux-engine.com/hub/0.4.3/build-2/InfernuxHubInstaller-0.4.3-2-linux-x64",
-            "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/v0.4.3-v2/InfernuxHubInstaller-0.4.3-2-linux-x64"
-          },
-          "update": {
-            "name": "InfernuxHub-0.4.3-2-linux-x64-full.zip",
-            "url": "https://downloads.infernux-engine.com/hub/0.4.3/build-2/InfernuxHub-0.4.3-2-linux-x64-full.zip",
-            "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/v0.4.3-v2/InfernuxHub-0.4.3-2-linux-x64-full.zip",
-            "size": 58442036
-          },
-          "manifest": {
-            "name": "InfernuxHub-linux-x64-manifest.json",
-            "url": "https://downloads.infernux-engine.com/hub/0.4.3/build-2/InfernuxHub-linux-x64-manifest.json",
-            "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/v0.4.3-v2/InfernuxHub-linux-x64-manifest.json"
+            "url": "https://downloads.infernux-engine.com/hub/0.4.3/build-4/InfernuxHub-linux-x64-manifest.json",
+            "fallback_url": "https://github.com/ChenlizheMe/Infernux/releases/download/v0.4.3-v3/InfernuxHub-linux-x64-manifest.json"
           }
         }
       }

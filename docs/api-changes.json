@@ -1,70 +1,14 @@
 {
   "schema_version": 1,
-  "current_release": "0.4.3-v2",
-  "previous_release": "0.4.3",
+  "current_release": "0.4.3-v3",
+  "previous_release": "0.4.3-v2",
   "comparison_available": true,
   "counts": {
     "added": 0,
     "removed": 0,
-    "changed": 1
+    "changed": 0
   },
   "added": [],
   "removed": [],
-  "changed": [
-    {
-      "symbol_key": "infernux.ui.UIText",
-      "changed_fields": [
-        "signatures"
-      ],
-      "before": {
-        "signatures": [
-          "str",
-          "FontAssetInfo | None",
-          "list[FontAssetInfo | None]",
-          "float",
-          "TextAlignH",
-          "TextAlignV",
-          "TextOverflow",
-          "TextResizeMode",
-          "list",
-          "is_auto_width() → bool",
-          "is_auto_height() → bool",
-          "is_fixed_size() → bool",
-          "get_wrap_width() → float",
-          "resolve_text_layout(measure_text: Callable[[str, float, float, str, float, float], Tuple[float, float]], scale: float = ...) → bool",
-          "get_resolved_size() → Tuple[float, float]",
-          "is_width_editable() → bool",
-          "is_height_editable() → bool"
-        ]
-      },
-      "after": {
-        "signatures": [
-          "str",
-          "bool",
-          "FontAssetInfo | None",
-          "list[FontAssetInfo | None]",
-          "float",
-          "TextAlignH",
-          "TextAlignV",
-          "TextOverflow",
-          "TextResizeMode",
-          "list",
-          "int",
-          "get_text_layout() → TextLayout",
-          "create_character_buffer() → TextCharacterBuffer",
-          "set_character_data(buffer: TextCharacterBuffer, layer: TextGeometryLayer | None = None) → None",
-          "reset_character_data(layer: TextGeometryLayer | None = None) → None",
-          "is_auto_width() → bool",
-          "is_auto_height() → bool",
-          "is_fixed_size() → bool",
-          "get_wrap_width() → float",
-          "resolve_text_layout(measure_text: Callable[[str, float, float, str, float, float], Tuple[float, float]], scale: float = ...) → bool",
-          "get_resolved_size() → Tuple[float, float]",
-          "is_width_editable() → bool",
-          "is_height_editable() → bool"
-        ]
-      },
-      "canonical_url": "https://infernux-engine.com/wiki/site/en/api/UIText.html"
-    }
-  ]
+  "changed": []
 }
