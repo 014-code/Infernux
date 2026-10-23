@@ -4899,7 +4899,7 @@ void InxRenderer::ConfigureScreenUIMaterialResolver(InxScreenUIRenderer &rendere
                                                ShaderProgramDomain expectedDomain) {
         auto material = AssetRegistry::Instance().GetAsset<InxMaterial>(guid);
         if (!material || material->IsDeleted() || material->GetVersion() != generation)
-            throw std::runtime_error("UI material GUID is missing or its retained generation is stale: " + guid);
+            throw UIShaderMaterialError("UI material GUID is missing or its retained generation is stale: " + guid);
         if (!m_uiMaterialShaderValidator)
             throw std::runtime_error("UI material shader publication validator is unavailable for GUID " + guid);
         if (!m_uiMaterialShaderValidator(material, expectedDomain))

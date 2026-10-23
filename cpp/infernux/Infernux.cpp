@@ -1055,13 +1055,13 @@ Infernux::Infernux(std::string dllPath, RuntimeMode mode) : m_runtimeMode(mode),
             // publishing. A cross-domain first draw must not leave an
             // ownerless artifact or Forward program in VkShaderCache.
             if (*declaredDomain != expectedDomain)
-                throw std::runtime_error("UI material shader domain mismatch: expected " +
-                                         std::string(ShaderProgramDomainName(expectedDomain)) + ", got " +
-                                         std::string(ShaderProgramDomainName(*declaredDomain)));
+                throw UIShaderMaterialError("UI material shader domain mismatch: expected " +
+                                            std::string(ShaderProgramDomainName(expectedDomain)) + ", got " +
+                                            std::string(ShaderProgramDomainName(*declaredDomain)));
             const LinkedShaderProgramPreparation prepared = EnsureLinkedShaderProgramArtifact(material, true);
             if (!prepared.usesLinkedArtifact || !prepared.success)
-                throw std::runtime_error(
-                    "UI material shader publication failed: " +
+                throw UIShaderMaterialError(
+                    "UI material '" + material->GetName() + "' shader publication failed: " +
                     (prepared.error.empty() ? std::string("linked UI program is unavailable") : prepared.error));
             return true;
         });
@@ -4603,6 +4603,7 @@ std::string Infernux::ReloadShaderSourceBatch(const std::vector<std::string> &ro
     };
     std::vector<PreparedStage> preparedStages;
     std::vector<PreparedProgram> preparedPrograms;
+    std::vector<ShaderStagePair> retiredPairs;
     std::unordered_set<std::string> changedStageIds;
     std::vector<std::string> linkedRootGuids;
     const auto materials = registry.GetAllMaterials();
@@ -4662,11 +4663,8 @@ std::string Infernux::ReloadShaderSourceBatch(const std::vector<std::string> &ro
 
         std::unordered_map<ShaderStagePair, std::shared_ptr<InxMaterial>, ShaderStagePairHash> owners;
         std::unordered_set<ShaderStagePair, ShaderStagePairHash> affectedPairs;
-        for (const auto &[stages, entry] : m_linkedShaderProgramCache)
-            if (affected(stages))
-                affectedPairs.insert(stages);
         for (const auto &material : materials) {
-            if (!material)
+            if (!material || material->IsDeleted())
                 continue;
             const ShaderStagePair stages{material->GetVertShaderName(), material->GetFragShaderName()};
             if (affected(stages)) {
@@ -4674,6 +4672,9 @@ std::string Infernux::ReloadShaderSourceBatch(const std::vector<std::string> &ro
                 owners.try_emplace(stages, material);
             }
         }
+        for (const auto &[stages, entry] : m_linkedShaderProgramCache)
+            if (affected(stages) && owners.find(stages) == owners.end())
+                retiredPairs.push_back(stages);
         std::vector<ShaderStagePair> orderedPairs(affectedPairs.begin(), affectedPairs.end());
         std::sort(orderedPairs.begin(), orderedPairs.end(), [](const auto &left, const auto &right) {
             return std::tie(left.vertexShaderId, left.fragmentShaderId) <
@@ -4734,6 +4735,12 @@ std::string Infernux::ReloadShaderSourceBatch(const std::vector<std::string> &ro
             runtimePrograms.push_back(program.artifact);
     if (!m_renderer->PublishShaderProgramArtifacts(runtimePrograms))
         return "Renderer rejected the dependent shader batch; running programs remain active";
+    for (const auto &stages : retiredPairs) {
+        const auto &entry = m_linkedShaderProgramCache.at(stages);
+        if (entry.programKey.IsValid())
+            m_renderer->RetireShaderProgramArtifact(entry.programKey);
+        m_linkedShaderProgramCache.erase(stages);
+    }
     for (const auto &guid : linkedRootGuids)
         registry.InvalidateAsset(guid);
     for (const auto &stage : preparedStages) {
@@ -4758,7 +4765,7 @@ std::string Infernux::ReloadShaderSourceBatch(const std::vector<std::string> &ro
     }
     dependencyPublication.Commit();
     for (const auto &material : materials) {
-        if (!material)
+        if (!material || material->IsDeleted())
             continue;
         const ShaderStagePair stages{material->GetVertShaderName(), material->GetFragShaderName()};
         if (!affected(stages))

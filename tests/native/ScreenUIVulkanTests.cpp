@@ -526,6 +526,9 @@ int main(int argc, char **argv)
             material.SetInt("mode", 1);
             material.SetMatrix("matrix", glm::mat4(1.0f));
             material.SetTextureGuid("detailTex", "white");
+            material.RemoveProperty("tint");
+            material.RemoveProperty("mode");
+            material.RemoveProperty("detailTex");
         };
         initializePropertyMaterial(*screenPropertyMaterial, *screenProperties);
         initializePropertyMaterial(*worldPropertyMaterial, *worldProperties);
@@ -536,6 +539,7 @@ int main(int argc, char **argv)
         size_t textureResolutions = 0;
         size_t pendingTextureResolutions = 0;
         bool texturePending = false;
+        bool textureFailed = false;
         const auto propertyMaterialResolver = [&](const std::string &guid, uint64_t generation) {
             const auto material = guid == "ui-screen-properties-guid" ? screenPropertyMaterial : worldPropertyMaterial;
             assert(material->GetVersion() == generation);
@@ -547,6 +551,8 @@ int main(int argc, char **argv)
             assert(guid == "white" && name == "detailTex");
             ++textureResolutions;
             TextureResolveResult result;
+            if (textureFailed)
+                return result;
             if (texturePending) {
                 ++pendingTextureResolutions;
                 result.status = TextureResolveStatus::Pending;
@@ -1034,7 +1040,7 @@ int main(int argc, char **argv)
                              [](const UIShaderMaterialBinding &binding) { return binding.IsValid(); }) == 1);
         buildGraph();
         frame();
-        std::array<uint8_t, 128 * 128 * 4> resetObserved{};
+        std::vector<uint8_t> resetObserved(128 * 128 * 4);
         assert(device.ReadBuffer(output, 0, resetObserved.data(), resetObserved.size()));
         const size_t defaultSample = (24 * 128 + 88) * 4;
         assert(resetObserved[defaultSample] == 255 && resetObserved[defaultSample + 1] == 255 &&
@@ -1065,7 +1071,7 @@ int main(int argc, char **argv)
                 const auto packet = renderer.EndCommandPacket();
                 renderer.AppendCommandPackets({packet});
                 frame();
-                std::array<uint8_t, 128 * 128 * 4> observed{};
+                std::vector<uint8_t> observed(128 * 128 * 4);
                 assert(device.ReadBuffer(output, 0, observed.data(), observed.size()));
                 const size_t sample = (64 * 128 + 64) * 4;
                 if (clip) {
@@ -1078,6 +1084,56 @@ int main(int argc, char **argv)
                 }
             }
         }
+
+        // Reject a bad authored program without losing the rest of the UI or
+        // retrying it every frame. A shader edit must make it drawable again.
+        for (auto kind : {ScreenUIList::Camera, ScreenUIList::Overlay, ScreenUIList::World}) {
+            list = kind;
+            buildGraph();
+            bool shaderFixed = false;
+            int rejectedResolutions = 0;
+            const std::string rejectedGuid = "ui-rejected-" + std::to_string(int(kind));
+            renderer.SetMaterialProgramResolver(
+                [&](const std::string &guid, uint64_t generation, ShaderProgramDomain domain) {
+                    if (guid == rejectedGuid) {
+                        ++rejectedResolutions;
+                        if (!shaderFixed)
+                            throw UIShaderMaterialError("Test UI shader has an invalid image binding");
+                    }
+                    return resolveMaterialProgram(guid, generation, domain);
+                });
+            renderer.BeginFrame(128, 128);
+            renderer.BeginCommandPacket();
+            if (list == ScreenUIList::World) {
+                glm::mat4 matrix(1.f);
+                matrix[3].z = .5f;
+                std::array<float, 16> pose{};
+                std::copy_n(glm::value_ptr(matrix), 16, pose.begin());
+                renderer.BeginWorldElement(pose, 50, 50);
+            }
+            renderer.SetMaterialBinding(list, rejectedGuid, 1, "bad-ui-program");
+            renderer.AddFilledRect(list, 0, 0, 100, 100, 1, 0, 0, 1);
+            renderer.SetMaterialBinding(list, "ui-ordinary-guid", 1, "ordinary-material");
+            renderer.AddFilledRect(list, 0, 0, 100, 100, 0, 1, 0, 1);
+            if (list == ScreenUIList::World)
+                renderer.EndWorldElement();
+            renderer.AppendCommandPackets({renderer.EndCommandPacket()});
+            for (int i = 0; i < 2; ++i) {
+                frame();
+                assert(renderer.GetLastSubmittedDrawCount(list) == 1);
+                std::vector<uint8_t> pixels(128 * 128 * 4);
+                assert(device.ReadBuffer(output, 0, pixels.data(), pixels.size()));
+                const size_t sample = (64 * 128 + 64) * 4;
+                assert(pixels[sample] == 0 && pixels[sample + 1] == 255 && pixels[sample + 2] == 0);
+            }
+            assert(rejectedResolutions == 1);
+            shaderFixed = true;
+            renderer.InvalidateMaterialProgram(screenProgram->key.stages);
+            frame();
+            assert(rejectedResolutions == 2);
+            assert(renderer.GetLastSubmittedDrawCount(list) == 2);
+        }
+        renderer.SetMaterialProgramResolver(resolveMaterialProgram);
 
         // A normal Standard/Unlit material still has a GUID and tint, but no
         // UI ShaderInfo domain. It must draw with the fixed pipeline on all
@@ -1133,7 +1189,7 @@ int main(int argc, char **argv)
                     renderer.EndWorldElement();
                 renderer.AppendCommandPackets({renderer.EndCommandPacket()});
                 frame();
-                std::array<uint8_t, 128 * 128 * 4> pixels{};
+                std::vector<uint8_t> pixels(128 * 128 * 4);
                 assert(device.ReadBuffer(output, 0, pixels.data(), pixels.size()));
                 const size_t sample = (64 * 128 + 64) * 4;
                 if (alternate) {
@@ -1148,7 +1204,7 @@ int main(int argc, char **argv)
 
         // ShaderInfo values and a GUID-resolved Texture2D must reach both UI
         // domains through set 1. The readback depends on all seven UBO types.
-        const auto renderPropertyList = [&](ScreenUIList kind) {
+        const auto renderPropertyList = [&](ScreenUIList kind, bool visible = true) {
             list = kind;
             buildGraph();
             renderer.BeginFrame(128, 128);
@@ -1170,6 +1226,10 @@ int main(int argc, char **argv)
             std::vector<uint8_t> pixels(128 * 128 * 4);
             assert(device.ReadBuffer(output, 0, pixels.data(), pixels.size()));
             const size_t sample = (64 * 128 + 64) * 4;
+            if (!visible) {
+                assert(renderer.GetLastSubmittedDrawCount(list) == 0 && pixels[sample + 3] == 0);
+                return;
+            }
             assert(pixels[sample] >= 226 && pixels[sample] <= 229);
             assert(pixels[sample + 1] >= 226 && pixels[sample + 1] <= 229);
             assert(pixels[sample + 2] >= 226 && pixels[sample + 2] <= 229);
@@ -1177,6 +1237,7 @@ int main(int argc, char **argv)
         };
         for (auto kind : {ScreenUIList::Camera, ScreenUIList::Overlay, ScreenUIList::World})
             renderPropertyList(kind);
+        assert(!screenPropertyMaterial->HasProperty("tint") && !worldPropertyMaterial->HasProperty("tint"));
         // Stable generations reuse the descriptor without repeating texture
         // resolution. A texture reimport changes its GPU publication even
         // while the owning material generation and retained command stay put.
@@ -1204,6 +1265,17 @@ int main(int argc, char **argv)
         renderPropertyList(ScreenUIList::Overlay);
         assert(textureResolutions == resolutionsWhilePending + 1);
         assert(retirement.GetStats().pushed > retiredBeforeReimport);
+        textureFailed = true;
+        ++textureGeneration;
+        renderPropertyList(ScreenUIList::Overlay, false);
+        const size_t failedResolutions = textureResolutions;
+        renderPropertyList(ScreenUIList::Overlay, false);
+        assert(textureResolutions == failedResolutions);
+        textureFailed = false;
+        ++textureGeneration;
+        renderPropertyList(ScreenUIList::Overlay);
+        assert(textureResolutions == failedResolutions + 1);
+        assert(screenPropertyMaterial->GetVersion() == propertyBinding.generation);
 
         // UI material samplers are authored per texture binding, including
         // when two bindings reference the same texture. The builtin resolver
@@ -1359,7 +1431,7 @@ int main(int argc, char **argv)
         assert(materialResolutions == resolvedBeforeRetained + 1);
 
         assert(renderer.GetMaterialPipelineVariantCount() <= variantsBeforeReload);
-        std::array<uint8_t, 128 * 128 * 4> hotPixels{};
+        std::vector<uint8_t> hotPixels(128 * 128 * 4);
         assert(device.ReadBuffer(output, 0, hotPixels.data(), hotPixels.size()));
         const size_t hotSample = (64 * 128 + 64) * 4;
         assert(hotPixels[hotSample] >= 31 && hotPixels[hotSample] <= 32);
@@ -1396,7 +1468,7 @@ int main(int argc, char **argv)
             list = kind;
             buildGraph();
             for (bool textured : {false, true}) {
-                std::vector<std::array<uint8_t, 128 * 128 * 4>> expectedFrames;
+                std::vector<std::vector<uint8_t>> expectedFrames;
                 for (bool retained : {false, true}) {
                     std::vector<std::shared_ptr<InxScreenUIRenderer::CommandPacket>> packets(1000);
                     const auto capturesBefore = renderer.GetGeometryStats(list).packetCaptures;
@@ -1435,7 +1507,7 @@ int main(int argc, char **argv)
                             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started)
                                 .count();
                         frame();
-                        std::array<uint8_t, 128 * 128 * 4> observed{};
+                        std::vector<uint8_t> observed(128 * 128 * 4);
                         assert(device.ReadBuffer(output, 0, observed.data(), observed.size()));
                         if (retained)
                             assert(observed == expectedFrames[iteration]);
@@ -1465,7 +1537,7 @@ int main(int argc, char **argv)
         renderer.BeginFrame(128, 128);
         renderer.AddFilledRect(list, 16, 16, 112, 112, 1, 0, 0, 1);
         frame();
-        std::array<uint8_t, 128 * 128 * 4> pixels{};
+        std::vector<uint8_t> pixels(128 * 128 * 4);
         assert(device.ReadBuffer(output, 0, pixels.data(), pixels.size()));
         const size_t center = (64 * 128 + 64) * 4;
         assert(pixels[center] == 255 && pixels[center + 1] == 0 && pixels[center + 3] == 255);
@@ -1615,7 +1687,7 @@ int main(int argc, char **argv)
                 decorate(1, large);
                 decorate(2);
                 frame();
-                std::array<uint8_t, 128 * 128 * 4> expected{};
+                std::vector<uint8_t> expected(128 * 128 * 4);
                 assert(device.ReadBuffer(output, 0, expected.data(), expected.size()));
                 const auto indices = renderer.GetLastSubmittedIndexCount(list);
                 renderer.BeginFrame(128, 128);
@@ -1633,7 +1705,7 @@ int main(int argc, char **argv)
                 if (list == ScreenUIList::World) {
                     cullingMask = 2;
                     frame();
-                    std::array<uint8_t, 128 * 128 * 4> masked{};
+                    std::vector<uint8_t> masked(128 * 128 * 4);
                     assert(device.ReadBuffer(output, 0, masked.data(), masked.size()));
                     renderer.BeginFrame(128, 128);
                     decorate(0);
@@ -1691,7 +1763,7 @@ int main(int argc, char **argv)
         auto animated = renderer.EndCommandPacket();
         const auto captureCount = renderer.GetGeometryStats(list).packetCaptures;
         auto &transforms = TransformECSStore::Instance();
-        std::array<uint8_t, 128 * 128 * 4> previousPose{};
+        std::vector<uint8_t> previousPose(128 * 128 * 4);
         for (int step = 0; step < 4; ++step) {
             parent->GetTransform()->SetLocalEulerAngles(8, float(step * 13), 7);
             parent->GetTransform()->SetLocalScale(1.5f, .7f, 1.f);
@@ -1705,7 +1777,7 @@ int main(int argc, char **argv)
                 renderer.BeginFrame(128, 128);
                 renderer.AppendCommandPackets({animated});
                 frame();
-                std::array<uint8_t, 128 * 128 * 4> retained{};
+                std::vector<uint8_t> retained(128 * 128 * 4);
                 assert(device.ReadBuffer(output, 0, retained.data(), retained.size()));
                 glm::mat4 current = glm::mat4_cast(object->GetTransform()->GetRotation());
                 current[3] = glm::vec4(object->GetTransform()->GetPosition(), 1);
@@ -1751,7 +1823,7 @@ int main(int argc, char **argv)
         renderer.BeginFrame(128, 128);
         renderer.AppendCommandPackets({screenPacket});
         frame();
-        std::array<uint8_t, 128 * 128 * 4> screenBefore{};
+        std::vector<uint8_t> screenBefore(128 * 128 * 4);
         assert(device.ReadBuffer(output, 0, screenBefore.data(), screenBefore.size()));
         const auto bounds = [](const auto &pixels) {
             std::array<int, 4> result{128, 128, -1, -1};
@@ -1775,7 +1847,7 @@ int main(int argc, char **argv)
             renderer.BeginFrame(128, 128);
             renderer.AppendCommandPackets({screenPacket});
             frame();
-            std::array<uint8_t, 128 * 128 * 4> current{};
+            std::vector<uint8_t> current(128 * 128 * 4);
             assert(device.ReadBuffer(output, 0, current.data(), current.size()));
             const auto currentBounds = bounds(current);
             std::cout << "SCREEN_PARENT_POSE " << label << " bounds=" << currentBounds[0] << "," << currentBounds[1]
@@ -1794,7 +1866,7 @@ int main(int argc, char **argv)
         renderer.BeginFrame(128, 128);
         renderer.AppendCommandPackets({screenPacket});
         frame();
-        std::array<uint8_t, 128 * 128 * 4> screenAfter{};
+        std::vector<uint8_t> screenAfter(128 * 128 * 4);
         assert(device.ReadBuffer(output, 0, screenAfter.data(), screenAfter.size()));
         assert(bounds(screenAfter) != screenBeforeBounds);
         screenObject->GetTransform()->SetLocalEulerAngles(0.0f, 0.0f, 25.0f);
@@ -1802,7 +1874,7 @@ int main(int argc, char **argv)
         renderer.BeginFrame(128, 128);
         renderer.AppendCommandPackets({screenPacket});
         frame();
-        std::array<uint8_t, 128 * 128 * 4> screenAfterRotateScale{};
+        std::vector<uint8_t> screenAfterRotateScale(128 * 128 * 4);
         assert(device.ReadBuffer(output, 0, screenAfterRotateScale.data(), screenAfterRotateScale.size()));
         assert(screenAfterRotateScale != screenAfter);
         screenPacket.reset();
@@ -1924,7 +1996,7 @@ int main(int argc, char **argv)
             label->GetTransform()->SetLocalPosition(0, 0, .5f);
             crowd.push_back(label);
         }
-        std::vector<std::array<uint8_t, 128 * 128 * 4>> poseFrames;
+        std::vector<std::vector<uint8_t>> poseFrames;
         for (bool retain : {false, true}) {
             std::vector<Packet> packets(1000);
             std::vector<double> buildTimes, recordTimes;

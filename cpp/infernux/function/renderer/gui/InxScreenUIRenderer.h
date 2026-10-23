@@ -32,8 +32,10 @@
 #include <glm/mat4x4.hpp>
 #include <imgui.h>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 namespace infernux::vk
 {
@@ -46,6 +48,18 @@ class VkDescriptorManager;
 
 namespace infernux
 {
+class UIShaderMaterialError : public std::runtime_error
+{
+  public:
+    using std::runtime_error::runtime_error;
+    UIShaderMaterialError(const std::string &message, std::string texture, uint64_t generation)
+        : std::runtime_error(message), textureGuid(std::move(texture)), textureGeneration(generation)
+    {
+    }
+    std::string textureGuid;
+    uint64_t textureGeneration = 0;
+};
+
 namespace textlayout
 {
 class TextGeometry;
@@ -396,6 +410,9 @@ class InxScreenUIRenderer : public NativeLifetimeOwner
     VkPipeline GetWorldPipeline(const rhi::GraphicsRenderingSignature &target, bool alwaysOnTop = false);
     VkPipeline GetMaterialPipeline(const UIShaderMaterialBinding &binding, ShaderProgramDomain domain,
                                    const rhi::GraphicsRenderingSignature *target = nullptr, bool alwaysOnTop = false);
+    bool TryResolveMaterial(const UIShaderMaterialBinding &binding, ShaderProgramDomain domain, VkPipeline &pipeline,
+                            VkDescriptorSet &descriptor, const rhi::GraphicsRenderingSignature *target = nullptr,
+                            bool alwaysOnTop = false);
     VkDescriptorSet GetMaterialDescriptor(const UIShaderMaterialBinding &binding,
                                           const ShaderProgramArtifact &artifact);
     void RetireMaterialDescriptor(const std::string &guid);
@@ -561,6 +578,13 @@ class InxScreenUIRenderer : public NativeLifetimeOwner
         std::shared_ptr<const ShaderProgramArtifact> artifact;
     };
     std::unordered_map<std::string, ResolvedMaterialProgram> m_resolvedMaterialPrograms;
+    struct RejectedMaterial
+    {
+        uint64_t generation = 0;
+        std::string textureGuid;
+        uint64_t textureGeneration = 0;
+    };
+    std::unordered_map<std::string, std::array<RejectedMaterial, 2>> m_rejectedMaterialGenerations;
     struct UIMaterialDescriptor;
     std::unordered_map<std::string, std::shared_ptr<UIMaterialDescriptor>> m_materialDescriptors;
     std::unordered_set<ShaderProgramKey, ShaderProgramKeyHash> m_ownedMaterialPrograms;
