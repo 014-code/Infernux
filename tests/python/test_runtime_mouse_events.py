@@ -42,6 +42,9 @@ def test_dispatcher_accepts_a_precomputed_hit_without_raycast(monkeypatch):
                         lambda *args, **kwargs: calls.append(True))
     dispatcher.process(object(), (1, 2), (100, 100), hit=hit)
     assert calls == []
+    dispatcher.process(object(), (-1, 2), (100, 100), hit=hit)
+    assert dispatcher._hover_object is None
+    assert calls == []
 
 
 def test_direct_mouse_query_respects_camera_mask_and_ignore_raycast(monkeypatch):

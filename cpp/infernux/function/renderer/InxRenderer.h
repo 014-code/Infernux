@@ -561,7 +561,7 @@ class InxRenderer
     }
 
     /// @brief Resize the game render target to match Game View panel size
-    void ResizeGameRenderTarget(uint32_t width, uint32_t height);
+    void ResizeGameRenderTarget(uint32_t width, uint32_t height, rhi::FilterMode filter = rhi::FilterMode::Linear);
 
     /// @brief Invalidate accumulated temporal effects for selected render views.
     void InvalidateTemporalHistory(bool sceneView = true, bool gameView = true);

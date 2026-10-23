@@ -103,6 +103,21 @@ def test_right_mouse_does_not_change_slider_value(scene):
     assert slider.value == 0
 
 
+def test_canvas_clips_new_hits_but_releases_a_drag_outside_its_rect(scene):
+    root, canvas = make_canvas(scene)
+    slider = make_control(scene, root, TrackedSlider, x=700)
+    assert canvas.raycast(750, 20) is slider
+    assert canvas.raycast(850, 20) is None
+    processor = UIEventProcessor()
+    for x, flags in ((850, dict(down=True, up=True)), (750, dict(down=True)),
+                     (850, dict(held=True)), (850, dict(up=True))):
+        processor.process_pointers([canvas], [pointer(1, x, **flags)], 0.016)
+        runtime_event_queue.drain()
+    assert slider.value == pytest.approx(0.75)
+    assert ("up", False) in slider.terminals
+    assert ("end", False) in slider.terminals
+
+
 MODES = (
     "enabled",
     "owner_active",

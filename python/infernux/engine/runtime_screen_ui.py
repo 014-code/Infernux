@@ -364,9 +364,10 @@ def _map_runtime_ui_pointer_geometry(
             float(screen_y) / max(scale_y, 1e-6),
         )
 
-    screen_blocks_scene = check_screen_block and _screen_ui_blocks_scene_query(
+    screen_blocks_scene = not (0 <= screen_x < viewport_width and 0 <= screen_y < viewport_height)
+    screen_blocks_scene = screen_blocks_scene or (check_screen_block and _screen_ui_blocks_scene_query(
         surfaces, positions
-    )
+    ))
     if screen_blocks_scene or not world_entries or camera is None:
         return positions, world_intersections, ray_origin, ray_direction, screen_blocks_scene
 

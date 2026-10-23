@@ -2475,12 +2475,14 @@ void infernux::RegisterInfernuxBindings(py::module_ &m)
             py::arg("url"), "Open a canonical URL through the active platform handler")
         .def(
             "resize_game_render_target",
-            [](Infernux &self, uint32_t width, uint32_t height) {
+            [](Infernux &self, uint32_t width, uint32_t height, bool pointFilter) {
                 auto *r = self.GetRenderer();
                 if (r)
-                    r->ResizeGameRenderTarget(width, height);
+                    r->ResizeGameRenderTarget(width, height,
+                                             pointFilter ? rhi::FilterMode::Nearest : rhi::FilterMode::Linear);
             },
-            py::arg("width"), py::arg("height"), "Resize the game render target (lazy-initializes on first call)")
+            py::arg("width"), py::arg("height"), py::arg("point_filter") = false,
+            "Resize the game render target and select its presentation sampler")
         .def(
             "get_game_render_target_generation",
             [](Infernux &self) -> uint64_t {

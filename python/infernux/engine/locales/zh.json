@@ -1696,5 +1696,12 @@
   "command.graph.create_node": "创建节点",
   "command.graph.workspace.add": "添加项目",
   "asset.load_error_title": "资产无法加载",
-  "asset.load_error_message": "文件可能已损坏或格式不正确。引擎未修改该文件。请选择删除，或取消以保留原文件。"
+  "asset.load_error_message": "文件可能已损坏或格式不正确。引擎未修改该文件。请选择删除，或取消以保留原文件。",
+  "build.render_output": "游戏画面输出（所有平台）",
+  "build.fixed_render_resolution": "固定绘制分辨率",
+  "build.render_width": "宽度",
+  "build.render_height": "高度",
+  "build.presentation_filter": "放大过滤",
+  "build.filter_linear": "线性",
+  "build.filter_nearest": "最近邻（整数倍放大）"
 }

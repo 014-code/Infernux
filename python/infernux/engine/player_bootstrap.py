@@ -56,6 +56,7 @@ class PlayerBootstrap:
         game_name: str = "",
         window_icon: str = "",
         window_resizable: bool = True,
+        render_output: Optional[dict] = None,
     ):
         self.project_path = project_path
         self.engine_log_level = engine_log_level
@@ -67,6 +68,7 @@ class PlayerBootstrap:
         self.game_name = game_name
         self.window_icon = window_icon
         self.window_resizable = window_resizable
+        self.render_output = render_output
         self.engine: Optional[Engine] = None
         self.runtime_session = None
         self._player_gui: Optional[PlayerGUI] = None
@@ -581,6 +583,7 @@ class PlayerBootstrap:
             data_root=self.project_path,
             control_channel=control_channel,
             activate_play=self._activate_initial_scene_for_play,
+            render_output=self.render_output,
         )
         self.engine.register_gui("player_gui", self._player_gui)
 

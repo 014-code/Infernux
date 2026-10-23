@@ -1,5 +1,6 @@
 #pragma once
 
+#include "rhi/RhiDescriptors.h"
 #include "rhi/RhiSubmission.h"
 
 #include <cstdint>
@@ -35,7 +36,9 @@ class SceneRenderTarget
     /// @param width Width of the render target
     /// @param height Height of the render target
     /// @return true if successful
-    bool Initialize(uint32_t width, uint32_t height);
+    bool Initialize(uint32_t width, uint32_t height, rhi::FilterMode filter = rhi::FilterMode::Linear);
+
+    rhi::FilterMode GetFilterMode() const;
 
     /// Adopt an existing allocation for an offscreen camera. No copy, second
     /// allocation, ImGui descriptor or editor outline target is created.

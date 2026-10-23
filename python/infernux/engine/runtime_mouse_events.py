@@ -55,7 +55,9 @@ class MouseEventDispatcher:
         if not enabled or camera is None or viewport_size[0] <= 0 or viewport_size[1] <= 0:
             self.reset()
             return
-        if hit is _UNSET_HIT:
+        if not (0 <= screen_position[0] < viewport_size[0] and 0 <= screen_position[1] < viewport_size[1]):
+            hit = None
+        elif hit is _UNSET_HIT:
             hit = Physics.raycast_screen(camera, screen_position, viewport_size,
                                          layer_mask=int(camera.culling_mask) & ~(1 << 2),
                                          query_triggers=True)

@@ -1283,12 +1283,12 @@ class Engine():
             return int(self._engine.get_game_render_target_generation())
         return 0
 
-    def resize_game_render_target(self, width: int, height: int):
+    def resize_game_render_target(self, width: int, height: int, *, point_filter: bool = False):
         """Resize the game render target to match game viewport size."""
         if self._screen_ui_submission is not None:
             self._screen_ui_submission.set_target_size(width, height)
         if self._engine:
-            self._engine.resize_game_render_target(width, height)
+            self._engine.resize_game_render_target(width, height, point_filter)
 
     def request_render_target_readback(self, game_view: bool = True):
         """Return a non-blocking ticket for the latest submitted render target."""

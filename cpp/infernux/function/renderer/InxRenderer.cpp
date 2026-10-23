@@ -4671,7 +4671,7 @@ uint64_t InxRenderer::GetGameTextureId()
     return 0;
 }
 
-void InxRenderer::ResizeGameRenderTarget(uint32_t width, uint32_t height)
+void InxRenderer::ResizeGameRenderTarget(uint32_t width, uint32_t height, rhi::FilterMode filter)
 {
     if (width == 0 || height == 0) {
         return;
@@ -4689,7 +4689,7 @@ void InxRenderer::ResizeGameRenderTarget(uint32_t width, uint32_t height)
         if (m_sceneRenderTarget) {
             m_gameRenderTarget->SetMsaaSampleCount(m_sceneRenderTarget->GetMsaaSampleCount());
         }
-        m_gameRenderTarget->Initialize(width, height);
+        m_gameRenderTarget->Initialize(width, height, filter);
         ++m_gameRenderTargetGeneration;
 
         EnsureScreenUIRenderer();
@@ -4701,10 +4701,11 @@ void InxRenderer::ResizeGameRenderTarget(uint32_t width, uint32_t height)
         return;
     }
 
-    if (m_gameRenderTarget && (width != m_gameRenderTarget->GetWidth() || height != m_gameRenderTarget->GetHeight())) {
+    if (width != m_gameRenderTarget->GetWidth() || height != m_gameRenderTarget->GetHeight() ||
+        filter != m_gameRenderTarget->GetFilterMode()) {
         auto replacementTarget = std::make_unique<SceneRenderTarget>(m_vkCore.get());
         replacementTarget->SetMsaaSampleCount(m_gameRenderTarget->GetMsaaSampleCount());
-        if (!replacementTarget->Initialize(width, height)) {
+        if (!replacementTarget->Initialize(width, height, filter)) {
             INXLOG_ERROR("Failed to prepare replacement Game render target for resize to ", width, "x", height,
                          "; keeping the current generation.");
             return;
@@ -5018,7 +5019,7 @@ bool InxRenderer::ApplyMsaaSamples(int samples, const char *source)
     auto createReplacement = [this, vkSamples](const SceneRenderTarget &source) {
         auto replacement = std::make_unique<SceneRenderTarget>(m_vkCore.get());
         replacement->SetMsaaSampleCount(vkSamples);
-        if (!replacement->Initialize(source.GetWidth(), source.GetHeight()))
+        if (!replacement->Initialize(source.GetWidth(), source.GetHeight(), source.GetFilterMode()))
             replacement.reset();
         return replacement;
     };

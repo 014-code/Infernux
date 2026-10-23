@@ -1696,5 +1696,12 @@
   "command.graph.create_node": "Create Node",
   "command.graph.workspace.add": "Add Item",
   "asset.load_error_title": "Asset cannot be loaded",
-  "asset.load_error_message": "The file may be damaged or use an invalid format. It has not been changed. Delete it, or cancel to keep it."
+  "asset.load_error_message": "The file may be damaged or use an invalid format. It has not been changed. Delete it, or cancel to keep it.",
+  "build.render_output": "Game output (all platforms)",
+  "build.fixed_render_resolution": "Fixed rendering resolution",
+  "build.render_width": "Width",
+  "build.render_height": "Height",
+  "build.presentation_filter": "Presentation filter",
+  "build.filter_linear": "Linear",
+  "build.filter_nearest": "Nearest (integer scaling)"
 }

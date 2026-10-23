@@ -22,7 +22,7 @@ SceneRenderTarget::~SceneRenderTarget()
     Cleanup();
 }
 
-bool SceneRenderTarget::Initialize(uint32_t width, uint32_t height)
+bool SceneRenderTarget::Initialize(uint32_t width, uint32_t height, rhi::FilterMode filter)
 {
     if (width == 0 || height == 0 || HasOwnedResources()) {
         INXLOG_ERROR("SceneRenderTarget requires an empty target and positive dimensions");
@@ -37,6 +37,7 @@ bool SceneRenderTarget::Initialize(uint32_t width, uint32_t height)
         rhi::RenderTextureDesc description;
         description.width = width;
         description.height = height;
+        description.filter = filter;
         description.colorFormat = rhi::PixelFormat::RGBA16SFloat;
         const auto depthFormat = m_vkCore->GetDeviceContext().FindSampledDepthFormat();
         if (depthFormat == VK_FORMAT_UNDEFINED)
@@ -104,6 +105,11 @@ void SceneRenderTarget::BindAttachments(std::shared_ptr<const rhi::RenderTexture
 VkFormat SceneRenderTarget::GetColorFormat() const
 {
     return m_attachments ? rhi::ToVkFormat(m_attachments->description.colorFormat) : VK_FORMAT_R16G16B16A16_SFLOAT;
+}
+
+rhi::FilterMode SceneRenderTarget::GetFilterMode() const
+{
+    return m_attachments ? m_attachments->description.filter : rhi::FilterMode::Linear;
 }
 
 VkFormat SceneRenderTarget::GetDepthFormat() const

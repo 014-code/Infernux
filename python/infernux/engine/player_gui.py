@@ -22,6 +22,7 @@ from infernux.debug import Debug
 from infernux.lib import InxGUIRenderable, InxGUIContext
 from infernux.input import Input, TouchPhase
 from infernux.engine.ui.viewport_utils import capture_viewport_info
+from infernux.engine.build_settings import BUILD_SETTINGS_DEFAULTS, normalize_render_output
 from infernux.ui.ui_event_data import PointerType
 from infernux.ui.ui_event_system import UIEventProcessor, UIPointerFrame, _mouse_pointer_frames
 from infernux.engine.runtime_screen_ui import (
@@ -112,17 +113,23 @@ class _FrameProfileWindow:
 
 class PlayerGUI(InxGUIRenderable):
     """Renders the game camera output fullscreen with screen-space UI overlay."""
+    _touch_viewport = (0.0, 0.0, 1.0, 1.0)
+    _render_output = BUILD_SETTINGS_DEFAULTS["render_output"]
 
     def __init__(self, engine, *,
                  splash_items: Optional[List[Dict]] = None,
                  data_root: str = "",
                  control_channel=None,
-                 activate_play: Optional[Callable[[], bool]] = None):
+                 activate_play: Optional[Callable[[], bool]] = None,
+                 render_output: Optional[dict] = None):
         super().__init__()
         self._engine = engine
         self._last_w = 0
         self._last_h = 0
         self._render_scale = _player_render_scale()
+        self._render_output = normalize_render_output(
+            BUILD_SETTINGS_DEFAULTS["render_output"] if render_output is None else render_output,
+        )
         self._ui_event_processor = UIEventProcessor()
         self._mouse_event_dispatcher = MouseEventDispatcher()
         self._input_scene_token = None
@@ -280,9 +287,13 @@ class PlayerGUI(InxGUIRenderable):
         display_h = max(1, int(vp_h))
         target_w = max(1, int(display_w * self._render_scale))
         target_h = max(1, int(display_h * self._render_scale))
+        if self._render_output["width"]:
+            target_w, target_h = self._render_output["width"], self._render_output["height"]
 
         if target_w != self._last_w or target_h != self._last_h:
-            self._engine.resize_game_render_target(target_w, target_h)
+            self._engine.resize_game_render_target(
+                target_w, target_h, point_filter=self._render_output["filter"] == "nearest",
+            )
             self._last_w = target_w
             self._last_h = target_h
 
@@ -291,6 +302,13 @@ class PlayerGUI(InxGUIRenderable):
         display_h = max(1, int(vp_h))
         self._prepare_game_target(vp_w, vp_h)
         target_w, target_h = self._last_w, self._last_h
+        if self._render_output["width"]:
+            scale = min(vp_w / target_w, vp_h / target_h)
+            if self._render_output["filter"] == "nearest" and scale >= 1.0:
+                scale = float(int(scale))
+            display_w, display_h = target_w * scale, target_h * scale
+        pad_x, pad_y = (vp_w - display_w) * 0.5, (vp_h - display_h) * 0.5
+        self._touch_viewport = (pad_x / vp_w, pad_y / vp_h, display_w / vp_w, display_h / vp_h)
         Input.set_game_viewport_size(float(display_w), float(display_h))
 
         game_tex = self._engine.get_game_texture_id()
@@ -303,6 +321,8 @@ class PlayerGUI(InxGUIRenderable):
                 return
             self._initial_image_pending = False
 
+        ctx.set_cursor_pos_x(ctx.get_cursor_pos_x() + pad_x)
+        ctx.set_cursor_pos_y(ctx.get_cursor_pos_y() + pad_y)
         ctx.image(game_tex, float(display_w), float(display_h), 0.0, 0.0, 1.0, 1.0)
         vp = capture_viewport_info(ctx)
         Input.set_game_viewport_origin(vp.image_min_x, vp.image_min_y)
@@ -311,8 +331,12 @@ class PlayerGUI(InxGUIRenderable):
         # do not define an ImGui mouse-hover state, so UI dispatch must not be
         # gated by the desktop hover bit.
         mouse_frame = Input.get_game_mouse_frame_state(0)
-        scene_hit = self._process_ui_events(display_w, display_h, mouse_frame=mouse_frame)
-        self._process_mouse_events(display_w, display_h, scene_hit=scene_hit, mouse_frame=mouse_frame)
+        mouse_frame = (
+            mouse_frame[0] * target_w / display_w, mouse_frame[1] * target_h / display_h,
+            *mouse_frame[2:],
+        )
+        scene_hit = self._process_ui_events(target_w, target_h, mouse_frame=mouse_frame)
+        self._process_mouse_events(target_w, target_h, scene_hit=scene_hit, mouse_frame=mouse_frame)
 
     def pointer_debug_state(self) -> dict:
         """Return the last runtime UI pointer transition for Player diagnostics."""
@@ -369,7 +393,7 @@ class PlayerGUI(InxGUIRenderable):
         scene = SceneManager.instance().get_active_scene()
         self._synchronize_input_scene(scene)
         touches = tuple(Input.touches)
-        self._touch_scene_frame = self._primary_touch_scene_frame(touches, game_w, game_h)
+        self._touch_scene_frame = self._primary_touch_scene_frame(touches, game_w, game_h, self._touch_viewport)
         self._touch_scene_hit = None
         self._touch_scene_query_shared = False
         surfaces = collect_runtime_ui_input_surfaces(*runtime_ui_scenes(SceneManager.instance()))
@@ -399,10 +423,7 @@ class PlayerGUI(InxGUIRenderable):
             (scroll_x, scroll_y),
         )
         touch_points = tuple(
-            (
-                float(touch.normalized_position[0]) * float(game_w),
-                (1.0 - float(touch.normalized_position[1])) * float(game_h),
-            )
+            self._touch_pixels(touch.normalized_position, game_w, game_h, self._touch_viewport)
             for touch in touches
         )
         primary_index = next(
@@ -434,10 +455,7 @@ class PlayerGUI(InxGUIRenderable):
         begin_positions = ()
         if any(same_frame_terminal):
             begin_points = tuple(
-                (
-                    float(touch.begin_normalized_position[0]) * float(game_w),
-                    (1.0 - float(touch.begin_normalized_position[1])) * float(game_h),
-                )
+                self._touch_pixels(touch.begin_normalized_position, game_w, game_h, self._touch_viewport)
                 for touch in touches
             )
             begin_positions = map_runtime_ui_pointers(
@@ -469,7 +487,15 @@ class PlayerGUI(InxGUIRenderable):
         return scene_hit
 
     @staticmethod
-    def _primary_touch_scene_frame(touches, game_w: int, game_h: int):
+    def _touch_pixels(normalized, width, height, viewport):
+        left, top, viewport_width, viewport_height = viewport
+        return (
+            (float(normalized[0]) - left) / viewport_width * width,
+            (1.0 - float(normalized[1]) - top) / viewport_height * height,
+        )
+
+    @staticmethod
+    def _primary_touch_scene_frame(touches, game_w: int, game_h: int, viewport=(0.0, 0.0, 1.0, 1.0)):
         """Promote the primary mobile contact to the gameplay pointer.
 
         Screen UI retains every independent touch. The primary contact also
@@ -485,8 +511,7 @@ class PlayerGUI(InxGUIRenderable):
             touch.begin_normalized_position
             if same_frame_terminal else touch.normalized_position
         )
-        x = float(normalized[0]) * float(game_w)
-        y = (1.0 - float(normalized[1])) * float(game_h)
+        x, y = PlayerGUI._touch_pixels(normalized, game_w, game_h, viewport)
         return (
             x,
             y,

@@ -64,7 +64,9 @@ from infernux.engine.path_utils import (
     resolved_path,
     same_path,
 )
-from infernux.engine.build_settings import load_build_settings_for_build
+from infernux.engine.build_settings import (
+    BUILD_SETTINGS_DEFAULTS, load_build_settings_for_build, normalize_render_output,
+)
 from infernux.engine.filesystem import remove_directory_tree, replace_path
 from infernux.engine.runtime_artifact_catalog import (
     RUNTIME_AUTHORING_DOCUMENT_SUFFIXES,
@@ -392,6 +394,7 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
         window_width: int = 1280,
         window_height: int = 720,
         window_resizable: bool = True,
+        render_output: Optional[dict] = None,
         splash_items: Optional[List[Dict]] = None,
         debug_mode: bool = False,
         lto: bool = True,
@@ -408,6 +411,9 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
         self.window_width = window_width
         self.window_height = window_height
         self.window_resizable = window_resizable
+        self.render_output = normalize_render_output(
+            BUILD_SETTINGS_DEFAULTS["render_output"] if render_output is None else render_output,
+        )
         self.splash_items = list(splash_items) if splash_items else []
         self.debug_mode = debug_mode
         self.lto = lto
@@ -4824,6 +4830,7 @@ class GameBuilder(BuildSplashMixin, BuildDependencyMixin):
             "window_width": self.window_width,
             "window_height": self.window_height,
             "window_resizable": self.window_resizable,
+            "render_output": self.render_output,
             "scene_guids": scene_guids,
             "splash_items": splash_runtime,
             "runtime_contract": player_runtime_contract_sections(flavor, features),

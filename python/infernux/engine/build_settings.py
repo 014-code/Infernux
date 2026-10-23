@@ -25,6 +25,7 @@ BUILD_SETTINGS_DEFAULTS: dict[str, Any] = {
     "output_dir": "",
     "icon_guid": "",
     "platform_options": {},
+    "render_output": {"width": 0, "height": 0, "filter": "linear"},
     "debug_mode": False,
     "lto": True,
     "splash_items": [],
@@ -33,6 +34,20 @@ BUILD_SETTINGS_DEFAULTS: dict[str, Any] = {
 
 def _json_copy(value: Any) -> Any:
     return json.loads(json.dumps(value, ensure_ascii=False, allow_nan=False))
+
+
+def normalize_render_output(value: Any) -> dict[str, Any]:
+    """Keep framebuffer resolution independent of the window's display size."""
+    if not isinstance(value, dict) or set(value) != {"width", "height", "filter"}:
+        raise ValueError("render_output requires width, height, and filter")
+    width, height = value["width"], value["height"]
+    if type(width) is not int or type(height) is not int:
+        raise TypeError("render_output dimensions must be integers")
+    if not ((width == height == 0) or (1 <= width <= 16384 and 1 <= height <= 16384)):
+        raise ValueError("render_output dimensions must both be zero or between 1 and 16384")
+    if value["filter"] not in {"linear", "nearest"}:
+        raise ValueError("render_output filter must be linear or nearest")
+    return dict(value)
 
 
 def normalize_build_settings(value: Any, *, project_path: Optional[str] = None) -> dict[str, Any]:
@@ -48,6 +63,7 @@ def normalize_build_settings(value: Any, *, project_path: Optional[str] = None) 
         raise ValueError(f"build settings contain unknown fields: {sorted(unknown)}")
     result = copy.deepcopy(BUILD_SETTINGS_DEFAULTS)
     result.update(copy.deepcopy(value))
+    result["render_output"] = normalize_render_output(result["render_output"])
     if not isinstance(result["scene_guids"], list) or not all(
         isinstance(item, str) and item for item in result["scene_guids"]
     ):

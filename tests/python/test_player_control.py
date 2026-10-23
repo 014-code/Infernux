@@ -90,7 +90,8 @@ def test_release_player_does_not_enable_validation_control(tmp_path, monkeypatch
     assert channel.enabled is False
 
 
-def test_standalone_player_dispatches_runtime_ui_without_desktop_hover(monkeypatch):
+@pytest.mark.parametrize("fixed", [False, True])
+def test_standalone_player_dispatches_runtime_ui_without_desktop_hover(monkeypatch, fixed):
     dispatched: list[tuple[int, int]] = []
     viewport_origins: list[tuple[float, float]] = []
     images = []
@@ -103,16 +104,30 @@ def test_standalone_player_dispatches_runtime_ui_without_desktop_hover(monkeypat
             self.readiness_queries += 1
             return self
 
-        def resize_game_render_target(self, width, height):
-            assert (width, height) == (1280, 720)
+        def resize_game_render_target(self, width, height, *, point_filter=False):
+            assert (width, height) == ((480, 270) if fixed else (1280, 720))
+            assert point_filter is fixed
 
         def get_game_texture_id(self):
             return 17
 
     class _Context:
         def image(self, *args):
-            assert args == (17, 1280.0, 720.0, 0.0, 0.0, 1.0, 1.0)
+            w, h = (960.0, 540.0) if fixed else (1280.0, 720.0)
+            assert args == (17, w, h, 0.0, 0.0, 1.0, 1.0)
             images.append(args)
+
+        def get_cursor_pos_x(self):
+            return 0.0
+
+        def get_cursor_pos_y(self):
+            return 0.0
+
+        def set_cursor_pos_x(self, value):
+            assert value == (160.0 if fixed else 0.0)
+
+        def set_cursor_pos_y(self, value):
+            assert value == (90.0 if fixed else 0.0)
 
     monkeypatch.setattr(
         player_gui_module,
@@ -138,6 +153,8 @@ def test_standalone_player_dispatches_runtime_ui_without_desktop_hover(monkeypat
     player._last_w = 0
     player._last_h = 0
     player._render_scale = 1.0
+    if fixed:
+        player._render_output = {"width": 480, "height": 270, "filter": "nearest"}
     player._initial_image_pending = True
     mouse_frame = (32.0, 48.0, 0.0, 0.0, True, True, False)
     samples = []
@@ -151,7 +168,7 @@ def test_standalone_player_dispatches_runtime_ui_without_desktop_hover(monkeypat
         return hit
 
     def mouse_events(width, height, *, scene_hit, mouse_frame):
-        assert (width, height) == (1280, 720)
+        assert (width, height) == ((480, 270) if fixed else (1280, 720))
         assert scene_hit is hit
         routed.append(mouse_frame)
 
@@ -173,9 +190,13 @@ def test_standalone_player_dispatches_runtime_ui_without_desktop_hover(monkeypat
     assert len(images) == 2
     assert player._engine.readiness_queries == 2
     assert viewport_origins == [(8.0, 12.0)] * 2
-    assert dispatched == [(1280, 720)] * 2
+    assert dispatched == [((480, 270) if fixed else (1280, 720))] * 2
     assert samples == [0, 0]
-    assert len(routed) == 4 and all(frame is mouse_frame for frame in routed)
+    expected = (16.0, 24.0, *mouse_frame[2:]) if fixed else mouse_frame
+    assert routed == [expected] * 4
+    assert player._touch_pixels((0.5, 0.5), player._last_w, player._last_h, player._touch_viewport) == (
+        player._last_w / 2, player._last_h / 2,
+    )
 
 
 def test_player_primary_touch_drives_gameplay_pointer_in_top_left_pixels():

@@ -333,6 +333,8 @@ class UICanvas(InxUIComponent):
             if layout_width is None
             else (max(1.0, float(layout_width)), max(1.0, float(layout_height)))
         )
+        if not (0 <= canvas_x < ref_w and 0 <= canvas_y < ref_h):
+            return
         for elem, left, top, right, bottom, clip in self._hit_candidates(ref_w, ref_h):
             if not (left - tolerance <= canvas_x <= right + tolerance
                     and top - tolerance <= canvas_y <= bottom + tolerance):

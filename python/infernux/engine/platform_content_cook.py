@@ -165,6 +165,7 @@ def cook_platform_content(
         window_width=int(settings["window_width"]),
         window_height=int(settings["window_height"]),
         window_resizable=bool(settings["window_resizable"]),
+        render_output=settings["render_output"],
         splash_items=list(settings["splash_items"]),
         debug_mode=request.profile.configuration
         is BuildConfiguration.DEVELOPMENT,

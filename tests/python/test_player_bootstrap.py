@@ -418,6 +418,7 @@ def test_player_build_manifest_accepts_the_build_owned_contract(tmp_path):
 
     manifest = {
         "game_name": "StrictPlayer",
+        "render_output": {"width": 480, "height": 270, "filter": "nearest"},
         "icon_path": "Branding/icon.png",
         "display_mode": "windowed",
         "window_width": 1280,

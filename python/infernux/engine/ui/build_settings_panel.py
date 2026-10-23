@@ -279,6 +279,7 @@ class BuildSettingsPanel(EditorPanel):
         self._debug_mode = data["debug_mode"]
         self._lto = data["lto"]
         self._splash_items = list(data["splash_items"])
+        self._render_output = dict(data["render_output"])
 
     def _capture_build_settings(self) -> dict:
         return normalize_build_settings({
@@ -291,6 +292,7 @@ class BuildSettingsPanel(EditorPanel):
             "debug_mode": self._debug_mode,
             "lto": self._lto,
             "splash_items": self._splash_items,
+            "render_output": self._render_output,
         }, project_path=get_project_root())
 
     def _save(self):
@@ -428,6 +430,8 @@ class BuildSettingsPanel(EditorPanel):
                     self._render_output_section(ctx)
                     ctx.separator()
                     self._render_display_section(ctx)
+                    ctx.separator()
+                    self._render_game_output_section(ctx)
                     ctx.separator()
                     self._render_splash_section(ctx)
                     ctx.separator()
@@ -842,8 +846,40 @@ class BuildSettingsPanel(EditorPanel):
 
 
     # ------------------------------------------------------------------
-    # SPLASH ITEMS
+    # GAME OUTPUT
     # ------------------------------------------------------------------
+
+    def _render_game_output_section(self, ctx):
+        ctx.label(t("build.render_output"))
+        fixed = self._render_output["width"] > 0
+        following = bool(ctx.checkbox(t("build.fixed_render_resolution"), fixed))
+        ctx.record_semantic_item("checkbox", t("build.fixed_render_resolution"), True,
+                                 "build_settings.fixed_render_resolution", bool_value=following)
+        if following != fixed:
+            self._render_output.update(width=480 if following else 0, height=270 if following else 0)
+            self._save()
+        if following:
+            for key in ("width", "height"):
+                ctx.label(t(f"build.render_{key}"))
+                ctx.same_line()
+                ctx.set_next_item_width(_metric(ctx, 120.0))
+                value = max(1, min(16384, int(ctx.input_int(f"##render_{key}", self._render_output[key], 1))))
+                ctx.record_semantic_item("int_input", t(f"build.render_{key}"), True,
+                                         f"build_settings.render_{key}", numeric_value=float(value))
+                if value != self._render_output[key]:
+                    self._render_output[key] = value
+                    self._save()
+        modes = ["linear", "nearest"]
+        ctx.label(t("build.presentation_filter"))
+        ctx.same_line()
+        ctx.set_next_item_width(_metric(ctx, 180.0))
+        index = int(ctx.combo("##presentation_filter", modes.index(self._render_output["filter"]),
+                              [t("build.filter_linear"), t("build.filter_nearest")]))
+        ctx.record_semantic_item("combo", t("build.presentation_filter"), True,
+                                 "build_settings.presentation_filter", string_value=modes[index])
+        if modes[index] != self._render_output["filter"]:
+            self._render_output["filter"] = modes[index]
+            self._save()
 
     def _render_splash_section(self, ctx):
         ctx.label(t("build.splash_sequence"))

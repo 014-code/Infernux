@@ -18,6 +18,7 @@ from infernux.engine.interaction import (
 from infernux.input import Input
 from infernux.engine.play_mode import PlayModeManager
 from infernux.engine.project_context import get_project_root
+from infernux.engine.build_settings import BUILD_SETTINGS_DEFAULTS
 from infernux.engine.project_view_settings import (
     load_project_view_settings,
     project_view_settings_path,
@@ -68,6 +69,7 @@ class GameViewPanel(EditorPanel):
     
     WINDOW_TYPE_ID = "game_view"
     WINDOW_DISPLAY_NAME = "Game"
+    _render_output = BUILD_SETTINGS_DEFAULTS["render_output"]
 
     def _document_is_dirty(self) -> bool:
         """Game View is a read-only projection of the Scene document."""
@@ -137,6 +139,14 @@ class GameViewPanel(EditorPanel):
         self._display_game_fps = 0.0
         self._display_game_frame_ms = 0.0
         self._fps_toolbar_hidden = False
+        self._bind_output_settings()
+
+    def _bind_output_settings(self):
+        from infernux.engine.interaction import ensure_project_settings_document
+
+        self._output_settings = ensure_project_settings_document(get_project_root())
+        self._output_settings.add_listener(self._apply_project_output)
+        self._apply_project_output(self._output_settings.capture_document())
 
     def _set_game_render_active(self, active: bool) -> None:
         """Keep C++ game rendering in lockstep with actual panel visibility.
@@ -319,6 +329,8 @@ class GameViewPanel(EditorPanel):
         return self._commit_view_state(before, "Change Game View Resolution")
 
     def _current_target_resolution(self):
+        if self._render_output["width"]:
+            return self._render_output["width"], self._render_output["height"]
         _, w, h = self._RESOLUTION_PRESETS[self._selected_resolution_idx]
         if self._selected_resolution_idx == len(self._RESOLUTION_PRESETS) - 1:
             return max(64, int(self._custom_width)), max(64, int(self._custom_height))
@@ -333,8 +345,17 @@ class GameViewPanel(EditorPanel):
         """Publish Game pixels before scene lifecycle, even when this tab is hidden."""
         self._load_resolution_settings()
         width, height = self._current_target_resolution()
-        self._engine.resize_game_render_target(width, height)
+        self._resize_game_target(width, height)
         self._last_game_width, self._last_game_height = width, height
+
+    def _resize_game_target(self, width, height):
+        self._engine.resize_game_render_target(
+            width, height, point_filter=self._render_output["filter"] == "nearest",
+        )
+
+    def _apply_project_output(self, document):
+        self._render_output = document["build"]["render_output"]
+        self._last_game_width = self._last_game_height = 0
 
     def _fit_scale(self):
         """Toggle Fit mode on."""
@@ -343,10 +364,12 @@ class GameViewPanel(EditorPanel):
         self._commit_view_state(before, "Fit Game View")
 
     @staticmethod
-    def _fit_into_region(src_w: int, src_h: int, region_w: float, region_h: float):
+    def _fit_into_region(src_w: int, src_h: int, region_w: float, region_h: float, *, point_filter=False):
         if src_w <= 0 or src_h <= 0 or region_w <= 0 or region_h <= 0:
             return 0.0, 0.0
         scale = min(region_w / float(src_w), region_h / float(src_h))
+        if point_filter and scale >= 1.0:
+            scale = float(int(scale))
         return float(src_w) * scale, float(src_h) * scale
 
     # ------------------------------------------------------------------
@@ -368,6 +391,7 @@ class GameViewPanel(EditorPanel):
         return
 
     def on_enable(self):
+        self._bind_output_settings()
         # Runtime caches must always start from a cold state after open.
         self._last_game_width = 0
         self._last_game_height = 0
@@ -375,6 +399,7 @@ class GameViewPanel(EditorPanel):
         self._invalidate_ui_scene_cache()
 
     def on_disable(self):
+        self._output_settings.remove_listener(self._apply_project_output)
         self._commit_pending_view_edits()
         self._set_game_render_active(False)
         self._reset_pointer_input()
@@ -517,6 +542,9 @@ class GameViewPanel(EditorPanel):
 
     def _render_resolution_toolbar(self, ctx, dpi: float):
         """Resolution preset combo and optional custom width/height inputs."""
+        if self._render_output["width"]:
+            ctx.label(f'{self._render_output["width"]}\u00d7{self._render_output["height"]}')
+            return
         old_idx = self._selected_resolution_idx
         ctx.set_next_item_width(140.0 * dpi)
         selected_idx = ctx.combo("##Resolution", old_idx, self._PRESET_NAMES, -1)
@@ -741,7 +769,7 @@ class GameViewPanel(EditorPanel):
         draw_h = float(target_h) * self._display_scale
 
         if target_w != self._last_game_width or target_h != self._last_game_height:
-            self._engine.resize_game_render_target(target_w, target_h)
+            self._resize_game_target(target_w, target_h)
             self._last_game_width = target_w
             self._last_game_height = target_h
 
@@ -759,7 +787,10 @@ class GameViewPanel(EditorPanel):
                 # Leave a tiny epsilon so float rounding does not create a child scrollbar.
                 fit_region_w = max(0.0, avail_width - 1.0)
                 fit_region_h = max(0.0, avail_height - 1.0)
-                draw_w, draw_h = self._fit_into_region(target_w, target_h, fit_region_w, fit_region_h)
+                draw_w, draw_h = self._fit_into_region(
+                    target_w, target_h, fit_region_w, fit_region_h,
+                    point_filter=self._render_output["filter"] == "nearest",
+                )
                 self._display_scale = max(0.01, min(draw_w / float(target_w), draw_h / float(target_h)))
 
             cursor_start_x = ctx.get_cursor_pos_x()

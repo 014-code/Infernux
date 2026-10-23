@@ -31,11 +31,13 @@ def test_build_settings_persist_target_owned_platform_options():
     settings = normalize_build_settings(
         {
             "build_target": "android-arm64",
+            "render_output": {"width": 480, "height": 270, "filter": "nearest"},
             "platform_options": {"android-arm64": {"android_artifact": "aab"}},
         }
     )
 
     assert settings["build_target"] == "android-arm64"
+    assert settings["render_output"] == {"width": 480, "height": 270, "filter": "nearest"}
     assert settings["platform_options"]["android-arm64"]["android_artifact"] == "aab"
 
 
@@ -48,6 +50,8 @@ def test_build_settings_reject_invalid_platform_target_and_option_shape():
         normalize_build_settings({"platform_options": {"Android arm64": {}}})
     with pytest.raises(TypeError, match="must be an object"):
         normalize_build_settings({"platform_options": {"android-arm64": []}})
+    with pytest.raises(ValueError, match="dimensions must both"):
+        normalize_build_settings({"render_output": {"width": 480, "height": 0, "filter": "nearest"}})
 
 
 def test_build_branding_uses_asset_guid_identity():

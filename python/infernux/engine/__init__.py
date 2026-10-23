@@ -182,6 +182,9 @@ def _load_player_build_manifest(project_path: str) -> dict[str, object]:
         raise TypeError(
             "Player BuildManifest.json window_resizable must be a boolean"
         )
+    from .build_settings import normalize_render_output
+
+    manifest["render_output"] = normalize_render_output(manifest["render_output"])
     splash_items = manifest.get("splash_items")
     if not isinstance(splash_items, list) or not all(
         isinstance(item, dict) for item in splash_items
@@ -277,6 +280,7 @@ def run_player(project_path: str, engine_log_level=LogLevel.Info):
             game_name=game_name,
             window_icon=window_icon,
             window_resizable=window_resizable,
+            render_output=manifest["render_output"],
         )
         bootstrap.run()
         bootstrap.engine._set_process_owned_exit()
