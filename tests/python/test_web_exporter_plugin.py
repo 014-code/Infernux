@@ -182,7 +182,11 @@ def test_web_payload_preparation_plan_and_successive_publication(monkeypatch, tm
     monkeypatch.setattr(pipeline, "compile_shader_manifest", compile_shaders)
     details = report.details
     mode = "windowed"
-    presentation = {"display_mode": mode, "window_width": 960, "window_height": 540}
+    render_output = {"width": 480, "height": 270, "filter": "nearest"}
+    presentation = {
+        "display_mode": mode, "window_width": 960, "window_height": 540,
+        "render_output": render_output,
+    }
     exporter._assemble_web_host(
         request,
         staging,
@@ -207,6 +211,7 @@ def test_web_payload_preparation_plan_and_successive_publication(monkeypatch, tm
     html = (output / "infernux-player.html").read_text(encoding="utf-8")
     assert "Module.infernuxPresentation = " in html
     assert f'"mode": "{mode}"' in html
+    assert f'"render_output": {json.dumps(render_output)}' in html
     assert f"fetch('infernux-player.{revision}.inxpkg')" in html
     assert "addRunDependency('infernux-project-content')" in html
     assert "Module.FS.writeFile" in html
@@ -730,6 +735,7 @@ def test_web_export_publishes_versioned_cooked_player(monkeypatch, tmp_path):
         "display_mode": "fullscreen_borderless",
         "window_width": 1280,
         "window_height": 720,
+        "render_output": {"width": 0, "height": 0, "filter": "linear"},
     }
     capability_manifest = result.manifest["webgpu_capabilities"]
     assert capability_manifest["path"] == "infernux-webgpu-capabilities.json"
